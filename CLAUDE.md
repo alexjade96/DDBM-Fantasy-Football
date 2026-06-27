@@ -13,7 +13,7 @@ There is no CLI entry point. Work the way the author does:
 - The package install lines at the top of `ddbmFF.R` are commented out; install them once into your R library before first run (notably `tidyverse`, `httr2`, `ggplot2`, `treemapify`, `tidytext`, `patchwork`, `RColorBrewer`, and the `nflverse` family).
 - `getSleeperPlayers.ps1` is a standalone PowerShell helper that downloads the full Sleeper player dump to a JSON file; it is not called by the R script and writes to a hardcoded absolute path under `~/Documents/Data/FantasyFootball`.
 
-Each chart block ends in a `ggsave("DDBM*.png", ...)` that writes into the repo root.
+Each chart block ends in a `ggsave("results/DDBM*.png", ...)` that writes into the `results/` subdirectory.
 
 ## Data flow / architecture
 

@@ -814,7 +814,7 @@ playerPerformance2Potential <- ggplot(playerRosterPerformances %>%
   theme_minimal()
 playerPerformance2Chart <- (playerPerformance2Actual | playerPerformance2Potential) + plot_layout(guides = "collect")
 playerPerformance2Chart
-ggsave("DDBMPlayerPerformance2Chart.png", playerPerformance2Chart,
+ggsave("results/DDBMPlayerPerformance2Chart.png", playerPerformance2Chart,
        width = 24, height = 8, dpi = 300)
 
 ## Diverging plot of differences in shared player points earned per team (3+)
@@ -864,7 +864,7 @@ playerPerformance3Potential <- ggplot(playerRosterPerformances %>%
   theme_minimal()
 playerPerformance3Chart <- (playerPerformance3Actual | playerPerformance3Potential) + plot_layout(guides = "collect")
 playerPerformance3Chart
-ggsave("DDBMPlayerPerformance3Chart.png", playerPerformance3Chart,
+ggsave("results/DDBMPlayerPerformance3Chart.png", playerPerformance3Chart,
        width = 24, height = 8, dpi = 300)
 
 
@@ -932,7 +932,7 @@ playerTradePerformancePlot <- ggplot(playerTradePerformances,
   theme(strip.text = element_text(face = "bold", size = 10),
         strip.background = element_rect(fill = "grey90", color = NA))
 playerTradePerformancePlot
-ggsave("DDBMplayerTradePerformancePlot.png", playerTradePerformancePlot,
+ggsave("results/DDBMplayerTradePerformancePlot.png", playerTradePerformancePlot,
        width = 24, height = 8, dpi = 300)
 
 playerWaiverPerformances <- {
@@ -1049,7 +1049,7 @@ playerWaiverPerformancePlot <- ggplot(playerWaiverPerformances %>%
        y = "Player") +
   theme_minimal()
 playerWaiverPerformancePlot
-ggsave("DDBMplayerWaiverPerformancePlot.png", playerWaiverPerformancePlot,
+ggsave("results/DDBMplayerWaiverPerformancePlot.png", playerWaiverPerformancePlot,
        width = 24, height = 8, dpi = 300)
 
 
@@ -1108,7 +1108,7 @@ for (team in unique(FilterDDBMRosters$user_name)) {
     theme_minimal()
   # print(weeklyRosterChart)
   plots[[team]] <- weeklyRosterChart
-  ggsave(paste0("DDBMWeeklyRosterChart_", team, ".png"),
+  ggsave(paste0("results/DDBMWeeklyRosterChart_", team, ".png"),
          plot = weeklyRosterChart,
          width = 12,
          height = 6,
@@ -1116,7 +1116,7 @@ for (team in unique(FilterDDBMRosters$user_name)) {
 }
 allPlots <- wrap_plots(plots, ncol = 2)   # adjust ncol/nrow as needed
 # allPlots
-ggsave("DDBMWeeklyRosterChart_AllTeams.png", allPlots,
+ggsave("results/DDBMWeeklyRosterChart_AllTeams.png", allPlots,
        width = 24, height = 16, dpi = 300)
 
 
@@ -1163,7 +1163,7 @@ rosterPositionPerformance <- ggplot(teamRosterStats,
   theme_minimal() +
   theme(axis.text.x = element_text(angle = 45, hjust = 1))
 rosterPositionPerformance
-ggsave("DDBMRosterPerformance.png", plot = rosterPositionPerformance,
+ggsave("results/DDBMRosterPerformance.png", plot = rosterPositionPerformance,
        width = 12, height = 6, dpi = 300)
 
 weeklyPositionPoints <- FilterDDBMRosters %>%
@@ -1219,7 +1219,7 @@ weeklyHeatmap <- ggplot(
        y = "Position") +
   theme_minimal()
 # weeklyHeatmap
-ggsave("DDBMWeeklyHeatmap.png", plot = weeklyHeatmap,
+ggsave("results/DDBMWeeklyHeatmap.png", plot = weeklyHeatmap,
        width = 12, height = 6, dpi = 300)
 
 ### Roster Flex & Points per Team
@@ -1261,7 +1261,7 @@ rosterFlexPlot <- ggplot(
        fill = "Position") +
   theme_minimal()
 # rosterFlexPlot
-ggsave("DDBMRosterFlexPlot.png", plot = rosterFlexPlot,
+ggsave("results/DDBMRosterFlexPlot.png", plot = rosterFlexPlot,
        width = 12, height = 6, dpi = 300)
 
 rosterFlexHeatmap <- ggplot(
@@ -1289,7 +1289,7 @@ rosterFlexHeatmap <- ggplot(
        fill = "Count") +
   theme_minimal()
 rosterFlexHeatmap
-ggsave("DDBMRosterFlexHeatmap.png", plot = rosterFlexHeatmap,
+ggsave("results/DDBMRosterFlexHeatmap.png", plot = rosterFlexHeatmap,
        width = 12, height = 6, dpi = 300)
 
 
@@ -1332,7 +1332,7 @@ rosterSpotPlot <- ggplot(
        fill = "Count") +
   theme_minimal()
 rosterSpotPlot
-ggsave("DDBMRosterSpotPlot.png", plot = rosterSpotPlot,
+ggsave("results/DDBMRosterSpotPlot.png", plot = rosterSpotPlot,
        width = 12, height = 6, dpi = 300)
 
 ### Total Seasonal Roster Count Averages
@@ -1358,7 +1358,7 @@ rosterCountBar <- ggplot(averagePositionCounts,
        fill = "Starter") +
   theme_minimal()
 # rosterCountBar
-ggsave("DDBMRosterCount.png", plot = rosterCountBar,
+ggsave("results/DDBMRosterCount.png", plot = rosterCountBar,
        width = 12, height = 6, dpi = 300)
 
 
@@ -1400,7 +1400,7 @@ seasonPointsBox <- ggplot(seasonPositionPoints,
        color = "Teams") +
   theme_minimal()
 # seasonPointsBox
-ggsave("DDBMSeasonPoints.png", plot = seasonPointsBox,
+ggsave("results/DDBMSeasonPoints.png", plot = seasonPointsBox,
        width = 12, height = 6, dpi = 300)
 
 
@@ -1443,7 +1443,7 @@ positionPointsTree <- ggplot(treemapData,
        fill = "Team") +
   theme_minimal()
 # positionPointsTree
-ggsave("DDBMPositionPointsTree.png", plot = positionPointsTree,
+ggsave("results/DDBMPositionPointsTree.png", plot = positionPointsTree,
        width = 12, height = 6, dpi = 300)
 
 
@@ -1495,7 +1495,7 @@ tablePointsChart <- ggplot(FilterMatchupResults,
        y = "Points") +
   theme_minimal()
 # tablePointsChart
-ggsave("DDBMTablePoints.png", plot = tablePointsChart,
+ggsave("results/DDBMTablePoints.png", plot = tablePointsChart,
        width = 12, height = 6, dpi = 300)
 
 
@@ -1521,7 +1521,7 @@ positionPointsChart <- ggplot(positionPoints,
        fill = "Position") +
   theme_void()
 # positionPointsChart
-ggsave("DDBMPositionPoints.png", plot = positionPointsChart,
+ggsave("results/DDBMPositionPoints.png", plot = positionPointsChart,
        width = 12, height = 6, dpi = 300)
 
 
@@ -1562,7 +1562,7 @@ tablePositionGraph <- ggplot(FilterMatchupResults,
   labs(title = "Table Position Shifts", x = "Week", y = "Position") +
   theme_minimal()
 # tablePositionGraph
-ggsave("DDBMTablePosition.png", plot = tablePositionGraph,
+ggsave("results/DDBMTablePosition.png", plot = tablePositionGraph,
        width = 10, height = 6, dpi = 300)
 
 # allTransactionsDF <- allTransactionsDF %>%
