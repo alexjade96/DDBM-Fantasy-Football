@@ -1,0 +1,1 @@
+Invoke-WebRequest -Uri "https://api.sleeper.app/v1/players/nfl" -OutFile "C:\Users\alexj\Documents\Data\FantasyFootball\sleeperPlayers.json"
