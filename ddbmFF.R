@@ -64,15 +64,12 @@
 # install.packages("e1071")
 
 # Load Packages
+# tidyverse attaches dplyr, purrr, tibble, ggplot2, tidyr, stringr, forcats
 library(tidyverse)
-library(dplyr)
-library(purrr)
 library(httr2)
 library(jsonlite)
 library(rjson)
 library(ggrepel)
-library(tibble)
-library(ggplot2)
 library(treemapify)
 library(tidytext)
 library(patchwork)
@@ -85,7 +82,6 @@ library(nflplotR)
 library(nfl4th)
 library(nflseedR)
 # Modeling Packages
-library(tidyverse)
 library(corrplot)
 library(olsrr)
 library(class)
@@ -145,7 +141,7 @@ currentSeason <- Filter(function(x) !any(is.na(x)), respDF)
 # Retrieves Player data for all players in the Sleeper Database & stores in RDS
 # Largest Data set - To be merged with other DFs for linking purposes
 # setwd("~/Data/FantasyFootball")
-playerFilename <- "sleeperplayerData.rds"
+playerFilename <- "sleeperPlayerData.rds"
 playerDF <- readRDS(playerFilename)
 fileDate <- as.Date(file.info(playerFilename)$mtime)
 today = Sys.Date()
@@ -357,10 +353,10 @@ DDBMRosters <- DDBMRosters %>%
 ### Check if any data is missing
 # view(filter(playerMap, if_any(everything(), is.na)))
 ## Get row number for missing data instances
-DDBMRosters %>%
-  mutate(row_number = row_number()) %>%
-  filter(if_any(everything(), is.na)) %>%
-  View()
+# DDBMRosters %>%
+#   mutate(row_number = row_number()) %>%
+#   filter(if_any(everything(), is.na)) %>%
+#   View()
 
 ### Manually add players here
 ## PlayerIDs:
@@ -1564,61 +1560,3 @@ tablePositionGraph <- ggplot(FilterMatchupResults,
 # tablePositionGraph
 ggsave("results/DDBMTablePosition.png", plot = tablePositionGraph,
        width = 10, height = 6, dpi = 300)
-
-# allTransactionsDF <- allTransactionsDF %>%
-#   ungroup() %>%
-#   mutate(adds = ifelse(adds == "", NA, adds),
-#          drops = ifelse(drops == "", NA, drops)) %>%
-#   unnest_wider(metadata, names_sep = ".") %>%
-#   rename(system_msg = metadata.notes) %>%
-#   unnest_wider(settings, names_sep = ".") %>%
-#   rename(order_seq = settings.seq,
-#          waiver_bid = settings.waiver_bid,
-#          user_id = creator) %>%
-#   separate_rows(adds, drops, sep = ",") %>%
-#   mutate(adds = ifelse(!is.na(drops) & adds == drops, NA, adds)) %>%
-#   pivot_longer(cols = c(adds, drops),
-#                names_to = "transaction", values_to = "player_id") %>%
-#   filter(!is.na(player_id)) %>%
-#   left_join(playerMap %>% select(player_id, player_name), by = "player_id") %>%
-  # mutate(transaction = case_when(
-  #   transaction == "adds" ~ "added",
-  #   transaction == "drops" ~ "dropped",
-  #   TRUE ~ transaction)) %>%
-  # separate_rows(adds, drops, sep = ",") %>%
-  # mutate(adds = ifelse(!is.na(drops) & adds == drops, NA, adds)) %>%
-  # left_join(playerMap %>% select(player_id, player_added = player_name),
-  #  by = c("adds" = "player_id")) %>%
-  # left_join(playerMap %>% select(player_id, player_dropped = player_name),
-  #  by = c("drops" = "player_id")) %>%
-  # unnest_wider(metadata, names_sep = ".") %>%
-  # rename(system_msg = metadata.notes) %>%
-  # unnest_wider(settings, names_sep = ".") %>%
-  # rename(order_seq = settings.seq,
-  #        waiver_bid = settings.waiver_bid,
-  #        user_id = creator) %>%
-  # select(-transaction_id) %>% #, -consenter_ids) %>%
-  # relocate(order_seq, waiver_bid, status, system_msg,
-  #          .after = player_name) %>%
-  # arrange(current_week, order_seq, desc(waiver_bid), roster_ids)
-# view(allTransactionsDF)
-# View(filter(allTransactionsDF, type == "trade"))
-
-
-############
-# nflfastR #
-############
-# options(scipen = 9999)
-#
-# data <- load_pbp(2025)
-#
-# dim(data)
-# str(data[1:10])
-# glimpse(data[1:10])
-# data |>
-#   select(home_team, away_team, posteam, desc) |>
-#   View()
-# data |>
-#   select(posteam, defteam, desc, rush, pass) |>
-#   head()
-# data |> select(posteam, defteam, desc, rush, pass) |> head()
