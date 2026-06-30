@@ -16,4 +16,4 @@ sleeperPlayersSorted.json
 Rplots.pdf
 
 # Generated chart outputs (build artifacts; regenerate by running ddbmFF.R)
-results/**/*.png
+*.png

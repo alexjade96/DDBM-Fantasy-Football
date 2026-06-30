@@ -97,7 +97,12 @@ library(e1071)
 callSleeper <- function(objectId, endpoint = NULL) {
   url <- paste0("https://api.sleeper.app/v1",objectId,endpoint)
   cat("\nSleeper API URL:",url,"\n")
+  # req_timeout caps a stalled connection; req_retry rides out transient
+  # failures (timeouts, 429/5xx) with exponential backoff - important when
+  # looping many weeks/seasons of calls.
   resp <- request(url) %>%
+    req_timeout(30) %>%
+    req_retry(max_tries = 4, retry_on_failure = TRUE, backoff = ~ 2 ^ .x) %>%
     req_perform()
   respData <- resp |>
     resp_body_json(simplifyDataFrame = TRUE)
@@ -106,6 +111,14 @@ callSleeper <- function(objectId, endpoint = NULL) {
 
   # respData <- fromJSON(respData)
   return(respData)
+}
+
+# Older seasons can be missing columns the latest season has. ensure_cols() adds
+# any absent expected columns as NA so downstream selects/renames are season-proof.
+ensure_cols <- function(df, cols) {
+  miss <- setdiff(cols, names(df))
+  if (length(miss)) df[miss] <- NA
+  df
 }
 #####################################
 ##### Sample calls useful later #####
@@ -147,8 +160,10 @@ currentSeason <- Filter(function(x) !any(is.na(x)), respDF)
 # previous_league_id, so historical seasons are reached by walking that chain.
 currentLeagueId <- "1252770181306929152"
 # Season to analyse: NULL = most recent (current) season; or a past season
-# string like "2024" / "2023" to render that season instead.
+# string like "2024" / "2023" to render that season instead. Can also be set
+# per-run via the DDBM_SEASON env var (e.g. DDBM_SEASON=2024 Rscript ddbmFF.R).
 targetSeason <- NULL
+if (nzchar(Sys.getenv("DDBM_SEASON"))) targetSeason <- Sys.getenv("DDBM_SEASON")
 
 # Walk previous_league_id to map each season -> {league_id, last_scored_leg}.
 # last_scored_leg is that season's last fully-scored week. It is live-safe (it
@@ -279,12 +294,14 @@ objectId = paste0("/league/", leagueId)
 endpoint = "/users"
 
 respDF <- as_tibble(callSleeper(objectId,endpoint), .name_repair = "unique")
+# Select the needed columns directly rather than dropping all NA-bearing columns:
+# team_name is optional per user, so the old where(!any(is.na)) drop removed it
+# entirely in seasons where any user left it blank. ensure_cols() guarantees it.
 userDF <- respDF %>%
   unnest(metadata, names_sep = "_") %>%
-  rename(user_name = display_name, team_name = metadata_team_name)
-userDF <- userDF %>%
-  select(where(~ !any(is.na(.)))) %>%
-  select(league_id, user_id, user_name, team_name)
+  rename(user_name = display_name) %>%
+  ensure_cols("metadata_team_name") %>%
+  transmute(league_id, user_id, user_name, team_name = metadata_team_name)
 # view(userDF)
 
 ##### Map Usernames to User IDs #####
@@ -316,8 +333,12 @@ for (i in 1:(currentWeek)) {
     left_join(respDF %>%
                 select(current_week, matchup_id, roster_id, points) %>%
                 rename(opp_id = roster_id, opp_points = points),
-              by = c("current_week", "matchup_id")) %>%
-    filter(roster_id != opp_id) %>%
+              by = c("current_week", "matchup_id"),
+              na_matches = "never") %>%
+    # Teams with matchup_id = NA (eliminated/bye in playoff weeks) have no
+    # opponent. na_matches="never" stops the NA-to-NA self-join from pairing
+    # them against each other; keep them as a single no-result row.
+    filter(is.na(opp_id) | roster_id != opp_id) %>%
     mutate(result = case_when(points > opp_points ~ "W",
                               points < opp_points ~ "L",
                               points == opp_points ~ "T")) %>%
@@ -363,8 +384,8 @@ matchupResults = do.call(rbind, matchupList)
 matchupResults <- matchupResults %>%
   group_by(roster_id) %>%
   rename(weekly_points = points) %>%
-  mutate(wins = cumsum(result == "W"),
-         losses = cumsum(result == "L"),
+  mutate(wins = cumsum(coalesce(result == "W", FALSE)),
+         losses = cumsum(coalesce(result == "L", FALSE)),
          current_record = paste0(wins, "-", losses),
          total_points = cumsum(weekly_points),
   ) %>%
@@ -488,12 +509,13 @@ for (i in 1:(currentWeek)) {
   transactionList[[i]] <- weeklyTransactions
 }
 transactionsDF = do.call(bind_rows, transactionList)
-transactionsDF <- transactionsDF %>% select(-c(
-  "created","draft_picks","status_updated","leg","waiver_budget"))
+# any_of(): older seasons may not carry every column, so drop only those present
+transactionsDF <- transactionsDF %>% select(-any_of(c(
+  "created","draft_picks","status_updated","leg","waiver_budget")))
 transactionsDF <- merge(transactionsDF, userDF, by.x="creator", by.y="user_id")
 transactionsDF <- transactionsDF %>%
-  relocate(current_week, transaction_id, roster_ids, consenter_ids,
-           creator, user_name, .before = status)
+  relocate(any_of(c("current_week", "transaction_id", "roster_ids",
+                    "consenter_ids", "creator", "user_name")), .before = status)
 transactionsDF <- transactionsDF[order(transactionsDF$transaction_id),]
 # view(transactionsDF)
 
@@ -501,6 +523,8 @@ transactionsDF <- transactionsDF[order(transactionsDF$transaction_id),]
 ## Join player_names from playerInfo
 ## Splice out trades (see below)
 ## View(filter(allTransactionsDF, type == "trade"))
+## ensure_cols() (defined near the top) guards the metadata/settings renames
+## below: older seasons can lack some keys after unnest_wider.
 allTransactionsDF <- transactionsDF %>%
   pivot_longer(cols = c(adds, drops),
                names_to = "transaction",
@@ -518,12 +542,14 @@ allTransactionsDF <- transactionsDF %>%
   filter(!is.na(player_id) & !is.na(target_roster)) %>%
   left_join(playerInfo %>% select(player_id, player_name), by = "player_id") %>%
   unnest_wider(metadata, names_sep = ".") %>%
-  rename(system_msg = metadata.notes) %>%
   unnest_wider(settings, names_sep = ".") %>%
+  ensure_cols(c("metadata.notes", "settings.seq", "settings.waiver_bid")) %>%
+  rename(system_msg = metadata.notes) %>%
   rename(order_seq = settings.seq,
        waiver_bid = settings.waiver_bid,
        user_id = creator) %>%
-  select(-settings.expires_at, -settings.is_counter, -consenter_ids) %>%
+  select(-any_of(c("settings.expires_at", "settings.is_counter",
+                   "consenter_ids"))) %>%
   relocate(target_roster, order_seq, waiver_bid, status, system_msg,
            .after = player_name) %>%
   mutate(
