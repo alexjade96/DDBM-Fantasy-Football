@@ -4,7 +4,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-An R analytics project for the "DDBM" Sleeper fantasy football redraft league. It pulls data from the public Sleeper API, reshapes it into tidy frames, and renders a set of `DDBM*.png` charts. There is no package, no test suite, and no build — it is a single script run interactively in RStudio (`FantasyFootball.Rproj`).
+An R analytics project for the "DDBM" Sleeper fantasy football redraft league. It pulls data from the public Sleeper API, reshapes it into tidy frames, and renders a set of `DDBM*.png` charts. There is no package, no test suite, and no build — scripts are run interactively in RStudio (`FantasyFootball.Rproj`) or headless via `Rscript`.
+
+Two scripts:
+- **`ddbmFF.R`** — single-season analytics (one season's matchups/rosters/transactions → ~26 charts in `results/<season>/`). This is the main program.
+- **`leagueAnalytics.R`** — cross-season *career* analytics. Walks the whole season chain and aggregates by persistent `user_id` (same manager across seasons despite changing display names/rosters), writing `results/league/` (career standings, finish trajectory, points-per-season, manager-player loyalty, plus `league-career-summary.md` + `.csv`). It reuses the same hardened `callSleeper`/`ensure_cols`/`buildLeagueChain`/NA-matchup logic as `ddbmFF.R`.
 
 ## Running
 
