@@ -137,6 +137,55 @@ respDF <- as_tibble(callSleeper(objectId,endpoint), .name_repair = "unique")
 currentSeason <- Filter(function(x) !any(is.na(x)), respDF)
 # view(currentSeason)
 
+##########
+# Config #
+##########
+# Head of the league's season chain (the latest/current season's league_id).
+# Sleeper stores each season as a SEPARATE league object, chained backwards by
+# previous_league_id, so historical seasons are reached by walking that chain.
+currentLeagueId <- "1252770181306929152"
+# Season to analyse: NULL = most recent (current) season; or a past season
+# string like "2024" / "2023" to render that season instead.
+targetSeason <- NULL
+
+# Walk previous_league_id to map each season -> {league_id, last_scored_leg}.
+# last_scored_leg is that season's last fully-scored week. It is live-safe (it
+# never points at an in-progress week) and, unlike currentSeason$week, does not
+# collapse to 0 in the offseason - so it is the correct cap for the week loops.
+buildLeagueChain <- function(headId) {
+  chain <- list()
+  id <- headId
+  while (!is.null(id) && !is.na(id) && nzchar(id)) {
+    lg <- callSleeper(paste0("/league/", id))
+    chain[[lg$season]] <- list(
+      league_id       = lg$league_id,
+      season          = lg$season,
+      last_scored_leg = lg$settings$last_scored_leg)
+    id <- lg$previous_league_id
+  }
+  chain
+}
+leagueChain <- buildLeagueChain(currentLeagueId)
+
+# Resolve the season to analyse (default = most recent in the chain)
+season <- if (is.null(targetSeason)) {
+  names(leagueChain)[which.max(as.integer(names(leagueChain)))]
+} else {
+  as.character(targetSeason)
+}
+stopifnot("Requested season not found in league chain" =
+            !is.null(leagueChain[[season]]))
+leagueId <- leagueChain[[season]]$league_id
+lastWeek <- leagueChain[[season]]$last_scored_leg
+cat("Analysing season", season, "| league", leagueId,
+    "| through week", lastWeek, "\n")
+
+# Per-season output directory for charts and logs (results/<season>/).
+# out("DDBMx.png") builds a season-namespaced path so seasons never overwrite.
+outDir <- file.path("results", season)
+dir.create(outDir, recursive = TRUE, showWarnings = FALSE)
+out <- function(filename) file.path(outDir, filename)
+
 ##### Player Fetch DF #####
 # Retrieves Player data for all players in the Sleeper Database & stores in RDS
 # Largest Data set - To be merged with other DFs for linking purposes
@@ -193,6 +242,17 @@ playerMap <- selectPlayers %>%
   arrange(match(position, sortPosition), as.numeric(player_id))
 # view(playerMap)
 
+## Intrinsic player name/position lookup (team-INDEPENDENT). Name and position
+## do not depend on a current team, so this resolves players who are team-less
+## in today's snapshot (e.g. released kickers a roster held earlier in the
+## season) without the per-row manual patches. All name/position joins below use
+## playerInfo; playerMap (team-filtered) is retained as the active-roster lookup.
+playerInfo <- selectPlayers %>%
+  mutate(player_name = if_else(
+    position == "DEF", as.character(player_id), player_name)) %>%
+  select(player_id, player_name, position)
+# view(playerInfo)
+
 ########################
 # League Specific Data #
 ########################
@@ -200,7 +260,7 @@ playerMap <- selectPlayers %>%
 ##### League Rosters DF #####
 # Gets latest rosters for DDBM Redraft League
 # League ID = "1252770181306929152"
-objectId = "/league/1252770181306929152"
+objectId = paste0("/league/", leagueId)
 endpoint = "/rosters"
 
 respDF <- as_tibble(callSleeper(objectId,endpoint), .name_repair = "unique")
@@ -213,7 +273,7 @@ rosterDF <- respDF %>%
 
 ##### Users DF #####
 # Fix and add user_id & user-name/display_name
-objectId = "/league/1252770181306929152"
+objectId = paste0("/league/", leagueId)
 endpoint = "/users"
 
 respDF <- as_tibble(callSleeper(objectId,endpoint), .name_repair = "unique")
@@ -235,9 +295,9 @@ userMap <- fullRosterDF %>%
 # view(userMap)
 
 ##### Aggregates all Matchup results for each week #####
-objectId = "/league/1252770181306929152/matchups/"
-# currentWeek = currentSeason$week
-currentWeek = 18
+objectId = paste0("/league/", leagueId, "/matchups/")
+# Cap loops at the season's last fully-scored week (see Config block)
+currentWeek = lastWeek
 matchupResults = data.frame()
 playerRoster = data.frame()
 playerPoints = data.frame()
@@ -319,7 +379,7 @@ matchupResults <- matchupResults %>%
 
 playerPoints <- do.call(rbind, pointsList)
 playerPoints <- playerPoints %>%
-  left_join(playerMap %>% select(player_id, position), by = "player_id") %>%
+  left_join(playerInfo %>% select(player_id, position), by = "player_id") %>%
   arrange(current_week, match(position, sortPosition),
           as.numeric(player_id))
 
@@ -332,7 +392,7 @@ playerRoster = do.call(rbind, playerList)
 ### Full list of weekly rosters for each DDBM User
 DDBMRosters <- playerRoster %>%
   full_join(playerPoints, by = c("current_week", "player_id")) %>%
-  left_join(playerMap %>% select(player_id, player_name),
+  left_join(playerInfo %>% select(player_id, player_name),
             by = "player_id") %>%
   left_join(userMap %>% select(roster_id, user_id, user_name),
             by = c("roster_id"))
@@ -358,39 +418,65 @@ DDBMRosters <- DDBMRosters %>%
 #   filter(if_any(everything(), is.na)) %>%
 #   View()
 
-### Manually add players here
-## PlayerIDs:
-## 6083 - Matt Gay
-## 4666 - Younghoe Koo
+### Player name/position resolution
+## Released / team-less players (kickers a roster dropped mid-season, etc.) are
+## now resolved automatically by the team-independent playerInfo lookup, so the
+## old per-row manual patches (keyed by fragile DDBMRosters row indices) are no
+## longer needed. A per-season fallback for players genuinely missing from the
+## Sleeper player DB is applied below via applyPlayerPatches().
+##
+## Historical patch trail (2025; row numbers refer to prior data snapshots and
+## are retained as a changelog - the patches themselves are now data-driven):
+##   6083 Matt Gay     (WAS -> SF -> released)  (K)  rows 78,251,425,600,774,951,1127,1972,2148
+##   4666 Younghoe Koo (ATL -> NYG -> released) (K)  row 130
+##   5230 Michael Badgley (IND -> BUF -> released) (K)  row 1872 -> 1672
+##   (earlier snapshots) Joshua Karty (K) row 826; Chris Moore (WR) rows 1145,1328
 
-# ## Add Joshua Karty (LAR -> released -> LAR) (K)
-# ## - Row 826
-# DDBMRosters[826, c("position", "player_name")] <- list("K", "Joshua Karty")
-#
-# ## Add Chris Moore (WAS -> released -> WAS) (WR)
-# ## - Rows (1145,1328)
-# DDBMRosters[c(1145, 1328),
-#             c("position", "player_name")] <- list("WR","Chris Moore")
-#
-## Add Michael Badgley (IND -> BUF -> released) (K)
-## - Row 1872
-DDBMRosters[1672, c("position", "player_name")] <- list("K","Michael Badgley")
+## Per-season fallback patches for players genuinely MISSING from the Sleeper
+## player DB (so playerInfo can't resolve them). Keyed by player_id, not row
+## index, so they are order-independent and season-scoped. Most seasons need
+## none. Add a row only if the patch log below reports an unresolved player_id.
+seasonPatches <- list(
+  # "2023" = tribble(~player_id, ~player_name, ~position,
+  #                  "1234", "Some Player", "K")
+)
+applyPlayerPatches <- function(rosters, patches) {
+  if (is.null(patches) || nrow(patches) == 0) return(rosters)
+  rows_patch(rosters, patches, by = "player_id", unmatched = "ignore")
+}
+DDBMRosters <- applyPlayerPatches(DDBMRosters, seasonPatches[[season]])
 
-## Add Younghoe Koo (ATL -> NYG -> released) (K)
-## - Row 130
-DDBMRosters[130, c("position", "player_name")] <- list("K","Younghoe Koo")
-## Add Matt Gay (WAS -> SF -> released) (K)
-## - Rows (78,251,425,600,774,951,1127,1972,2148)
-DDBMRosters[c(78,251,425,600,774,951,1127,1972,2148),
-            c("position", "player_name")] <- list("K","Matt Gay")
+## Per-season patch log: records team-less players auto-resolved by playerInfo,
+## any manual patches applied, and any player_id still unresolved (a hole).
+autoResolved <- DDBMRosters %>%
+  distinct(player_id, player_name, position) %>%
+  semi_join(selectPlayers %>% filter(is.na(team)), by = "player_id") %>%
+  arrange(match(position, sortPosition), player_name)
+unresolved <- DDBMRosters %>% filter(is.na(player_name)) %>% distinct(player_id)
+patchLog <- c(
+  paste0("# Player patch log - ", season, " season"),
+  paste0("_Generated ", Sys.Date(), " by ddbmFF.R (league ", leagueId, ")_"), "",
+  "## Team-less players auto-resolved by playerInfo (no manual patch needed)",
+  if (nrow(autoResolved) == 0) "_none_" else
+    paste0("- `", autoResolved$player_id, "` ", autoResolved$player_name,
+           " (", autoResolved$position, ")"), "",
+  "## Manual patches applied (seasonPatches)",
+  if (is.null(seasonPatches[[season]]) || nrow(seasonPatches[[season]]) == 0)
+    "_none_" else
+    paste0("- `", seasonPatches[[season]]$player_id, "` ",
+           seasonPatches[[season]]$player_name,
+           " (", seasonPatches[[season]]$position, ")"), "",
+  "## Unresolved player_ids (add to seasonPatches if any)",
+  if (nrow(unresolved) == 0) "_none_" else paste0("- `", unresolved$player_id, "`"))
+writeLines(patchLog, out("player-patch-log.md"))
 
 ##### Transactions DF #####
 # objectId = "/league/1252770181306929152"
 # endpoint = "/transactions/1"
 # respDF <- as_tibble(callSleeper(objectId,endpoint), .name_repair = "unique")
-objectId = "/league/1252770181306929152/transactions/"
-# currentWeek = currentSeason$week
-currentWeek = 18
+objectId = paste0("/league/", leagueId, "/transactions/")
+# Cap loops at the season's last fully-scored week (see Config block)
+currentWeek = lastWeek
 transactionList = vector("list", length = currentWeek)
 for (i in 1:(currentWeek)) {
   endpoint = i
@@ -410,7 +496,7 @@ transactionsDF <- transactionsDF[order(transactionsDF$transaction_id),]
 # view(transactionsDF)
 
 ## Alter columns to transaction types (adds/drops)
-## Join player_names from playerMap
+## Join player_names from playerInfo
 ## Splice out trades (see below)
 ## View(filter(allTransactionsDF, type == "trade"))
 allTransactionsDF <- transactionsDF %>%
@@ -428,7 +514,7 @@ allTransactionsDF <- transactionsDF %>%
   ungroup() %>%
   unnest(player_df) %>%
   filter(!is.na(player_id) & !is.na(target_roster)) %>%
-  left_join(playerMap %>% select(player_id, player_name), by = "player_id") %>%
+  left_join(playerInfo %>% select(player_id, player_name), by = "player_id") %>%
   unnest_wider(metadata, names_sep = ".") %>%
   rename(system_msg = metadata.notes) %>%
   unnest_wider(settings, names_sep = ".") %>%
@@ -514,21 +600,17 @@ allTransactionsDF <- transactionsDF %>%
 #   g) Closest matchup performances (pf vs pa)
 #####
 
-# Manually remove current week if Matchup set is incomplete & Sort Positions
+# The week loops run 1:lastWeek (= last_scored_leg), so every week present is
+# already complete - no in-progress week needs removing. The Filter* frames now
+# just set the position factor ordering used by the charts below.
 # prePlayoffWeeks = 15
-# endOfSeasonWeek = 18
-# latestWeek = currentSeason$week
-latestWeek = 18
-FilterMatchupResults <- matchupResults %>%
-  filter(current_week != latestWeek)
+latestWeek = lastWeek
+FilterMatchupResults <- matchupResults
 FilterPlayerPoints <- playerPoints %>%
-  filter(current_week != latestWeek) %>%
   mutate(position = factor(position, levels = sortPosition))
 FilterDDBMRosters <- DDBMRosters %>%
-  filter(current_week != latestWeek) %>%
   mutate(position = factor(position, levels = sortPosition))
-FilterAllTransactions <- allTransactionsDF %>%
-  filter(current_week != latestWeek)
+FilterAllTransactions <- allTransactionsDF
 # view(FilterMatchupResults)
 # view(FilterPlayerPoints)
 # view(FilterDDBMRosters)
@@ -810,7 +892,7 @@ playerPerformance2Potential <- ggplot(playerRosterPerformances %>%
   theme_minimal()
 playerPerformance2Chart <- (playerPerformance2Actual | playerPerformance2Potential) + plot_layout(guides = "collect")
 playerPerformance2Chart
-ggsave("results/DDBMPlayerPerformance2Chart.png", playerPerformance2Chart,
+ggsave(out("DDBMPlayerPerformance2Chart.png"), playerPerformance2Chart,
        width = 24, height = 8, dpi = 300)
 
 ## Diverging plot of differences in shared player points earned per team (3+)
@@ -860,7 +942,7 @@ playerPerformance3Potential <- ggplot(playerRosterPerformances %>%
   theme_minimal()
 playerPerformance3Chart <- (playerPerformance3Actual | playerPerformance3Potential) + plot_layout(guides = "collect")
 playerPerformance3Chart
-ggsave("results/DDBMPlayerPerformance3Chart.png", playerPerformance3Chart,
+ggsave(out("DDBMPlayerPerformance3Chart.png"), playerPerformance3Chart,
        width = 24, height = 8, dpi = 300)
 
 
@@ -928,7 +1010,7 @@ playerTradePerformancePlot <- ggplot(playerTradePerformances,
   theme(strip.text = element_text(face = "bold", size = 10),
         strip.background = element_rect(fill = "grey90", color = NA))
 playerTradePerformancePlot
-ggsave("results/DDBMplayerTradePerformancePlot.png", playerTradePerformancePlot,
+ggsave(out("DDBMplayerTradePerformancePlot.png"), playerTradePerformancePlot,
        width = 24, height = 8, dpi = 300)
 
 playerWaiverPerformances <- {
@@ -1045,7 +1127,7 @@ playerWaiverPerformancePlot <- ggplot(playerWaiverPerformances %>%
        y = "Player") +
   theme_minimal()
 playerWaiverPerformancePlot
-ggsave("results/DDBMplayerWaiverPerformancePlot.png", playerWaiverPerformancePlot,
+ggsave(out("DDBMplayerWaiverPerformancePlot.png"), playerWaiverPerformancePlot,
        width = 24, height = 8, dpi = 300)
 
 
@@ -1104,7 +1186,7 @@ for (team in unique(FilterDDBMRosters$user_name)) {
     theme_minimal()
   # print(weeklyRosterChart)
   plots[[team]] <- weeklyRosterChart
-  ggsave(paste0("results/DDBMWeeklyRosterChart_", team, ".png"),
+  ggsave(out(paste0("DDBMWeeklyRosterChart_", team, ".png")),
          plot = weeklyRosterChart,
          width = 12,
          height = 6,
@@ -1112,7 +1194,7 @@ for (team in unique(FilterDDBMRosters$user_name)) {
 }
 allPlots <- wrap_plots(plots, ncol = 2)   # adjust ncol/nrow as needed
 # allPlots
-ggsave("results/DDBMWeeklyRosterChart_AllTeams.png", allPlots,
+ggsave(out("DDBMWeeklyRosterChart_AllTeams.png"), allPlots,
        width = 24, height = 16, dpi = 300)
 
 
@@ -1159,7 +1241,7 @@ rosterPositionPerformance <- ggplot(teamRosterStats,
   theme_minimal() +
   theme(axis.text.x = element_text(angle = 45, hjust = 1))
 rosterPositionPerformance
-ggsave("results/DDBMRosterPerformance.png", plot = rosterPositionPerformance,
+ggsave(out("DDBMRosterPerformance.png"), plot = rosterPositionPerformance,
        width = 12, height = 6, dpi = 300)
 
 weeklyPositionPoints <- FilterDDBMRosters %>%
@@ -1215,7 +1297,7 @@ weeklyHeatmap <- ggplot(
        y = "Position") +
   theme_minimal()
 # weeklyHeatmap
-ggsave("results/DDBMWeeklyHeatmap.png", plot = weeklyHeatmap,
+ggsave(out("DDBMWeeklyHeatmap.png"), plot = weeklyHeatmap,
        width = 12, height = 6, dpi = 300)
 
 ### Roster Flex & Points per Team
@@ -1257,7 +1339,7 @@ rosterFlexPlot <- ggplot(
        fill = "Position") +
   theme_minimal()
 # rosterFlexPlot
-ggsave("results/DDBMRosterFlexPlot.png", plot = rosterFlexPlot,
+ggsave(out("DDBMRosterFlexPlot.png"), plot = rosterFlexPlot,
        width = 12, height = 6, dpi = 300)
 
 rosterFlexHeatmap <- ggplot(
@@ -1285,7 +1367,7 @@ rosterFlexHeatmap <- ggplot(
        fill = "Count") +
   theme_minimal()
 rosterFlexHeatmap
-ggsave("results/DDBMRosterFlexHeatmap.png", plot = rosterFlexHeatmap,
+ggsave(out("DDBMRosterFlexHeatmap.png"), plot = rosterFlexHeatmap,
        width = 12, height = 6, dpi = 300)
 
 
@@ -1328,7 +1410,7 @@ rosterSpotPlot <- ggplot(
        fill = "Count") +
   theme_minimal()
 rosterSpotPlot
-ggsave("results/DDBMRosterSpotPlot.png", plot = rosterSpotPlot,
+ggsave(out("DDBMRosterSpotPlot.png"), plot = rosterSpotPlot,
        width = 12, height = 6, dpi = 300)
 
 ### Total Seasonal Roster Count Averages
@@ -1354,7 +1436,7 @@ rosterCountBar <- ggplot(averagePositionCounts,
        fill = "Starter") +
   theme_minimal()
 # rosterCountBar
-ggsave("results/DDBMRosterCount.png", plot = rosterCountBar,
+ggsave(out("DDBMRosterCount.png"), plot = rosterCountBar,
        width = 12, height = 6, dpi = 300)
 
 
@@ -1396,7 +1478,7 @@ seasonPointsBox <- ggplot(seasonPositionPoints,
        color = "Teams") +
   theme_minimal()
 # seasonPointsBox
-ggsave("results/DDBMSeasonPoints.png", plot = seasonPointsBox,
+ggsave(out("DDBMSeasonPoints.png"), plot = seasonPointsBox,
        width = 12, height = 6, dpi = 300)
 
 
@@ -1439,7 +1521,7 @@ positionPointsTree <- ggplot(treemapData,
        fill = "Team") +
   theme_minimal()
 # positionPointsTree
-ggsave("results/DDBMPositionPointsTree.png", plot = positionPointsTree,
+ggsave(out("DDBMPositionPointsTree.png"), plot = positionPointsTree,
        width = 12, height = 6, dpi = 300)
 
 
@@ -1462,7 +1544,7 @@ totalPointsLabel <- FilterMatchupResults %>%
   select(user_name, total_points)
 
 teamLabel <- with(
-  FilterMatchupResults[FilterMatchupResults$current_week == latestWeek-1,],
+  FilterMatchupResults[FilterMatchupResults$current_week == latestWeek,],
   setNames(paste0(user_name, "\n(", current_record, ")"),user_name))
 
 
@@ -1491,7 +1573,7 @@ tablePointsChart <- ggplot(FilterMatchupResults,
        y = "Points") +
   theme_minimal()
 # tablePointsChart
-ggsave("results/DDBMTablePoints.png", plot = tablePointsChart,
+ggsave(out("DDBMTablePoints.png"), plot = tablePointsChart,
        width = 12, height = 6, dpi = 300)
 
 
@@ -1517,7 +1599,7 @@ positionPointsChart <- ggplot(positionPoints,
        fill = "Position") +
   theme_void()
 # positionPointsChart
-ggsave("results/DDBMPositionPoints.png", plot = positionPointsChart,
+ggsave(out("DDBMPositionPoints.png"), plot = positionPointsChart,
        width = 12, height = 6, dpi = 300)
 
 
@@ -1558,5 +1640,5 @@ tablePositionGraph <- ggplot(FilterMatchupResults,
   labs(title = "Table Position Shifts", x = "Week", y = "Position") +
   theme_minimal()
 # tablePositionGraph
-ggsave("results/DDBMTablePosition.png", plot = tablePositionGraph,
+ggsave(out("DDBMTablePosition.png"), plot = tablePositionGraph,
        width = 10, height = 6, dpi = 300)
