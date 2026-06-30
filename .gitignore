@@ -11,3 +11,6 @@
 *.rds
 sleeperPlayers.json
 sleeperPlayersSorted.json
+
+# Stray default R graphics device output (from bare print() under Rscript)
+Rplots.pdf

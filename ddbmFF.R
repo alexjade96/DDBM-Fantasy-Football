@@ -133,7 +133,9 @@ callSleeper <- function(objectId, endpoint = NULL) {
 # Retrieves the current NFL season progress (current week, year, season, etc.)
 objectId = "/state"
 endpoint = "/nfl"
-respDF <- as_tibble(callSleeper(objectId,endpoint), .name_repair = "unique")
+# compact() drops NULL fields (e.g. season_start_date is null in the offseason),
+# which as_tibble() would otherwise reject as a NULL column.
+respDF <- as_tibble(compact(callSleeper(objectId,endpoint)), .name_repair = "unique")
 currentSeason <- Filter(function(x) !any(is.na(x)), respDF)
 # view(currentSeason)
 
