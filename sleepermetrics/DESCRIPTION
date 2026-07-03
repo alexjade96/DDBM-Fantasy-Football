@@ -1,0 +1,43 @@
+Package: sleepermetrics
+Title: Analytical Metrics for Sleeper Fantasy Football Leagues
+Version: 0.1.0
+Authors@R:
+    person("Alexander", "Yeh", email = "alexander.x.yeh@gmail.com",
+           role = c("aut", "cre"))
+Description: Fetches public Sleeper fantasy football league data by league id,
+    walks the multi-season chain, and computes descriptive analytics
+    (standings, all-play luck, lineup efficiency, consistency, points
+    for/against, career trajectories and manager-player loyalty) with
+    ready-made 'ggplot2' charts and auto-generated markdown insight summaries.
+    A bundled 'shiny' dashboard visualises any league id interactively.
+    Generalised from the DDBM league project; the optimal-lineup solver adapts
+    to each league's roster settings.
+License: MIT + file LICENSE
+Encoding: UTF-8
+Roxygen: list(markdown = TRUE)
+RoxygenNote: 7.3.3
+Depends:
+    R (>= 4.1)
+Imports:
+    dplyr,
+    forcats,
+    ggplot2,
+    ggrepel,
+    grDevices,
+    httr2,
+    jsonlite,
+    magrittr,
+    purrr,
+    RColorBrewer,
+    rlang,
+    stats,
+    tibble,
+    tidyr
+Suggests:
+    bslib,
+    DT,
+    nflplotR,
+    ragg,
+    shiny,
+    testthat (>= 3.0.0)
+Config/testthat/edition: 3
