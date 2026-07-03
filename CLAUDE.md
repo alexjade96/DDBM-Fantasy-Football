@@ -6,15 +6,17 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 An R analytics project for the "DDBM" Sleeper fantasy football redraft league. It pulls data from the public Sleeper API, reshapes it into tidy frames, and renders a set of `DDBM*.png` charts. There is no package, no test suite, and no build — scripts are run interactively in RStudio (`FantasyFootball.Rproj`) or headless via `Rscript`.
 
-Two scripts:
-- **`ddbmFF.R`** — single-season analytics (one season's matchups/rosters/transactions → ~26 charts in `results/<season>/`). This is the main program.
+Components:
+- **`ddbmFF.R`** — single-season analytics (one season's matchups/rosters/transactions → ~26 charts in `results/<season>/`). This is the original main program.
 - **`leagueAnalytics.R`** — cross-season *career* analytics. Walks the whole season chain and aggregates by persistent `user_id` (same manager across seasons despite changing display names/rosters), writing `results/league/` (career standings, finish trajectory, points-per-season, manager-player loyalty, plus `league-career-summary.md` + `.csv`). It reuses the same hardened `callSleeper`/`ensure_cols`/`buildLeagueChain`/NA-matchup logic as `ddbmFF.R`.
+- **`app.R` + `R/ddbmMetrics.R`** — a Shiny web dashboard. Enter *any* Sleeper league ID; it walks the season chain and shows descriptive metrics (standings, luck/all-play expected wins, lineup efficiency, consistency, points-for/against, career trajectory) plus auto-generated markdown insight text. `R/ddbmMetrics.R` is a **pure, Shiny-free engine** (fetch → compute → ggplot + `summarize_*()` markdown); `app.R` is only UI/reactivity, so the metric functions are testable headless. The optimal-lineup solver is generic — it reads each league's `roster_positions` (so FLEX/SUPER_FLEX/etc. adapt per league), not DDBM's slots.
 
 ## Running
 
 Two ways to run:
 - **RStudio (the author's way):** open `FantasyFootball.Rproj` and source/step through `ddbmFF.R` top to bottom. Most analysis blocks have a trailing `# view(...)` comment naming the frame to inspect with RStudio's `View()`.
 - **Headless:** `Rscript ddbmFF.R` from the repo root works end to end (verified). Select a season with the `DDBM_SEASON` env var, e.g. `DDBM_SEASON=2024 Rscript ddbmFF.R`; unset/empty uses the most recent season. In RStudio instead set `targetSeason <- "2024"` in the Config block (`NULL` = current).
+- **Dashboard:** `shiny::runApp(".")` (or `Rscript -e 'shiny::runApp(".", port=8100)'`) launches the web app; open the printed `http://127.0.0.1:<port>`. It auto-loads the default DDBM league on startup; type any league ID and click **Load league** to switch. Needs `shiny`, `bslib`, `DT`, `ragg` (and `nflplotR` for the demo flair). Note: `runApp` blocks and reads the source once at startup — after editing `app.R`/`R/ddbmMetrics.R` you must stop and relaunch. Verify metric logic **headless** by sourcing `R/ddbmMetrics.R` and calling the functions directly (no app needed) — that's the fast path.
 
 Notes:
 - The package install lines at the top of `ddbmFF.R` are commented out; install them once into your R library before first run (notably `tidyverse`, `httr2`, `ggplot2`, `treemapify`, `tidytext`, `patchwork`, `RColorBrewer`, and the `nflverse` family).
