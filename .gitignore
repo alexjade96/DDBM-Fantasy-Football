@@ -17,3 +17,16 @@ Rplots.pdf
 
 # Generated chart outputs (build artifacts; regenerate by running ddbmFF.R)
 *.png
+
+# Python instance: virtualenv, caches, secrets
+python/venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+*.pkl
+
+# Local secrets (per-instance .env; commit only the .env.example templates)
+.env
+python/.env
+R/.env
+
