@@ -57,3 +57,23 @@ sl_dashboard("1252770181306929152", port = 8100) # any league id
 ```
 
 Requires the `shiny`, `bslib`, `DT`, `ragg` suggested packages.
+
+## Discord
+
+Get league analytics into Discord two ways (see
+`inst/discordbot/README.md` for full setup):
+
+```r
+# 1. Weekly stats poster (webhook; schedulable, no hosting)
+sl_post_weekly("<WEBHOOK_URL>", "1252770181306929152")            # post recap
+sl_post_weekly("<WEBHOOK_URL>", "1252770181306929152", dry_run = TRUE)
+
+# 2. Interactive slash-command bot (/standings /luck /weekly /career ...)
+sl_discord_register_commands(app_id, bot_token, guild_id)  # one-time
+sl_discord_serve(port = 8000)                              # interactions endpoint
+```
+
+The interactions endpoint verifies Discord's Ed25519 request signatures
+(`sl_discord_verify()`), answers the PING handshake, and defers slash commands
+so the chart/summary is delivered as a follow-up. Needs `plumber`, `sodium`,
+`curl`.

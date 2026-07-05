@@ -35,9 +35,13 @@ Imports:
     tidyr
 Suggests:
     bslib,
+    curl,
     DT,
+    later,
     nflplotR,
+    plumber,
     ragg,
     shiny,
+    sodium,
     testthat (>= 3.0.0)
 Config/testthat/edition: 3
