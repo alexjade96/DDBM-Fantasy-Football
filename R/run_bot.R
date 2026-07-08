@@ -13,7 +13,7 @@ if (file.exists("R/.env")) readRenviron("R/.env")
 if (requireNamespace("sleepermetrics", quietly = TRUE)) {
   suppressMessages(library(sleepermetrics))
 } else {
-  suppressMessages(pkgload::load_all("sleepermetrics", quiet = TRUE))
+  suppressMessages(pkgload::load_all("R/sleepermetrics", quiet = TRUE))
 }
 
 league <- Sys.getenv("SLEEPERMETRICS_LEAGUE", "1252770181306929152")
