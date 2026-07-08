@@ -13,5 +13,6 @@ sl_plot_standings(season)
 A ggplot.
 }
 \description{
-Season standings bar chart
+Bars in standing order (1st on top), podium medals on the top three, and a
+crown on the playoff champion.
 }

@@ -2,7 +2,7 @@
 % Please edit documentation in R/plots.R
 \name{theme_sleeper}
 \alias{theme_sleeper}
-\title{A clean ggplot theme for sleepermetrics charts}
+\title{A clean, recessive ggplot theme for sleepermetrics charts}
 \usage{
 theme_sleeper()
 }
@@ -10,5 +10,7 @@ theme_sleeper()
 A ggplot2 theme.
 }
 \description{
-A clean ggplot theme for sleepermetrics charts
+Bold title, muted subtitle/caption, ink-token axis text, and light gridlines
+only on the value axis (horizontal-bar friendly). Line/scatter charts re-add
+the y grid themselves.
 }

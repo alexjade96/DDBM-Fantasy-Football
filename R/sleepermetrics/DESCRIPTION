@@ -30,6 +30,7 @@ Imports:
     purrr,
     RColorBrewer,
     rlang,
+    scales,
     stats,
     tibble,
     tidyr
