@@ -219,3 +219,64 @@ sl_plot_trajectory <- function(seasons) {
     theme_sleeper() +
     ggplot2::theme(panel.grid.major.y = ggplot2::element_line(colour = "grey92", linewidth = 0.4))
 }
+
+# --- Roster & position charts (ported from ddbmFF.R) ----------------------
+
+#' League scoring-by-position chart
+#' @param season A [sleeper_season] object.
+#' @return A ggplot.
+#' @export
+sl_plot_position_scoring <- function(season) {
+  d <- sl_position_scoring(season)
+  ggplot2::ggplot(d, ggplot2::aes(points, position, fill = position)) +
+    ggplot2::geom_col(width = 0.7, show.legend = FALSE) +
+    ggplot2::geom_text(ggplot2::aes(label = sprintf("%s pts  ·  %.0f%%", round(points), share)),
+                       hjust = -0.04, size = 3.4, colour = "grey20") +
+    ggplot2::scale_fill_manual(values = .sl_pos_colors) +
+    ggplot2::scale_y_discrete(limits = rev(.sl_positions)) +
+    ggplot2::scale_x_continuous(expand = ggplot2::expansion(c(0, 0.2))) +
+    ggplot2::labs(title = "Where the Points Come From",
+                  subtitle = "Total started points by position  ·  share of league scoring",
+                  x = "Starter Points", y = NULL, caption = .sl_cap(season)) +
+    theme_sleeper()
+}
+
+#' Roster-construction heatmap (team \U00D7 position)
+#' @param season A [sleeper_season] object.
+#' @return A ggplot.
+#' @export
+sl_plot_roster_heatmap <- function(season) {
+  d <- sl_roster(season)
+  ggplot2::ggplot(d, ggplot2::aes(position, user_name, fill = avg)) +
+    ggplot2::geom_tile(colour = "white", linewidth = 1.4) +
+    ggplot2::geom_text(ggplot2::aes(label = sprintf("%d wk\n%.1f", spots, avg)),
+                       size = 2.7, lineheight = 0.9, colour = "grey15") +
+    ggplot2::scale_fill_gradient(low = "#eaf2f8", high = "#1f6f8b", name = "Avg pts") +
+    ggplot2::scale_x_discrete(position = "top") +
+    ggplot2::labs(title = "Roster Construction",
+                  subtitle = "Player-weeks rostered and average points, by team and position",
+                  x = NULL, y = NULL, caption = .sl_cap(season)) +
+    theme_sleeper() +
+    ggplot2::theme(panel.grid.major.x = ggplot2::element_blank(),
+                   legend.position = "right")
+}
+
+#' Starters-vs-bench average points chart
+#' @param season A [sleeper_season] object.
+#' @return A ggplot.
+#' @export
+sl_plot_starter_bench <- function(season) {
+  d <- sl_starter_bench(season) %>%
+    dplyr::mutate(status = factor(status, levels = c("Starters", "Bench")))
+  ggplot2::ggplot(d, ggplot2::aes(avg, user_name, fill = status)) +
+    ggplot2::geom_col(position = ggplot2::position_dodge(width = 0.7), width = 0.66) +
+    ggplot2::facet_wrap(~ position, nrow = 1) +
+    ggplot2::scale_fill_manual(values = c(Starters = "#2f9e44", Bench = "#c3c9d0"), name = NULL) +
+    ggplot2::labs(title = "Starters vs Bench",
+                  subtitle = "Average points by position  ·  are the right players in the lineup?",
+                  x = "Average Points", y = NULL, caption = .sl_cap(season)) +
+    theme_sleeper() +
+    ggplot2::theme(legend.position = "top", legend.justification = "left",
+                   panel.spacing = ggplot2::unit(0.8, "lines"),
+                   strip.text = ggplot2::element_text(face = "bold", colour = "grey30"))
+}

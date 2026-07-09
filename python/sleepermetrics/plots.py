@@ -221,3 +221,93 @@ def plot_trajectory(seasons: dict):
     return _finish(fig, ax, "Finish Trajectory by Season",
                    "1 = top  ·  gold band = podium  ·  ★ = champion",
                    "Season", "Final Position", grid_axis="y")
+
+
+# --- Roster & position charts (ported from ddbmFF.R) ----------------------
+POSITIONS = list(POS_COLORS)
+
+
+def plot_position_scoring(s: Season):
+    d = metrics.position_scoring(s)
+    fig, ax = plt.subplots(figsize=(9, 6))
+    ax.barh(range(len(d)), d["points"],
+            color=[POS_COLORS[str(p)] for p in d["position"]], height=0.7)
+    ax.set_yticks(range(len(d)))
+    ax.set_yticklabels([str(p) for p in d["position"]])
+    ax.invert_yaxis()  # QB on top
+    xmax = d["points"].max()
+    for i, (_, r) in enumerate(d.iterrows()):
+        ax.text(r["points"] + xmax * 0.01, i, f"{round(r['points'])} pts  ·  {r['share']:.0f}%",
+                va="center", fontsize=9, color="#333333")
+    ax.set_xlim(0, xmax * 1.22)
+    return _finish(fig, ax, "Where the Points Come From",
+                   "Total started points by position  ·  share of league scoring",
+                   "Starter Points", caption=_cap(s))
+
+
+def plot_roster_heatmap(s: Season):
+    d = metrics.roster(s)
+    users = sorted(d["user_name"].unique())
+    piv_avg = d.pivot(index="user_name", columns="position", values="avg").reindex(
+        index=users, columns=POSITIONS)
+    piv_spots = d.pivot(index="user_name", columns="position", values="spots").reindex(
+        index=users, columns=POSITIONS)
+    cmap = mcolors.LinearSegmentedColormap.from_list("sl", ["#eaf2f8", "#1f6f8b"])
+    fig, ax = plt.subplots(figsize=(9, 6))
+    im = ax.imshow(piv_avg.values, aspect="auto", cmap=cmap)
+    ax.set_xticks(range(len(POSITIONS)))
+    ax.set_xticklabels(POSITIONS)
+    ax.xaxis.set_ticks_position("top")
+    ax.set_yticks(range(len(users)))
+    ax.set_yticklabels(users)
+    vmax = piv_avg.values.max()
+    for i in range(len(users)):
+        for j in range(len(POSITIONS)):
+            sp, av = piv_spots.values[i, j], piv_avg.values[i, j]
+            if sp == sp:  # not NaN
+                col = "white" if av > vmax * 0.6 else "#1a1a1a"
+                ax.text(j, i, f"{int(sp)} wk\n{av:.1f}", ha="center", va="center",
+                        fontsize=7.5, color=col, linespacing=0.95)
+    for sp in ax.spines.values():
+        sp.set_visible(False)
+    ax.tick_params(length=0, colors="#4d4d4d", labelsize=9.5)
+    fig.colorbar(im, ax=ax, fraction=0.035, pad=0.02, label="Avg pts")
+    ax.set_title("Roster Construction", loc="left", fontsize=16, fontweight="bold",
+                 color="#262626", pad=24)
+    ax.text(0, 1.06, "Player-weeks rostered and average points, by team and position",
+            transform=ax.transAxes, fontsize=9.5, color="#666666")
+    fig.text(0.99, 0.01, _cap(s), ha="right", fontsize=7, color="#999999")
+    fig.tight_layout()
+    return fig
+
+
+def plot_starter_bench(s: Season):
+    d = metrics.starter_bench(s)
+    users = sorted(d["user_name"].unique())
+    fig, axes = plt.subplots(1, len(POSITIONS), figsize=(15, 6), sharey=True)
+    yy = list(range(len(users)))
+    for ax, p in zip(axes, POSITIONS):
+        sub = d[d["position"] == p]
+        st = sub[sub["status"] == "Starters"].set_index("user_name")["avg"].reindex(users).fillna(0)
+        bn = sub[sub["status"] == "Bench"].set_index("user_name")["avg"].reindex(users).fillna(0)
+        ax.barh([y + 0.2 for y in yy], st.values, height=0.38, color="#2f9e44", label="Starters")
+        ax.barh([y - 0.2 for y in yy], bn.values, height=0.38, color="#c3c9d0", label="Bench")
+        ax.set_title(p, fontsize=12, fontweight="bold", color="#404040")
+        ax.grid(axis="x", color="#ececec", linewidth=0.7)
+        ax.set_axisbelow(True)
+        ax.tick_params(length=0, colors="#4d4d4d", labelsize=9)
+        for sp in ("top", "right", "left"):
+            ax.spines[sp].set_visible(False)
+        ax.spines["bottom"].set_color("#cccccc")
+    axes[0].set_yticks(yy)
+    axes[0].set_yticklabels(users)
+    h, l = axes[0].get_legend_handles_labels()
+    fig.legend(h, l, loc="upper right", frameon=False, fontsize=9,
+               bbox_to_anchor=(0.99, 1.0))
+    fig.suptitle("Starters vs Bench   ", x=0.01, ha="left", fontsize=16,
+                 fontweight="bold", color="#262626")
+    fig.text(0.01, 0.945, "Average points by position  ·  are the right players in the lineup?",
+             fontsize=9.5, color="#666666")
+    fig.text(0.99, 0.005, _cap(s), ha="right", fontsize=7, color="#999999")
+    fig.tight_layout(rect=[0, 0.01, 1, 0.93])
+    return fig

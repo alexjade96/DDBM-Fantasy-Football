@@ -140,3 +140,61 @@ sl_player_loyalty <- function(seasons, min_seasons = 3) {
     dplyr::filter(!is.na(player_name)) %>%
     dplyr::arrange(dplyr::desc(seasons_kept), user_name, player_name)
 }
+
+# --- Roster & position analytics (ported from ddbmFF.R) -------------------
+
+#' League scoring by position
+#'
+#' Total *started* points by position and each position's share of league
+#' scoring. Ported/generalised from `ddbmFF.R`'s position pie/treemap.
+#'
+#' @param season A [sleeper_season] object.
+#' @return Tibble: `position`, `points` (starter total), `share` (%).
+#' @export
+sl_position_scoring <- function(season) {
+  season$pl_wk %>%
+    dplyr::filter(is_starter, position %in% .sl_positions) %>%
+    dplyr::group_by(position) %>%
+    dplyr::summarise(points = sum(points), .groups = "drop") %>%
+    dplyr::mutate(share = round(points / sum(points) * 100, 1),
+                  position = factor(position, levels = .sl_positions)) %>%
+    dplyr::arrange(position)
+}
+
+#' Roster construction by team and position
+#'
+#' Player-weeks rostered ("spots"), total and average points per manager per
+#' position. Ported from `ddbmFF.R`'s roster-spot heatmap.
+#'
+#' @param season A [sleeper_season] object.
+#' @return Tibble: `user_name`, `position`, `spots`, `points`, `avg`.
+#' @export
+sl_roster <- function(season) {
+  season$pl_wk %>%
+    dplyr::left_join(dplyr::select(season$user_map, roster_id, user_name), by = "roster_id") %>%
+    dplyr::filter(position %in% .sl_positions) %>%
+    dplyr::group_by(user_name, position) %>%
+    dplyr::summarise(spots = dplyr::n(), points = sum(points),
+                     avg = sum(points) / dplyr::n(), .groups = "drop") %>%
+    dplyr::mutate(position = factor(position, levels = .sl_positions)) %>%
+    dplyr::arrange(user_name, position)
+}
+
+#' Average points, starters vs bench, per team and position
+#'
+#' Ported from `ddbmFF.R`'s starters-vs-bench roster-performance chart: are the
+#' right players in the lineup?
+#'
+#' @param season A [sleeper_season] object.
+#' @return Tibble: `user_name`, `position`, `status`, `avg`.
+#' @export
+sl_starter_bench <- function(season) {
+  season$pl_wk %>%
+    dplyr::left_join(dplyr::select(season$user_map, roster_id, user_name), by = "roster_id") %>%
+    dplyr::filter(position %in% .sl_positions) %>%
+    dplyr::mutate(status = ifelse(is_starter, "Starters", "Bench")) %>%
+    dplyr::group_by(user_name, position, status) %>%
+    dplyr::summarise(avg = mean(points), .groups = "drop") %>%
+    dplyr::mutate(position = factor(position, levels = .sl_positions)) %>%
+    dplyr::arrange(user_name, position, status)
+}

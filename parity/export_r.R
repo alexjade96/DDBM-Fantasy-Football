@@ -38,6 +38,11 @@ out <- list(
   week_stats = recs(sl_week_stats(latest), c("user_name", "points", "margin"), "user_name"),
   career = recs(sl_career(ss),
                 c("user_name", "seasons", "wins", "losses", "win_pct", "titles"), "user_name"),
+  position_scoring = recs(sl_position_scoring(latest), c("position", "points", "share"), "position"),
+  roster = recs(sl_roster(latest),
+                c("user_name", "position", "spots", "points", "avg"), "user_name"),
+  starter_bench = recs(sl_starter_bench(latest),
+                       c("user_name", "position", "status", "avg"), "user_name"),
   summary_season = sl_summary_season(latest),
   summary_career = sl_summary_career(ss),
   summary_week = sl_summary_week(latest)

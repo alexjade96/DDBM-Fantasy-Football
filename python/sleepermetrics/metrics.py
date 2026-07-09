@@ -106,3 +106,38 @@ def player_loyalty(seasons: dict, min_seasons: int = 3) -> pd.DataFrame:
     g = g[g["player_name"].notna()]
     return g.sort_values(["seasons_kept", "user_name", "player_name"],
                          ascending=[False, True, True]).reset_index(drop=True)
+
+
+# --- Roster & position analytics (ported from ddbmFF.R) -------------------
+
+def _pos_cat(df):
+    df = df.copy()
+    df["position"] = pd.Categorical(df["position"], categories=POSITIONS, ordered=True)
+    return df
+
+
+def position_scoring(s: Season) -> pd.DataFrame:
+    """Total started points by position + each position's share of scoring."""
+    d = s.pl_wk[s.pl_wk["is_starter"] & s.pl_wk["position"].isin(POSITIONS)]
+    g = d.groupby("position", as_index=False).agg(points=("points", "sum"))
+    g["share"] = (g["points"] / g["points"].sum() * 100).round(1)
+    return _pos_cat(g).sort_values("position").reset_index(drop=True)
+
+
+def roster(s: Season) -> pd.DataFrame:
+    """Player-weeks rostered, total and average points per team per position."""
+    d = s.pl_wk.merge(s.user_map[["roster_id", "user_name"]], on="roster_id", how="left")
+    d = d[d["position"].isin(POSITIONS)]
+    g = d.groupby(["user_name", "position"], as_index=False).agg(
+        spots=("points", "size"), points=("points", "sum"))
+    g["avg"] = g["points"] / g["spots"]
+    return _pos_cat(g).sort_values(["user_name", "position"]).reset_index(drop=True)
+
+
+def starter_bench(s: Season) -> pd.DataFrame:
+    """Average points, starters vs bench, per team and position."""
+    d = s.pl_wk.merge(s.user_map[["roster_id", "user_name"]], on="roster_id", how="left")
+    d = d[d["position"].isin(POSITIONS)].copy()
+    d["status"] = d["is_starter"].map({True: "Starters", False: "Bench"})
+    g = d.groupby(["user_name", "position", "status"], as_index=False).agg(avg=("points", "mean"))
+    return _pos_cat(g).sort_values(["user_name", "position", "status"]).reset_index(drop=True)

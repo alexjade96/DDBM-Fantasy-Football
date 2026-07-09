@@ -18,7 +18,9 @@ def recs(df, cols):
     """Round numerics to 2dp and return JSON-native records (via pandas)."""
     d = df[cols].copy()
     for c in d.columns:
-        if d[c].dtype.kind == "f":
+        if str(d[c].dtype) == "category":
+            d[c] = d[c].astype(str)
+        elif d[c].dtype.kind == "f":
             d[c] = d[c].round(2)
     return json.loads(d.to_json(orient="records"))
 
@@ -47,6 +49,13 @@ def main():
                            ["user_name", "points", "margin"]),
         "career": recs(metrics.career(ss).sort_values("user_name"),
                        ["user_name", "seasons", "wins", "losses", "win_pct", "titles"]),
+        "position_scoring": recs(metrics.position_scoring(latest).sort_values("position"),
+                                 ["position", "points", "share"]),
+        "roster": recs(metrics.roster(latest).sort_values(["user_name", "position"]),
+                       ["user_name", "position", "spots", "points", "avg"]),
+        "starter_bench": recs(
+            metrics.starter_bench(latest).sort_values(["user_name", "position", "status"]),
+            ["user_name", "position", "status", "avg"]),
         "summary_season": summaries.summary_season(latest),
         "summary_career": summaries.summary_career(ss),
         "summary_week": weekly.summary_week(latest),

@@ -115,11 +115,12 @@ def assemble_season(link: dict) -> Season:
             tw.at[idx, "is_high"] = bool(p == pts.max())
     tw = tw.merge(user_map, on="roster_id", how="left")
 
+    # pl_wk stays user_name-free to mirror R's schema; the lineup build joins it.
     pl = (pd.DataFrame(pl_rows)
-          .merge(pinfo[["player_id", "player_name", "position"]], on="player_id", how="left")
-          .merge(user_map[["roster_id", "user_name"]], on="roster_id", how="left"))
+          .merge(pinfo[["player_id", "player_name", "position"]], on="player_id", how="left"))
+    pl_named = pl.merge(user_map[["roster_id", "user_name"]], on="roster_id", how="left")
     lineup_rows = []
-    for (un, wk), g in pl.groupby(["user_name", "week"]):
+    for (un, wk), g in pl_named.groupby(["user_name", "week"]):
         actual = float(g.loc[g["is_starter"], "points"].sum())
         opt = optimal_points(g[["player_id", "position", "points"]], slots)
         lineup_rows.append({"user_name": un, "week": wk, "actual": actual,
