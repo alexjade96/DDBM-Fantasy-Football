@@ -27,10 +27,23 @@ ui <- page_sidebar(
       card(card_header("What the numbers say"), uiOutput("season_summary")),
       layout_columns(card(full_screen = TRUE, plotOutput("p_standings", height = 430)),
                      card(full_screen = TRUE, plotOutput("p_luck", height = 430)))),
+    nav_panel("Weekly trends", icon = icon("chart-line"),
+      card(full_screen = TRUE, plotOutput("p_tablepos", height = 470)),
+      card(full_screen = TRUE, plotOutput("p_teampts", height = 470))),
     nav_panel("Coaching & scoring", icon = icon("chart-simple"),
       layout_columns(card(full_screen = TRUE, plotOutput("p_eff", height = 430)),
                      card(full_screen = TRUE, plotOutput("p_cons", height = 430))),
       card(full_screen = TRUE, plotOutput("p_pfpa", height = 470))),
+    nav_panel("Roster & positions", icon = icon("users"),
+      layout_columns(card(full_screen = TRUE, plotOutput("p_posscore", height = 430)),
+                     card(full_screen = TRUE, plotOutput("p_rostercount", height = 430))),
+      card(full_screen = TRUE, plotOutput("p_heatmap", height = 470)),
+      card(full_screen = TRUE, plotOutput("p_starter", height = 400)),
+      card(full_screen = TRUE, plotOutput("p_posbox", height = 470))),
+    nav_panel("Transactions", icon = icon("right-left"),
+      markdown("Value **while rostered**, read from weekly roster membership. Trades show every team that held the player; waivers/FA show the acquiring team."),
+      card(full_screen = TRUE, plotOutput("p_trade", height = 520)),
+      card(full_screen = TRUE, plotOutput("p_waiver", height = 560))),
     nav_panel("Career (all seasons)", icon = icon("trophy"),
       card(card_header("Career insights"), uiOutput("career_summary")),
       layout_columns(card(full_screen = TRUE, plotOutput("p_career", height = 470)),
@@ -84,6 +97,29 @@ server <- function(input, output, session) {
   output$p_pfpa      <- renderPlot({ req(cur()); sm$sl_plot_pf_pa(cur()) }, res = 96)
   output$p_career    <- renderPlot({ req(seasons()); sm$sl_plot_career(seasons()) }, res = 96)
   output$p_traj      <- renderPlot({ req(seasons()); sm$sl_plot_trajectory(seasons()) }, res = 96)
+
+  # Ported roster/position + weekly-trend charts.
+  output$p_tablepos    <- renderPlot({ req(cur()); sm$sl_plot_table_position(cur()) }, res = 96)
+  output$p_teampts     <- renderPlot({ req(cur()); sm$sl_plot_team_points(cur()) }, res = 96)
+  output$p_posscore    <- renderPlot({ req(cur()); sm$sl_plot_position_scoring(cur()) }, res = 96)
+  output$p_rostercount <- renderPlot({ req(cur()); sm$sl_plot_roster_counts(cur()) }, res = 96)
+  output$p_heatmap     <- renderPlot({ req(cur()); sm$sl_plot_roster_heatmap(cur()) }, res = 96)
+  output$p_starter     <- renderPlot({ req(cur()); sm$sl_plot_starter_bench(cur()) }, res = 96)
+  output$p_posbox      <- renderPlot({ req(cur()); sm$sl_plot_position_box(cur()) }, res = 96)
+
+  # Transaction charts: guard seasons with no trades / pickups.
+  output$p_trade <- renderPlot({
+    req(cur())
+    validate(need(nrow(sm$sl_trade_performance(cur())) > 0,
+                  "No trades recorded this season."))
+    sm$sl_plot_trade_performance(cur())
+  }, res = 96)
+  output$p_waiver <- renderPlot({
+    req(cur())
+    validate(need(nrow(sm$sl_waiver_performance(cur())) > 0,
+                  "No waiver / free-agent pickups recorded this season."))
+    sm$sl_plot_waiver_performance(cur())
+  }, res = 96)
 }
 
 shinyApp(ui, server)
