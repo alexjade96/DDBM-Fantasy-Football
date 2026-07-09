@@ -16,6 +16,15 @@ test_that("sl_consistency and sl_high_scores return one row per team", {
   expect_equal(sum(sl_high_scores(s)$highs), 1L)  # one weekly-high team-week
 })
 
+test_that("sl_table_position ranks by cumulative record then points", {
+  d <- sl_table_position(make_season())
+  expect_equal(nrow(d), 6L)                          # 3 teams x 2 weeks
+  wk2 <- d[d$week == 2, ]
+  expect_equal(wk2$user_name[wk2$table_position == 1], "Al")   # 2-0, top
+  expect_equal(wk2$user_name[wk2$table_position == 3], "Bo")   # 0-2, bottom
+  expect_true(all(wk2$table_position == 1:3))
+})
+
 test_that("sl_summary_season is a single markdown string", {
   txt <- sl_summary_season(make_season())
   expect_length(txt, 1L)

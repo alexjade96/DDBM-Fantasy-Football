@@ -198,3 +198,125 @@ sl_starter_bench <- function(season) {
     dplyr::mutate(position = factor(position, levels = .sl_positions)) %>%
     dplyr::arrange(user_name, position, status)
 }
+
+#' Weekly table-position trajectory
+#'
+#' Rebuilds the league table after each week from cumulative record then points,
+#' giving every manager's standing position week by week. Ported/generalised
+#' from `ddbmFF.R`'s table-position line graph. Cumulative wins use
+#' `coalesce(result == "W", FALSE)` so bye/eliminated weeks (no opponent) never
+#' poison the running record.
+#'
+#' @param season A [sleeper_season] object.
+#' @return Tibble: `week`, `user_name`, `wins`, `losses`, `points` (all
+#'   cumulative through that week) and `table_position`.
+#' @export
+sl_table_position <- function(season) {
+  season$team_wk %>%
+    dplyr::arrange(user_name, week) %>%
+    dplyr::group_by(user_name) %>%
+    dplyr::mutate(wins = cumsum(dplyr::coalesce(result == "W", FALSE)),
+                  losses = cumsum(dplyr::coalesce(result == "L", FALSE)),
+                  points = cumsum(points)) %>%
+    dplyr::ungroup() %>%
+    dplyr::group_by(week) %>%
+    dplyr::arrange(dplyr::desc(wins), dplyr::desc(points), user_name, .by_group = TRUE) %>%
+    dplyr::mutate(table_position = dplyr::row_number()) %>%
+    dplyr::ungroup() %>%
+    dplyr::transmute(week, user_name, wins, losses, points, table_position) %>%
+    dplyr::arrange(week, table_position)
+}
+
+#' Average roster composition (slots used per position, starters vs bench)
+#'
+#' Mean number of roster spots each team devotes to a position per week, split
+#' by starter/bench. Ported from `ddbmFF.R`'s roster-count breakdown.
+#'
+#' @param season A [sleeper_season] object.
+#' @return Tibble: `position`, `status`, `avg_count` (slots per team per week).
+#' @export
+sl_roster_counts <- function(season) {
+  denom <- nrow(season$standings) * season$last_week
+  season$pl_wk %>%
+    dplyr::filter(position %in% .sl_positions) %>%
+    dplyr::mutate(status = ifelse(is_starter, "Starters", "Bench")) %>%
+    dplyr::group_by(position, status) %>%
+    dplyr::summarise(avg_count = dplyr::n() / denom, .groups = "drop") %>%
+    dplyr::mutate(position = factor(position, levels = .sl_positions)) %>%
+    dplyr::arrange(position, status)
+}
+
+# --- Transaction analytics (ported from ddbmFF.R) -------------------------
+
+#' League transactions (adds/drops, one row per player movement)
+#'
+#' The season's `transactions` frame, already unnested to one row per player
+#' add/drop. Ported from `ddbmFF.R`'s `allTransactionsDF`.
+#'
+#' @param season A [sleeper_season] object.
+#' @return Tibble: `week`, `transaction_id`, `type`, `transaction` (add/drop),
+#'   `player_id`, `roster_id`, `user_name`, `player_name`, `position`, `status`.
+#' @export
+sl_transactions <- function(season) season$transactions
+
+# Points a set of players scored while rostered by each manager, from pl_wk
+# (roster membership week by week) rather than reconstructing transaction
+# stints -- pl_wk already knows exactly which weeks a player was on a roster.
+# `by` selects the join grain: player_id alone (trades -> every team that held
+# the player) or player_id+roster_id (waivers -> only the acquiring team).
+.sl_rostered_perf <- function(season, keep, by) {
+  season$pl_wk %>%
+    dplyr::semi_join(keep, by = by) %>%
+    dplyr::left_join(dplyr::select(season$user_map, roster_id, user_name), by = "roster_id") %>%
+    dplyr::filter(position %in% .sl_positions, !is.na(player_name)) %>%
+    dplyr::group_by(player_name, position, user_name) %>%
+    dplyr::summarise(weeks = dplyr::n_distinct(week), points = sum(points),
+                     avg = sum(points) / dplyr::n_distinct(week), .groups = "drop") %>%
+    dplyr::group_by(player_name) %>%
+    dplyr::mutate(total = sum(points)) %>%
+    dplyr::ungroup()
+}
+
+#' Traded-player performance while rostered
+#'
+#' For every player who changed hands in a trade, the points they scored on each
+#' team that rostered them (kept to players who actually moved between managers).
+#' Ported/improved from `ddbmFF.R`'s trade-performance chart -- membership comes
+#' from `pl_wk`, so "while rostered" needs no stint reconstruction, and both
+#' sides of the trade are captured by matching the player across every roster.
+#'
+#' @param season A [sleeper_season] object.
+#' @return Tibble: `player_name`, `position`, `user_name`, `weeks`, `points`,
+#'   `avg`, `total` (player's points across all teams).
+#' @export
+sl_trade_performance <- function(season) {
+  keep <- season$transactions %>%
+    dplyr::filter(type == "trade", transaction == "add", status != "failed") %>%
+    dplyr::distinct(player_id)
+  .sl_rostered_perf(season, keep, by = "player_id") %>%
+    dplyr::group_by(player_name) %>%
+    dplyr::filter(dplyr::n_distinct(user_name) > 1) %>%
+    dplyr::ungroup() %>%
+    dplyr::mutate(position = factor(position, levels = .sl_positions)) %>%
+    dplyr::arrange(dplyr::desc(total), player_name, user_name)
+}
+
+#' Waiver / free-agent pickup performance
+#'
+#' Points scored by players a manager acquired off waivers or free agency, while
+#' they were on that manager's roster. Ported/improved from `ddbmFF.R`'s waiver
+#' performance chart.
+#'
+#' @param season A [sleeper_season] object.
+#' @return Tibble: `player_name`, `position`, `user_name`, `weeks`, `points`,
+#'   `avg`, `total`.
+#' @export
+sl_waiver_performance <- function(season) {
+  keep <- season$transactions %>%
+    dplyr::filter(type %in% c("waiver", "free_agent"), transaction == "add",
+                  status != "failed") %>%
+    dplyr::distinct(player_id, roster_id)
+  .sl_rostered_perf(season, keep, by = c("player_id", "roster_id")) %>%
+    dplyr::mutate(position = factor(position, levels = .sl_positions)) %>%
+    dplyr::arrange(dplyr::desc(total), player_name, user_name)
+}

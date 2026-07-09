@@ -311,3 +311,158 @@ def plot_starter_bench(s: Season):
     fig.text(0.99, 0.005, _cap(s), ha="right", fontsize=7, color="#999999")
     fig.tight_layout(rect=[0, 0.01, 1, 0.93])
     return fig
+
+
+# --- Weekly-standings & transaction charts (ported from ddbmFF.R) ----------
+
+def plot_table_position(s: Season):
+    d = metrics.table_position(s)
+    last = d[d["week"] == d["week"].max()].sort_values("table_position")
+    order = last["user_name"].tolist()
+    pal = palette(order)
+    nteams = len(last)
+    playoff = nteams / 2 if nteams >= 8 else None
+    fig, ax = plt.subplots(figsize=(10, 6))
+    if playoff is not None:
+        ax.axhspan(0.5, playoff + 0.5, color="#2f9e44", alpha=0.06, zorder=0)
+    weeks = sorted(d["week"].unique())
+    for nm in order:
+        g = d[d["user_name"] == nm].sort_values("week")
+        ax.plot(g["week"], g["table_position"], color=pal[nm], lw=2, alpha=0.85, zorder=2)
+        ax.scatter(g["week"], g["table_position"], color=pal[nm], s=32, zorder=3)
+        r = last[last["user_name"] == nm].iloc[0]
+        ax.text(weeks[-1] + 0.15, r["table_position"],
+                f"{nm} ({int(r['wins'])}-{int(r['losses'])})", va="center",
+                fontsize=8, color=pal[nm])
+    ax.set_ylim(nteams + 0.5, 0.5)
+    ax.set_yticks(range(1, nteams + 1))
+    ax.set_xticks(weeks)
+    sub = ("Standing after each week  ·  1 = top  ·  green band = playoff spots"
+           if playoff is not None else "Standing after each week  ·  1 = top")
+    return _finish(fig, ax, "Table-Position Trajectory", sub,
+                   "Week", "Table Position", caption=_cap(s), grid_axis="y")
+
+
+def plot_team_points(s: Season):
+    import pandas as pd
+    tot = (s.team_wk.groupby("user_name", as_index=False)["points"].sum()
+           .sort_values("points", ascending=False))
+    order = tot["user_name"].tolist()
+    weeks = sorted(s.team_wk["week"].unique())
+    piv = (s.team_wk.pivot_table(index="user_name", columns="week", values="points",
+                                 aggfunc="sum", fill_value=0).reindex(order))
+    ramp = mcolors.LinearSegmentedColormap.from_list("wk", ["#1f6f8b", "#8ecae6"])
+    fig, ax = plt.subplots(figsize=(11, 6))
+    y = range(len(order))
+    left = pd.Series(0.0, index=order)
+    for i, wk in enumerate(weeks):
+        vals = piv[wk]
+        ax.barh(list(y), vals.values, left=left.values, height=0.7,
+                color=mcolors.to_hex(ramp(i / max(len(weeks) - 1, 1))),
+                edgecolor="white", linewidth=0.3)
+        left += vals
+    for i, nm in enumerate(order):
+        t = tot.loc[tot["user_name"] == nm, "points"].iloc[0]
+        ax.text(t * 1.01, i, f"{round(t)}", va="center", fontsize=8.5,
+                fontweight="bold", color="#404040")
+    ax.set_yticks(list(y))
+    ax.set_yticklabels(order)
+    ax.invert_yaxis()
+    ax.set_xlim(0, tot["points"].max() * 1.12)
+    return _finish(fig, ax, "Total Points by Team",
+                   "Season points, stacked by week  ·  bold = season total",
+                   "Points", caption=_cap(s))
+
+
+def plot_position_box(s: Season):
+    d = metrics.roster(s)
+    pal = palette(d["user_name"])
+    fig, ax = plt.subplots(figsize=(9, 6))
+    data = [d.loc[d["position"] == p, "avg"].values for p in POSITIONS]
+    ax.boxplot(data, positions=range(len(POSITIONS)), widths=0.55, showfliers=False,
+               patch_artist=True, boxprops=dict(facecolor="#ececec", color="#8c8c8c"),
+               medianprops=dict(color="#555555"), whiskerprops=dict(color="#8c8c8c"),
+               capprops=dict(color="#8c8c8c"))
+    import numpy as np
+    seen = set()
+    for j, p in enumerate(POSITIONS):
+        sub = d[d["position"] == p]
+        for _, r in sub.iterrows():
+            lab = r["user_name"] if r["user_name"] not in seen else None
+            seen.add(r["user_name"])
+            ax.scatter(j + np.random.uniform(-0.16, 0.16), r["avg"], color=pal[r["user_name"]],
+                       alpha=0.8, s=32, zorder=3, label=lab)
+    ax.set_xticks(range(len(POSITIONS)))
+    ax.set_xticklabels(POSITIONS)
+    ax.legend(loc="upper right", frameon=False, fontsize=7, title="Team", ncol=2)
+    return _finish(fig, ax, "Average Weekly Position Points",
+                   "Each dot is a team's per-week average at a position  ·  spread = positional inequality",
+                   "Position", "Average Points", caption=_cap(s), grid_axis="y")
+
+
+def plot_roster_counts(s: Season):
+    d = metrics.roster_counts(s)
+    fig, ax = plt.subplots(figsize=(9, 6))
+    x = range(len(POSITIONS))
+    bench = [d[(d["position"] == p) & (d["status"] == "Bench")]["avg_count"].sum() for p in POSITIONS]
+    start = [d[(d["position"] == p) & (d["status"] == "Starters")]["avg_count"].sum() for p in POSITIONS]
+    ax.bar(list(x), start, width=0.7, color="#2f9e44", label="Starters")
+    ax.bar(list(x), bench, width=0.7, bottom=start, color="#c3c9d0", label="Bench")
+    for j in x:
+        if start[j] > 0:
+            ax.text(j, start[j] / 2, f"{start[j]:.1f}", ha="center", va="center",
+                    fontsize=8, fontweight="bold", color="white")
+        if bench[j] > 0:
+            ax.text(j, start[j] + bench[j] / 2, f"{bench[j]:.1f}", ha="center",
+                    va="center", fontsize=8, fontweight="bold", color="white")
+    ax.set_xticks(list(x))
+    ax.set_xticklabels(POSITIONS)
+    ax.legend(loc="upper right", frameon=False, fontsize=9)
+    return _finish(fig, ax, "Average Roster Composition",
+                   "Mean roster slots per team each week, by position",
+                   "Position", "Slots per Team-Week", caption=_cap(s), grid_axis="y")
+
+
+def _plot_acq(d, s: Season, title, subtitle):
+    import pandas as pd
+    players = (d.drop_duplicates("player_name").sort_values("total")["player_name"].tolist())
+    totals = {p: d[d["player_name"] == p]["total"].iloc[0] for p in players}
+    span = max(totals.values()) if totals else 1
+    pal = palette(d["user_name"])
+    fig, ax = plt.subplots(figsize=(11, max(5, len(players) * 0.42)))
+    y = {p: i for i, p in enumerate(players)}
+    left = pd.Series(0.0, index=players)
+    for nm in sorted(d["user_name"].unique()):
+        row = d[d["user_name"] == nm].set_index("player_name")["points"].reindex(players).fillna(0)
+        wk = d[d["user_name"] == nm].set_index("player_name")["weeks"].reindex(players)
+        ax.barh([y[p] for p in players], row.values, left=left.values, height=0.72,
+                color=pal[nm], edgecolor="white", linewidth=0.3, label=nm)
+        for p in players:
+            if row[p] >= span * 0.06:
+                ax.text(left[p] + row[p] / 2, y[p], f"{round(row[p])} ({int(wk[p])}w)",
+                        ha="center", va="center", fontsize=7, color="#1a1a1a")
+        left += row.values
+    for p in players:
+        ax.text(totals[p] + span * 0.01, y[p], f"{round(totals[p])}", va="center",
+                fontsize=8, fontweight="bold", color="#4d4d4d")
+    ax.set_yticks(list(y.values()))
+    ax.set_yticklabels(players, fontsize=8.5)
+    ax.set_xlim(0, span * 1.12)
+    ax.legend(loc="lower right", frameon=False, fontsize=8, title="Team", ncol=2)
+    return _finish(fig, ax, title, subtitle, "Points While Rostered", caption=_cap(s))
+
+
+def plot_trade_performance(s: Season, top_n=12):
+    d = metrics.trade_performance(s)
+    keep = d.drop_duplicates("player_name").nlargest(top_n, "total")["player_name"]
+    return _plot_acq(d[d["player_name"].isin(keep)], s,
+                     "Traded Players: Value While Rostered",
+                     "Points each team got from players it acquired in trades  ·  segment = one manager's stint")
+
+
+def plot_waiver_performance(s: Season, top_n=15):
+    d = metrics.waiver_performance(s)
+    keep = d.drop_duplicates("player_name").nlargest(top_n, "total")["player_name"]
+    return _plot_acq(d[d["player_name"].isin(keep)], s,
+                     "Best Waiver & Free-Agent Pickups",
+                     "Points managers got from players added off waivers / FA")

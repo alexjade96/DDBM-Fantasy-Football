@@ -141,3 +141,74 @@ def starter_bench(s: Season) -> pd.DataFrame:
     d["status"] = d["is_starter"].map({True: "Starters", False: "Bench"})
     g = d.groupby(["user_name", "position", "status"], as_index=False).agg(avg=("points", "mean"))
     return _pos_cat(g).sort_values(["user_name", "position", "status"]).reset_index(drop=True)
+
+
+def table_position(s: Season) -> pd.DataFrame:
+    """Weekly table-position trajectory (cumulative record then points)."""
+    d = s.team_wk.sort_values(["user_name", "week"]).copy()
+    d["is_w"] = (d["result"] == "W").fillna(False).astype(int)
+    d["is_l"] = (d["result"] == "L").fillna(False).astype(int)
+    g = d.groupby("user_name")
+    d["wins"] = g["is_w"].cumsum()
+    d["losses"] = g["is_l"].cumsum()
+    d["points"] = g["points"].cumsum()
+    d = d.sort_values(["week", "wins", "points", "user_name"],
+                      ascending=[True, False, False, True])
+    d["table_position"] = d.groupby("week").cumcount() + 1
+    return (d[["week", "user_name", "wins", "losses", "points", "table_position"]]
+            .sort_values(["week", "table_position"]).reset_index(drop=True))
+
+
+def roster_counts(s: Season) -> pd.DataFrame:
+    """Average roster slots per position per team-week, starters vs bench."""
+    denom = len(s.standings) * s.last_week
+    d = s.pl_wk[s.pl_wk["position"].isin(POSITIONS)].copy()
+    d["status"] = d["is_starter"].map({True: "Starters", False: "Bench"})
+    g = d.groupby(["position", "status"], as_index=False).agg(avg_count=("points", "size"))
+    g["avg_count"] = g["avg_count"] / denom
+    return _pos_cat(g).sort_values(["position", "status"]).reset_index(drop=True)
+
+
+# --- Transaction analytics (ported from ddbmFF.R) -------------------------
+
+def transactions(s: Season) -> pd.DataFrame:
+    """The season's unnested add/drop transactions frame."""
+    return s.transactions
+
+
+def _rostered_perf(s: Season, keep: pd.DataFrame, on: list) -> pd.DataFrame:
+    """Points scored while rostered, by player x manager (from pl_wk).
+
+    `on` sets the join grain: ["player_id"] (trades -> every team that held the
+    player) or ["player_id", "roster_id"] (waivers -> the acquiring team only).
+    """
+    d = s.pl_wk.merge(s.user_map[["roster_id", "user_name"]], on="roster_id", how="left")
+    d = d.merge(keep, on=on, how="inner")
+    d = d[d["position"].isin(POSITIONS) & d["player_name"].notna()]
+    g = d.groupby(["player_name", "position", "user_name"], as_index=False).agg(
+        weeks=("week", "nunique"), points=("points", "sum"))
+    g["avg"] = g["points"] / g["weeks"]
+    g["total"] = g.groupby("player_name")["points"].transform("sum")
+    return g
+
+
+def trade_performance(s: Season) -> pd.DataFrame:
+    """Traded players' points on each team that rostered them (movers only)."""
+    tx = s.transactions
+    keep = (tx[(tx["type"] == "trade") & (tx["transaction"] == "add")
+               & (tx["status"] != "failed")][["player_id"]].drop_duplicates())
+    g = _rostered_perf(s, keep, ["player_id"])
+    g = g[g.groupby("player_name")["user_name"].transform("nunique") > 1]
+    return _pos_cat(g).sort_values(["total", "player_name", "user_name"],
+                                   ascending=[False, True, True]).reset_index(drop=True)
+
+
+def waiver_performance(s: Season) -> pd.DataFrame:
+    """Waiver / free-agent pickups' points while on the acquiring roster."""
+    tx = s.transactions
+    keep = (tx[(tx["type"].isin(["waiver", "free_agent"])) & (tx["transaction"] == "add")
+               & (tx["status"] != "failed")][["player_id", "roster_id"]]
+            .drop_duplicates())
+    g = _rostered_perf(s, keep, ["player_id", "roster_id"])
+    return _pos_cat(g).sort_values(["total", "player_name", "user_name"],
+                                   ascending=[False, True, True]).reset_index(drop=True)

@@ -1,7 +1,7 @@
 """Assemble one season into a tidy object (mirrors R season.R)."""
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import pandas as pd
 
@@ -47,10 +47,33 @@ class Season:
     lineup: pd.DataFrame
     standings: pd.DataFrame
     user_map: pd.DataFrame
+    transactions: pd.DataFrame = field(default_factory=pd.DataFrame)
 
     def __repr__(self):
         return (f"<Season {self.name} {self.season} | teams: "
                 f"{len(self.standings)} | weeks 1:{self.last_week}>")
+
+
+_TX_COLS = ["week", "transaction_id", "type", "transaction", "player_id",
+            "roster_id", "user_name", "player_name", "position", "status"]
+
+
+def _unnest_transactions(tx_rows: list, user_map: pd.DataFrame,
+                         pinfo: pd.DataFrame) -> pd.DataFrame:
+    """One row per player add/drop, named + positioned (mirrors R)."""
+    if not tx_rows:
+        return pd.DataFrame(columns=_TX_COLS)
+    tx = pd.DataFrame(tx_rows)
+    tx["transaction_id"] = tx["transaction_id"].astype(str)
+    tx["roster_id"] = pd.to_numeric(tx["roster_id"], errors="coerce").astype("Int64")
+    tx = tx.dropna(subset=["player_id", "roster_id"])
+    tx = tx.merge(user_map[["roster_id", "user_name"]], on="roster_id", how="left")
+    tx = tx.merge(pinfo[["player_id", "player_name", "position"]],
+                  on="player_id", how="left")
+    tx["roster_id"] = tx["roster_id"].astype(int)
+    return (tx[_TX_COLS]
+            .sort_values(["week", "transaction_id", "transaction", "roster_id"])
+            .reset_index(drop=True))
 
 
 def _result(points, pa):
@@ -93,6 +116,18 @@ def assemble_season(link: dict) -> Season:
                 pl_rows.append({"week": wk, "roster_id": m["roster_id"], "player_id": pid,
                                 "points": 0.0 if pts is None else float(pts),
                                 "is_starter": pid in starters})
+
+    tx_rows = []
+    for wk in range(1, lw + 1):
+        for t in sleeper_api(f"/league/{lid}/transactions/{wk}"):
+            tid, typ, status = (t.get("transaction_id"), t.get("type"),
+                                t.get("status"))
+            for kind, col in (("add", "adds"), ("drop", "drops")):
+                for pid, rid in (t.get(col) or {}).items():
+                    tx_rows.append({"week": wk, "transaction_id": tid, "type": typ,
+                                    "transaction": kind, "player_id": pid,
+                                    "roster_id": rid, "status": status})
+    transactions = _unnest_transactions(tx_rows, user_map, pinfo)
 
     base = pd.DataFrame(tw_rows)
     # Opponent via self-merge on (week, matchup_id) EXCLUDING NaN matchup_id, so
@@ -155,7 +190,7 @@ def assemble_season(link: dict) -> Season:
     standings["season"] = link["season"]
 
     return Season(link["season"], link.get("name"), lid, lw, slots,
-                  tw, pl, lineup, standings, user_map)
+                  tw, pl, lineup, standings, user_map, transactions)
 
 
 def season(league_id, season: str | None = None) -> Season:

@@ -78,6 +78,15 @@ sl_assemble_season <- function(link) {
   }) %>% dplyr::left_join(pinfo %>% dplyr::select(player_id, player_name, position),
                           by = "player_id")
 
+  tx_raw <- map_dfr(seq_len(lw), function(i) {
+    t <- sleeper_api(paste0("/league/", lid, "/transactions/", i))
+    t <- as_tibble(t)
+    if (nrow(t) == 0) return(tibble())
+    t$week <- i
+    t
+  })
+  transactions <- sl_unnest_transactions(tx_raw, user_map, pinfo)
+
   lineup <- pl_wk %>% dplyr::left_join(user_map, by = "roster_id") %>%
     dplyr::group_by(user_name, week) %>%
     dplyr::summarise(actual = sum(points[is_starter]),
@@ -109,8 +118,49 @@ sl_assemble_season <- function(link) {
   structure(
     list(season = link$season, name = link$name, league_id = lid,
          last_week = lw, slots = slots, team_wk = team_wk, pl_wk = pl_wk,
-         lineup = lineup, standings = standings, user_map = user_map),
+         lineup = lineup, standings = standings, user_map = user_map,
+         transactions = transactions),
     class = "sleeper_season")
+}
+
+# Empty transactions frame with the canonical column set.
+.sl_empty_transactions <- function() {
+  tibble(week = integer(), transaction_id = character(), type = character(),
+         transaction = character(), player_id = character(),
+         roster_id = integer(), user_name = character(),
+         player_name = character(), position = character(), status = character())
+}
+
+# Unnest a raw weekly-transactions frame (list-columns `adds`/`drops`, each a
+# named list player_id -> roster_id) into one row per player movement. Mirrors
+# the Python season._unnest_transactions build.
+sl_unnest_transactions <- function(tx_raw, user_map, pinfo) {
+  if (!nrow(tx_raw) || !all(c("adds", "drops") %in% names(tx_raw))) {
+    return(.sl_empty_transactions())
+  }
+  tx_raw %>%
+    ensure_cols(c("transaction_id", "type", "status")) %>%
+    dplyr::select(week, transaction_id, type, status, adds, drops) %>%
+    tidyr::pivot_longer(c(adds, drops), names_to = "transaction",
+                        values_to = "pd") %>%
+    dplyr::mutate(transaction = dplyr::recode(transaction, adds = "add", drops = "drop")) %>%
+    dplyr::rowwise() %>%
+    dplyr::mutate(pd = list(
+      if (is.null(pd) || length(pd) == 0) {
+        tibble(player_id = character(), roster_id = integer())
+      } else {
+        tibble(player_id = names(pd), roster_id = as.integer(unlist(pd)))
+      })) %>%
+    dplyr::ungroup() %>%
+    tidyr::unnest(pd) %>%
+    dplyr::filter(!is.na(player_id), !is.na(roster_id)) %>%
+    dplyr::left_join(dplyr::select(user_map, roster_id, user_name), by = "roster_id") %>%
+    dplyr::left_join(dplyr::select(pinfo, player_id, player_name, position),
+                     by = "player_id") %>%
+    dplyr::transmute(week, transaction_id = as.character(transaction_id),
+                     type, transaction, player_id, roster_id, user_name,
+                     player_name, position, status) %>%
+    dplyr::arrange(week, transaction_id, transaction, roster_id)
 }
 
 #' Assemble one season of a league

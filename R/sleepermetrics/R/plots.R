@@ -280,3 +280,164 @@ sl_plot_starter_bench <- function(season) {
                    panel.spacing = ggplot2::unit(0.8, "lines"),
                    strip.text = ggplot2::element_text(face = "bold", colour = "grey30"))
 }
+
+# --- Weekly-standings & transaction charts (ported from ddbmFF.R) ----------
+
+#' Weekly table-position bump chart
+#' @param season A [sleeper_season] object.
+#' @return A ggplot.
+#' @export
+sl_plot_table_position <- function(season) {
+  d <- sl_table_position(season)
+  last <- d %>% dplyr::filter(week == max(week))
+  ord <- last %>% dplyr::arrange(table_position) %>% dplyr::pull(user_name)
+  d <- d %>% dplyr::mutate(user_name = factor(user_name, levels = ord))
+  end_lab <- last %>% dplyr::mutate(user_name = factor(user_name, levels = ord),
+                                    lbl = paste0(user_name, " (", wins, "-", losses, ")"))
+  nteams <- nrow(last)
+  playoff <- if (nteams >= 8) nteams / 2 else NA_real_
+  p <- ggplot2::ggplot(d, ggplot2::aes(week, table_position, colour = user_name,
+                                       group = user_name))
+  if (!is.na(playoff)) p <- p +
+    ggplot2::annotate("rect", xmin = -Inf, xmax = Inf, ymin = 0.5, ymax = playoff + 0.5,
+                      fill = "#2f9e44", alpha = 0.06)
+  p +
+    ggplot2::geom_line(linewidth = 1.2, alpha = 0.85) +
+    ggplot2::geom_point(size = 2.6) +
+    ggrepel::geom_text_repel(data = end_lab, ggplot2::aes(label = lbl),
+                             nudge_x = 0.35, hjust = 0, direction = "y", size = 3,
+                             segment.colour = "grey80", show.legend = FALSE) +
+    ggplot2::scale_y_reverse(breaks = seq_len(max(d$table_position))) +
+    ggplot2::scale_x_continuous(breaks = sort(unique(d$week)),
+                                expand = ggplot2::expansion(c(0.03, 0.28))) +
+    ggplot2::scale_colour_manual(values = sl_palette(as.character(d$user_name)), guide = "none") +
+    ggplot2::labs(title = "Table-Position Trajectory",
+                  subtitle = if (!is.na(playoff))
+                    "Standing after each week  ·  1 = top  ·  green band = playoff spots"
+                    else "Standing after each week  ·  1 = top",
+                  x = "Week", y = "Table Position", caption = .sl_cap(season)) +
+    theme_sleeper() +
+    ggplot2::theme(panel.grid.major.y = ggplot2::element_line(colour = "grey92", linewidth = 0.4))
+}
+
+#' Weekly points stacked-by-week bar chart
+#' @param season A [sleeper_season] object.
+#' @return A ggplot.
+#' @export
+sl_plot_team_points <- function(season) {
+  tot <- season$team_wk %>% dplyr::group_by(user_name) %>%
+    dplyr::summarise(total = sum(points), .groups = "drop") %>%
+    dplyr::arrange(dplyr::desc(total))
+  d <- season$team_wk %>%
+    dplyr::mutate(user_name = factor(user_name, levels = tot$user_name),
+                  week = factor(week, levels = sort(unique(week))))
+  ramp <- grDevices::colorRampPalette(c("#1f6f8b", "#8ecae6"))(nlevels(d$week))
+  ggplot2::ggplot(d, ggplot2::aes(points, user_name, fill = week)) +
+    ggplot2::geom_col(width = 0.7, colour = "white", linewidth = 0.3) +
+    ggplot2::geom_text(data = tot, ggplot2::aes(x = total, y = user_name,
+                       label = round(total)), inherit.aes = FALSE,
+                       hjust = -0.15, size = 3.2, fontface = "bold", colour = "grey25") +
+    ggplot2::scale_fill_manual(values = ramp, name = "Week", guide =
+                                 ggplot2::guide_legend(reverse = TRUE, ncol = 2)) +
+    ggplot2::scale_y_discrete(limits = rev(tot$user_name)) +
+    ggplot2::scale_x_continuous(expand = ggplot2::expansion(c(0, 0.12))) +
+    ggplot2::labs(title = "Total Points by Team",
+                  subtitle = "Season points, stacked by week  ·  bold = season total",
+                  x = "Points", y = NULL, caption = .sl_cap(season)) +
+    theme_sleeper()
+}
+
+#' Average weekly position-points distribution (box + jitter)
+#' @param season A [sleeper_season] object.
+#' @return A ggplot.
+#' @export
+sl_plot_position_box <- function(season) {
+  d <- sl_roster(season)
+  ggplot2::ggplot(d, ggplot2::aes(position, avg)) +
+    ggplot2::geom_boxplot(width = 0.55, fill = "grey92", colour = "grey55",
+                          outlier.shape = NA) +
+    ggplot2::geom_jitter(ggplot2::aes(colour = user_name), width = 0.16, alpha = 0.8,
+                         size = 2.4, show.legend = TRUE) +
+    ggplot2::scale_colour_manual(values = sl_palette(d$user_name), name = "Team") +
+    ggplot2::labs(title = "Average Weekly Position Points",
+                  subtitle = "Each dot is a team's per-week average at a position  ·  spread = positional inequality",
+                  x = NULL, y = "Average Points", caption = .sl_cap(season)) +
+    theme_sleeper() +
+    ggplot2::theme(panel.grid.major.y = ggplot2::element_line(colour = "grey92", linewidth = 0.4))
+}
+
+#' Average roster composition (starters vs bench slots by position)
+#' @param season A [sleeper_season] object.
+#' @return A ggplot.
+#' @export
+sl_plot_roster_counts <- function(season) {
+  d <- sl_roster_counts(season) %>%
+    dplyr::mutate(status = factor(status, levels = c("Bench", "Starters")))
+  ggplot2::ggplot(d, ggplot2::aes(position, avg_count, fill = status)) +
+    ggplot2::geom_col(width = 0.7) +
+    ggplot2::geom_text(ggplot2::aes(label = sprintf("%.1f", avg_count)),
+                       position = ggplot2::position_stack(vjust = 0.5),
+                       size = 3, colour = "white", fontface = "bold") +
+    ggplot2::scale_fill_manual(values = c(Starters = "#2f9e44", Bench = "#c3c9d0"),
+                               name = NULL) +
+    ggplot2::labs(title = "Average Roster Composition",
+                  subtitle = "Mean roster slots per team each week, by position",
+                  x = NULL, y = "Slots per Team-Week", caption = .sl_cap(season)) +
+    theme_sleeper() +
+    ggplot2::theme(panel.grid.major.y = ggplot2::element_line(colour = "grey92", linewidth = 0.4),
+                   panel.grid.major.x = ggplot2::element_blank(),
+                   legend.position = "top", legend.justification = "left")
+}
+
+# Shared renderer for the trade/waiver performance charts: stacked player points
+# by manager (each segment = one manager's stint), ranked by total, with the
+# season total called out at the end of each bar.
+.sl_plot_acq <- function(d, season, title, subtitle) {
+  d <- d %>% dplyr::mutate(player_name = fct_reorder(player_name, total))
+  totals <- d %>% dplyr::distinct(player_name, total)
+  span <- max(totals$total)
+  ggplot2::ggplot(d, ggplot2::aes(points, player_name, fill = user_name)) +
+    ggplot2::geom_col(width = 0.72, colour = "white", linewidth = 0.3) +
+    ggplot2::geom_text(ggplot2::aes(label = ifelse(points >= span * 0.06,
+                                    paste0(round(points), " (", weeks, "w)"), "")),
+                       position = ggplot2::position_stack(vjust = 0.5), size = 2.5,
+                       colour = "grey15") +
+    ggplot2::geom_text(data = totals, ggplot2::aes(x = total, y = player_name,
+                       label = paste0(round(total))), inherit.aes = FALSE,
+                       hjust = -0.2, size = 3, fontface = "bold", colour = "grey30") +
+    ggplot2::scale_fill_manual(values = sl_palette(d$user_name), name = "Team") +
+    ggplot2::scale_x_continuous(expand = ggplot2::expansion(c(0, 0.12))) +
+    ggplot2::labs(title = title, subtitle = subtitle,
+                  x = "Points While Rostered", y = NULL, caption = .sl_cap(season)) +
+    theme_sleeper() +
+    ggplot2::theme(legend.position = "top", legend.justification = "left",
+                   legend.key.size = ggplot2::unit(0.9, "lines"))
+}
+
+#' Traded-player performance chart
+#' @param season A [sleeper_season] object.
+#' @param top_n Keep the `top_n` highest-scoring traded players.
+#' @return A ggplot.
+#' @export
+sl_plot_trade_performance <- function(season, top_n = 12) {
+  d <- sl_trade_performance(season)
+  keep <- d %>% dplyr::distinct(player_name, total) %>%
+    dplyr::slice_max(total, n = top_n, with_ties = FALSE) %>% dplyr::pull(player_name)
+  .sl_plot_acq(dplyr::filter(d, player_name %in% keep), season,
+               "Traded Players: Value While Rostered",
+               "Points each team got from players it acquired in trades  ·  segment = one manager's stint")
+}
+
+#' Waiver / free-agent pickup performance chart
+#' @param season A [sleeper_season] object.
+#' @param top_n Keep the `top_n` highest-scoring pickups.
+#' @return A ggplot.
+#' @export
+sl_plot_waiver_performance <- function(season, top_n = 15) {
+  d <- sl_waiver_performance(season)
+  keep <- d %>% dplyr::distinct(player_name, total) %>%
+    dplyr::slice_max(total, n = top_n, with_ties = FALSE) %>% dplyr::pull(player_name)
+  .sl_plot_acq(dplyr::filter(d, player_name %in% keep), season,
+               "Best Waiver & Free-Agent Pickups",
+               "Points managers got from players added off waivers / FA")
+}

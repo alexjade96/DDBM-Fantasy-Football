@@ -56,6 +56,18 @@ def main():
         "starter_bench": recs(
             metrics.starter_bench(latest).sort_values(["user_name", "position", "status"]),
             ["user_name", "position", "status", "avg"]),
+        "table_position": recs(
+            metrics.table_position(latest).sort_values(["week", "table_position"]),
+            ["week", "user_name", "table_position", "wins"]),
+        "roster_counts": recs(
+            metrics.roster_counts(latest).sort_values(["position", "status"]),
+            ["position", "status", "avg_count"]),
+        "trade_performance": recs(
+            metrics.trade_performance(latest).sort_values(["player_name", "user_name"]),
+            ["player_name", "user_name", "weeks", "points", "avg", "total"]),
+        "waiver_performance": recs(
+            metrics.waiver_performance(latest).sort_values(["player_name", "user_name"]),
+            ["player_name", "user_name", "weeks", "points", "avg", "total"]),
         "summary_season": summaries.summary_season(latest),
         "summary_career": summaries.summary_career(ss),
         "summary_week": weekly.summary_week(latest),

@@ -44,6 +44,15 @@ def test_week_stats(season_obj):
     assert d.iloc[0]["user_name"] == "Al"  # top scorer week 2
 
 
+def test_table_position(season_obj):
+    d = metrics.table_position(season_obj)
+    assert len(d) == 6  # 3 teams x 2 weeks
+    wk2 = d[d["week"] == 2]
+    assert wk2.loc[wk2["table_position"] == 1, "user_name"].iloc[0] == "Al"  # 2-0
+    assert wk2.loc[wk2["table_position"] == 3, "user_name"].iloc[0] == "Bo"  # 0-2
+    assert list(wk2["table_position"]) == [1, 2, 3]
+
+
 def test_summary_week(season_obj):
     txt = summary_week(season_obj, 2)
     assert "Week 2 recap" in txt and "Top score" in txt
