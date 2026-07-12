@@ -21,15 +21,15 @@
     "BN",
     "BN"
   ],
-  "_comment": "Manual choose-your-opponent playoff, weeks 15-18. Seeds 5-8 play R1; seeds 3-4 then pick from the R1 winners; seeds 1-2 pick from the R2 winners; then the final. Seeds 1-2 therefore get two byes. Replace `starters` with the lineups submitted to the commissioner -- they are currently Sleeper's recorded lineups.",
+  "_comment": "Manual choose-your-opponent playoff, weeks 15-18. SEEDING IS THE REGULAR SEASON (through week 14) -- not the final standings, which include playoff weeks. Seeds 5-8 play R1; seeds 3-4 then pick from the R1 winners; seeds 1-2 pick from the R2 winners; then the final. Seeds 1-2 therefore get two byes.",
   "_seeds": {
     "1": "LuckyHarm",
     "2": "SimonSmith",
-    "3": "Downinthebend",
-    "4": "diogenesthecat",
-    "5": "SearingShadow",
+    "3": "SearingShadow",
+    "4": "Downinthebend",
+    "5": "vougz",
     "6": "Greebo775",
-    "7": "vougz",
+    "7": "diogenesthecat",
     "8": "xPsyD"
   },
   "scoring_settings": {
@@ -94,17 +94,17 @@
         {
           "id": "R1M1",
           "home": {
-            "team": "SearingShadow",
+            "team": "vougz",
             "starters": [
-              "11563",
-              "11584",
-              "9221",
-              "5927",
-              "4983",
-              "12517",
-              "12512",
-              "6650",
-              "BAL"
+              "4892",
+              "4866",
+              "7588",
+              "7049",
+              "7526",
+              "7002",
+              "8228",
+              "11539",
+              "BUF"
             ]
           },
           "away": {
@@ -139,17 +139,17 @@
             ]
           },
           "away": {
-            "team": "vougz",
+            "team": "diogenesthecat",
             "starters": [
-              "4892",
-              "4866",
-              "7588",
-              "7049",
-              "7526",
-              "7002",
-              "8228",
-              "11539",
-              "BUF"
+              "421",
+              "8138",
+              "4034",
+              "10229",
+              "5045",
+              "11604",
+              "12506",
+              "5189",
+              "PHI"
             ]
           }
         },
@@ -163,11 +163,11 @@
         },
         {
           "id": "R1B3",
-          "bye": "Downinthebend"
+          "bye": "SearingShadow"
         },
         {
           "id": "R1B4",
-          "bye": "diogenesthecat"
+          "bye": "Downinthebend"
         }
       ]
     },
@@ -180,6 +180,38 @@
       "matchups": [
         {
           "id": "R2M1",
+          "home": {
+            "team": "SearingShadow",
+            "starters": [
+              "11563",
+              "11584",
+              "9221",
+              "5927",
+              "4983",
+              "12517",
+              "12512",
+              "6650",
+              "BAL"
+            ]
+          },
+          "away": {
+            "team": "xPsyD",
+            "starters": [
+              "4984",
+              "7021",
+              "4988",
+              "6794",
+              "12526",
+              "1466",
+              "6801",
+              "11533",
+              "MIA"
+            ]
+          },
+          "_pick": "seed 3 SearingShadow picked xPsyD"
+        },
+        {
+          "id": "R2M2",
           "home": {
             "team": "Downinthebend",
             "starters": [
@@ -195,25 +227,6 @@
             ]
           },
           "away": {
-            "team": "SearingShadow",
-            "starters": [
-              "11563",
-              "11584",
-              "9221",
-              "5927",
-              "4983",
-              "12517",
-              "12512",
-              "6650",
-              "BAL"
-            ]
-          },
-          "_pick": "seed 3 Downinthebend picked SearingShadow",
-          "_discrepancy": "SearingShadow advanced (they faced LuckyHarm in R3), but under Sleeper's RECORDED lineups Downinthebend wins this 170.69-116.13 -- and outscores SearingShadow in every playoff week. So the lineups actually submitted to the commissioner must differ here. Replace both sides' `starters` with the submitted lineups to make the bracket self-consistent."
-        },
-        {
-          "id": "R2M2",
-          "home": {
             "team": "diogenesthecat",
             "starters": [
               "421",
@@ -227,21 +240,7 @@
               "HOU"
             ]
           },
-          "away": {
-            "team": "Greebo775",
-            "starters": [
-              "3294",
-              "8150",
-              "12529",
-              "8148",
-              "6786",
-              "5844",
-              "7611",
-              "2020",
-              "LAR"
-            ]
-          },
-          "_pick": "seed 4 diogenesthecat drew the remaining R1 winner"
+          "_pick": "seed 4 Downinthebend drew the remaining R1 winner"
         },
         {
           "id": "R2B1",
@@ -321,8 +320,7 @@
               "5189",
               "DET"
             ]
-          },
-          "_pick": "seed 2 SimonSmith drew diogenesthecat"
+          }
         }
       ]
     },
@@ -366,6 +364,5 @@
         }
       ]
     }
-  ],
-  "_status": "Picks and schedule confirmed (weeks 15-18). Starters are Sleeper's RECORDED lineups, not the commissioner-submitted ones; every round reproduces the known result except R2M1 (see its _discrepancy)."
+  ]
 }
