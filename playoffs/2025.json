@@ -1,5 +1,5 @@
 {
-  "name": "Dank Soupers 2025 Playoffs (custom)",
+  "name": "Dank Soupers 2025 Playoffs (manual: choose-your-opponent)",
   "season": "2025",
   "league_id": "1252770181306929152",
   "roster_positions": [
@@ -21,7 +21,17 @@
     "BN",
     "BN"
   ],
-  "_comment": "Starters are pre-filled from Sleeper as a baseline. Replace each side's `starters` with the lineup submitted to the commissioner. Ids or player names both work. Winners advance via 'W:<matchup_id>'.",
+  "_comment": "Seeds 5-8 play R1. Seeds 3-4 then PICK their opponent from the R1 winners, then seeds 1-2 PICK from the R2 winners. Picks are a human decision, so name the chosen opponent directly in R2/R3 (replace the W:.. placeholders). Replace each side's `starters` with the lineup submitted to the commissioner.",
+  "_seeds": {
+    "1": "LuckyHarm",
+    "2": "SimonSmith",
+    "3": "Downinthebend",
+    "4": "diogenesthecat",
+    "5": "SearingShadow",
+    "6": "Greebo775",
+    "7": "vougz",
+    "8": "xPsyD"
+  },
   "scoring_settings": {
     "sack": 1.0,
     "fgm_40_49": 4.0,
@@ -72,40 +82,41 @@
     "pts_allow_7_13": 4.0,
     "st_ff": 1.0
   },
+  "final": "R4M1",
   "rounds": [
     {
       "id": "R1",
-      "name": "Round 1",
+      "name": "Round 1 (seeds 5-8)",
       "weeks": [
-        14
+        15
       ],
       "matchups": [
         {
           "id": "R1M1",
           "home": {
-            "team": "LuckyHarm",
+            "team": "SearingShadow",
             "starters": [
-              "4046",
-              "6813",
-              "9224",
-              "9488",
-              "2133",
-              "9480",
-              "10232",
-              "3451",
-              "SEA"
+              "11563",
+              "11584",
+              "9221",
+              "5927",
+              "4983",
+              "12517",
+              "12512",
+              "6650",
+              "BAL"
             ]
           },
           "away": {
             "team": "xPsyD",
             "starters": [
               "4984",
-              "11586",
+              "11655",
               "12474",
               "6794",
-              "1479",
+              "12526",
               "1466",
-              "8142",
+              "5872",
               "11533",
               "MIA"
             ]
@@ -114,17 +125,17 @@
         {
           "id": "R1M2",
           "home": {
-            "team": "SimonSmith",
+            "team": "Greebo775",
             "starters": [
-              "4881",
-              "9226",
-              "8151",
-              "7564",
-              "8137",
-              "8130",
-              "12507",
-              "8259",
-              "TB"
+              "3294",
+              "8150",
+              "12529",
+              "8148",
+              "6786",
+              "5844",
+              "7611",
+              "2020",
+              "LAR"
             ]
           },
           "away": {
@@ -133,7 +144,7 @@
               "4892",
               "4866",
               "7588",
-              "11834",
+              "7049",
               "7526",
               "7002",
               "8228",
@@ -143,120 +154,177 @@
           }
         },
         {
-          "id": "R1M3",
-          "home": {
-            "team": "Downinthebend",
-            "starters": [
-              "3163",
-              "6790",
-              "12527",
-              "9493",
-              "7525",
-              "12493",
-              "4098",
-              "5095",
-              "CLE"
-            ]
-          },
-          "away": {
-            "team": "Greebo775",
-            "starters": [
-              "3294",
-              "8150",
-              "8122",
-              "8148",
-              "5846",
-              "12498",
-              "6786",
-              "2020",
-              "LAR"
-            ]
-          }
+          "id": "R1B1",
+          "bye": "LuckyHarm"
         },
         {
-          "id": "R1M4",
-          "home": {
-            "team": "diogenesthecat",
-            "starters": [
-              "6770",
-              "10219",
-              "8138",
-              "5045",
-              "10229",
-              "11604",
-              "12476",
-              "1945",
-              "HOU"
-            ]
-          },
-          "away": {
-            "team": "SearingShadow",
-            "starters": [
-              "11563",
-              "11584",
-              "9221",
-              "5927",
-              "4983",
-              "1339",
-              "12512",
-              "6650",
-              "BAL"
-            ]
-          }
+          "id": "R1B2",
+          "bye": "SimonSmith"
+        },
+        {
+          "id": "R1B3",
+          "bye": "Downinthebend"
+        },
+        {
+          "id": "R1B4",
+          "bye": "diogenesthecat"
         }
       ]
     },
     {
       "id": "R2",
-      "name": "Round 2",
-      "weeks": [
-        15
-      ],
-      "matchups": [
-        {
-          "id": "R2M1",
-          "home": {
-            "team": "W:R1M1",
-            "starters": []
-          },
-          "away": {
-            "team": "W:R1M4",
-            "starters": []
-          }
-        },
-        {
-          "id": "R2M2",
-          "home": {
-            "team": "W:R1M2",
-            "starters": []
-          },
-          "away": {
-            "team": "W:R1M3",
-            "starters": []
-          }
-        }
-      ]
-    },
-    {
-      "id": "R3",
-      "name": "Round 3",
+      "name": "Round 2 (seeds 3-4 pick)",
       "weeks": [
         16
       ],
       "matchups": [
         {
+          "id": "R2M1",
+          "home": {
+            "team": "Downinthebend",
+            "starters": [
+              "96",
+              "6790",
+              "12527",
+              "9493",
+              "11628",
+              "4217",
+              "7525",
+              "1945",
+              "MIN"
+            ]
+          },
+          "away": {
+            "team": "W:R1M1",
+            "starters": []
+          },
+          "_pick": "seed 3 chose this opponent -- edit to the team actually picked"
+        },
+        {
+          "id": "R2M2",
+          "home": {
+            "team": "diogenesthecat",
+            "starters": [
+              "421",
+              "8138",
+              "4034",
+              "9756",
+              "5045",
+              "11604",
+              "12506",
+              "5189",
+              "HOU"
+            ]
+          },
+          "away": {
+            "team": "W:R1M2",
+            "starters": []
+          },
+          "_pick": "seed 4 got the remaining team"
+        },
+        {
+          "id": "R2B1",
+          "bye": "LuckyHarm"
+        },
+        {
+          "id": "R2B2",
+          "bye": "SimonSmith"
+        }
+      ]
+    },
+    {
+      "id": "R3",
+      "name": "Round 3 (seeds 1-2 pick)",
+      "weeks": [
+        17
+      ],
+      "matchups": [
+        {
           "id": "R3M1",
           "home": {
+            "team": "LuckyHarm",
+            "starters": [
+              "12545",
+              "6813",
+              "9224",
+              "9488",
+              "2216",
+              "12518",
+              "7543",
+              "3451",
+              "NE"
+            ]
+          },
+          "away": {
             "team": "W:R2M1",
             "starters": []
+          },
+          "_pick": "seed 1 chose this opponent -- edit to the team actually picked"
+        },
+        {
+          "id": "R3M2",
+          "home": {
+            "team": "SimonSmith",
+            "starters": [
+              "8183",
+              "9226",
+              "12507",
+              "7564",
+              "8137",
+              "8130",
+              "8151",
+              "11786",
+              "NO"
+            ]
           },
           "away": {
             "team": "W:R2M2",
             "starters": []
-          }
+          },
+          "_pick": "seed 2 got the remaining team"
+        }
+      ]
+    },
+    {
+      "id": "R4",
+      "name": "Final",
+      "weeks": [
+        18
+      ],
+      "matchups": [
+        {
+          "id": "R4M1",
+          "home": {
+            "team": "LuckyHarm",
+            "starters": [
+              "12545",
+              "6813",
+              "9224",
+              "9488",
+              "10232",
+              "12518",
+              "7543",
+              "3451",
+              "NE"
+            ]
+          },
+          "away": {
+            "team": "SimonSmith",
+            "starters": [
+              "8183",
+              "9226",
+              "12507",
+              "7564",
+              "8137",
+              "8130",
+              "8151",
+              "11786",
+              "NO"
+            ]
+          },
+          "_note": "known: SimonSmith vs LuckyHarm in week 18"
         }
       ]
     }
-  ],
-  "final": "R3M1"
+  ]
 }
