@@ -452,6 +452,114 @@ def _plot_acq(d, s: Season, title, subtitle):
     return _finish(fig, ax, title, subtitle, "Points While Rostered", caption=_cap(s))
 
 
+# --- Playoff charts (mirror R plots.R) -------------------------------------
+
+def plot_playoff_bracket(p):
+    """Rounds left to right; winner filled, loser grey, bye amber, pending hollow."""
+    import pandas as pd
+    d = p.results.copy()
+    rounds = list(dict.fromkeys(d["round_id"]))
+    seeds = (p.config.get("_seeds") or {})
+    seed_of = {v: k for k, v in seeds.items()}
+    mu = d.drop_duplicates("matchup_id")[["round_id", "matchup_id"]].copy()
+    mu["j"] = mu.groupby("round_id").cumcount() + 1
+    mu["n"] = mu.groupby("round_id")["matchup_id"].transform("size")
+    span = int(mu["n"].max())
+    mu["rx"] = mu["round_id"].map({r: i for i, r in enumerate(rounds)})
+    mu["cy"] = (mu["j"] - 0.5) * span / mu["n"]
+    d = d.merge(mu[["matchup_id", "rx", "cy"]], on="matchup_id", how="left")
+    d["side"] = d.groupby("matchup_id").cumcount()
+    d["sides"] = d.groupby("matchup_id")["team"].transform("size")
+    d["y"] = d["cy"] + (d["sides"] > 1) * (d["side"] * 0.38 - 0.19)
+
+    COL = {"W": "#a5d6a7", "L": "#e6e8ea", "BYE": "#ffe0a3", "PENDING": "#f4f6f8", "T": "#e6e8ea"}
+    fig, ax = plt.subplots(figsize=(12.5, max(5.5, span * 1.05)))
+    # connectors: each advancing team flows into the next matchup that holds it
+    for _, a in d[d["result"].isin(["W", "BYE"])].iterrows():
+        nxt = d[(d["team"] == a["team"]) & (d["rx"] > a["rx"])].sort_values("rx")
+        if len(nxt):
+            n = nxt.iloc[0]
+            ax.plot([a["rx"] + 0.44, n["rx"] - 0.44], [a["cy"], n["y"]],
+                    color="#d2d2d2", lw=1, zorder=1)
+    for _, r in d.iterrows():
+        ax.add_patch(plt.Rectangle((r["rx"] - 0.43, r["y"] - 0.15), 0.86, 0.30,
+                                   facecolor=COL.get(r["result"], "#e6e8ea"),
+                                   edgecolor="white", lw=1.2, zorder=2))
+        sd = seed_of.get(r["team"], "")
+        pts = "–" if pd.isna(r["points"]) else f"{r['points']:.1f}"
+        ax.text(r["rx"], r["y"], f"{sd}  {r['team']}   {pts}".strip(), ha="center",
+                va="center", fontsize=9, zorder=3,
+                fontweight="bold" if r["result"] == "W" else "normal", color="#262626")
+    ax.set_xlim(-0.6, len(rounds) - 0.4)
+    ax.set_ylim(span + 0.25, -0.25)
+    ax.set_xticks(range(len(rounds)))
+    ax.set_xticklabels(list(dict.fromkeys(d["round"])), fontweight="bold")
+    ax.xaxis.set_ticks_position("top")
+    ax.set_yticks([])
+    for sp in ax.spines.values():
+        sp.set_visible(False)
+    ax.tick_params(length=0, colors="#4d4d4d")
+    ax.set_title(f"{p.name} · {p.season} Bracket", loc="left", fontsize=16,
+                 fontweight="bold", color="#262626", pad=26)
+    ax.text(0, 1.02, f"Champion: {p.champion or 'undecided'}  ·  every score computed "
+            "from the submitted lineups under the league's own scoring chart",
+            transform=ax.transAxes, fontsize=9.5, color="#666666", va="bottom")
+    fig.tight_layout()
+    return fig
+
+
+def plot_playoff_stats(playoffs: dict):
+    """Career playoff win %, gold for managers with a title."""
+    from .playoffs import playoff_stats
+    d = playoff_stats(playoffs)
+    d = d[d["games"] > 0].sort_values("win_pct").reset_index(drop=True)
+    fig, ax = plt.subplots(figsize=(10, 6))
+    ax.barh(range(len(d)), d["win_pct"], height=0.72,
+            color=["#f1c40f" if t > 0 else "#9fb8c8" for t in d["titles"]])
+    ax.set_yticks(range(len(d)))
+    ax.set_yticklabels(d["user_name"])
+    for i, r in d.iterrows():
+        stars = "★" * int(r["titles"])
+        ax.text(r["win_pct"] + 1, i, f"{int(r['wins'])}-{int(r['losses'])}  "
+                f"{r['win_pct']:.0f}%  {stars}", va="center", fontsize=8.5, color="#333333")
+    ax.set_xlim(0, 100)
+    return _finish(fig, ax, "Career Playoff Record",
+                   f"Win % across {len(playoffs)} postseasons  ·  gold = has won a title  "
+                   "·  ★ per title", "Playoff Win %")
+
+
+def plot_playoff_matchup(p, matchup_id):
+    """Both submitted lineups facing each other, player by player."""
+    d = p.players[p.players["matchup_id"] == matchup_id]
+    if not len(d):
+        raise ValueError(f"No scored players for matchup '{matchup_id}'")
+    g = (d.groupby(["team", "player_name", "position"], as_index=False)["points"].sum())
+    teams = list(dict.fromkeys(g["team"]))
+    pal = palette(teams)
+    tot = g.groupby("team")["points"].sum()
+    g["signed"] = g.apply(lambda r: -r["points"] if r["team"] == teams[0] else r["points"], axis=1)
+    g["lbl"] = g["player_name"] + " (" + g["position"].astype(str) + ")"
+    g = g.sort_values("points")
+    fig, ax = plt.subplots(figsize=(10, 6.4))
+    ax.barh(range(len(g)), g["signed"], height=0.72,
+            color=[pal[t] for t in g["team"]])
+    for i, (_, r) in enumerate(g.iterrows()):
+        off = -1.5 if r["signed"] < 0 else 1.5
+        ha = "right" if r["signed"] < 0 else "left"
+        ax.text(r["signed"] + off, i, f"{r['points']:.1f}", va="center", ha=ha,
+                fontsize=8, color="#404040")
+    ax.axvline(0, color="#b0b0b0", lw=1)
+    ax.set_yticks(range(len(g)))
+    ax.set_yticklabels(g["lbl"], fontsize=8.5)
+    lim = float(g["points"].max()) * 1.35
+    ax.set_xlim(-lim, lim)
+    ax.set_xticklabels([f"{abs(t):.0f}" for t in ax.get_xticks()])
+    hdr = "   vs   ".join(f"{t}: {tot[t]:.1f}" for t in teams)
+    handles = [plt.Rectangle((0, 0), 1, 1, color=pal[t]) for t in teams]
+    ax.legend(handles, teams, loc="lower right", frameon=False, fontsize=9)
+    return _finish(fig, ax, f"Matchup {matchup_id}", hdr, "Points")
+
+
 def plot_trade_performance(s: Season, top_n=12):
     d = metrics.trade_performance(s)
     keep = d.drop_duplicates("player_name").nlargest(top_n, "total")["player_name"]
