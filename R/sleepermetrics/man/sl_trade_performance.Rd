@@ -17,5 +17,6 @@ Tibble: \code{player_name}, \code{position}, \code{user_name}, \code{weeks}, \co
 For every player who changed hands in a trade, the points they scored on each
 team that rostered them (kept to players who actually moved between managers).
 Ported/improved from \code{ddbmFF.R}'s trade-performance chart -- membership comes
-from \code{pl_wk}, so "while rostered" needs no stint reconstruction.
+from \code{pl_wk}, so "while rostered" needs no stint reconstruction, and both
+sides of the trade are captured by matching the player across every roster.
 }

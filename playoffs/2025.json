@@ -1,0 +1,262 @@
+{
+  "name": "Dank Soupers 2025 Playoffs (custom)",
+  "season": "2025",
+  "league_id": "1252770181306929152",
+  "roster_positions": [
+    "QB",
+    "RB",
+    "RB",
+    "WR",
+    "WR",
+    "TE",
+    "FLEX",
+    "K",
+    "DEF",
+    "BN",
+    "BN",
+    "BN",
+    "BN",
+    "BN",
+    "BN",
+    "BN",
+    "BN"
+  ],
+  "_comment": "Starters are pre-filled from Sleeper as a baseline. Replace each side's `starters` with the lineup submitted to the commissioner. Ids or player names both work. Winners advance via 'W:<matchup_id>'.",
+  "scoring_settings": {
+    "sack": 1.0,
+    "fgm_40_49": 4.0,
+    "bonus_rec_te": 0.25,
+    "pass_int": -2.0,
+    "pts_allow_0": 10.0,
+    "pass_2pt": 2.0,
+    "st_td": 6.0,
+    "rec_td": 6.0,
+    "fgm_30_39": 3.0,
+    "xpmiss": -1.0,
+    "rush_td": 6.0,
+    "rec_2pt": 2.0,
+    "rush_fd": 0.5,
+    "pass_int_td": -14.0,
+    "st_fum_rec": 1.0,
+    "fgmiss": -1.0,
+    "ff": 1.0,
+    "rec": 1.0,
+    "pts_allow_14_20": 1.0,
+    "fgm_0_19": 3.0,
+    "int": 2.0,
+    "def_st_fum_rec": 1.0,
+    "fum_lost": -2.0,
+    "pts_allow_1_6": 7.0,
+    "fgmiss_20_29": -2.0,
+    "fgm_20_29": 3.0,
+    "pts_allow_21_27": 0.0,
+    "xpm": 1.0,
+    "pass_sack": -0.5,
+    "fgmiss_0_19": -4.0,
+    "rush_2pt": 2.0,
+    "fum_rec": 2.0,
+    "def_st_td": 6.0,
+    "fgm_50p": 5.0,
+    "def_td": 6.0,
+    "safe": 2.0,
+    "pass_yd": 0.04,
+    "blk_kick": 2.0,
+    "pass_td": 5.0,
+    "rush_yd": 0.1,
+    "fum": 0.0,
+    "pts_allow_28_34": -1.0,
+    "pts_allow_35p": -4.0,
+    "fum_rec_td": 6.0,
+    "rec_yd": 0.1,
+    "def_st_ff": 1.0,
+    "pts_allow_7_13": 4.0,
+    "st_ff": 1.0
+  },
+  "rounds": [
+    {
+      "id": "R1",
+      "name": "Round 1",
+      "weeks": [
+        14
+      ],
+      "matchups": [
+        {
+          "id": "R1M1",
+          "home": {
+            "team": "LuckyHarm",
+            "starters": [
+              "4046",
+              "6813",
+              "9224",
+              "9488",
+              "2133",
+              "9480",
+              "10232",
+              "3451",
+              "SEA"
+            ]
+          },
+          "away": {
+            "team": "xPsyD",
+            "starters": [
+              "4984",
+              "11586",
+              "12474",
+              "6794",
+              "1479",
+              "1466",
+              "8142",
+              "11533",
+              "MIA"
+            ]
+          }
+        },
+        {
+          "id": "R1M2",
+          "home": {
+            "team": "SimonSmith",
+            "starters": [
+              "4881",
+              "9226",
+              "8151",
+              "7564",
+              "8137",
+              "8130",
+              "12507",
+              "8259",
+              "TB"
+            ]
+          },
+          "away": {
+            "team": "vougz",
+            "starters": [
+              "4892",
+              "4866",
+              "7588",
+              "11834",
+              "7526",
+              "7002",
+              "8228",
+              "11539",
+              "BUF"
+            ]
+          }
+        },
+        {
+          "id": "R1M3",
+          "home": {
+            "team": "Downinthebend",
+            "starters": [
+              "3163",
+              "6790",
+              "12527",
+              "9493",
+              "7525",
+              "12493",
+              "4098",
+              "5095",
+              "CLE"
+            ]
+          },
+          "away": {
+            "team": "Greebo775",
+            "starters": [
+              "3294",
+              "8150",
+              "8122",
+              "8148",
+              "5846",
+              "12498",
+              "6786",
+              "2020",
+              "LAR"
+            ]
+          }
+        },
+        {
+          "id": "R1M4",
+          "home": {
+            "team": "diogenesthecat",
+            "starters": [
+              "6770",
+              "10219",
+              "8138",
+              "5045",
+              "10229",
+              "11604",
+              "12476",
+              "1945",
+              "HOU"
+            ]
+          },
+          "away": {
+            "team": "SearingShadow",
+            "starters": [
+              "11563",
+              "11584",
+              "9221",
+              "5927",
+              "4983",
+              "1339",
+              "12512",
+              "6650",
+              "BAL"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "R2",
+      "name": "Round 2",
+      "weeks": [
+        15
+      ],
+      "matchups": [
+        {
+          "id": "R2M1",
+          "home": {
+            "team": "W:R1M1",
+            "starters": []
+          },
+          "away": {
+            "team": "W:R1M4",
+            "starters": []
+          }
+        },
+        {
+          "id": "R2M2",
+          "home": {
+            "team": "W:R1M2",
+            "starters": []
+          },
+          "away": {
+            "team": "W:R1M3",
+            "starters": []
+          }
+        }
+      ]
+    },
+    {
+      "id": "R3",
+      "name": "Round 3",
+      "weeks": [
+        16
+      ],
+      "matchups": [
+        {
+          "id": "R3M1",
+          "home": {
+            "team": "W:R2M1",
+            "starters": []
+          },
+          "away": {
+            "team": "W:R2M2",
+            "starters": []
+          }
+        }
+      ]
+    }
+  ],
+  "final": "R3M1"
+}

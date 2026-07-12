@@ -8,6 +8,13 @@ sm <- asNamespace("sleepermetrics")  # package must be loaded/installed
 
 DEFAULT_LEAGUE <- Sys.getenv("SLEEPERMETRICS_LEAGUE", "1252770181306929152")
 
+# Playoff bracket configs (see sl_dashboard(playoffs = ...)).
+PLAYOFF_DIR <- Sys.getenv("SLEEPERMETRICS_PLAYOFFS", "")
+playoff_cfgs <- if (nzchar(PLAYOFF_DIR) && dir.exists(PLAYOFF_DIR)) {
+  stats::setNames(list.files(PLAYOFF_DIR, "\\.json$", full.names = TRUE),
+                  basename(list.files(PLAYOFF_DIR, "\\.json$")))
+} else character(0)
+
 ui <- page_sidebar(
   title = "Sleeper League Analytics",
   theme = bs_theme(version = 5, bootswatch = "litera", primary = "#2c7fb8"),
@@ -44,6 +51,24 @@ ui <- page_sidebar(
       markdown("Value **while rostered**, read from weekly roster membership. Trades show every team that held the player; waivers/FA show the acquiring team."),
       card(full_screen = TRUE, plotOutput("p_trade", height = 520)),
       card(full_screen = TRUE, plotOutput("p_waiver", height = 560))),
+    nav_panel("Playoffs", icon = icon("sitemap"),
+      layout_columns(
+        col_widths = c(8, 4),
+        card(full_screen = TRUE, card_header("Bracket"),
+             plotOutput("p_bracket", height = 520)),
+        card(card_header("Run the bracket"),
+          if (length(playoff_cfgs))
+            selectInput("pl_cfg", "Bracket config", choices = playoff_cfgs)
+          else markdown("No bracket configs found. Launch with `sl_dashboard(playoffs = \"playoffs\")`."),
+          actionButton("pl_refresh", "Score / refresh", icon = icon("rotate"),
+                       class = "btn-primary"),
+          markdown("<small>Only **roster inputs** are needed: each side's submitted starters. Scores are recomputed live from current NFL stats under the league's own scoring chart.</small>"),
+          tableOutput("pl_summary"))),
+      card(full_screen = TRUE, card_header("Matchup detail"),
+           selectInput("pl_matchup", "Matchup", choices = NULL),
+           plotOutput("p_matchup", height = 470)),
+      card(card_header("League point-calculation chart (stored with the bracket)"),
+           tableOutput("pl_scoring"))),
     nav_panel("Career (all seasons)", icon = icon("trophy"),
       card(card_header("Career insights"), uiOutput("career_summary")),
       layout_columns(card(full_screen = TRUE, plotOutput("p_career", height = 470)),
@@ -106,6 +131,59 @@ server <- function(input, output, session) {
   output$p_heatmap     <- renderPlot({ req(cur()); sm$sl_plot_roster_heatmap(cur()) }, res = 96)
   output$p_starter     <- renderPlot({ req(cur()); sm$sl_plot_starter_bench(cur()) }, res = 96)
   output$p_posbox      <- renderPlot({ req(cur()); sm$sl_plot_position_box(cur()) }, res = 96)
+
+  # --- Playoffs: config-driven custom bracket, scored live -----------------
+  playoff <- reactiveVal(NULL)
+
+  run_bracket <- function() {
+    cfg <- input$pl_cfg
+    if (is.null(cfg) || !nzchar(cfg)) return()
+    withProgress(message = "Scoring bracket from submitted lineups...", value = 0.3, {
+      sm$sl_clear_stats_cache()   # live week: never serve stale stat lines
+      p <- tryCatch(sm$sl_playoff(cfg), error = function(e) {
+        showNotification(paste("Bracket error:", conditionMessage(e)), type = "error")
+        NULL
+      })
+      if (is.null(p)) return()
+      playoff(p)
+      played <- unique(p$results$matchup_id[p$results$result %in% c("W", "L", "T")])
+      updateSelectInput(session, "pl_matchup", choices = played,
+                        selected = if (length(played)) played[length(played)] else NULL)
+    })
+  }
+  observeEvent(input$pl_refresh, run_bracket(), ignoreInit = TRUE)
+  observeEvent(input$pl_cfg, run_bracket(), ignoreInit = FALSE)
+
+  output$p_bracket <- renderPlot({
+    validate(need(playoff(), "Pick a bracket config and hit Score / refresh."))
+    sm$sl_plot_playoff_bracket(playoff())
+  }, res = 96)
+
+  output$pl_summary <- renderTable({
+    req(playoff()); sm$sl_playoff_summary(playoff())
+  }, digits = 1, spacing = "xs")
+
+  output$p_matchup <- renderPlot({
+    req(playoff())
+    validate(need(isTruthy(input$pl_matchup), "No matchup has been played yet."))
+    sm$sl_plot_playoff_matchup(playoff(), input$pl_matchup)
+  }, res = 96)
+
+  output$pl_scoring <- renderTable({
+    p <- playoff(); req(p)
+    sc <- p$config$scoring_settings
+    validate(need(length(sc), "This bracket has no stored scoring chart."))
+    d <- data.frame(stat = names(sc), weight = as.numeric(unlist(sc)))
+    d <- d[order(d$stat), ]
+    # Wide, compact layout: the chart is ~48 rules.
+    n <- ceiling(nrow(d) / 4)
+    cols <- lapply(seq_len(4), function(i) {
+      idx <- ((i - 1) * n + 1):min(i * n, nrow(d))
+      r <- d[idx, ]; r[is.na(r$stat), ] <- ""
+      setNames(r, paste0(c("stat", "weight"), i))
+    })
+    do.call(cbind, lapply(cols, function(x) { x[seq_len(n), ] }))
+  }, digits = 2, spacing = "xs", na = "")
 
   # Transaction charts: guard seasons with no trades / pickups.
   output$p_trade <- renderPlot({

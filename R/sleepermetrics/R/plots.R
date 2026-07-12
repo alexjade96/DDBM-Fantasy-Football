@@ -441,3 +441,104 @@ sl_plot_waiver_performance <- function(season, top_n = 15) {
                "Best Waiver & Free-Agent Pickups",
                "Points managers got from players added off waivers / FA")
 }
+
+# --- Playoff charts --------------------------------------------------------
+
+#' Playoff bracket chart
+#'
+#' The whole bracket at a glance: rounds left to right, each matchup a pair of
+#' rows with its score, the winner filled and the loser greyed. Pending matchups
+#' (lineups not in yet) are drawn hollow.
+#'
+#' @param playoff A `sleeper_playoff` object (see [sl_playoff()]).
+#' @return A ggplot.
+#' @export
+sl_plot_playoff_bracket <- function(playoff) {
+  d <- playoff$results
+  rounds <- unique(d$round_id)
+  d <- d %>%
+    dplyr::mutate(rx = match(round_id, rounds),
+                  lbl = ifelse(is.na(points), paste0(team, "  --"),
+                               paste0(team, "  ", sprintf("%.1f", points))))
+  # Stack matchups vertically within each round, centred.
+  d <- d %>% dplyr::group_by(round_id) %>%
+    dplyr::mutate(slot = dplyr::dense_rank(matchup_id),
+                  n_slot = dplyr::n_distinct(matchup_id)) %>%
+    dplyr::ungroup() %>%
+    dplyr::group_by(matchup_id) %>%
+    dplyr::mutate(side = dplyr::row_number()) %>%
+    dplyr::ungroup() %>%
+    dplyr::mutate(
+      span = max(n_slot),
+      y = (slot - 0.5) * (span / n_slot) - ifelse(side == 1, 0.16, -0.16),
+      fill = dplyr::case_when(result == "W" ~ "win", result == "BYE" ~ "bye",
+                              result == "PENDING" ~ "pending", TRUE ~ "loss"))
+  champ <- playoff$champion
+  ggplot2::ggplot(d, ggplot2::aes(rx, y)) +
+    ggplot2::geom_tile(ggplot2::aes(fill = fill), width = 0.86, height = 0.3,
+                       colour = "white", linewidth = 0.8) +
+    ggplot2::geom_text(ggplot2::aes(label = lbl,
+                       fontface = ifelse(result == "W", "bold", "plain")),
+                       size = 2.9, colour = "grey15") +
+    ggplot2::scale_fill_manual(
+      values = c(win = "#a5d6a7", loss = "#e6e8ea", bye = "#ffe0a3",
+                 pending = "#f4f6f8"),
+      labels = c(win = "won", loss = "lost", bye = "bye", pending = "not yet played"),
+      name = NULL) +
+    ggplot2::scale_x_continuous(breaks = seq_along(rounds),
+                                labels = unique(d$round),
+                                position = "top",
+                                expand = ggplot2::expansion(c(0.06, 0.06))) +
+    ggplot2::scale_y_reverse() +
+    ggplot2::labs(
+      title = paste0(playoff$name, " \U00B7 ", playoff$season, " Bracket"),
+      subtitle = if (!is.null(champ))
+        paste0("Champion: ", champ, " \U0001F451   \U00B7   scores computed from submitted lineups under league rules")
+        else "Scores computed from submitted lineups under league rules",
+      x = NULL, y = NULL) +
+    theme_sleeper() +
+    ggplot2::theme(
+      panel.grid = ggplot2::element_blank(),
+      axis.text.y = ggplot2::element_blank(),
+      axis.text.x = ggplot2::element_text(face = "bold", colour = "grey30"),
+      legend.position = "bottom", legend.justification = "left",
+      plot.subtitle = ggplot2::element_text(family = "Segoe UI Emoji", colour = "grey40"))
+}
+
+#' Player-by-player breakdown of one playoff matchup
+#'
+#' The receipts for a result: both submitted lineups side by side, each starter's
+#' points under the league's scoring chart.
+#'
+#' @param playoff A `sleeper_playoff` object.
+#' @param matchup_id Which matchup to show (e.g. `"R1M1"`).
+#' @return A ggplot.
+#' @export
+sl_plot_playoff_matchup <- function(playoff, matchup_id) {
+  d <- playoff$players %>% dplyr::filter(matchup_id == !!matchup_id)
+  if (!nrow(d)) stop("No scored players for matchup '", matchup_id,
+                     "' (is it still pending?)", call. = FALSE)
+  d <- d %>% dplyr::group_by(team, player_name, position) %>%
+    dplyr::summarise(points = sum(points), .groups = "drop")
+  tm <- unique(d$team)
+  tot <- d %>% dplyr::group_by(team) %>%
+    dplyr::summarise(total = sum(points), .groups = "drop")
+  # Mirror the left-hand team so the two lineups face each other.
+  d <- d %>% dplyr::mutate(
+    signed = ifelse(team == tm[1], -points, points),
+    lbl = paste0(player_name, " (", position, ")"))
+  hdr <- paste0(tot$team, ": ", sprintf("%.1f", tot$total), collapse = "   vs   ")
+  ggplot2::ggplot(d, ggplot2::aes(signed, stats::reorder(lbl, abs(signed)), fill = team)) +
+    ggplot2::geom_col(width = 0.72) +
+    ggplot2::geom_vline(xintercept = 0, colour = "grey70") +
+    ggplot2::geom_text(ggplot2::aes(label = sprintf("%.1f", points),
+                       hjust = ifelse(signed < 0, 1.15, -0.15)),
+                       size = 2.9, colour = "grey25") +
+    ggplot2::scale_fill_manual(values = sl_palette(d$team), name = NULL) +
+    ggplot2::scale_x_continuous(labels = function(x) abs(x),
+                                expand = ggplot2::expansion(c(0.16, 0.16))) +
+    ggplot2::labs(title = paste0("Matchup ", matchup_id),
+                  subtitle = hdr, x = "Points", y = NULL) +
+    theme_sleeper() +
+    ggplot2::theme(legend.position = "top", legend.justification = "left")
+}
