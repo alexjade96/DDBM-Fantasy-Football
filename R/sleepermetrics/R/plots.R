@@ -453,54 +453,79 @@ sl_plot_waiver_performance <- function(season, top_n = 15) {
 #' @param playoff A `sleeper_playoff` object (see [sl_playoff()]).
 #' @return A ggplot.
 #' @export
-sl_plot_playoff_bracket <- function(playoff) {
+sl_plot_playoff_bracket <- function(playoff, seeds = NULL) {
   d <- playoff$results
   rounds <- unique(d$round_id)
+  if (is.null(seeds)) seeds <- playoff$config$`_seeds`
+  seed_of <- if (length(seeds))
+    stats::setNames(names(seeds), unlist(seeds)) else character(0)
+
+  # Lay each round out as evenly spaced matchup slots on a shared vertical span.
+  mu <- d %>% dplyr::distinct(round_id, matchup_id) %>%
+    dplyr::group_by(round_id) %>%
+    dplyr::mutate(j = dplyr::row_number(), n = dplyr::n()) %>%
+    dplyr::ungroup()
+  span <- max(mu$n)
+  mu <- mu %>% dplyr::mutate(rx = match(round_id, rounds),
+                             cy = (j - 0.5) * span / n)
+
   d <- d %>%
-    dplyr::mutate(rx = match(round_id, rounds),
-                  lbl = ifelse(is.na(points), paste0(team, "  --"),
-                               paste0(team, "  ", sprintf("%.1f", points))))
-  # Stack matchups vertically within each round, centred.
-  d <- d %>% dplyr::group_by(round_id) %>%
-    dplyr::mutate(slot = dplyr::dense_rank(matchup_id),
-                  n_slot = dplyr::n_distinct(matchup_id)) %>%
-    dplyr::ungroup() %>%
+    dplyr::left_join(dplyr::select(mu, matchup_id, rx, cy), by = "matchup_id") %>%
     dplyr::group_by(matchup_id) %>%
-    dplyr::mutate(side = dplyr::row_number()) %>%
+    dplyr::mutate(side = dplyr::row_number(), sides = dplyr::n()) %>%
     dplyr::ungroup() %>%
     dplyr::mutate(
-      span = max(n_slot),
-      y = (slot - 0.5) * (span / n_slot) - ifelse(side == 1, 0.16, -0.16),
+      y = dplyr::if_else(sides == 1, cy, cy + dplyr::if_else(side == 1, -0.19, 0.19)),
+      sd = unname(seed_of[team]),
+      lbl = paste0(ifelse(is.na(sd), "", paste0(sd, "  ")), team,
+                   ifelse(is.na(points), "   \U2013", paste0("   ", sprintf("%.1f", points)))),
       fill = dplyr::case_when(result == "W" ~ "win", result == "BYE" ~ "bye",
                               result == "PENDING" ~ "pending", TRUE ~ "loss"))
+
+  # Connectors: a winner (or a bye team) flows into the next matchup that holds
+  # it, so trace each advancing team forward and elbow the line across.
+  adv <- d %>% dplyr::filter(result %in% c("W", "BYE"), !is.na(team))
+  seg <- purrr::map_dfr(seq_len(nrow(adv)), function(i) {
+    a <- adv[i, ]
+    nxt <- d %>% dplyr::filter(team == a$team, rx > a$rx) %>%
+      dplyr::slice_min(rx, n = 1, with_ties = FALSE)
+    if (!nrow(nxt)) return(NULL)
+    tibble(x = a$rx + 0.44, y = a$cy, xend = nxt$rx - 0.44, yend = nxt$y)
+  })
+
   champ <- playoff$champion
-  ggplot2::ggplot(d, ggplot2::aes(rx, y)) +
+  p <- ggplot2::ggplot(d, ggplot2::aes(rx, y))
+  if (nrow(seg)) p <- p +
+    ggplot2::geom_curve(data = seg,
+      ggplot2::aes(x = x, y = y, xend = xend, yend = yend), inherit.aes = FALSE,
+      curvature = 0, colour = "grey82", linewidth = 0.5)
+  p +
     ggplot2::geom_tile(ggplot2::aes(fill = fill), width = 0.86, height = 0.3,
-                       colour = "white", linewidth = 0.8) +
+                       colour = "white", linewidth = 0.9) +
     ggplot2::geom_text(ggplot2::aes(label = lbl,
                        fontface = ifelse(result == "W", "bold", "plain")),
-                       size = 2.9, colour = "grey15") +
+                       size = 3, colour = "grey15") +
     ggplot2::scale_fill_manual(
       values = c(win = "#a5d6a7", loss = "#e6e8ea", bye = "#ffe0a3",
                  pending = "#f4f6f8"),
-      labels = c(win = "won", loss = "lost", bye = "bye", pending = "not yet played"),
-      name = NULL) +
+      breaks = c("win", "loss", "bye", "pending"),
+      labels = c(win = "won", loss = "lost", bye = "bye (seeded)",
+                 pending = "not yet played"), name = NULL) +
     ggplot2::scale_x_continuous(breaks = seq_along(rounds),
-                                labels = unique(d$round),
-                                position = "top",
-                                expand = ggplot2::expansion(c(0.06, 0.06))) +
-    ggplot2::scale_y_reverse() +
+                                labels = unique(d$round), position = "top",
+                                expand = ggplot2::expansion(c(0.05, 0.05))) +
+    ggplot2::scale_y_reverse(expand = ggplot2::expansion(c(0.06, 0.06))) +
     ggplot2::labs(
       title = paste0(playoff$name, " \U00B7 ", playoff$season, " Bracket"),
       subtitle = if (!is.null(champ))
-        paste0("Champion: ", champ, " \U0001F451   \U00B7   scores computed from submitted lineups under league rules")
-        else "Scores computed from submitted lineups under league rules",
+        paste0("Champion: ", champ, " \U0001F451   \U00B7   every score computed from the submitted lineups under the league's own scoring chart")
+        else "Every score computed from the submitted lineups under the league's own scoring chart",
       x = NULL, y = NULL) +
     theme_sleeper() +
     ggplot2::theme(
       panel.grid = ggplot2::element_blank(),
       axis.text.y = ggplot2::element_blank(),
-      axis.text.x = ggplot2::element_text(face = "bold", colour = "grey30"),
+      axis.text.x = ggplot2::element_text(face = "bold", colour = "grey30", size = 11),
       legend.position = "bottom", legend.justification = "left",
       plot.subtitle = ggplot2::element_text(family = "Segoe UI Emoji", colour = "grey40"))
 }

@@ -1,5 +1,5 @@
 {
-  "name": "Dank Soupers 2025 Playoffs (manual: choose-your-opponent)",
+  "name": "Dank Soupers 2025 Playoffs",
   "season": "2025",
   "league_id": "1252770181306929152",
   "roster_positions": [
@@ -21,7 +21,7 @@
     "BN",
     "BN"
   ],
-  "_comment": "Seeds 5-8 play R1. Seeds 3-4 then PICK their opponent from the R1 winners, then seeds 1-2 PICK from the R2 winners. Picks are a human decision, so name the chosen opponent directly in R2/R3 (replace the W:.. placeholders). Replace each side's `starters` with the lineup submitted to the commissioner.",
+  "_comment": "Manual choose-your-opponent playoff, weeks 15-18. Seeds 5-8 play R1; seeds 3-4 then pick from the R1 winners; seeds 1-2 pick from the R2 winners; then the final. Seeds 1-2 therefore get two byes. Replace `starters` with the lineups submitted to the commissioner -- they are currently Sleeper's recorded lineups.",
   "_seeds": {
     "1": "LuckyHarm",
     "2": "SimonSmith",
@@ -195,10 +195,21 @@
             ]
           },
           "away": {
-            "team": "W:R1M1",
-            "starters": []
+            "team": "SearingShadow",
+            "starters": [
+              "11563",
+              "11584",
+              "9221",
+              "5927",
+              "4983",
+              "12517",
+              "12512",
+              "6650",
+              "BAL"
+            ]
           },
-          "_pick": "seed 3 chose this opponent -- edit to the team actually picked"
+          "_pick": "seed 3 Downinthebend picked SearingShadow",
+          "_discrepancy": "SearingShadow advanced (they faced LuckyHarm in R3), but under Sleeper's RECORDED lineups Downinthebend wins this 170.69-116.13 -- and outscores SearingShadow in every playoff week. So the lineups actually submitted to the commissioner must differ here. Replace both sides' `starters` with the submitted lineups to make the bracket self-consistent."
         },
         {
           "id": "R2M2",
@@ -217,10 +228,20 @@
             ]
           },
           "away": {
-            "team": "W:R1M2",
-            "starters": []
+            "team": "Greebo775",
+            "starters": [
+              "3294",
+              "8150",
+              "12529",
+              "8148",
+              "6786",
+              "5844",
+              "7611",
+              "2020",
+              "LAR"
+            ]
           },
-          "_pick": "seed 4 got the remaining team"
+          "_pick": "seed 4 diogenesthecat drew the remaining R1 winner"
         },
         {
           "id": "R2B1",
@@ -256,10 +277,20 @@
             ]
           },
           "away": {
-            "team": "W:R2M1",
-            "starters": []
+            "team": "SearingShadow",
+            "starters": [
+              "11563",
+              "11584",
+              "9221",
+              "5927",
+              "4983",
+              "12517",
+              "5850",
+              "6650",
+              "BAL"
+            ]
           },
-          "_pick": "seed 1 chose this opponent -- edit to the team actually picked"
+          "_pick": "seed 1 LuckyHarm chose SearingShadow"
         },
         {
           "id": "R3M2",
@@ -278,10 +309,20 @@
             ]
           },
           "away": {
-            "team": "W:R2M2",
-            "starters": []
+            "team": "diogenesthecat",
+            "starters": [
+              "6770",
+              "8138",
+              "4034",
+              "8167",
+              "5045",
+              "12506",
+              "12489",
+              "5189",
+              "DET"
+            ]
           },
-          "_pick": "seed 2 got the remaining team"
+          "_pick": "seed 2 SimonSmith drew diogenesthecat"
         }
       ]
     },
@@ -321,10 +362,10 @@
               "11786",
               "NO"
             ]
-          },
-          "_note": "known: SimonSmith vs LuckyHarm in week 18"
+          }
         }
       ]
     }
-  ]
+  ],
+  "_status": "Picks and schedule confirmed (weeks 15-18). Starters are Sleeper's RECORDED lineups, not the commissioner-submitted ones; every round reproduces the known result except R2M1 (see its _discrepancy)."
 }
