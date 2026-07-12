@@ -98,6 +98,9 @@ def main(argv=None):
     res["testthat"] = _run("testthat (R unit tests)", [rs, "-e", (
         'r <- as.data.frame(testthat::test_local("R/sleepermetrics", reporter="minimal"));'
         ' quit(status = as.integer(sum(r$failed) + sum(r$error) > 0))')], cwd=str(BASE))
+    res["playoffs"] = _run("playoff champions (recomputed from lineups)",
+                           [str(PY), "parity/check_playoffs.py"],
+                           cwd=str(BASE), env=env)
     res["export_py"] = _run("export metrics (Python)",
                             [str(PY), "parity/export_py.py", league, "parity/out_py.json"],
                             cwd=str(BASE), env=env)

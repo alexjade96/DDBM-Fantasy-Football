@@ -53,6 +53,16 @@ ui <- page_sidebar(
       card(full_screen = TRUE, plotOutput("p_waiver", height = 560))),
     nav_panel("Playoffs", icon = icon("sitemap"),
       layout_columns(
+        col_widths = c(3, 3, 3, 3),
+        value_box("Champion", textOutput("pl_champ"), showcase = icon("crown"),
+                  theme = "warning"),
+        value_box("Playoff games", textOutput("pl_games"), showcase = icon("sitemap"),
+                  theme = "primary"),
+        value_box("Highest playoff score", textOutput("pl_top"),
+                  showcase = icon("fire"), theme = "success"),
+        value_box("Biggest blowout", textOutput("pl_blow"),
+                  showcase = icon("bomb"), theme = "secondary")),
+      layout_columns(
         col_widths = c(8, 4),
         card(full_screen = TRUE, card_header("Bracket"),
              plotOutput("p_bracket", height = 520)),
@@ -67,6 +77,13 @@ ui <- page_sidebar(
       card(full_screen = TRUE, card_header("Matchup detail"),
            selectInput("pl_matchup", "Matchup", choices = NULL),
            plotOutput("p_matchup", height = 470)),
+      layout_columns(
+        col_widths = c(7, 5),
+        card(full_screen = TRUE, card_header("Career playoff record (all seasons)"),
+             plotOutput("p_plstats", height = 420)),
+        card(full_screen = TRUE, card_header("Postseason résumé"),
+             markdown("<small>Playoff-only metrics: appearances, playoff W-L, titles, finals reached, and points per playoff game.</small>"),
+             tableOutput("pl_career"))),
       card(card_header("League point-calculation chart (stored with the bracket)"),
            tableOutput("pl_scoring"))),
     nav_panel("Career (all seasons)", icon = icon("trophy"),
@@ -96,6 +113,13 @@ server <- function(input, output, session) {
       }
       seasons <- seasons[!vapply(seasons, is.null, logical(1))]
       if (!length(seasons)) { showNotification("No scored seasons found.", type = "error"); return() }
+      # A season's playoff bracket, where one is stored, decides its champion --
+      # Sleeper's own bracket is not reliable (see playoffs/README.md). This is
+      # what makes career titles correct.
+      if (nzchar(PLAYOFF_DIR)) {
+        seasons <- tryCatch(sm$sl_apply_playoffs(seasons, PLAYOFF_DIR),
+                            error = function(e) seasons)
+      }
       store(list(seasons = seasons, name = chain[[length(chain)]]$name,
                  season_names = names(seasons)))
       updateSelectInput(session, "season", choices = rev(names(seasons)),
@@ -168,6 +192,42 @@ server <- function(input, output, session) {
 
   output$pl_summary <- renderTable({
     req(playoff()); sm$sl_playoff_summary(playoff())
+  }, digits = 1, spacing = "xs")
+
+  # Stat indicators for the selected season's bracket.
+  pl_played <- reactive({
+    p <- playoff(); req(p)
+    p$results[p$results$result %in% c("W", "L", "T"), ]
+  })
+  output$pl_champ <- renderText({ playoff()$champion %||% "undecided" })
+  output$pl_games <- renderText({
+    d <- pl_played(); paste0(length(unique(d$matchup_id)), " games")
+  })
+  output$pl_top <- renderText({
+    d <- pl_played(); req(nrow(d))
+    i <- which.max(d$points)
+    sprintf("%.1f  %s", d$points[i], d$team[i])
+  })
+  output$pl_blow <- renderText({
+    d <- pl_played(); req(nrow(d))
+    i <- which.max(d$margin)
+    sprintf("%+.1f  %s", d$margin[i], d$team[i])
+  })
+
+  # Playoff-only analytics across every stored bracket.
+  all_playoffs <- reactive({
+    req(nzchar(PLAYOFF_DIR))
+    withProgress(message = "Scoring every stored bracket...", value = 0.3,
+                 sm$sl_load_playoffs(PLAYOFF_DIR))
+  })
+  output$p_plstats <- renderPlot({
+    validate(need(length(all_playoffs()) > 0, "No bracket configs found."))
+    sm$sl_plot_playoff_stats(all_playoffs())
+  }, res = 96)
+  output$pl_career <- renderTable({
+    req(all_playoffs())
+    sm$sl_playoff_stats(all_playoffs())[, c("user_name", "appearances", "games",
+      "wins", "losses", "win_pct", "titles", "finals", "ppg")]
   }, digits = 1, spacing = "xs")
 
   output$p_matchup <- renderPlot({

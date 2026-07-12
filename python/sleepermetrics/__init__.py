@@ -7,7 +7,8 @@ from . import discord_bot, metrics, playoffs, plots, scoring, summaries, weekly
 from .api import sleeper_api
 from .league import league, league_chain, starter_slots
 from .players import players
-from .playoffs import Playoff, playoff, playoff_config, playoff_summary
+from .playoffs import (Playoff, apply_playoffs, load_playoffs, playoff,
+                       playoff_config, playoff_stats, playoff_summary)
 from .scoring import score_lineup, scoring_chart
 from .season import Season, assemble_season, optimal_points, season, seasons
 from .summaries import summary_career, summary_season
@@ -20,6 +21,7 @@ __all__ = [
     "summary_season", "summary_career", "summary_week",
     "scoring", "scoring_chart", "score_lineup",
     "playoffs", "playoff", "playoff_config", "playoff_summary", "Playoff",
+    "apply_playoffs", "load_playoffs", "playoff_stats",
 ]
 
 __version__ = "0.1.0"

@@ -530,6 +530,35 @@ sl_plot_playoff_bracket <- function(playoff, seeds = NULL) {
       plot.subtitle = ggplot2::element_text(family = "Segoe UI Emoji", colour = "grey40"))
 }
 
+#' Career playoff record chart
+#'
+#' Postseason résumé per manager: playoff win %, sized by games played, with
+#' titles marked. Managers who never made a bracket are omitted.
+#'
+#' @param playoffs A named list of `sleeper_playoff` objects ([sl_load_playoffs()]).
+#' @return A ggplot.
+#' @export
+sl_plot_playoff_stats <- function(playoffs) {
+  d <- sl_playoff_stats(playoffs) %>%
+    dplyr::filter(games > 0) %>%
+    dplyr::mutate(user_name = fct_reorder(user_name, win_pct),
+                  lbl = paste0(wins, "-", losses, "  ", sprintf("%.0f%%", win_pct),
+                               ifelse(titles > 0, paste0("  ", strrep("\U0001F451", titles)), "")))
+  ggplot2::ggplot(d, ggplot2::aes(win_pct, user_name)) +
+    ggplot2::geom_col(ggplot2::aes(fill = titles > 0), width = 0.72, show.legend = FALSE) +
+    ggplot2::geom_text(ggplot2::aes(label = lbl), hjust = -0.03, size = 3.2,
+                       colour = "grey20", family = "Segoe UI Emoji") +
+    ggplot2::scale_fill_manual(values = c(`TRUE` = "#f1c40f", `FALSE` = "#9fb8c8")) +
+    ggplot2::scale_x_continuous(expand = ggplot2::expansion(c(0, 0.34)), limits = c(0, 100)) +
+    ggplot2::labs(title = "Career Playoff Record",
+                  subtitle = paste0("Win % across ", length(playoffs),
+                                    " postseasons  \U00B7  gold = has won a title  \U00B7  \U0001F451 per title"),
+                  x = "Playoff Win %", y = NULL) +
+    theme_sleeper() +
+    ggplot2::theme(plot.subtitle = ggplot2::element_text(family = "Segoe UI Emoji",
+                                                         colour = "grey40"))
+}
+
 #' Player-by-player breakdown of one playoff matchup
 #'
 #' The receipts for a result: both submitted lineups side by side, each starter's

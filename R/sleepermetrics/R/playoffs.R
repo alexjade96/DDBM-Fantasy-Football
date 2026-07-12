@@ -220,6 +220,116 @@ print.sleeper_playoff <- function(x, ...) {
   invisible(x)
 }
 
+#' Stored season brackets
+#' @param playoff_dir Directory of bracket configs.
+#' @return Named character vector: `season -> config path`.
+#' @export
+sl_playoff_configs <- function(playoff_dir = "playoffs") {
+  fs <- list.files(playoff_dir, "\\.json$", full.names = TRUE)
+  out <- character(0)
+  for (f in fs) {
+    cfg <- tryCatch(sl_playoff_config(f), error = function(e) NULL)
+    if (!is.null(cfg) && !is.null(cfg$rounds) && !is.null(cfg$season)) {
+      out[[as.character(cfg$season)]] <- f
+    }
+  }
+  out
+}
+
+#' The champion a bracket produces
+#'
+#' Configs persist the engine-derived `champion` so a season load stays cheap;
+#' pass `recompute = TRUE` to re-run the bracket from the stored lineups rather
+#' than trust the stored value (`verify.py` does exactly this).
+#'
+#' @param config A config, or a path to one.
+#' @param recompute Re-run the bracket instead of reading the stored champion.
+#' @return The champion's manager name, or `NULL`.
+#' @export
+sl_playoff_champion <- function(config, recompute = FALSE) {
+  if (is.character(config)) config <- sl_playoff_config(config)
+  if (!recompute && !is.null(config$champion)) return(config$champion)
+  sl_playoff(config, validate = FALSE)$champion
+}
+
+#' Let each season's playoff bracket decide that season's champion
+#'
+#' Sleeper's `winners_bracket` is the default source of the champion flag, but it
+#' is only right for playoffs Sleeper actually ran -- for DDBM 2025 it is
+#' demonstrably incoherent. Where a bracket config exists it is authoritative,
+#' and the corrected flag flows straight into career titles.
+#'
+#' @param seasons A list of [sleeper_season] objects.
+#' @param playoff_dir Directory of bracket configs.
+#' @param recompute Re-run each bracket rather than reading its stored champion.
+#' @return The seasons, with `standings$champion` corrected where a bracket exists.
+#' @export
+sl_apply_playoffs <- function(seasons, playoff_dir = "playoffs", recompute = FALSE) {
+  paths <- sl_playoff_configs(playoff_dir)
+  for (k in names(seasons)) {
+    s <- seasons[[k]]
+    p <- paths[[as.character(s$season)]]
+    if (is.null(p)) next
+    champ <- sl_playoff_champion(p, recompute = recompute)
+    if (!is.null(champ)) {
+      seasons[[k]]$standings$champion <- seasons[[k]]$standings$user_name == champ
+    }
+  }
+  seasons
+}
+
+#' Score every stored bracket
+#' @param playoff_dir Directory of bracket configs.
+#' @return Named list of `sleeper_playoff` objects (names = seasons).
+#' @export
+sl_load_playoffs <- function(playoff_dir = "playoffs") {
+  paths <- sl_playoff_configs(playoff_dir)
+  stats::setNames(lapply(paths, function(p) sl_playoff(p, validate = FALSE)),
+                  names(paths))
+}
+
+#' Career playoff record per manager
+#'
+#' Regular-season metrics say nothing about January. This is the postseason
+#' resume: how often you got there, how you did once you did, and how deep.
+#'
+#' @param playoffs A named list of `sleeper_playoff` objects (see
+#'   [sl_load_playoffs()]).
+#' @return Tibble: `user_name`, `appearances`, `games`, `wins`, `losses`,
+#'   `points`, `titles`, `finals`, `win_pct`, `ppg`.
+#' @export
+sl_playoff_stats <- function(playoffs) {
+  rows <- dplyr::bind_rows(lapply(names(playoffs), function(s) {
+    p <- playoffs[[s]]
+    final_id <- p$config$final
+    played <- p$results %>% dplyr::filter(result %in% c("W", "L", "T"))
+    p$results %>% dplyr::group_by(team) %>%
+      dplyr::summarise(in_final = if (is.null(final_id)) FALSE
+                                  else any(matchup_id == final_id), .groups = "drop") %>%
+      dplyr::left_join(
+        played %>% dplyr::group_by(team) %>%
+          dplyr::summarise(games = dplyr::n(), wins = sum(result == "W"),
+                           losses = sum(result == "L"),
+                           points = sum(points, na.rm = TRUE), .groups = "drop"),
+        by = "team") %>%
+      dplyr::mutate(season = s, title = team == (p$champion %||% ""),
+                    games = dplyr::coalesce(games, 0L),
+                    wins = dplyr::coalesce(wins, 0L),
+                    losses = dplyr::coalesce(losses, 0L),
+                    points = dplyr::coalesce(points, 0))
+  }))
+  if (!nrow(rows)) return(rows)
+  rows %>%
+    dplyr::group_by(user_name = team) %>%
+    dplyr::summarise(appearances = dplyr::n_distinct(season), games = sum(games),
+                     wins = sum(wins), losses = sum(losses),
+                     points = round(sum(points), 2), titles = sum(title),
+                     finals = sum(in_final), .groups = "drop") %>%
+    dplyr::mutate(win_pct = round(wins / pmax(games, 1) * 100, 1),
+                  ppg = round(points / pmax(games, 1), 1)) %>%
+    dplyr::arrange(dplyr::desc(titles), dplyr::desc(win_pct), dplyr::desc(ppg))
+}
+
 #' Playoff standings (per-team run through the bracket)
 #' @param playoff A `sleeper_playoff` object.
 #' @return Tibble: `team`, `games`, `wins`, `losses`, `points`, `eliminated_in`.

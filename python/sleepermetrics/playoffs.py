@@ -181,6 +181,96 @@ def playoff(config, rules: dict | None = None, validate: bool = True) -> Playoff
                    config.get("name", "Playoffs"), config)
 
 
+def config_paths(playoff_dir: str = "playoffs") -> dict:
+    """{season: config path} for every stored season bracket."""
+    import glob
+    import os
+    out = {}
+    for f in sorted(glob.glob(os.path.join(playoff_dir, "*.json"))):
+        try:
+            cfg = playoff_config(f)
+        except Exception:
+            continue
+        if "rounds" in cfg and cfg.get("season"):
+            out[str(cfg["season"])] = f
+    return out
+
+
+def champion_of(config, recompute: bool = False):
+    """The season's champion per its bracket.
+
+    Configs persist the engine-derived `champion` so a season load is cheap;
+    pass `recompute=True` to re-run the bracket from the stored lineups instead
+    of trusting the stored value (verify.py does exactly this).
+    """
+    if isinstance(config, str):
+        config = playoff_config(config)
+    if not recompute and config.get("champion"):
+        return config["champion"]
+    return playoff(config, validate=False).champion
+
+
+def apply_playoffs(seasons: dict, playoff_dir: str = "playoffs",
+                   recompute: bool = False) -> dict:
+    """Let each season's playoff bracket decide that season's champion.
+
+    Sleeper's `winners_bracket` is the default source of the champion flag, but
+    it is only correct for playoffs Sleeper actually ran -- for DDBM 2025 it is
+    demonstrably incoherent. Where a bracket config exists it is authoritative,
+    and the corrected flag flows into career titles.
+    """
+    paths = config_paths(playoff_dir)
+    for key, s in seasons.items():
+        p = paths.get(str(s.season))
+        if not p:
+            continue
+        champ = champion_of(p, recompute=recompute)
+        if champ:
+            s.standings["champion"] = s.standings["user_name"] == champ
+    return seasons
+
+
+def load_playoffs(playoff_dir: str = "playoffs") -> dict:
+    """{season: Playoff} -- every stored bracket, scored."""
+    return {s: playoff(p, validate=False)
+            for s, p in config_paths(playoff_dir).items()}
+
+
+def playoff_stats(playoffs: dict) -> pd.DataFrame:
+    """Career playoff record per manager, across every stored bracket.
+
+    Regular-season metrics say nothing about January. This is the postseason
+    résumé: how often you got there, how you did once you did, and how deep.
+    """
+    rows = []
+    for season, p in playoffs.items():
+        final_id = p.config.get("final")
+        played = p.results[p.results["result"].isin(["W", "L", "T"])]
+        for team, g in p.results.groupby("team"):
+            gp = played[played["team"] == team]
+            rows.append({
+                "user_name": team, "season": str(season),
+                "games": len(gp),
+                "wins": int((gp["result"] == "W").sum()),
+                "losses": int((gp["result"] == "L").sum()),
+                "points": round(float(pd.to_numeric(gp["points"], errors="coerce").sum()), 2),
+                "title": bool(p.champion == team),
+                "final": bool((g["matchup_id"] == final_id).any()) if final_id else False,
+            })
+    d = pd.DataFrame(rows)
+    if d.empty:
+        return d
+    out = (d.groupby("user_name", as_index=False)
+           .agg(appearances=("season", "nunique"), games=("games", "sum"),
+                wins=("wins", "sum"), losses=("losses", "sum"),
+                points=("points", "sum"), titles=("title", "sum"),
+                finals=("final", "sum")))
+    out["win_pct"] = (out["wins"] / out[["games"]].clip(lower=1)["games"] * 100).round(1)
+    out["ppg"] = (out["points"] / out[["games"]].clip(lower=1)["games"]).round(1)
+    return out.sort_values(["titles", "win_pct", "ppg"],
+                           ascending=False).reset_index(drop=True)
+
+
 def playoff_summary(p: Playoff) -> pd.DataFrame:
     """Per-team run through the bracket."""
     d = p.results

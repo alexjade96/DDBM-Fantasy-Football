@@ -27,7 +27,7 @@ sl_summary_season <- function(season) {
   paste0(
     "### ", season$season, " season - what the numbers say\n\n",
     "- ", .b("Top of the table:"), " ", .b(lead$user_name), " (", lead$wins, "-", lead$losses,
-      ", ", round(lead$points), " pts", ifelse(lead$champion, ", and the champion \U0001F451", ""), ").\n",
+      ", ", round(lead$points), " pts", ifelse(lead$champion, " and the champion \U0001F451", ""), ").\n",
     "- ", .b("Luckiest:"), " ", .b(lucky$user_name), " won ", sprintf("%+.1f", lucky$luck),
       " games above all-play expectation; ", .b("unluckiest:"), " ", .b(unlucky$user_name),
       " (", sprintf("%+.1f", unlucky$luck), ").\n",

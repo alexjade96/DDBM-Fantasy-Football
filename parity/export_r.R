@@ -22,6 +22,10 @@ recs <- function(df, cols, sortcol) {
 }
 
 ss <- sl_seasons(league)
+# Playoff brackets are authoritative for a season's champion (Sleeper's own
+# bracket is wrong for 2025), so career titles must be computed from them.
+ss <- sl_apply_playoffs(ss, "playoffs")
+pos <- sl_load_playoffs("playoffs")
 latest <- ss[[length(ss)]]
 
 out <- list(
@@ -53,6 +57,14 @@ out <- list(
   waiver_performance = recs(sl_waiver_performance(latest),
                             c("player_name", "user_name", "weeks", "points", "avg", "total"),
                             "player_name"),
+  playoff_stats = recs(sl_playoff_stats(pos),
+                       c("user_name", "appearances", "games", "wins", "losses",
+                         "titles", "finals", "win_pct", "ppg"), "user_name"),
+  playoff_champions = recs(
+    tibble(season = names(pos),
+           champion = vapply(pos, function(p) p$champion %||% NA_character_,
+                             character(1))),
+    c("season", "champion"), "season"),
   summary_season = sl_summary_season(latest),
   summary_career = sl_summary_career(ss),
   summary_week = sl_summary_week(latest)

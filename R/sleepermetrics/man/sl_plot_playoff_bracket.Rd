@@ -4,7 +4,7 @@
 \alias{sl_plot_playoff_bracket}
 \title{Playoff bracket chart}
 \usage{
-sl_plot_playoff_bracket(playoff)
+sl_plot_playoff_bracket(playoff, seeds = NULL)
 }
 \arguments{
 \item{playoff}{A \code{sleeper_playoff} object (see \code{\link[=sl_playoff]{sl_playoff()}}).}

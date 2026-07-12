@@ -10,6 +10,7 @@ import json
 import sys
 
 sys.path.insert(0, "python")  # import the python-instance package
+import pandas as pd  # noqa: E402
 import sleepermetrics as sm  # noqa: E402
 from sleepermetrics import metrics, summaries, weekly  # noqa: E402
 
@@ -29,6 +30,10 @@ def main():
     league = sys.argv[1] if len(sys.argv) > 1 else "1252770181306929152"
     out_path = sys.argv[2] if len(sys.argv) > 2 else "parity/out_py.json"
     ss = sm.seasons(league)
+    # Playoff brackets are authoritative for a season's champion (Sleeper's own
+    # bracket is wrong for 2025), so career titles must be computed from them.
+    ss = sm.apply_playoffs(ss, "playoffs")
+    pos = sm.load_playoffs("playoffs")
     latest = list(ss.values())[-1]
 
     out = {
@@ -68,6 +73,14 @@ def main():
         "waiver_performance": recs(
             metrics.waiver_performance(latest).sort_values(["player_name", "user_name"]),
             ["player_name", "user_name", "weeks", "points", "avg", "total"]),
+        "playoff_stats": recs(
+            sm.playoff_stats(pos).sort_values("user_name"),
+            ["user_name", "appearances", "games", "wins", "losses",
+             "titles", "finals", "win_pct", "ppg"]),
+        "playoff_champions": recs(
+            pd.DataFrame({"season": list(pos),
+                          "champion": [p.champion for p in pos.values()]})
+            .sort_values("season"), ["season", "champion"]),
         "summary_season": summaries.summary_season(latest),
         "summary_career": summaries.summary_career(ss),
         "summary_week": weekly.summary_week(latest),
