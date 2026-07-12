@@ -117,8 +117,35 @@ Notes:
 
 ## Files
 
-| File | What it is |
-|---|---|
-| `2025.json` | the custom week-14→18 bracket (**edit the `starters`**) |
-| `2025-sleeper-bracket.json` | Sleeper's own bracket, replayed — the engine's ground-truth fixture |
-| `scaffold.py` | generates either of the above from the league |
+Every season has a stored bracket, holding the **finalized lineups** each team
+started. The dashboard's Playoffs tab follows the season picker and loads the
+matching one automatically.
+
+| File | Season | Bracket | Champion |
+|---|---|---|---|
+| `2022.json` | 2022 (6 teams) | standard Sleeper | sparky1335 |
+| `2023.json` | 2023 (8 teams) | standard Sleeper | rezzu |
+| `2024.json` | 2024 (6 teams) | standard Sleeper | SearingShadow |
+| `2025.json` | 2025 (10 teams) | **custom** choose-your-opponent, wks 15–18 | LuckyHarm |
+| `fixtures/2025-sleeper-bracket.json` | — | Sleeper's own 2025 bracket, replayed — the engine's ground-truth fixture | — |
+| `scaffold.py` | — | generates any of the above from the league | — |
+
+For 2022–2024 the engine reproduces **Sleeper's own recorded champion** from the
+stored lineups, which is the check that the scoring is right.
+
+### 2025 is deliberately different
+
+2025's playoff was run by hand, so its bracket comes from config, not the API:
+
+- **Seeding is the regular season (through wk14)** — *not* the final standings,
+  which are polluted by the playoff weeks themselves. This is the subtle bit: it
+  makes SearingShadow the 3-seed (not the 5-seed), so they took an R1 bye and
+  *picked* xPsyD. Seed off the wrong table and the bracket cannot be made to
+  resolve at all.
+- Seeds 5–8 play R1; seeds 3–4 then **pick** from the R1 winners; seeds 1–2 pick
+  from the R2 winners; then the final. Seeds 1 and 2 therefore get **two byes**.
+- All 7 games reproduce the known outcomes from the recorded lineups.
+
+Note Sleeper's *own* stored 2025 bracket disagrees (it crowns SimonSmith) — but
+that bracket is incoherent: the team it records as losing rounds 1 **and** 2 is
+also its `p == 1` champion. The config is the accurate record.

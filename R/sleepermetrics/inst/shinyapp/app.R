@@ -154,6 +154,13 @@ server <- function(input, output, session) {
   observeEvent(input$pl_refresh, run_bracket(), ignoreInit = TRUE)
   observeEvent(input$pl_cfg, run_bracket(), ignoreInit = FALSE)
 
+  # Follow the season picker: show that season's stored bracket automatically.
+  observeEvent(input$season, {
+    req(input$season, length(playoff_cfgs) > 0)
+    hit <- playoff_cfgs[startsWith(names(playoff_cfgs), input$season)]
+    if (length(hit)) updateSelectInput(session, "pl_cfg", selected = hit[[1]])
+  }, ignoreInit = FALSE)
+
   output$p_bracket <- renderPlot({
     validate(need(playoff(), "Pick a bracket config and hit Score / refresh."))
     sm$sl_plot_playoff_bracket(playoff())

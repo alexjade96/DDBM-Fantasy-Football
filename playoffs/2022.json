@@ -1,0 +1,338 @@
+{
+  "name": "Dank Soupers 2022",
+  "season": "2022",
+  "league_id": "870378308704141312",
+  "roster_positions": [
+    "QB",
+    "RB",
+    "RB",
+    "RB",
+    "WR",
+    "WR",
+    "WR",
+    "TE",
+    "K",
+    "DEF",
+    "BN",
+    "BN",
+    "BN",
+    "BN",
+    "BN"
+  ],
+  "_comment": "Standard Sleeper playoff bracket for this season, with the finalized lineups each team actually started. Scores are recomputed from those lineups under the league's scoring chart; the champion reproduces Sleeper's own recorded champion.",
+  "scoring_settings": {
+    "sack": 1.0,
+    "fgm_40_49": 4.0,
+    "pass_int": -1.0,
+    "pts_allow_0": 10.0,
+    "pass_2pt": 2.0,
+    "st_td": 6.0,
+    "rec_td": 6.0,
+    "fgm_30_39": 3.0,
+    "xpmiss": -1.0,
+    "rush_td": 6.0,
+    "rec_2pt": 2.0,
+    "rush_fd": 0.5,
+    "pass_int_td": -6.0,
+    "st_fum_rec": 1.0,
+    "fgmiss": -1.0,
+    "ff": 1.0,
+    "rec": 1.0,
+    "pts_allow_14_20": 1.0,
+    "fgm_0_19": 3.0,
+    "int": 2.0,
+    "def_st_fum_rec": 1.0,
+    "fum_lost": -2.0,
+    "pts_allow_1_6": 7.0,
+    "fgm_20_29": 3.0,
+    "pts_allow_21_27": 0.0,
+    "xpm": 1.0,
+    "pass_sack": -0.5,
+    "rush_2pt": 2.0,
+    "fum_rec": 2.0,
+    "def_st_td": 6.0,
+    "fgm_50p": 5.0,
+    "def_td": 6.0,
+    "safe": 2.0,
+    "pass_yd": 0.04,
+    "blk_kick": 2.0,
+    "pass_td": 4.0,
+    "rush_yd": 0.1,
+    "fum": 0.0,
+    "pts_allow_28_34": -1.0,
+    "pts_allow_35p": -4.0,
+    "fum_rec_td": 6.0,
+    "rec_yd": 0.1,
+    "def_st_ff": 1.0,
+    "pts_allow_7_13": 4.0,
+    "st_ff": 1.0
+  },
+  "rounds": [
+    {
+      "id": "R1",
+      "name": "Round 1",
+      "weeks": [
+        15
+      ],
+      "matchups": [
+        {
+          "id": "M1",
+          "home": {
+            "team": "xPsyD",
+            "starters": [
+              "4046",
+              "4137",
+              "3198",
+              "6151",
+              "2449",
+              "2309",
+              "6786",
+              "4217",
+              "4227",
+              "DAL"
+            ]
+          },
+          "away": {
+            "team": "SearingShadow",
+            "starters": [
+              "4984",
+              "4034",
+              "5967",
+              "4035",
+              "7564",
+              "5927",
+              "2374",
+              "4033",
+              "7042",
+              "KC"
+            ]
+          },
+          "_sleeper_winner": "xPsyD"
+        },
+        {
+          "id": "M2",
+          "home": {
+            "team": "sparky1335",
+            "starters": [
+              "6770",
+              "4018",
+              "4199",
+              "5892",
+              "4082",
+              "7525",
+              "4040",
+              "5012",
+              "5095",
+              "BUF"
+            ]
+          },
+          "away": {
+            "team": "rezzu",
+            "starters": [
+              "3294",
+              "6813",
+              "8136",
+              "8122",
+              "5846",
+              "1426",
+              "8144",
+              "5844",
+              "650",
+              "BAL"
+            ]
+          },
+          "_sleeper_winner": "sparky1335"
+        }
+      ]
+    },
+    {
+      "id": "R2",
+      "name": "Round 2",
+      "weeks": [
+        16
+      ],
+      "matchups": [
+        {
+          "id": "M3",
+          "home": {
+            "team": "diogenesthecat",
+            "starters": [
+              "5870",
+              "4866",
+              "7611",
+              "5850",
+              "6794",
+              "8146",
+              "3321",
+              "1466",
+              "5230",
+              "DEN"
+            ]
+          },
+          "away": {
+            "team": "xPsyD",
+            "starters": [
+              "4046",
+              "4137",
+              "3198",
+              "6806",
+              "2449",
+              "4950",
+              "6786",
+              "4217",
+              "4227",
+              "DAL"
+            ]
+          },
+          "_sleeper_winner": "xPsyD"
+        },
+        {
+          "id": "M4",
+          "home": {
+            "team": "CowboyKitten",
+            "starters": [
+              "7591",
+              "4663",
+              "4029",
+              "4988",
+              "4037",
+              "2133",
+              "7547",
+              "4066",
+              "2747",
+              "SF"
+            ]
+          },
+          "away": {
+            "team": "sparky1335",
+            "starters": [
+              "6770",
+              "4018",
+              "4199",
+              "5892",
+              "2216",
+              "7525",
+              "4040",
+              "5012",
+              "5095",
+              "BUF"
+            ]
+          },
+          "_sleeper_winner": "sparky1335"
+        },
+        {
+          "id": "M5",
+          "home": {
+            "team": "SearingShadow",
+            "starters": [
+              "4984",
+              "4034",
+              "5967",
+              "4035",
+              "7564",
+              "6819",
+              "7526",
+              "7600",
+              "7042",
+              "TEN"
+            ]
+          },
+          "away": {
+            "team": "rezzu",
+            "starters": [
+              "3294",
+              "3969",
+              "8136",
+              "8122",
+              "5846",
+              "1426",
+              "6801",
+              "5844",
+              "650",
+              "BAL"
+            ]
+          },
+          "_sleeper_winner": "rezzu"
+        }
+      ]
+    },
+    {
+      "id": "R3",
+      "name": "Round 3",
+      "weeks": [
+        17
+      ],
+      "matchups": [
+        {
+          "id": "M6",
+          "home": {
+            "team": "xPsyD",
+            "starters": [
+              "4046",
+              "4137",
+              "6151",
+              "6938",
+              "2449",
+              "1479",
+              "6786",
+              "4217",
+              "4227",
+              "DAL"
+            ]
+          },
+          "away": {
+            "team": "sparky1335",
+            "starters": [
+              "6770",
+              "4018",
+              "4111",
+              "5892",
+              "5937",
+              "7525",
+              "2216",
+              "5012",
+              "49",
+              "KC"
+            ]
+          },
+          "_sleeper_winner": "sparky1335"
+        },
+        {
+          "id": "M7",
+          "home": {
+            "team": "diogenesthecat",
+            "starters": [
+              "7523",
+              "4866",
+              "7543",
+              "2161",
+              "6794",
+              "4068",
+              "3321",
+              "1466",
+              "5230",
+              "PHI"
+            ]
+          },
+          "away": {
+            "team": "CowboyKitten",
+            "starters": [
+              "7591",
+              "4663",
+              "4029",
+              "1535",
+              "7547",
+              "2133",
+              "5859",
+              "4066",
+              "2747",
+              "SF"
+            ]
+          },
+          "_sleeper_winner": "CowboyKitten"
+        }
+      ]
+    }
+  ],
+  "final": "M6"
+}
