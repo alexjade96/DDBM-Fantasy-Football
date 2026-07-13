@@ -1,7 +1,20 @@
+{# The season rail: jump between postseasons without leaving the tab. Shown even
+   when this season has no bracket, so it is always a way back to one. #}
+{% if bracket_seasons %}
+<nav class="rail" hx-target="#panel" hx-swap="innerHTML" hx-include="#league">
+  <span class="k">Postseason</span>
+  {% for y in bracket_seasons %}
+  <button class="year {% if y == season %}on{% endif %}"
+          hx-get="/tab/playoffs?season={{ y }}&scope={{ scope }}">{{ y }}</button>
+  {% endfor %}
+</nav>
+{% endif %}
+
 {% if missing %}
 <p class="empty">No stored bracket for {{ missing }}. Add <code>playoffs/{{ missing }}.json</code>
    (see <code>playoffs/README.md</code>).</p>
 {% else %}
+{% with oob = true %}{% include "_seasons.html" %}{% endwith %}
 
 <section class="stats">
   <div class="stat gold">
@@ -46,23 +59,51 @@
        alt="Playoff bracket">
 </figure>
 
-<h2>Matchup detail</h2>
-<form class="controls inline" hx-get="/tab/playoffs" hx-target="#panel"
-      hx-swap="innerHTML" hx-include="#league, #season" hx-trigger="change">
-  <input type="hidden" name="scope" value="{{ scope }}">
-  <label>
-    <span>Matchup</span>
-    <select name="matchup">
-      {% for m in matchups %}
-      <option value="{{ m }}" {% if m == matchup %}selected{% endif %}>{{ m }}</option>
-      {% endfor %}
-    </select>
-  </label>
-</form>
+<h2>Walk the bracket</h2>
+{% if walk %}
+<div class="walk" hx-target="#panel" hx-swap="innerHTML" hx-include="#league, #season">
+  <div class="walkbar">
+    {# No hx-get at all at the ends -- a disabled button must not carry a live
+       url with matchup=None in it. #}
+    <button class="ghost" {% if prev %}hx-get="/tab/playoffs?matchup={{ prev }}&scope={{ scope }}"
+            {% else %}disabled{% endif %}>&larr; Previous</button>
+    <span class="step">Game {{ step }} of {{ n_steps }}</span>
+    <button class="ghost" {% if next %}hx-get="/tab/playoffs?matchup={{ next }}&scope={{ scope }}"
+            {% else %}disabled{% endif %}>Next &rarr;</button>
+  </div>
+
+  {# Games in the order they were played, grouped by round -- the bracket's own
+     shape, not the alphabetical order of its matchup ids. #}
+  <ol class="games">
+    {% for g in walk %}
+    {% if loop.first or g.round != walk[loop.index0 - 1].round %}
+    <li class="roundhead">{{ g.round }}{% if g.weeks %} · week {{ g.weeks }}{% endif %}</li>
+    {% endif %}
+    <li>
+      <button class="game {% if g.id == matchup %}on{% endif %}
+                     {% if g.bracket == 'consolation' %}conso{% endif %}"
+              hx-get="/tab/playoffs?matchup={{ g.id }}&scope={{ scope }}">
+        <span class="teams">
+          {% for s in g.sides %}
+          <span class="side {% if s.result == 'W' %}won{% endif %}">
+            {{ s.team }} <b>{{ "%.1f"|format(s.points) }}</b>
+          </span>
+          {% endfor %}
+        </span>
+        {% if g.bracket == 'consolation' %}<span class="tag">consolation</span>{% endif %}
+      </button>
+    </li>
+    {% endfor %}
+  </ol>
+</div>
+
 <figure class="card chart">
   <img src="/chart/playoff_matchup?league={{ league }}&season={{ season }}&matchup={{ matchup }}&_={{ bust }}"
        alt="Matchup breakdown">
 </figure>
+{% else %}
+<p class="empty">No games have been played in this bracket yet.</p>
+{% endif %}
 
 <h2>Playoff analytics</h2>
 <div class="grid two">

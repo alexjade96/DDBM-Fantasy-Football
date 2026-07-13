@@ -77,6 +77,44 @@ def _md(text: str):
 tpl.env.filters["md"] = _md
 
 
+def _playoff_games(p) -> list[dict]:
+    """Every game in the bracket, in the order it was played.
+
+    The raw matchup ids sort alphabetically, which is not bracket order once a
+    bracket has more than 9 games (R1M10 lands before R1M2) and says nothing
+    about rounds. Walk the results frame instead -- the engine emits it round by
+    round -- and describe each game well enough to navigate by.
+    """
+    games, seen = [], set()
+    for mid in p.results["matchup_id"]:
+        if mid in seen:
+            continue
+        seen.add(mid)
+        rows = p.results[p.results["matchup_id"] == mid]
+        sides = [{"team": r["team"], "points": r["points"], "result": r["result"]}
+                 for _, r in rows.iterrows() if pd_notna(r["team"])]
+        played = [x for x in sides if x["result"] in ("W", "L", "T")]
+        winner = next((x["team"] for x in sides if x["result"] == "W"), None)
+        first = rows.iloc[0]
+        games.append({
+            "id": mid,
+            "round": first.get("round") or first.get("round_id"),
+            "weeks": first.get("weeks"),
+            "bracket": first.get("bracket"),
+            "sides": sides,
+            "winner": winner,
+            "played": bool(played),
+            # A bye has one side; an undecided game has teams but no result yet.
+            "label": " vs ".join(x["team"] for x in sides) if sides else "TBD",
+        })
+    return games
+
+
+def pd_notna(v) -> bool:
+    import pandas as pd
+    return bool(pd.notna(v))
+
+
 def _grouped_rules(settings: dict) -> list[tuple[str, list[dict]]]:
     """The point-calculation chart as [(group, [rule, ...])], in plain English.
 
@@ -241,6 +279,12 @@ def tab(name: str, request: Request, league: str = DEFAULT_LEAGUE,
         mg = mg.astype(object).where(mg.notna(), None)
         ctx["managers"] = mg.to_dict("records")
     elif name == "playoffs":
+        # The season rail: every season of this league that HAS a stored bracket,
+        # so the postseasons can be walked without leaving the tab.
+        ctx["bracket_seasons"] = [n for n in d["names"] if n in d["playoffs"]]
+        # Walking to another season from in here must also move the header's
+        # season picker, or the two disagree about what is on screen.
+        ctx["seasons"] = list(reversed(d["names"]))
         p = d["playoffs"].get(key)
         if p is None:
             ctx["missing"] = key
@@ -249,14 +293,27 @@ def tab(name: str, request: Request, league: str = DEFAULT_LEAGUE,
         played = r[r["result"].isin(["W", "L", "T"])]
         top = played.loc[played["points"].idxmax()] if len(played) else None
         blow = played.loc[played["margin"].idxmax()] if len(played) else None
+
+        # Walk the bracket game by game, in the order it was actually played.
+        all_games = _playoff_games(p)
+        walk = [g for g in all_games if g["played"]]
+        ids = [g["id"] for g in walk]
+        cur = matchup if matchup in ids else (p.config.get("final")
+                                              if p.config.get("final") in ids
+                                              else (ids[-1] if ids else None))
+        i = ids.index(cur) if cur in ids else -1
         ctx.update({
             "playoff": p,
             "champion": p.champion or "undecided",
             "games": played["matchup_id"].nunique(),
             "top": (f"{top['points']:.1f} · {top['team']}" if top is not None else "—"),
             "blow": (f"+{blow['margin']:.1f} · {blow['team']}" if blow is not None else "—"),
-            "matchups": sorted(played["matchup_id"].unique()),
-            "matchup": matchup or (played["matchup_id"].iloc[-1] if len(played) else None),
+            "walk": walk,
+            "matchup": cur,
+            "prev": ids[i - 1] if i > 0 else None,
+            "next": ids[i + 1] if 0 <= i < len(ids) - 1 else None,
+            "step": (i + 1) if i >= 0 else 0,
+            "n_steps": len(ids),
             "summary": sm.playoff_summary(p).to_dict("records"),
             "stats": sm.playoff_stats(d["playoffs"], scope).to_dict("records"),
             "rules": _grouped_rules(p.config.get("scoring_settings", {})),

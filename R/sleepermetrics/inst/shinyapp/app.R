@@ -79,8 +79,17 @@ ui <- page_sidebar(
                        class = "btn-primary"),
           markdown("<small>Only **roster inputs** are needed: each side's submitted starters. Scores are recomputed live from current NFL stats under the league's own scoring chart.</small>"),
           tableOutput("pl_summary"))),
-      card(full_screen = TRUE, card_header("Matchup detail"),
-           selectInput("pl_matchup", "Matchup", choices = NULL),
+      card(full_screen = TRUE, card_header("Walk the bracket"),
+           # Step through the postseason game by game, in the order it was
+           # played. The season picker walks between postseasons.
+           div(class = "d-flex align-items-end gap-2 mb-2",
+               div(class = "flex-grow-1",
+                   selectInput("pl_matchup", "Game", choices = NULL, width = "100%")),
+               actionButton("pl_prev", NULL, icon = icon("arrow-left"),
+                            class = "btn-outline-secondary mb-3"),
+               actionButton("pl_next", NULL, icon = icon("arrow-right"),
+                            class = "btn-outline-secondary mb-3")),
+           textOutput("pl_step"),
            plotOutput("p_matchup", height = 470)),
       layout_columns(
         col_widths = c(6, 6),
@@ -173,6 +182,7 @@ server <- function(input, output, session) {
 
   # --- Playoffs: config-driven custom bracket, scored live -----------------
   playoff <- reactiveVal(NULL)
+  walk <- reactiveVal(character(0))   # played matchup ids, in bracket order
 
   run_bracket <- function() {
     cfg <- input$pl_cfg
@@ -185,13 +195,52 @@ server <- function(input, output, session) {
       })
       if (is.null(p)) return()
       playoff(p)
-      played <- unique(p$results$matchup_id[p$results$result %in% c("W", "L", "T")])
-      updateSelectInput(session, "pl_matchup", choices = played,
-                        selected = if (length(played)) played[length(played)] else NULL)
+      games <- bracket_games(p)
+      walk(games$id)
+      updateSelectInput(
+        session, "pl_matchup", choices = stats::setNames(games$id, games$label),
+        # Open on the title game -- the answer everyone wants first.
+        selected = if (!is.null(p$config$final) && p$config$final %in% games$id) {
+          p$config$final
+        } else if (length(games$id)) games$id[length(games$id)] else NULL)
     })
+  }
+
+  # The played games, in the order the engine resolved them (i.e. bracket order,
+  # NOT the alphabetical order of matchup ids -- R1M10 would sort before R1M2).
+  bracket_games <- function(p) {
+    r <- p$results
+    ids <- unique(r$matchup_id[r$matchup_id %in%
+                                 r$matchup_id[r$result %in% c("W", "L", "T")]])
+    lab <- vapply(ids, function(m) {
+      g <- r[r$matchup_id == m & !is.na(r$team), ]
+      side <- sprintf("%s %.1f", g$team, g$points)
+      side[g$result %in% "W"] <- paste0(side[g$result %in% "W"], " \U2713")
+      sprintf("%s · %s", g$round[1], paste(side, collapse = "  vs  "))
+    }, character(1))
+    list(id = as.character(ids), label = unname(lab))
   }
   observeEvent(input$pl_refresh, run_bracket(), ignoreInit = TRUE)
   observeEvent(input$pl_cfg, run_bracket(), ignoreInit = FALSE)
+
+  # Step through the bracket. Clamped at both ends rather than wrapping -- a
+  # bracket has a first and a last game and walking off either end is a mistake.
+  step_game <- function(by) {
+    ids <- walk(); cur_id <- input$pl_matchup
+    req(length(ids), isTruthy(cur_id))
+    i <- match(cur_id, ids)
+    j <- max(1L, min(length(ids), i + by))
+    if (j != i) updateSelectInput(session, "pl_matchup", selected = ids[[j]])
+  }
+  observeEvent(input$pl_prev, step_game(-1L), ignoreInit = TRUE)
+  observeEvent(input$pl_next, step_game(+1L), ignoreInit = TRUE)
+
+  output$pl_step <- renderText({
+    ids <- walk()
+    validate(need(length(ids) > 0, "No games have been played in this bracket yet."))
+    i <- match(input$pl_matchup, ids)
+    if (is.na(i)) "" else sprintf("Game %d of %d", i, length(ids))
+  })
 
   # Follow the season picker: show that season's stored bracket automatically.
   observeEvent(input$season, {
