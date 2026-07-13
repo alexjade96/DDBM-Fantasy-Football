@@ -13,6 +13,7 @@ from __future__ import annotations
 import io
 import os
 import time
+from html import escape as html_escape
 from pathlib import Path
 
 import matplotlib
@@ -104,7 +105,10 @@ def league_data(league_id: str, fresh: bool = False) -> dict:
     if hit and not fresh and time.time() - hit["at"] < TTL:
         return hit
     seasons = sm.apply_playoffs(sm.seasons(league_id), PLAYOFF_DIR)
-    playoffs = sm.load_playoffs(PLAYOFF_DIR)
+    # Only this league's brackets -- a stored 2025.json belongs to a league, not
+    # to the number 2025, so another league must not inherit DDBM's playoffs.
+    playoffs = sm.load_playoffs(
+        PLAYOFF_DIR, league_ids=[s.league_id for s in seasons.values()])
     d = {"at": time.time(), "seasons": seasons, "playoffs": playoffs,
          "names": list(seasons)}
     _cache[league_id] = d
@@ -180,13 +184,39 @@ def index(request: Request, league: str = DEFAULT_LEAGUE):
     })
 
 
+@app.get("/load", response_class=HTMLResponse)
+def load(request: Request, league: str = DEFAULT_LEAGUE, season: str | None = None):
+    """Load a league (or a season of it): overview panel + a refreshed shell.
+
+    A typo'd or private league id is a normal thing for a user to do, so it
+    answers with a message in the panel rather than a 500 -- the previous league
+    stays on screen and can be typed back.
+    """
+    try:
+        d, s, key = pick(league, season)
+    except Exception:
+        return HTMLResponse(
+            "<p class='empty'>Couldn&rsquo;t load league <code>"
+            f"{html_escape(league)}</code>. Check the id is a Sleeper league "
+            "that has at least one scored week.</p>")
+    ctx = {"league": league, "season": key, "scope": "title", "bust": 0,
+           "league_name": s.name, "seasons": list(reversed(d["names"])),
+           "summary": summaries.summary_season(s),
+           "charts": ["standings", "luck"]}
+    return tpl.TemplateResponse(request, "load.html", ctx)
+
+
 @app.get("/tab/{name}", response_class=HTMLResponse)
 def tab(name: str, request: Request, league: str = DEFAULT_LEAGUE,
         season: str | None = None, refresh: int = 0, scope: str = "title",
         matchup: str | None = None):
     if refresh:
         scoring.clear_stats_cache()      # a live week must not serve stale points
-    d, s, key = pick(league, season)
+    try:
+        d, s, key = pick(league, season)
+    except Exception:
+        return HTMLResponse("<p class='empty'>Couldn&rsquo;t load league <code>"
+                            f"{html_escape(league)}</code>.</p>")
     ctx = {"league": league, "season": key, "scope": scope,
            "bust": int(time.time()) if refresh else 0}
 

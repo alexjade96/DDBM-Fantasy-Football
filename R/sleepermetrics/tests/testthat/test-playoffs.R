@@ -101,3 +101,40 @@ test_that("sl_check_lineup flags illegal submissions", {
     expect_true(any(grepl("RB", sl_check_lineup(c("1", "2", "3"), rp, fake_players))))
   })
 })
+
+# --- brackets belong to a league, not to a season number --------------------
+
+write_cfg <- function(dir, league_id) {
+  cfg <- test_cfg()
+  cfg$league_id <- league_id
+  cfg$roster_positions <- list("QB")   # stated, so nothing hits the network
+  jsonlite::write_json(cfg, file.path(dir, "2025.json"), auto_unbox = TRUE)
+  dir
+}
+
+test_that("sl_playoff_configs filters by league", {
+  d <- withr::local_tempdir()
+  write_cfg(d, "111")
+  expect_equal(names(sl_playoff_configs(d)), "2025")                 # unfiltered
+  expect_equal(names(sl_playoff_configs(d, "111")), "2025")          # its own league
+  # Another league's 2025 is NOT this bracket: it must not be handed over.
+  expect_length(sl_playoff_configs(d, "222"), 0)
+  with_mocks(expect_length(sl_load_playoffs(d, league_ids = "222"), 0))
+})
+
+test_that("sl_apply_playoffs does not stamp another league's champion", {
+  d <- withr::local_tempdir()
+  write_cfg(d, "111")
+  mk <- function(lid) list(`2025` = list(
+    season = "2025", league_id = lid,
+    standings = tibble::tibble(user_name = c("Dee", "Al"),
+                               champion = c(FALSE, FALSE))))
+
+  with_mocks({
+    same <- sl_apply_playoffs(mk("111"), d)
+    expect_equal(same[["2025"]]$standings$champion, c(TRUE, FALSE))
+
+    other <- sl_apply_playoffs(mk("222"), d)   # different league, same season
+    expect_equal(other[["2025"]]$standings$champion, c(FALSE, FALSE))
+  })
+})

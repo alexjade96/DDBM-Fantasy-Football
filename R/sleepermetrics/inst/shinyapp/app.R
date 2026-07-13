@@ -228,11 +228,14 @@ server <- function(input, output, session) {
     sprintf("%+.1f  %s", d$margin[i], d$team[i])
   })
 
-  # Playoff-only analytics across every stored bracket.
+  # Playoff-only analytics across every stored bracket -- but only brackets
+  # belonging to the loaded league. A stored 2025.json is a *league's* 2025, not
+  # the number 2025, so another league must not inherit DDBM's playoffs.
   all_playoffs <- reactive({
-    req(nzchar(PLAYOFF_DIR))
+    req(nzchar(PLAYOFF_DIR), seasons())
+    ids <- vapply(seasons(), function(s) s$league_id, character(1))
     withProgress(message = "Scoring every stored bracket...", value = 0.3,
-                 sm$sl_load_playoffs(PLAYOFF_DIR))
+                 sm$sl_load_playoffs(PLAYOFF_DIR, league_ids = ids))
   })
   output$p_plstats <- renderPlot({
     validate(need(length(all_playoffs()) > 0, "No bracket configs found."))

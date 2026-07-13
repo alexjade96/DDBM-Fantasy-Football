@@ -218,18 +218,29 @@ def scope_frame(d: pd.DataFrame, scope: str = "title") -> pd.DataFrame:
     return d[d["bracket"] == scope]
 
 
-def config_paths(playoff_dir: str = "playoffs") -> dict:
-    """{season: config path} for every stored season bracket."""
+def config_paths(playoff_dir: str = "playoffs", league_ids=None) -> dict:
+    """{season: config path} for every stored season bracket.
+
+    `league_ids` restricts the result to brackets belonging to those leagues.
+    A bracket is keyed by season, but a season number is not unique across
+    leagues -- without this filter, loading some *other* league into the
+    dashboard would silently hand it DDBM's brackets and DDBM's champions.
+    Sleeper gives each season its own league id, so pass the whole chain.
+    """
     import glob
     import os
+    ids = {str(i) for i in league_ids} if league_ids is not None else None
     out = {}
     for f in sorted(glob.glob(os.path.join(playoff_dir, "*.json"))):
         try:
             cfg = playoff_config(f)
         except Exception:
             continue
-        if "rounds" in cfg and cfg.get("season"):
-            out[str(cfg["season"])] = f
+        if "rounds" not in cfg or not cfg.get("season"):
+            continue
+        if ids is not None and str(cfg.get("league_id", "")) not in ids:
+            continue
+        out[str(cfg["season"])] = f
     return out
 
 
@@ -255,8 +266,12 @@ def apply_playoffs(seasons: dict, playoff_dir: str = "playoffs",
     it is only correct for playoffs Sleeper actually ran -- for DDBM 2025 it is
     demonstrably incoherent. Where a bracket config exists it is authoritative,
     and the corrected flag flows into career titles.
+
+    Only brackets belonging to *these* seasons' leagues are applied, so pointing
+    the dashboard at another league cannot stamp this league's champions onto it.
     """
-    paths = config_paths(playoff_dir)
+    paths = config_paths(playoff_dir,
+                         league_ids=[s.league_id for s in seasons.values()])
     for key, s in seasons.items():
         p = paths.get(str(s.season))
         if not p:
@@ -267,10 +282,14 @@ def apply_playoffs(seasons: dict, playoff_dir: str = "playoffs",
     return seasons
 
 
-def load_playoffs(playoff_dir: str = "playoffs") -> dict:
-    """{season: Playoff} -- every stored bracket, scored."""
+def load_playoffs(playoff_dir: str = "playoffs", league_ids=None) -> dict:
+    """{season: Playoff} -- every stored bracket, scored.
+
+    Pass `league_ids` (the league's season chain) to load only that league's
+    brackets; see config_paths().
+    """
     return {s: playoff(p, validate=False)
-            for s, p in config_paths(playoff_dir).items()}
+            for s, p in config_paths(playoff_dir, league_ids).items()}
 
 
 def playoff_performances(playoffs: dict, scope: str = "title") -> pd.DataFrame:

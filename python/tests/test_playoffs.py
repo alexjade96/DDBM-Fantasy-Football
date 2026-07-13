@@ -109,3 +109,40 @@ def test_check_lineup_flags_illegal_submissions():
     # Missing the RB entirely -> called out by position.
     probs = playoffs.check_lineup(["1", "2", "3"], rp, PINFO)
     assert any("RB" in p for p in probs)
+
+
+# --- brackets belong to a league, not to a season number --------------------
+def _write_cfg(tmp, league_id):
+    """The standard test bracket (Dee wins), stored as league `league_id`'s 2025."""
+    import json
+    p = tmp / "2025.json"
+    p.write_text(json.dumps(_cfg(league_id=league_id, roster_positions=["QB"])))
+    return p
+
+
+def test_config_paths_filters_by_league(tmp_path):
+    _write_cfg(tmp_path, "111")
+    d = str(tmp_path)
+    assert list(playoffs.config_paths(d)) == ["2025"]              # unfiltered
+    assert list(playoffs.config_paths(d, ["111"])) == ["2025"]     # its own league
+    # Another league's 2025 is NOT this bracket: it must not be handed over.
+    assert playoffs.config_paths(d, ["222"]) == {}
+    assert playoffs.load_playoffs(d, league_ids=["222"]) == {}
+
+
+def test_apply_playoffs_does_not_stamp_another_leagues_champion(tmp_path):
+    _write_cfg(tmp_path, "111")
+
+    class S:                       # minimal stand-in for a Season
+        def __init__(self, lid):
+            self.season, self.league_id = "2025", lid
+            self.standings = pd.DataFrame({"user_name": ["Dee", "Al"],
+                                           "champion": [False, False]})
+
+    same = {"2025": S("111")}
+    playoffs.apply_playoffs(same, str(tmp_path))
+    assert same["2025"].standings["champion"].tolist() == [True, False]
+
+    other = {"2025": S("222")}     # different league, same season number
+    playoffs.apply_playoffs(other, str(tmp_path))
+    assert other["2025"].standings["champion"].tolist() == [False, False]

@@ -14,24 +14,24 @@
     <div class="brand">
       <span class="mark"></span>
       <div>
-        <h1>{{ league_name }}</h1>
+        <h1 id="league-name">{{ league_name }}</h1>
         <p class="sub">Sleeper league analytics · metrics computed live</p>
       </div>
     </div>
 
-    <form class="controls" hx-get="/tab/overview" hx-target="#panel" hx-swap="innerHTML"
-          hx-trigger="change from:#season, submit">
+    <!-- Switching league must also refresh the season list and the title, not
+         just the panel: /load swaps those back out-of-band. Changing only the
+         season is a plain tab reload -- the shell is already correct. -->
+    <form class="controls" hx-get="/load" hx-target="#panel" hx-swap="innerHTML"
+          hx-trigger="change from:#season, submit"
+          hx-on="htmx:afterRequest: document.querySelectorAll('.tabs button').forEach((b,i)=>b.classList.toggle('active', i===0))">
       <label>
         <span>League ID</span>
         <input type="text" name="league" id="league" value="{{ league }}">
       </label>
       <label>
         <span>Season</span>
-        <select name="season" id="season">
-          {% for s in seasons %}
-          <option value="{{ s }}" {% if s == season %}selected{% endif %}>{{ s }}</option>
-          {% endfor %}
-        </select>
+        {% include "_seasons.html" %}
       </label>
       <button type="submit">Load</button>
     </form>
