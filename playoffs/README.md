@@ -31,6 +31,15 @@ mismatches**, and the per-player scoring matched Sleeper's own numbers on
 The chart is **snapshotted into the config**, so a finished bracket keeps scoring
 the same even if league settings change later.
 
+Sleeper keys the chart by internal stat code (`pass_yd`, `bonus_rec_te`,
+`pts_allow_7_13`), which is fine for arithmetic and unreadable to a human. Both
+dashboards therefore render it through `sl_scoring_readable()` /
+`sm.scoring_readable()`, which groups the rules and states each one in plain
+English — `pass_yd: 0.04` becomes **Passing yards — 1 point per 25 yards** — while
+still showing the raw code beside it. Unknown keys are never dropped; they land in
+an "Other" group under their raw name, so a new Sleeper stat shows up rather than
+silently vanishing from the chart the season was decided by.
+
 ## Workflow
 
 ```bash

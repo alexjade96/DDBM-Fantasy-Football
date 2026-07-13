@@ -96,7 +96,8 @@ ui <- page_sidebar(
              markdown("<small>Playoff-only metrics: appearances, playoff W-L, titles, finals reached, and points per playoff game.</small>"),
              tableOutput("pl_career"))),
       card(card_header("League point-calculation chart (stored with the bracket)"),
-           tableOutput("pl_scoring"))),
+           markdown("<small>Every playoff score above is the sum of each starter&rsquo;s stats times these weights &mdash; which is what lets a hand-submitted lineup be scored at all. Sleeper&rsquo;s raw stat code is shown beside each rule.</small>"),
+           uiOutput("pl_scoring"))),
     nav_panel("Career (all seasons)", icon = icon("trophy"),
       card(card_header("Career insights"), uiOutput("career_summary")),
       layout_columns(card(full_screen = TRUE, plotOutput("p_career", height = 470)),
@@ -257,21 +258,31 @@ server <- function(input, output, session) {
     sm$sl_plot_playoff_matchup(playoff(), input$pl_matchup)
   }, res = 96)
 
-  output$pl_scoring <- renderTable({
+  # The chart is ~48 rules keyed by Sleeper's stat codes. Translate them
+  # (sl_scoring_readable) and lay them out grouped -- a manager reading why they
+  # lost should not have to know what `bonus_rec_te` means.
+  output$pl_scoring <- renderUI({
     p <- playoff(); req(p)
     sc <- p$config$scoring_settings
     validate(need(length(sc), "This bracket has no stored scoring chart."))
-    d <- data.frame(stat = names(sc), weight = as.numeric(unlist(sc)))
-    d <- d[order(d$stat), ]
-    # Wide, compact layout: the chart is ~48 rules.
-    n <- ceiling(nrow(d) / 4)
-    cols <- lapply(seq_len(4), function(i) {
-      idx <- ((i - 1) * n + 1):min(i * n, nrow(d))
-      r <- d[idx, ]; r[is.na(r$stat), ] <- ""
-      setNames(r, paste0(c("stat", "weight"), i))
+    d <- sm$sl_scoring_readable(sc)
+    panels <- lapply(unique(d$group), function(g) {
+      rows <- d[d$group == g, ]
+      tags$div(
+        class = "mb-3",
+        tags$h6(g, class = "text-muted text-uppercase small fw-bold"),
+        tags$table(
+          class = "table table-sm mb-0",
+          tags$tbody(lapply(seq_len(nrow(rows)), function(i) tags$tr(
+            tags$td(rows$label[i]),
+            tags$td(tags$code(rows$stat[i]), class = "text-muted small"),
+            tags$td(rows$rule[i], class = "text-end fw-semibold text-nowrap")
+          )))
+        )
+      )
     })
-    do.call(cbind, lapply(cols, function(x) { x[seq_len(n), ] }))
-  }, digits = 2, spacing = "xs", na = "")
+    do.call(layout_column_wrap, c(list(width = 1/2, heights_equal = "row"), panels))
+  })
 
   # Transaction charts: guard seasons with no trades / pickups.
   output$p_trade <- renderPlot({

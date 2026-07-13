@@ -91,6 +91,14 @@ out <- list(
                           "flipped"), c("season", "matchup_id")),
   playoff_stats_all = recs(sl_playoff_stats(pos, "all"),
                            c("user_name", "games", "wins", "losses"), "user_name"),
+  # Exported in engine order, NOT re-sorted: the grouping and the reading order
+  # within a group are part of what the dashboards render, so parity should catch
+  # a divergence in either.
+  scoring_readable = {
+    p <- pos[[latest$season]]
+    sc <- if (is.null(p)) list() else p$config$scoring_settings
+    sl_scoring_readable(sc)
+  },
   summary_season = sl_summary_season(latest),
   summary_career = sl_summary_career(ss),
   summary_week = sl_summary_week(latest)

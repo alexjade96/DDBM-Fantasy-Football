@@ -75,6 +75,17 @@ def _md(text: str):
 
 tpl.env.filters["md"] = _md
 
+
+def _grouped_rules(settings: dict) -> list[tuple[str, list[dict]]]:
+    """The point-calculation chart as [(group, [rule, ...])], in plain English.
+
+    Sleeper keys the chart by stat code (`bonus_rec_te`); a manager reading why
+    they lost should not have to know what that means. statnames does the
+    translating -- shared with the R dashboard and parity-checked against it.
+    """
+    d = sm.scoring_readable(settings)
+    return [(g, rows.to_dict("records")) for g, rows in d.groupby("group", sort=False)]
+
 TABS = [
     ("overview", "Season overview"), ("weekly", "Weekly trends"),
     ("coaching", "Coaching & scoring"), ("roster", "Roster & positions"),
@@ -213,7 +224,8 @@ def tab(name: str, request: Request, league: str = DEFAULT_LEAGUE,
             "matchup": matchup or (played["matchup_id"].iloc[-1] if len(played) else None),
             "summary": sm.playoff_summary(p).to_dict("records"),
             "stats": sm.playoff_stats(d["playoffs"], scope).to_dict("records"),
-            "rules": sorted(p.config.get("scoring_settings", {}).items()),
+            "rules": _grouped_rules(p.config.get("scoring_settings", {})),
+            "n_rules": len(p.config.get("scoring_settings", {})),
         })
         return tpl.TemplateResponse(request, "tab_playoffs.html", ctx)
     else:

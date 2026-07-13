@@ -111,6 +111,13 @@ def main():
         "playoff_stats_all": recs(
             sm.playoff_stats(pos, "all").sort_values("user_name"),
             ["user_name", "games", "wins", "losses"]),
+        # Exported in engine order, NOT re-sorted: the grouping and the reading
+        # order within a group are part of what the dashboards render, so parity
+        # should catch a divergence in either.
+        "scoring_readable": sm.scoring_readable(
+            (pos[latest.season].config.get("scoring_settings", {})
+             if latest.season in pos else {})
+        ).round(4).to_dict("records"),
         "summary_season": summaries.summary_season(latest),
         "summary_career": summaries.summary_career(ss),
         "summary_week": weekly.summary_week(latest),

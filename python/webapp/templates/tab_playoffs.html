@@ -131,12 +131,22 @@
 </div>
 
 <details class="card">
-  <summary>League point-calculation chart ({{ rules | length }} rules, stored with the bracket)</summary>
-  <p class="hint">Every playoff score above is <code>Σ(stat × weight)</code> from these rules —
-     which is what lets a hand-submitted lineup be scored at all.</p>
-  <div class="rules">
-    {% for k, v in rules %}
-    <div class="rule"><code>{{ k }}</code><span class="n">{{ v }}</span></div>
+  <summary>League point-calculation chart ({{ n_rules }} rules, stored with the bracket)</summary>
+  <p class="hint">Every playoff score above is each starter&rsquo;s stats multiplied by these
+     weights and added up — which is what lets a hand-submitted lineup be scored at all.
+     Sleeper&rsquo;s raw stat code is shown beside each rule.</p>
+  <div class="rulegroups">
+    {% for group, items in rules %}
+    <section class="rulegroup">
+      <h4>{{ group }}</h4>
+      {% for r in items %}
+      <div class="rule">
+        <span class="label">{{ r.label }}</span>
+        <code>{{ r.stat }}</code>
+        <span class="n">{{ r.rule }}</span>
+      </div>
+      {% endfor %}
+    </section>
     {% endfor %}
   </div>
 </details>
