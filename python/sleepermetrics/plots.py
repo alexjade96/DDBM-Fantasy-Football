@@ -508,10 +508,10 @@ def plot_playoff_bracket(p):
     return fig
 
 
-def plot_playoff_stats(playoffs: dict):
+def plot_playoff_stats(playoffs: dict, scope: str = "title"):
     """Career playoff win %, gold for managers with a title."""
     from .playoffs import playoff_stats
-    d = playoff_stats(playoffs)
+    d = playoff_stats(playoffs, scope)
     d = d[d["games"] > 0].sort_values("win_pct").reset_index(drop=True)
     fig, ax = plt.subplots(figsize=(10, 6))
     ax.barh(range(len(d)), d["win_pct"], height=0.72,
@@ -523,9 +523,59 @@ def plot_playoff_stats(playoffs: dict):
         ax.text(r["win_pct"] + 1, i, f"{int(r['wins'])}-{int(r['losses'])}  "
                 f"{r['win_pct']:.0f}%  {stars}", va="center", fontsize=8.5, color="#333333")
     ax.set_xlim(0, 100)
+    sub = "championship path only" if scope == "title" else f"scope: {scope}"
     return _finish(fig, ax, "Career Playoff Record",
-                   f"Win % across {len(playoffs)} postseasons  ·  gold = has won a title  "
-                   "·  ★ per title", "Playoff Win %")
+                   f"Win % across {len(playoffs)} postseasons  ·  {sub}  ·  "
+                   "gold = has won a title  ·  ★ per title", "Playoff Win %")
+
+
+def plot_playoff_players(playoffs: dict, n: int = 15, scope: str = "title"):
+    """Career playoff scoring leaders -- who actually produces in January."""
+    from .playoffs import playoff_players
+    d = playoff_players(playoffs, scope).head(n).iloc[::-1].reset_index(drop=True)
+    fig, ax = plt.subplots(figsize=(10, 6.4))
+    ax.barh(range(len(d)), d["points"], height=0.72,
+            color=[POS_COLORS.get(str(p), "#999999") for p in d["position"]])
+    ax.set_yticks(range(len(d)))
+    ax.set_yticklabels(d["player_name"])
+    xmax = float(d["points"].max())
+    for i, r in d.iterrows():
+        rings = "★" * int(r["rings"])
+        ax.text(r["points"] + xmax * 0.01, i,
+                f"{r['points']:.0f}  ({r['ppg']:.1f} ppg)  {rings}",
+                va="center", fontsize=8.5, color="#333333")
+    ax.set_xlim(0, xmax * 1.34)
+    sub = "championship path only" if scope == "title" else f"scope: {scope}"
+    seen = [p for p in POSITIONS if p in set(d["position"])]
+    handles = [plt.Rectangle((0, 0), 1, 1, color=POS_COLORS[p]) for p in seen]
+    ax.legend(handles, seen, loc="lower right", frameon=False, fontsize=8, ncol=3)
+    return _finish(fig, ax, "Best Playoff Players (All Time)",
+                   f"Total points scored in the postseason  ·  {sub}  ·  ★ per title",
+                   "Playoff Points")
+
+
+def plot_clutch(seasons: dict, playoffs: dict, scope: str = "title"):
+    """Playoff PPG vs regular-season PPG -- who raises their game."""
+    from .playoffs import clutch as _clutch
+    d = _clutch(seasons, playoffs, scope).sort_values("clutch").reset_index(drop=True)
+    fig, ax = plt.subplots(figsize=(10, 6))
+    cols = ["#2ca02c" if v > 0 else "#d62728" for v in d["clutch"]]
+    for i, r in d.iterrows():
+        ax.plot([r["reg_ppg"], r["po_ppg"]], [i, i], color=cols[i], lw=2.5,
+                alpha=0.5, zorder=1)
+    ax.scatter(d["reg_ppg"], range(len(d)), color="#a6a6a6", s=65, zorder=2,
+               label="regular season")
+    ax.scatter(d["po_ppg"], range(len(d)), color=cols, s=95, zorder=3, label="playoffs")
+    for i, r in d.iterrows():
+        off, ha = (2, "left") if r["clutch"] > 0 else (-2, "right")
+        ax.text(r["po_ppg"] + off, i, f"{r['clutch']:+.1f}", va="center", ha=ha,
+                fontsize=8, fontweight="bold", color=cols[i])
+    ax.set_yticks(range(len(d)))
+    ax.set_yticklabels(d["user_name"])
+    ax.legend(loc="lower right", frameon=False, fontsize=8)
+    return _finish(fig, ax, "Clutch: Playoff vs Regular-Season Scoring",
+                   "Grey dot = regular-season PPG; coloured = playoff PPG",
+                   "Points per Game")
 
 
 def plot_playoff_matchup(p, matchup_id):

@@ -134,7 +134,7 @@ SEASON_CHARTS = {
 
 @app.get("/chart/{name}")
 def chart(name: str, league: str = DEFAULT_LEAGUE, season: str | None = None,
-          matchup: str | None = None, _: str | None = None):
+          matchup: str | None = None, scope: str = "title", _: str | None = None):
     d, s, key = pick(league, season)
     if name in SEASON_CHARTS:
         return png(SEASON_CHARTS[name](s))
@@ -143,7 +143,11 @@ def chart(name: str, league: str = DEFAULT_LEAGUE, season: str | None = None,
     if name == "trajectory":
         return png(plots.plot_trajectory(d["seasons"]))
     if name == "playoff_stats":
-        return png(plots.plot_playoff_stats(d["playoffs"]))
+        return png(plots.plot_playoff_stats(d["playoffs"], scope))
+    if name == "playoff_players":
+        return png(plots.plot_playoff_players(d["playoffs"], scope=scope))
+    if name == "clutch":
+        return png(plots.plot_clutch(d["seasons"], d["playoffs"], scope))
     if name == "bracket":
         p = d["playoffs"].get(key)
         return png(plots.plot_playoff_bracket(p))
@@ -167,11 +171,12 @@ def index(request: Request, league: str = DEFAULT_LEAGUE):
 
 @app.get("/tab/{name}", response_class=HTMLResponse)
 def tab(name: str, request: Request, league: str = DEFAULT_LEAGUE,
-        season: str | None = None, refresh: int = 0):
+        season: str | None = None, refresh: int = 0, scope: str = "title",
+        matchup: str | None = None):
     if refresh:
         scoring.clear_stats_cache()      # a live week must not serve stale points
     d, s, key = pick(league, season)
-    ctx = {"league": league, "season": key,
+    ctx = {"league": league, "season": key, "scope": scope,
            "bust": int(time.time()) if refresh else 0}
 
     if name == "overview":
@@ -205,9 +210,9 @@ def tab(name: str, request: Request, league: str = DEFAULT_LEAGUE,
             "top": (f"{top['points']:.1f} · {top['team']}" if top is not None else "—"),
             "blow": (f"+{blow['margin']:.1f} · {blow['team']}" if blow is not None else "—"),
             "matchups": sorted(played["matchup_id"].unique()),
-            "matchup": played["matchup_id"].iloc[-1] if len(played) else None,
+            "matchup": matchup or (played["matchup_id"].iloc[-1] if len(played) else None),
             "summary": sm.playoff_summary(p).to_dict("records"),
-            "stats": sm.playoff_stats(d["playoffs"]).to_dict("records"),
+            "stats": sm.playoff_stats(d["playoffs"], scope).to_dict("records"),
             "rules": sorted(p.config.get("scoring_settings", {}).items()),
         })
         return tpl.TemplateResponse(request, "tab_playoffs.html", ctx)

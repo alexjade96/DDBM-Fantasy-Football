@@ -24,6 +24,17 @@
 
 <div class="rowhead">
   <h2>Bracket</h2>
+  <form class="controls inline" hx-get="/tab/playoffs" hx-target="#panel"
+        hx-swap="innerHTML" hx-include="#league, #season" hx-trigger="change">
+    <label>
+      <span>Count which games?</span>
+      <select name="scope">
+        <option value="title" {% if scope == 'title' %}selected{% endif %}>Championship path only</option>
+        <option value="all" {% if scope == 'all' %}selected{% endif %}>Include consolation</option>
+        <option value="consolation" {% if scope == 'consolation' %}selected{% endif %}>Consolation only</option>
+      </select>
+    </label>
+  </form>
   <button class="ghost"
           hx-get="/tab/playoffs?refresh=1" hx-target="#panel" hx-swap="innerHTML"
           hx-include="#league, #season">
@@ -38,6 +49,7 @@
 <h2>Matchup detail</h2>
 <form class="controls inline" hx-get="/tab/playoffs" hx-target="#panel"
       hx-swap="innerHTML" hx-include="#league, #season" hx-trigger="change">
+  <input type="hidden" name="scope" value="{{ scope }}">
   <label>
     <span>Matchup</span>
     <select name="matchup">
@@ -55,12 +67,23 @@
 <h2>Playoff analytics</h2>
 <div class="grid two">
   <figure class="card chart">
-    <img src="/chart/playoff_stats?league={{ league }}&season={{ season }}&_={{ bust }}"
+    <img src="/chart/playoff_players?league={{ league }}&season={{ season }}&scope={{ scope }}&_={{ bust }}"
+         alt="Best playoff players" loading="lazy">
+  </figure>
+  <figure class="card chart">
+    <img src="/chart/clutch?league={{ league }}&season={{ season }}&scope={{ scope }}&_={{ bust }}"
+         alt="Clutch index" loading="lazy">
+  </figure>
+</div>
+<div class="grid two">
+  <figure class="card chart">
+    <img src="/chart/playoff_stats?league={{ league }}&season={{ season }}&scope={{ scope }}&_={{ bust }}"
          alt="Career playoff record" loading="lazy">
   </figure>
   <div class="card">
     <h3>Postseason résumé</h3>
-    <p class="hint">Playoff-only metrics across every stored bracket.</p>
+    <p class="hint">Playoff-only metrics across every stored bracket
+       (<strong>{{ scope }}</strong> games).</p>
     <div class="tablewrap">
       <table>
         <thead><tr>
@@ -74,9 +97,9 @@
             <td class="n">{{ r.appearances }}</td>
             <td class="n">{{ r.wins }}</td>
             <td class="n">{{ r.losses }}</td>
-            <td class="n">{{ r.win_pct }}</td>
+            <td class="n">{{ r.win_pct | round(1) }}</td>
             <td class="n">{% if r.titles %}<span class="chip">{{ r.titles }}</span>{% else %}—{% endif %}</td>
-            <td class="n">{{ r.ppg }}</td>
+            <td class="n">{{ r.ppg | round(1) }}</td>
           </tr>
         {% endfor %}
         </tbody>
@@ -99,7 +122,7 @@
         <td class="n">{{ r.games }}</td>
         <td class="n">{{ r.wins }}</td>
         <td class="n">{{ r.losses }}</td>
-        <td class="n">{{ r.points }}</td>
+        <td class="n">{{ r.points | round(1) }}</td>
         <td>{{ r.eliminated_in or "— champion" }}</td>
       </tr>
     {% endfor %}

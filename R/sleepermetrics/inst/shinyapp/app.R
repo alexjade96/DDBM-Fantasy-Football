@@ -70,6 +70,11 @@ ui <- page_sidebar(
           if (length(playoff_cfgs))
             selectInput("pl_cfg", "Bracket config", choices = playoff_cfgs)
           else markdown("No bracket configs found. Launch with `sl_dashboard(playoffs = \"playoffs\")`."),
+          radioButtons("pl_scope", "Count which games?",
+                       choices = c("Championship path only" = "title",
+                                   "Include consolation" = "all",
+                                   "Consolation only" = "consolation"),
+                       selected = "title"),
           actionButton("pl_refresh", "Score / refresh", icon = icon("rotate"),
                        class = "btn-primary"),
           markdown("<small>Only **roster inputs** are needed: each side's submitted starters. Scores are recomputed live from current NFL stats under the league's own scoring chart.</small>"),
@@ -77,6 +82,12 @@ ui <- page_sidebar(
       card(full_screen = TRUE, card_header("Matchup detail"),
            selectInput("pl_matchup", "Matchup", choices = NULL),
            plotOutput("p_matchup", height = 470)),
+      layout_columns(
+        col_widths = c(6, 6),
+        card(full_screen = TRUE, card_header("Best playoff players (all time)"),
+             plotOutput("p_plplayers", height = 460)),
+        card(full_screen = TRUE, card_header("Clutch: playoff vs regular season"),
+             plotOutput("p_clutch", height = 460))),
       layout_columns(
         col_widths = c(7, 5),
         card(full_screen = TRUE, card_header("Career playoff record (all seasons)"),
@@ -194,6 +205,8 @@ server <- function(input, output, session) {
     req(playoff()); sm$sl_playoff_summary(playoff())
   }, digits = 1, spacing = "xs")
 
+  scope <- reactive(input$pl_scope %||% "title")
+
   # Stat indicators for the selected season's bracket.
   pl_played <- reactive({
     p <- playoff(); req(p)
@@ -222,12 +235,20 @@ server <- function(input, output, session) {
   })
   output$p_plstats <- renderPlot({
     validate(need(length(all_playoffs()) > 0, "No bracket configs found."))
-    sm$sl_plot_playoff_stats(all_playoffs())
+    sm$sl_plot_playoff_stats(all_playoffs(), scope = scope())
+  }, res = 96)
+  output$p_plplayers <- renderPlot({
+    req(all_playoffs()); sm$sl_plot_playoff_players(all_playoffs(), scope = scope())
+  }, res = 96)
+  output$p_clutch <- renderPlot({
+    req(all_playoffs(), seasons())
+    sm$sl_plot_clutch(seasons(), all_playoffs(), scope = scope())
   }, res = 96)
   output$pl_career <- renderTable({
     req(all_playoffs())
-    sm$sl_playoff_stats(all_playoffs())[, c("user_name", "appearances", "games",
-      "wins", "losses", "win_pct", "titles", "finals", "ppg")]
+    d <- sm$sl_playoff_stats(all_playoffs(), scope = scope())
+    d[, c("user_name", "appearances", "games", "wins", "losses", "win_pct",
+          "titles", "finals", "ppg")]
   }, digits = 1, spacing = "xs")
 
   output$p_matchup <- renderPlot({

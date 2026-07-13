@@ -78,6 +78,48 @@ sl_check_lineup <- function(player_ids, roster_positions, pinfo = NULL) {
   probs
 }
 
+# Split a bracket into the championship path and everything else.
+#
+# Sleeper's winners_bracket stores 3rd-place and placement games alongside the
+# real thing, so counting every game as a "playoff win" inflates records. A game
+# belongs to the title path only if BOTH teams are still alive going into it;
+# once you lose a title-path game you are out, and anything you play afterwards
+# is consolation. Rounds are walked in order and eliminations are applied at the
+# END of a round, so games within a round cannot affect each other.
+.sl_tag_bracket <- function(results, round_order) {
+  results$bracket <- NA_character_
+  elim <- character(0)
+  for (rid in round_order) {
+    fresh <- character(0)
+    for (m in unique(results$matchup_id[results$round_id == rid])) {
+      i <- which(results$matchup_id == m)
+      tms <- as.character(stats::na.omit(results$team[i]))
+      title <- !any(tms %in% elim)
+      results$bracket[i] <- if (title) "title" else "consolation"
+      if (title) {
+        lost <- results$team[i][results$result[i] == "L"]
+        fresh <- c(fresh, as.character(stats::na.omit(lost)))
+      }
+    }
+    elim <- c(elim, fresh)
+  }
+  results
+}
+
+#' Scope a playoff frame to part of the bracket
+#'
+#' `"title"` (default) keeps only the championship path; `"consolation"` keeps
+#' the placement games a team plays after being knocked out; `"all"` keeps both.
+#'
+#' @param d A frame with a `bracket` column.
+#' @param scope One of `"title"`, `"all"`, `"consolation"`.
+#' @return The filtered frame.
+#' @export
+sl_scope <- function(d, scope = c("title", "all", "consolation")) {
+  scope <- match.arg(scope)
+  if (scope == "all") d else dplyr::filter(d, bracket == scope)
+}
+
 # Score one side of a matchup: total points + the per-player breakdown.
 .sl_score_side <- function(side, season, weeks, rules, pinfo, ctx) {
   starters <- .sl_resolve_players(side$starters, pinfo)
@@ -195,8 +237,13 @@ sl_playoff <- function(config, rules = NULL, validate = TRUE) {
     }
   }
 
-  results <- dplyr::bind_rows(res)
+  results <- .sl_tag_bracket(dplyr::bind_rows(res),
+                             vapply(config$rounds, function(r) r$id, character(1)))
   players <- dplyr::bind_rows(det)
+  if (nrow(players)) {
+    players <- players %>%
+      dplyr::left_join(dplyr::distinct(results, matchup_id, bracket), by = "matchup_id")
+  }
   # The championship must be named: a final round can also hold consolation and
   # placement games, so "last matchup" is not the title game.
   final_id <- config$final
@@ -295,14 +342,17 @@ sl_load_playoffs <- function(playoff_dir = "playoffs") {
 #'
 #' @param playoffs A named list of `sleeper_playoff` objects (see
 #'   [sl_load_playoffs()]).
+#' @param scope See [sl_scope()]. Defaults to `"title"`, so 3rd-place and
+#'   placement games do not get counted as playoff wins.
 #' @return Tibble: `user_name`, `appearances`, `games`, `wins`, `losses`,
 #'   `points`, `titles`, `finals`, `win_pct`, `ppg`.
 #' @export
-sl_playoff_stats <- function(playoffs) {
+sl_playoff_stats <- function(playoffs, scope = "title") {
   rows <- dplyr::bind_rows(lapply(names(playoffs), function(s) {
     p <- playoffs[[s]]
     final_id <- p$config$final
-    played <- p$results %>% dplyr::filter(result %in% c("W", "L", "T"))
+    played <- sl_scope(p$results, scope) %>%
+      dplyr::filter(result %in% c("W", "L", "T"))
     p$results %>% dplyr::group_by(team) %>%
       dplyr::summarise(in_final = if (is.null(final_id)) FALSE
                                   else any(matchup_id == final_id), .groups = "drop") %>%
@@ -323,11 +373,358 @@ sl_playoff_stats <- function(playoffs) {
     dplyr::group_by(user_name = team) %>%
     dplyr::summarise(appearances = dplyr::n_distinct(season), games = sum(games),
                      wins = sum(wins), losses = sum(losses),
-                     points = round(sum(points), 2), titles = sum(title),
+                     points = sum(points), titles = sum(title),
                      finals = sum(in_final), .groups = "drop") %>%
-    dplyr::mutate(win_pct = round(wins / pmax(games, 1) * 100, 1),
-                  ppg = round(points / pmax(games, 1), 1)) %>%
+    dplyr::mutate(win_pct = wins / pmax(games, 1) * 100,
+                  ppg = points / pmax(games, 1)) %>%
     dplyr::arrange(dplyr::desc(titles), dplyr::desc(win_pct), dplyr::desc(ppg))
+}
+
+# --- Playoff analytics ----------------------------------------------------
+
+#' Every playoff player-week, across all stored brackets
+#'
+#' The raw grain the player metrics are built from: one row per started player
+#' per week, tagged with season, round and `bracket` (title / consolation).
+#'
+#' @param playoffs Named list of `sleeper_playoff` objects.
+#' @param scope See [sl_scope()].
+#' @return Tibble: `season`, `round`, `bracket`, `matchup_id`, `team`,
+#'   `player_name`, `position`, `week`, `points`.
+#' @export
+sl_playoff_performances <- function(playoffs, scope = "title") {
+  d <- dplyr::bind_rows(lapply(names(playoffs), function(s) {
+    p <- playoffs[[s]]
+    if (!nrow(p$players)) return(NULL)
+    p$players %>%
+      dplyr::left_join(dplyr::distinct(p$results, matchup_id, round), by = "matchup_id") %>%
+      dplyr::mutate(season = s, champion = team == (p$champion %||% ""))
+  }))
+  if (!nrow(d)) return(d)
+  sl_scope(d, scope) %>%
+    dplyr::select(season, round, bracket, matchup_id, team, player_name, position,
+                  week, points, champion) %>%
+    dplyr::arrange(dplyr::desc(points))
+}
+
+#' Career playoff scoring leaders (players)
+#'
+#' Who actually produces in January. Aggregates every started player-week across
+#' all stored brackets.
+#'
+#' @param playoffs Named list of `sleeper_playoff` objects.
+#' @param scope See [sl_scope()].
+#' @return Tibble: `player_name`, `position`, `seasons`, `games`, `points`,
+#'   `ppg`, `best`, `rings` (games played on a roster that won the title).
+#' @export
+sl_playoff_players <- function(playoffs, scope = "title") {
+  d <- sl_playoff_performances(playoffs, scope)
+  if (!nrow(d)) return(d)
+  d %>%
+    dplyr::group_by(player_name, position) %>%
+    # NOTE: dplyr evaluates summarise() expressions in order, so `best` and `ppg`
+    # must be computed BEFORE `points` is redefined -- otherwise they read the
+    # summed column and `best` silently becomes the season total.
+    dplyr::summarise(seasons = dplyr::n_distinct(season), games = dplyr::n(),
+                     best = max(points),
+                     ppg = sum(points) / dplyr::n(),
+                     points = sum(points),
+                     # rings = SEASONS won while on the title roster, not champion
+                     # player-weeks (weeks gave players more rings than seasons).
+                     rings = dplyr::n_distinct(season[champion]),
+                     .groups = "drop") %>%
+    dplyr::arrange(dplyr::desc(points))
+}
+
+#' The playoff All-Star team
+#'
+#' Top career playoff scorer at each position.
+#'
+#' @param playoffs Named list of `sleeper_playoff` objects.
+#' @param scope See [sl_scope()].
+#' @return Tibble, one row per position.
+#' @export
+sl_playoff_all_stars <- function(playoffs, scope = "title") {
+  d <- sl_playoff_players(playoffs, scope)
+  if (!nrow(d)) return(d)
+  d %>% dplyr::filter(position %in% .sl_positions) %>%
+    dplyr::group_by(position) %>%
+    dplyr::slice_max(points, n = 1, with_ties = FALSE) %>%
+    dplyr::ungroup() %>%
+    dplyr::mutate(position = factor(position, levels = .sl_positions)) %>%
+    dplyr::arrange(position)
+}
+
+#' Best single playoff performances
+#' @param playoffs Named list of `sleeper_playoff` objects.
+#' @param n How many to return.
+#' @param scope See [sl_scope()].
+#' @return Tibble of the biggest individual player-weeks.
+#' @export
+sl_playoff_best_games <- function(playoffs, n = 15, scope = "title") {
+  d <- sl_playoff_performances(playoffs, scope)
+  if (!nrow(d)) return(d)
+  d %>% dplyr::slice_max(points, n = n, with_ties = FALSE)
+}
+
+#' Worst playoff performances by a started player
+#' @param playoffs Named list of `sleeper_playoff` objects.
+#' @param n How many to return.
+#' @param scope See [sl_scope()].
+#' @return Tibble of the biggest playoff busts (started, and did nothing).
+#' @export
+sl_playoff_busts <- function(playoffs, n = 15, scope = "title") {
+  d <- sl_playoff_performances(playoffs, scope)
+  if (!nrow(d)) return(d)
+  d %>% dplyr::slice_min(points, n = n, with_ties = FALSE)
+}
+
+#' Title-game performers
+#'
+#' Who shows up when the trophy is on the line: every player-week in a final.
+#'
+#' @param playoffs Named list of `sleeper_playoff` objects.
+#' @return Tibble of finals performances, best first.
+#' @export
+sl_playoff_finals <- function(playoffs) {
+  d <- dplyr::bind_rows(lapply(names(playoffs), function(s) {
+    p <- playoffs[[s]]
+    fid <- p$config$final
+    if (is.null(fid) || !nrow(p$players)) return(NULL)
+    p$players %>% dplyr::filter(matchup_id == fid) %>%
+      dplyr::mutate(season = s, won = team == (p$champion %||% ""))
+  }))
+  if (!nrow(d)) return(d)
+  d %>% dplyr::select(season, team, won, player_name, position, week, points) %>%
+    dplyr::arrange(dplyr::desc(points))
+}
+
+#' Carry factor: how much of a playoff run one player accounted for
+#' @param playoffs Named list of `sleeper_playoff` objects.
+#' @param scope See [sl_scope()].
+#' @return Tibble: `season`, `team`, `points`, `top_player`, `top_points`,
+#'   `share` (% of the team's playoff points from its best player).
+#' @export
+sl_playoff_carry <- function(playoffs, scope = "title") {
+  d <- sl_playoff_performances(playoffs, scope)
+  if (!nrow(d)) return(d)
+  by_player <- d %>% dplyr::group_by(season, team, player_name) %>%
+    dplyr::summarise(pp = sum(points), .groups = "drop")
+  tot <- by_player %>% dplyr::group_by(season, team) %>%
+    dplyr::summarise(points = sum(pp), .groups = "drop")
+  by_player %>% dplyr::group_by(season, team) %>%
+    dplyr::slice_max(pp, n = 1, with_ties = FALSE) %>% dplyr::ungroup() %>%
+    dplyr::left_join(tot, by = c("season", "team")) %>%
+    dplyr::transmute(season, team, points = points,
+                     top_player = player_name, top_points = pp,
+                     share = pp / points * 100) %>%
+    dplyr::arrange(dplyr::desc(share))
+}
+
+#' Clutch index: playoff scoring vs regular-season scoring
+#'
+#' Regular-season averages say nothing about January. Positive = raises their
+#' game when it matters.
+#'
+#' @param seasons Named list of [sleeper_season] objects.
+#' @param playoffs Named list of `sleeper_playoff` objects.
+#' @param scope See [sl_scope()].
+#' @return Tibble: `user_name`, `reg_ppg`, `po_ppg`, `clutch`, `games`.
+#' @export
+sl_clutch <- function(seasons, playoffs, scope = "title") {
+  po <- dplyr::bind_rows(lapply(names(playoffs), function(s) {
+    r <- sl_scope(playoffs[[s]]$results, scope)
+    r %>% dplyr::filter(result %in% c("W", "L", "T")) %>% dplyr::mutate(season = s)
+  }))
+  if (!nrow(po)) return(po)
+  reg <- dplyr::bind_rows(lapply(seasons, function(s) s$team_wk)) %>%
+    dplyr::group_by(user_name) %>%
+    dplyr::summarise(reg_ppg = mean(points), .groups = "drop")
+  po %>% dplyr::group_by(user_name = team) %>%
+    dplyr::summarise(games = dplyr::n(), po_ppg = mean(points),
+                     .groups = "drop") %>%
+    dplyr::left_join(reg, by = "user_name") %>%
+    dplyr::mutate(clutch = po_ppg - reg_ppg) %>%
+    dplyr::select(user_name, reg_ppg, po_ppg, clutch, games) %>%
+    dplyr::arrange(dplyr::desc(clutch))
+}
+
+#' Playoff margins per manager
+#' @param playoffs Named list of `sleeper_playoff` objects.
+#' @param scope See [sl_scope()].
+#' @return Tibble: `user_name`, `avg_margin`, `best_win`, `worst_loss`, `games`.
+#' @export
+sl_playoff_margins <- function(playoffs, scope = "title") {
+  d <- dplyr::bind_rows(lapply(playoffs, function(p) sl_scope(p$results, scope))) %>%
+    dplyr::filter(result %in% c("W", "L", "T"))
+  if (!nrow(d)) return(d)
+  d %>% dplyr::group_by(user_name = team) %>%
+    dplyr::summarise(games = dplyr::n(), avg_margin = mean(margin), best_win = max(margin),
+                     worst_loss = min(margin), .groups = "drop") %>%
+    dplyr::arrange(dplyr::desc(avg_margin))
+}
+
+#' Path difficulty: how hard were the teams you had to beat
+#' @param playoffs Named list of `sleeper_playoff` objects.
+#' @param scope See [sl_scope()].
+#' @return Tibble: `user_name`, `games`, `opp_ppg` (mean points the opponents
+#'   scored against them), `opp_total`.
+#' @export
+sl_playoff_path <- function(playoffs, scope = "title") {
+  d <- dplyr::bind_rows(lapply(playoffs, function(p) sl_scope(p$results, scope))) %>%
+    dplyr::filter(result %in% c("W", "L", "T"))
+  if (!nrow(d)) return(d)
+  d %>% dplyr::group_by(user_name = team) %>%
+    dplyr::summarise(games = dplyr::n(), opp_ppg = mean(opp_points),
+                     opp_total = sum(opp_points), .groups = "drop") %>%
+    dplyr::arrange(dplyr::desc(opp_ppg))
+}
+
+#' Playoff all-play: win rate against the whole playoff field each week
+#'
+#' Separates genuinely dominant runs from soft brackets -- your record if you had
+#' played every other playoff team that week instead of just your opponent.
+#'
+#' @param playoffs Named list of `sleeper_playoff` objects.
+#' @param scope See [sl_scope()].
+#' @return Tibble: `user_name`, `games`, `allplay_w`, `allplay_l`, `allplay_pct`.
+#' @export
+sl_playoff_allplay <- function(playoffs, scope = "title") {
+  d <- dplyr::bind_rows(lapply(names(playoffs), function(s) {
+    sl_scope(playoffs[[s]]$results, scope) %>%
+      dplyr::filter(result %in% c("W", "L", "T")) %>% dplyr::mutate(season = s)
+  }))
+  if (!nrow(d)) return(d)
+  d %>% dplyr::group_by(season, weeks) %>%
+    dplyr::mutate(allplay_w = map_dbl(points, ~ sum(.x > points, na.rm = TRUE)),
+                  allplay_l = map_dbl(points, ~ sum(.x < points, na.rm = TRUE))) %>%
+    dplyr::ungroup() %>%
+    dplyr::group_by(user_name = team) %>%
+    dplyr::summarise(games = dplyr::n(), allplay_w = sum(allplay_w),
+                     allplay_l = sum(allplay_l),
+                     allplay_pct = sum(allplay_w) /
+                       pmax(sum(allplay_w) + sum(allplay_l), 1) * 100,
+                     .groups = "drop") %>%
+    dplyr::arrange(dplyr::desc(allplay_pct))
+}
+
+#' Regular-season playoff seeding
+#'
+#' Seeds are set by the REGULAR season, not the final standings -- the final
+#' table includes the playoff weeks themselves, which reorders the middle of the
+#' bracket and quietly breaks every seed-based metric.
+#'
+#' @param season A [sleeper_season] object.
+#' @param through_week Last regular-season week (default: the week before the
+#'   playoff starts, if `playoff` is supplied).
+#' @param playoff Optional `sleeper_playoff` used to infer `through_week`.
+#' @return Tibble: `seed`, `user_name`, `wins`, `losses`, `points`.
+#' @export
+sl_seeds <- function(season, through_week = NULL, playoff = NULL) {
+  if (is.null(through_week)) {
+    if (is.null(playoff)) stop("Give through_week or a playoff to infer it from.",
+                               call. = FALSE)
+    wk1 <- min(as.integer(unlist(lapply(playoff$config$rounds, function(r) r$weeks))))
+    through_week <- wk1 - 1L
+  }
+  season$team_wk %>%
+    dplyr::filter(week <= through_week) %>%
+    dplyr::group_by(user_name) %>%
+    dplyr::summarise(wins = sum(dplyr::coalesce(result == "W", FALSE)),
+                     losses = sum(dplyr::coalesce(result == "L", FALSE)),
+                     points = round(sum(points), 2), .groups = "drop") %>%
+    dplyr::arrange(dplyr::desc(wins), dplyr::desc(points)) %>%
+    dplyr::mutate(seed = dplyr::row_number()) %>%
+    dplyr::select(seed, user_name, wins, losses, points)
+}
+
+#' Seed-based playoff metrics: upsets, Cinderellas and chokes
+#'
+#' @param playoffs Named list of `sleeper_playoff` objects.
+#' @param seasons Named list of [sleeper_season] objects.
+#' @return Tibble: `user_name`, `runs`, `avg_seed`, `best_seed`, `upsets` (wins
+#'   over a better seed), `upset_losses`, `cinderella` (best seed-vs-finish
+#'   overachievement), `chokes` (top-2 seed that missed the final).
+#' @export
+sl_playoff_seeding <- function(playoffs, seasons) {
+  rows <- dplyr::bind_rows(lapply(names(playoffs), function(s) {
+    p <- playoffs[[s]]
+    if (is.null(seasons[[s]])) return(NULL)
+    sd <- sl_seeds(seasons[[s]], playoff = p)
+    seed_of <- stats::setNames(sd$seed, sd$user_name)
+    r <- sl_scope(p$results, "title") %>% dplyr::filter(result %in% c("W", "L", "T"))
+    fid <- p$config$final
+    reached_final <- unique(p$results$team[p$results$matchup_id == fid])
+    r %>% dplyr::mutate(
+      season = s,
+      seed = unname(seed_of[team]),
+      opp_seed = unname(seed_of[opponent]),
+      upset = result == "W" & !is.na(opp_seed) & !is.na(seed) & seed > opp_seed,
+      upset_loss = result == "L" & !is.na(opp_seed) & !is.na(seed) & seed < opp_seed,
+      in_final = team %in% reached_final,
+      champ = team == (p$champion %||% ""))
+  }))
+  if (!nrow(rows)) return(rows)
+  rows %>% dplyr::group_by(user_name = team, season) %>%
+    dplyr::summarise(seed = dplyr::first(seed), upsets = sum(upset),
+                     upset_losses = sum(upset_loss),
+                     in_final = any(in_final), champ = any(champ),
+                     .groups = "drop") %>%
+    dplyr::group_by(user_name) %>%
+    dplyr::summarise(runs = dplyr::n(), avg_seed = mean(seed, na.rm = TRUE),
+                     best_seed = suppressWarnings(min(seed, na.rm = TRUE)),
+                     upsets = sum(upsets), upset_losses = sum(upset_losses),
+                     # Cinderella: the deepest run relative to seed (a low seed
+                     # reaching a final scores highest).
+                     cinderella = suppressWarnings(max(
+                       ifelse(in_final, seed, 0L), na.rm = TRUE)),
+                     chokes = sum(seed <= 2 & !in_final, na.rm = TRUE),
+                     .groups = "drop") %>%
+    dplyr::arrange(dplyr::desc(upsets), avg_seed)
+}
+
+#' Did the wrong team win? Replay each matchup with optimal lineups
+#'
+#' Re-scores both sides of every playoff game using the best legal lineup their
+#' roster could have started, and reports where the result would have flipped.
+#'
+#' Only works where the season object actually holds that week's rosters. DDBM
+#' 2025's final is week 18, past `last_scored_leg` (17), so it cannot be
+#' replayed -- those rows come back `NA` rather than being quietly dropped.
+#'
+#' @param playoffs Named list of `sleeper_playoff` objects.
+#' @param seasons Named list of [sleeper_season] objects.
+#' @param scope See [sl_scope()].
+#' @return Tibble: one row per matchup with actual and optimal points for both
+#'   sides, and `flipped`.
+#' @export
+sl_playoff_replay <- function(playoffs, seasons, scope = "title") {
+  dplyr::bind_rows(lapply(names(playoffs), function(s) {
+    p <- playoffs[[s]]; se <- seasons[[s]]
+    if (is.null(se)) return(NULL)
+    r <- sl_scope(p$results, scope) %>% dplyr::filter(result %in% c("W", "L"))
+    if (!nrow(r)) return(NULL)
+    dplyr::bind_rows(lapply(unique(r$matchup_id), function(m) {
+      g <- r[r$matchup_id == m, ]
+      wks <- as.integer(strsplit(g$weeks[1], "\\+")[[1]])
+      opt <- vapply(g$team, function(tm) {
+        rid <- se$user_map$roster_id[match(tm, se$user_map$user_name)]
+        # Rosters for these weeks may be past the season's last scored leg.
+        d <- se$pl_wk %>% dplyr::filter(roster_id == rid, week %in% wks)
+        if (!nrow(d) || !all(wks %in% unique(d$week))) return(NA_real_)
+        sum(vapply(wks, function(w) sl_optimal_points(
+          d %>% dplyr::filter(week == w), se$slots), numeric(1)))
+      }, numeric(1))
+      opt_win <- if (anyNA(opt)) NA_character_ else g$team[which.max(opt)]
+      act_win <- g$team[g$result == "W"][1]
+      tibble(season = s, matchup_id = m, round = g$round[1],
+             team_a = g$team[1], team_b = g$team[2],
+             actual_a = g$points[1], actual_b = g$points[2],
+             optimal_a = round(opt[[1]], 2), optimal_b = round(opt[[2]], 2),
+             actual_winner = act_win, optimal_winner = opt_win,
+             flipped = if (is.na(opt_win)) NA else opt_win != act_win)
+    }))
+  }))
 }
 
 #' Playoff standings (per-team run through the bracket)

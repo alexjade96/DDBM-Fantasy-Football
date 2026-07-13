@@ -536,10 +536,11 @@ sl_plot_playoff_bracket <- function(playoff, seeds = NULL) {
 #' titles marked. Managers who never made a bracket are omitted.
 #'
 #' @param playoffs A named list of `sleeper_playoff` objects ([sl_load_playoffs()]).
+#' @param scope See [sl_scope()].
 #' @return A ggplot.
 #' @export
-sl_plot_playoff_stats <- function(playoffs) {
-  d <- sl_playoff_stats(playoffs) %>%
+sl_plot_playoff_stats <- function(playoffs, scope = "title") {
+  d <- sl_playoff_stats(playoffs, scope) %>%
     dplyr::filter(games > 0) %>%
     dplyr::mutate(user_name = fct_reorder(user_name, win_pct),
                   lbl = paste0(wins, "-", losses, "  ", sprintf("%.0f%%", win_pct),
@@ -552,11 +553,72 @@ sl_plot_playoff_stats <- function(playoffs) {
     ggplot2::scale_x_continuous(expand = ggplot2::expansion(c(0, 0.34)), limits = c(0, 100)) +
     ggplot2::labs(title = "Career Playoff Record",
                   subtitle = paste0("Win % across ", length(playoffs),
-                                    " postseasons  \U00B7  gold = has won a title  \U00B7  \U0001F451 per title"),
+                                    " postseasons  \U00B7  ",
+                                    if (scope == "title") "championship path only"
+                                    else paste0("scope: ", scope),
+                                    "  \U00B7  gold = has won a title  \U00B7  \U0001F451 per title"),
                   x = "Playoff Win %", y = NULL) +
     theme_sleeper() +
     ggplot2::theme(plot.subtitle = ggplot2::element_text(family = "Segoe UI Emoji",
                                                          colour = "grey40"))
+}
+
+#' Career playoff scoring leaders chart
+#' @param playoffs Named list of `sleeper_playoff` objects.
+#' @param n How many players to show.
+#' @param scope See [sl_scope()].
+#' @return A ggplot.
+#' @export
+sl_plot_playoff_players <- function(playoffs, n = 15, scope = "title") {
+  d <- sl_playoff_players(playoffs, scope) %>%
+    dplyr::slice_max(points, n = n, with_ties = FALSE) %>%
+    dplyr::mutate(player_name = fct_reorder(player_name, points))
+  ggplot2::ggplot(d, ggplot2::aes(points, player_name, fill = position)) +
+    ggplot2::geom_col(width = 0.72) +
+    ggplot2::geom_text(ggplot2::aes(label = sprintf("%.0f  (%.1f ppg)%s", points, ppg,
+                       ifelse(rings > 0, paste0("  ", strrep("\U0001F48D", rings)), ""))),
+                       hjust = -0.03, size = 3, colour = "grey20",
+                       family = "Segoe UI Emoji") +
+    ggplot2::scale_fill_manual(values = .sl_pos_colors, name = NULL) +
+    ggplot2::scale_x_continuous(expand = ggplot2::expansion(c(0, 0.34))) +
+    ggplot2::labs(title = "Best Playoff Players (All Time)",
+                  subtitle = paste0("Total points scored in the postseason  \U00B7  ",
+                                    if (scope == "title") "championship path only"
+                                    else paste0("scope: ", scope),
+                                    "  \U00B7  \U0001F48D per title"),
+                  x = "Playoff Points", y = NULL) +
+    theme_sleeper() +
+    ggplot2::theme(legend.position = "top", legend.justification = "left",
+                   plot.subtitle = ggplot2::element_text(family = "Segoe UI Emoji",
+                                                         colour = "grey40"))
+}
+
+#' Clutch chart: playoff scoring vs regular-season scoring
+#' @param seasons Named list of [sleeper_season] objects.
+#' @param playoffs Named list of `sleeper_playoff` objects.
+#' @param scope See [sl_scope()].
+#' @return A ggplot.
+#' @export
+sl_plot_clutch <- function(seasons, playoffs, scope = "title") {
+  d <- sl_clutch(seasons, playoffs, scope) %>%
+    dplyr::mutate(user_name = fct_reorder(user_name, clutch))
+  ggplot2::ggplot(d, ggplot2::aes(y = user_name)) +
+    ggplot2::geom_vline(xintercept = 0, colour = "grey75", linetype = "dashed") +
+    ggplot2::geom_segment(ggplot2::aes(x = reg_ppg, xend = po_ppg, yend = user_name,
+                                       colour = clutch > 0), linewidth = 1.3, alpha = 0.5) +
+    ggplot2::geom_point(ggplot2::aes(x = reg_ppg), colour = "grey65", size = 3.4) +
+    ggplot2::geom_point(ggplot2::aes(x = po_ppg, colour = clutch > 0), size = 4.6) +
+    ggplot2::geom_text(ggplot2::aes(x = po_ppg, label = sprintf("%+.1f", clutch),
+                       colour = clutch > 0, hjust = ifelse(clutch > 0, -0.35, 1.35)),
+                       size = 3, fontface = "bold", show.legend = FALSE) +
+    ggplot2::scale_colour_manual(values = c(`TRUE` = "#2ca02c", `FALSE` = "#d62728"),
+                                 labels = c(`TRUE` = "raises their game",
+                                            `FALSE` = "shrinks"), name = NULL) +
+    ggplot2::labs(title = "Clutch: Playoff vs Regular-Season Scoring",
+                  subtitle = "Grey dot = regular-season PPG; coloured = playoff PPG",
+                  x = "Points per Game", y = NULL) +
+    theme_sleeper() +
+    ggplot2::theme(legend.position = "top", legend.justification = "left")
 }
 
 #' Player-by-player breakdown of one playoff matchup

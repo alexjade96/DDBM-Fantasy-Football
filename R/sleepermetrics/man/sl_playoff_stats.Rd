@@ -4,11 +4,14 @@
 \alias{sl_playoff_stats}
 \title{Career playoff record per manager}
 \usage{
-sl_playoff_stats(playoffs)
+sl_playoff_stats(playoffs, scope = "title")
 }
 \arguments{
 \item{playoffs}{A named list of \code{sleeper_playoff} objects (see
 \code{\link[=sl_load_playoffs]{sl_load_playoffs()}}).}
+
+\item{scope}{See \code{\link[=sl_scope]{sl_scope()}}. Defaults to \code{"title"}, so 3rd-place and
+placement games do not get counted as playoff wins.}
 }
 \value{
 Tibble: \code{user_name}, \code{appearances}, \code{games}, \code{wins}, \code{losses},

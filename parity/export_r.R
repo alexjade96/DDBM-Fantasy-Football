@@ -17,7 +17,7 @@ out_path <- if (length(args) >= 2) args[[2]] else "parity/out_r.json"
 recs <- function(df, cols, sortcol) {
   df %>%
     dplyr::select(dplyr::all_of(cols)) %>%
-    dplyr::arrange(.data[[sortcol]]) %>%
+    dplyr::arrange(dplyr::across(dplyr::all_of(sortcol))) %>%
     dplyr::mutate(dplyr::across(dplyr::where(is.numeric), ~ round(.x, 2)))
 }
 
@@ -65,6 +65,32 @@ out <- list(
            champion = vapply(pos, function(p) p$champion %||% NA_character_,
                              character(1))),
     c("season", "champion"), "season"),
+  playoff_players = recs(head(sl_playoff_players(pos), 25),
+                         c("player_name", "position", "seasons", "games", "points",
+                           "ppg", "best", "rings"), "player_name"),
+  playoff_all_stars = recs(sl_playoff_all_stars(pos),
+                           c("position", "player_name", "points", "ppg"), "position"),
+  playoff_clutch = recs(sl_clutch(ss, pos),
+                        c("user_name", "reg_ppg", "po_ppg", "clutch", "games"), "user_name"),
+  playoff_seeding = recs(sl_playoff_seeding(pos, ss),
+                         c("user_name", "runs", "avg_seed", "best_seed", "upsets",
+                           "upset_losses", "cinderella", "chokes"), "user_name"),
+  playoff_margins = recs(sl_playoff_margins(pos),
+                         c("user_name", "games", "avg_margin", "best_win", "worst_loss"),
+                         "user_name"),
+  playoff_path = recs(sl_playoff_path(pos),
+                      c("user_name", "games", "opp_ppg", "opp_total"), "user_name"),
+  playoff_allplay = recs(sl_playoff_allplay(pos),
+                         c("user_name", "games", "allplay_w", "allplay_l", "allplay_pct"),
+                         "user_name"),
+  playoff_carry = recs(sl_playoff_carry(pos),
+                       c("season", "team", "points", "top_player", "top_points", "share"),
+                       c("season", "team")),
+  playoff_replay = recs(sl_playoff_replay(pos, ss),
+                        c("season", "matchup_id", "actual_winner", "optimal_winner",
+                          "flipped"), c("season", "matchup_id")),
+  playoff_stats_all = recs(sl_playoff_stats(pos, "all"),
+                           c("user_name", "games", "wins", "losses"), "user_name"),
   summary_season = sl_summary_season(latest),
   summary_career = sl_summary_career(ss),
   summary_week = sl_summary_week(latest)

@@ -81,6 +81,36 @@ def main():
             pd.DataFrame({"season": list(pos),
                           "champion": [p.champion for p in pos.values()]})
             .sort_values("season"), ["season", "champion"]),
+        "playoff_players": recs(
+            sm.playoff_players(pos).head(25).sort_values("player_name"),
+            ["player_name", "position", "seasons", "games", "points", "ppg",
+             "best", "rings"]),
+        "playoff_all_stars": recs(
+            sm.playoff_all_stars(pos).sort_values("position"),
+            ["position", "player_name", "points", "ppg"]),
+        "playoff_clutch": recs(sm.clutch(ss, pos).sort_values("user_name"),
+                               ["user_name", "reg_ppg", "po_ppg", "clutch", "games"]),
+        "playoff_seeding": recs(
+            sm.playoff_seeding(pos, ss).sort_values("user_name"),
+            ["user_name", "runs", "avg_seed", "best_seed", "upsets",
+             "upset_losses", "cinderella", "chokes"]),
+        "playoff_margins": recs(
+            sm.playoff_margins(pos).sort_values("user_name"),
+            ["user_name", "games", "avg_margin", "best_win", "worst_loss"]),
+        "playoff_path": recs(sm.playoff_path(pos).sort_values("user_name"),
+                             ["user_name", "games", "opp_ppg", "opp_total"]),
+        "playoff_allplay": recs(
+            sm.playoff_allplay(pos).sort_values("user_name"),
+            ["user_name", "games", "allplay_w", "allplay_l", "allplay_pct"]),
+        "playoff_carry": recs(
+            sm.playoff_carry(pos).sort_values(["season", "team"]),
+            ["season", "team", "points", "top_player", "top_points", "share"]),
+        "playoff_replay": recs(
+            sm.playoff_replay(pos, ss).sort_values(["season", "matchup_id"]),
+            ["season", "matchup_id", "actual_winner", "optimal_winner", "flipped"]),
+        "playoff_stats_all": recs(
+            sm.playoff_stats(pos, "all").sort_values("user_name"),
+            ["user_name", "games", "wins", "losses"]),
         "summary_season": summaries.summary_season(latest),
         "summary_career": summaries.summary_career(ss),
         "summary_week": weekly.summary_week(latest),

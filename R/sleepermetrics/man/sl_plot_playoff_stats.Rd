@@ -4,10 +4,12 @@
 \alias{sl_plot_playoff_stats}
 \title{Career playoff record chart}
 \usage{
-sl_plot_playoff_stats(playoffs)
+sl_plot_playoff_stats(playoffs, scope = "title")
 }
 \arguments{
 \item{playoffs}{A named list of \code{sleeper_playoff} objects (\code{\link[=sl_load_playoffs]{sl_load_playoffs()}}).}
+
+\item{scope}{See \code{\link[=sl_scope]{sl_scope()}}.}
 }
 \value{
 A ggplot.
