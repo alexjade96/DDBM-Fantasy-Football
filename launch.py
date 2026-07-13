@@ -64,12 +64,17 @@ def _run_python(mode: str, extra: list[str]) -> int:
                  "  python -m venv python/venv && "
                  "python/venv/Scripts/pip install -r python/requirements.txt")
     if mode == "dashboard":
-        port, _rest = _parse_port(extra, 8000)
+        port, rest = _parse_port(extra, 8000)
         env = dict(os.environ, SLEEPERMETRICS_PLAYOFFS=str(BASE / "playoffs"))
+        # Jinja reloads templates on its own, so WITHOUT --reload a long-running
+        # server picks up template edits while still holding the old app.py --
+        # the two drift apart and blow up on the mismatch. Reload both together.
+        # Pass --no-reload when serving for real (hosting, Docker).
+        reload = [] if "--no-reload" in rest else ["--reload"]
         print(f"Dashboard: http://127.0.0.1:{port}  (Ctrl+C to stop)")
         return subprocess.run(
             [str(venv_py), "-m", "uvicorn", "webapp.app:app",
-             "--host", "127.0.0.1", "--port", str(port)],
+             "--host", "127.0.0.1", "--port", str(port), *reload],
             cwd=str(PY_DIR), env=env).returncode
     return subprocess.run([str(venv_py), "bot.py", mode, *extra], cwd=str(PY_DIR)).returncode
 

@@ -22,7 +22,13 @@ python launch.py r dashboard                   # Shiny           -> http://127.0
 
 python launch.py python dashboard --port 8080  # pick a port
 python launch.py r dashboard --port 8200
+
+python launch.py python dashboard --no-reload  # serving for real, not editing
 ```
+
+The Python dashboard hot-reloads on save (code *and* templates together — see
+`--no-reload` above to turn that off). The Shiny app does not: `runApp` reads the
+source once at startup, so after editing it you must stop and relaunch.
 
 Both serve the same seven tabs — season overview, weekly trends, coaching &
 scoring, roster & positions, transactions, playoffs, career — and the same 22
