@@ -101,7 +101,10 @@ ui <- page_sidebar(
     nav_panel("Career (all seasons)", icon = icon("trophy"),
       card(card_header("Career insights"), uiOutput("career_summary")),
       layout_columns(card(full_screen = TRUE, plotOutput("p_career", height = 470)),
-                     card(full_screen = TRUE, plotOutput("p_traj", height = 470))))
+                     card(full_screen = TRUE, plotOutput("p_traj", height = 470))),
+      card(card_header("Managers"),
+           markdown("<small>Imported from each account: the team name they chose and their current Sleeper picture. Identity follows the persistent account, so a manager who renamed themselves is still one person.</small>"),
+           uiOutput("managers")))
   )
 )
 
@@ -260,6 +263,38 @@ server <- function(input, output, session) {
     validate(need(isTruthy(input$pl_matchup), "No matchup has been played yet."))
     sm$sl_plot_playoff_matchup(playoff(), input$pl_matchup)
   }, res = 96)
+
+  # The account import: team name + current Sleeper picture, per manager.
+  output$managers <- renderUI({
+    req(seasons())
+    a <- sm$sl_league_accounts(seasons())
+    validate(need(nrow(a) > 0, "No accounts found for this league."))
+    cards <- lapply(seq_len(nrow(a)), function(i) {
+      r <- a[i, ]
+      face <- if (!is.na(r$avatar_url)) {
+        tags$img(src = r$avatar_url, width = 44, height = 44, alt = "",
+                 style = "border-radius:50%;object-fit:cover;flex:0 0 44px;")
+      } else {
+        tags$span(substr(r$user_name, 1, 1),
+                  class = "text-muted fw-bold d-grid",
+                  style = paste("width:44px;height:44px;flex:0 0 44px;border-radius:50%;",
+                                "background:#e9ecef;place-items:center;"))
+      }
+      tags$div(
+        class = "d-flex align-items-center gap-3 border rounded p-2",
+        face,
+        tags$div(
+          class = "flex-grow-1 text-truncate",
+          tags$div(tags$strong(r$team), class = "text-truncate"),
+          tags$div(r$user_name, class = "text-muted small")),
+        tags$div(
+          class = "text-end small text-muted",
+          if (r$titles > 0) tags$div(strrep("\U0001F3C6", r$titles)),
+          tags$div(sprintf("%d season%s", r$seasons,
+                           if (r$seasons == 1) "" else "s"))))
+    })
+    do.call(layout_column_wrap, c(list(width = 1/3, heights_equal = "row"), cards))
+  })
 
   # The chart is ~48 rules keyed by Sleeper's stat codes. Translate them
   # (sl_scoring_readable) and lay them out grouped -- a manager reading why they

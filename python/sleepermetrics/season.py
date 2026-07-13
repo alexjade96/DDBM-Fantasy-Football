@@ -48,6 +48,7 @@ class Season:
     standings: pd.DataFrame
     user_map: pd.DataFrame
     transactions: pd.DataFrame = field(default_factory=pd.DataFrame)
+    accounts: pd.DataFrame = field(default_factory=pd.DataFrame)
 
     def __repr__(self):
         return (f"<Season {self.name} {self.season} | teams: "
@@ -56,6 +57,43 @@ class Season:
 
 _TX_COLS = ["week", "transaction_id", "type", "transaction", "player_id",
             "roster_id", "user_name", "player_name", "position", "status"]
+
+_ACCT_COLS = ["roster_id", "user_id", "user_name", "team_name",
+              "avatar_url", "team_avatar_url", "team"]
+
+AVATAR_CDN = "https://sleepercdn.com/avatars"
+
+
+def avatar_url(avatar: str | None, thumb: bool = False) -> str | None:
+    """CDN url for a Sleeper *account* avatar id.
+
+    Note the two avatar fields have different shapes and are easy to confuse: a
+    user's `avatar` is a bare id that has to be turned into a url, while a
+    league-specific `metadata.avatar` (the custom team picture) is already a full
+    url. Pass each to the right place.
+    """
+    if not avatar:
+        return None
+    a = str(avatar)
+    if a.startswith("http"):          # already a url -- don't double-prefix it
+        return a
+    return f"{AVATAR_CDN}/{'thumbs/' if thumb else ''}{a}"
+
+
+def _account(u: dict) -> dict:
+    """One league member: who they are, what they called their team, their icons."""
+    meta = u.get("metadata") or {}
+    name = u.get("display_name")
+    team_name = (meta.get("team_name") or "").strip() or None
+    return {
+        "user_id": u.get("user_id"),
+        "user_name": name,
+        "team_name": team_name,
+        "avatar_url": avatar_url(u.get("avatar")),          # the account's picture
+        "team_avatar_url": avatar_url(meta.get("avatar")),  # a custom team picture
+        # What to actually show: a manager who named their team gets that name.
+        "team": team_name or name,
+    }
 
 
 def _unnest_transactions(tx_rows: list, user_map: pd.DataFrame,
@@ -94,14 +132,21 @@ def assemble_season(link: dict) -> Season:
 
     users_raw = sleeper_api(f"/league/{lid}/users")
     rosters_raw = sleeper_api(f"/league/{lid}/rosters")
-    by_id = {u["user_id"]: {"user_name": u.get("display_name"),
-                            "team_name": (u.get("metadata") or {}).get("team_name")}
-             for u in users_raw}
+    by_id = {u["user_id"]: _account(u) for u in users_raw}
     user_map = pd.DataFrame([
         {"roster_id": r["roster_id"], "user_id": r.get("owner_id"),
          "user_name": by_id.get(r.get("owner_id"), {}).get("user_name")}
         for r in rosters_raw
     ])
+    # Identity is kept OUT of user_map on purpose: user_map is merged into
+    # team_wk, and every column added there would ride along into the metrics.
+    accounts = pd.DataFrame([
+        {"roster_id": r["roster_id"],
+         **by_id.get(r.get("owner_id"),
+                     {"user_id": None, "user_name": None, "team_name": None,
+                      "avatar_url": None, "team_avatar_url": None, "team": None})}
+        for r in rosters_raw
+    ], columns=_ACCT_COLS)
 
     tw_rows, pl_rows = [], []
     for wk in range(1, lw + 1):
@@ -190,7 +235,47 @@ def assemble_season(link: dict) -> Season:
     standings["season"] = link["season"]
 
     return Season(link["season"], link.get("name"), lid, lw, slots,
-                  tw, pl, lineup, standings, user_map, transactions)
+                  tw, pl, lineup, standings, user_map, transactions, accounts)
+
+
+def league_accounts(seasons: dict) -> pd.DataFrame:
+    """Every manager in the league's history: who they are *now*, and their record.
+
+    Keyed on `user_id`, which persists across seasons even as display names and
+    team names change -- so a manager who renamed themselves is one row, not two,
+    and the name/icon shown is the one from their most recent season.
+    """
+    cols = ["user_id", "user_name", "team_name", "team", "avatar_url",
+            "team_avatar_url", "seasons", "first_season", "last_season", "titles"]
+    rows = []
+    for s in seasons.values():                     # oldest -> newest
+        if s.accounts.empty:
+            continue
+        a = s.accounts.copy()
+        a["season"] = s.season
+        champs = set(s.standings.loc[s.standings["champion"], "user_name"])
+        a["title"] = a["user_name"].isin(champs)
+        rows.append(a)
+    if not rows:
+        return pd.DataFrame(columns=cols)
+
+    d = pd.concat(rows, ignore_index=True)
+    d = d[d["user_id"].notna()]
+    out = []
+    for uid, g in d.groupby("user_id", sort=False):
+        cur = g.iloc[-1]                           # most recent season = current identity
+        out.append({
+            "user_id": uid, "user_name": cur["user_name"],
+            "team_name": cur["team_name"], "team": cur["team"],
+            "avatar_url": cur["avatar_url"], "team_avatar_url": cur["team_avatar_url"],
+            "seasons": g["season"].nunique(),
+            "first_season": g["season"].min(), "last_season": g["season"].max(),
+            "titles": int(g["title"].sum()),
+        })
+    return (pd.DataFrame(out, columns=cols)
+            .sort_values(["titles", "seasons", "user_name"],
+                         ascending=[False, False, True])
+            .reset_index(drop=True))
 
 
 def season(league_id, season: str | None = None) -> Season:

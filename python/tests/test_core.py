@@ -88,3 +88,55 @@ def test_render_command_routes_and_renders(tmp_path, season_obj, monkeypatch):
 def test_plot_standings_renders(tmp_path, season_obj):
     p = plots.save(plots.plot_standings(season_obj), str(tmp_path / "s.png"))
     assert os.path.exists(p)
+
+
+# --- per-account import: team names + icons ---------------------------------
+def test_avatar_url_handles_both_sleeper_shapes():
+    from sleepermetrics.season import avatar_url
+    # An account avatar is a bare id and must be turned into a CDN url...
+    assert avatar_url("abc") == "https://sleepercdn.com/avatars/abc"
+    assert avatar_url("abc", thumb=True) == "https://sleepercdn.com/avatars/thumbs/abc"
+    # ...but a custom TEAM avatar is already a url: don't double-prefix it.
+    u = "https://sleepercdn.com/uploads/xyz.jpg"
+    assert avatar_url(u) == u
+    assert avatar_url(None) is None and avatar_url("") is None
+
+
+def test_account_prefers_team_name_and_falls_back_to_display_name():
+    from sleepermetrics.season import _account
+    named = _account({"user_id": "1", "display_name": "Al",
+                      "avatar": "a1", "metadata": {"team_name": "The Als"}})
+    assert named["team"] == "The Als"
+    assert named["avatar_url"].endswith("/avatars/a1")
+
+    # No team name (and a blank one) -> show the manager's display name.
+    for meta in ({}, {"team_name": "   "}):
+        bare = _account({"user_id": "2", "display_name": "Bo", "metadata": meta})
+        assert bare["team_name"] is None and bare["team"] == "Bo"
+        assert bare["avatar_url"] is None
+
+
+def test_league_accounts_keys_on_the_persistent_user_id():
+    import pandas as pd
+    from sleepermetrics.season import league_accounts
+
+    def s(season, name, team, champ):
+        o = type("S", (), {})()
+        o.season = season
+        o.accounts = pd.DataFrame([{
+            "roster_id": 1, "user_id": "u1", "user_name": name,
+            "team_name": team, "avatar_url": f"pic-{season}",
+            "team_avatar_url": None, "team": team}])
+        o.standings = pd.DataFrame({"user_name": [name],
+                                    "champion": [champ]})
+        return o
+
+    # Same account, renamed between seasons: one row, not two.
+    d = league_accounts({"2024": s("2024", "Old", "Old FC", True),
+                         "2025": s("2025", "New", "New FC", False)})
+    assert len(d) == 1
+    row = d.iloc[0]
+    assert row["user_name"] == "New"          # current identity wins
+    assert row["avatar_url"] == "pic-2025"    # ...including the current picture
+    assert row["seasons"] == 2 and row["titles"] == 1
+    assert row["first_season"] == "2024" and row["last_season"] == "2025"

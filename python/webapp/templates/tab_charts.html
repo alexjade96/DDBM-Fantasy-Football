@@ -12,3 +12,31 @@
   </figure>
   {% endfor %}
 </section>
+
+{% if managers %}
+<h2>Managers</h2>
+<p class="hint">Imported from each account: the team name they chose and their current
+   Sleeper picture. Identity follows the persistent account, so a manager who renamed
+   themselves is still one person.</p>
+<section class="managers">
+  {% for m in managers %}
+  <article class="mgr">
+    {% if m.avatar_url %}
+    <img class="face" src="{{ m.avatar_url }}" alt="" loading="lazy"
+         onerror="this.replaceWith(Object.assign(document.createElement('span'),{className:'face blank',textContent:'{{ m.user_name[0] | upper }}'}))">
+    {% else %}
+    <span class="face blank">{{ m.user_name[0] | upper }}</span>
+    {% endif %}
+    <div class="who">
+      <strong>{{ m.team or m.user_name }}</strong>
+      <span class="sub">{{ m.user_name }}</span>
+    </div>
+    <div class="meta">
+      {% if m.titles %}<span class="chip" title="Championships">{{ "🏆" * m.titles }}</span>{% endif %}
+      <span class="sub">{{ m.seasons }} season{{ "" if m.seasons == 1 else "s" }}
+        · {{ m.first_season }}{% if m.last_season != m.first_season %}–{{ m.last_season }}{% endif %}</span>
+    </div>
+  </article>
+  {% endfor %}
+</section>
+{% endif %}

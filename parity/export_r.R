@@ -91,6 +91,10 @@ out <- list(
                           "flipped"), c("season", "matchup_id")),
   playoff_stats_all = recs(sl_playoff_stats(pos, "all"),
                            c("user_name", "games", "wins", "losses"), "user_name"),
+  accounts = recs(sl_league_accounts(ss),
+                  c("user_id", "user_name", "team_name", "team", "avatar_url",
+                    "team_avatar_url", "seasons", "first_season", "last_season",
+                    "titles"), "user_id"),
   # Exported in engine order, NOT re-sorted: the grouping and the reading order
   # within a group are part of what the dashboards render, so parity should catch
   # a divergence in either.

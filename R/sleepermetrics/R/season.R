@@ -22,6 +22,24 @@ sl_optimal_points <- function(d, slots) {
   tot
 }
 
+SL_AVATAR_CDN <- "https://sleepercdn.com/avatars"
+
+#' CDN url for a Sleeper account avatar id
+#'
+#' Note the two avatar fields have different shapes and are easy to confuse: a
+#' user's `avatar` is a bare id that has to be turned into a url, while a
+#' league-specific `metadata.avatar` (the custom team picture) is already a full
+#' url. This handles both, so either can be passed to it.
+#'
+#' @param avatar Avatar id, a full url, or `NA`.
+#' @return Character url, or `NA` where there is no avatar. Vectorised.
+#' @export
+sl_avatar_url <- function(avatar) {
+  a <- as.character(avatar)
+  ifelse(is.na(a) | !nzchar(a), NA_character_,
+         ifelse(grepl("^http", a), a, paste0(SL_AVATAR_CDN, "/", a)))
+}
+
 # Core assembler used by sl_season(); takes a chain link.
 sl_assemble_season <- function(link) {
   lid <- link$league_id
@@ -33,13 +51,26 @@ sl_assemble_season <- function(link) {
                      .name_repair = "unique") %>%
     unnest(metadata, names_sep = "_") %>%
     dplyr::rename(user_name = display_name) %>%
-    ensure_cols("metadata_team_name") %>%
-    dplyr::transmute(user_id, user_name, team_name = metadata_team_name)
-  user_map <- as_tibble(sleeper_api(paste0("/league/", lid, "/rosters")),
-                        .name_repair = "unique") %>%
-    dplyr::select(roster_id, owner_id) %>%
+    ensure_cols(c("metadata_team_name", "metadata_avatar", "avatar")) %>%
+    dplyr::transmute(
+      user_id, user_name,
+      team_name = dplyr::na_if(trimws(as.character(metadata_team_name)), ""),
+      avatar_url      = sl_avatar_url(avatar),           # the account's picture
+      team_avatar_url = sl_avatar_url(metadata_avatar),  # a custom team picture
+      # What to actually show: a manager who named their team gets that name.
+      team = dplyr::coalesce(team_name, user_name))
+  rosters <- as_tibble(sleeper_api(paste0("/league/", lid, "/rosters")),
+                       .name_repair = "unique") %>%
+    dplyr::select(roster_id, owner_id)
+  # Identity is kept OUT of user_map on purpose: user_map is joined into team_wk,
+  # and every column added there would ride along into the metrics.
+  user_map <- rosters %>%
     dplyr::left_join(users, by = c("owner_id" = "user_id")) %>%
     dplyr::transmute(roster_id, user_id = owner_id, user_name)
+  accounts <- rosters %>%
+    dplyr::left_join(users, by = c("owner_id" = "user_id")) %>%
+    dplyr::transmute(roster_id, user_id = owner_id, user_name, team_name,
+                     avatar_url, team_avatar_url, team)
 
   raw <- map(seq_len(lw), function(i) {
     m <- as_tibble(sleeper_api(paste0("/league/", lid, "/matchups/", i)))
@@ -119,8 +150,50 @@ sl_assemble_season <- function(link) {
     list(season = link$season, name = link$name, league_id = lid,
          last_week = lw, slots = slots, team_wk = team_wk, pl_wk = pl_wk,
          lineup = lineup, standings = standings, user_map = user_map,
-         transactions = transactions),
+         transactions = transactions, accounts = accounts),
     class = "sleeper_season")
+}
+
+#' Every manager in the league's history
+#'
+#' Who they are *now*, and their record. Keyed on `user_id`, which persists
+#' across seasons even as display names and team names change -- so a manager who
+#' renamed themselves is one row, not two, and the name/icon shown is the one
+#' from their most recent season.
+#'
+#' @param seasons Named list of `sleeper_season` objects ([sl_seasons()]).
+#' @return Tibble: `user_id`, `user_name`, `team_name`, `team`, `avatar_url`,
+#'   `team_avatar_url`, `seasons`, `first_season`, `last_season`, `titles`.
+#' @export
+sl_league_accounts <- function(seasons) {
+  rows <- dplyr::bind_rows(lapply(seasons, function(s) {
+    if (is.null(s$accounts) || !nrow(s$accounts)) return(NULL)
+    champs <- s$standings$user_name[s$standings$champion]
+    s$accounts %>%
+      dplyr::mutate(season = s$season, title = .data$user_name %in% champs)
+  }))
+  if (!nrow(rows)) {
+    return(tibble(user_id = character(), user_name = character(),
+                  team_name = character(), team = character(),
+                  avatar_url = character(), team_avatar_url = character(),
+                  seasons = integer(), first_season = character(),
+                  last_season = character(), titles = integer()))
+  }
+  rows %>%
+    dplyr::filter(!is.na(.data$user_id)) %>%
+    dplyr::group_by(.data$user_id) %>%
+    dplyr::summarise(
+      # dplyr::last() = most recent season in the chain = the current identity.
+      user_name = dplyr::last(.data$user_name),
+      team_name = dplyr::last(.data$team_name),
+      team = dplyr::last(.data$team),
+      avatar_url = dplyr::last(.data$avatar_url),
+      team_avatar_url = dplyr::last(.data$team_avatar_url),
+      seasons = dplyr::n_distinct(.data$season),
+      first_season = min(.data$season), last_season = max(.data$season),
+      titles = sum(.data$title), .groups = "drop") %>%
+    dplyr::arrange(dplyr::desc(.data$titles), dplyr::desc(.data$seasons),
+                   .data$user_name)
 }
 
 # Empty transactions frame with the canonical column set.

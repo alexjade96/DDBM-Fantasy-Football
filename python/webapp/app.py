@@ -235,6 +235,11 @@ def tab(name: str, request: Request, league: str = DEFAULT_LEAGUE,
     elif name == "career":
         ctx["summary"] = summaries.summary_career(d["seasons"])
         ctx["charts"] = ["career", "trajectory"]
+        mg = sm.league_accounts(d["seasons"])
+        # NaN is TRUTHY in Jinja, so a missing avatar would sail through
+        # `{% if m.avatar_url %}` and render src="nan". Hand the template None.
+        mg = mg.astype(object).where(mg.notna(), None)
+        ctx["managers"] = mg.to_dict("records")
     elif name == "playoffs":
         p = d["playoffs"].get(key)
         if p is None:

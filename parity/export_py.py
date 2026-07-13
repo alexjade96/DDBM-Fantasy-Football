@@ -111,6 +111,11 @@ def main():
         "playoff_stats_all": recs(
             sm.playoff_stats(pos, "all").sort_values("user_name"),
             ["user_name", "games", "wins", "losses"]),
+        "accounts": recs(
+            sm.league_accounts(ss).sort_values("user_id"),
+            ["user_id", "user_name", "team_name", "team", "avatar_url",
+             "team_avatar_url", "seasons", "first_season", "last_season",
+             "titles"]),
         # Exported in engine order, NOT re-sorted: the grouping and the reading
         # order within a group are part of what the dashboards render, so parity
         # should catch a divergence in either.

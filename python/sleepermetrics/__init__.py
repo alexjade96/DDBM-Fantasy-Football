@@ -16,7 +16,8 @@ from .playoffs import (Playoff, apply_playoffs, clutch, load_playoffs, playoff,
                        playoff_seeding, playoff_stats, playoff_summary,
                        scope_frame, seeds)
 from .scoring import score_lineup, scoring_chart
-from .season import Season, assemble_season, optimal_points, season, seasons
+from .season import (Season, assemble_season, avatar_url, league_accounts,
+                     optimal_points, season, seasons)
 from .statnames import scoring_readable, stat_labels
 from .summaries import summary_career, summary_season
 from .weekly import summary_week
@@ -24,6 +25,7 @@ from .weekly import summary_week
 __all__ = [
     "sleeper_api", "league", "league_chain", "starter_slots", "players",
     "Season", "assemble_season", "optimal_points", "season", "seasons",
+    "league_accounts", "avatar_url",
     "metrics", "plots", "summaries", "weekly", "discord_bot",
     "summary_season", "summary_career", "summary_week",
     "scoring", "scoring_chart", "score_lineup",

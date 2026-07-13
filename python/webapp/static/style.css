@@ -105,6 +105,21 @@ tbody tr:last-child td { border-bottom: 0; }
 
 details.card { margin-top: 18px; }
 details summary { cursor: pointer; font-weight: 600; }
+/* Managers: the account import -- team name + their current Sleeper picture. */
+.managers { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+            gap: 10px; margin-top: 12px; }
+.mgr { display: flex; align-items: center; gap: 12px; padding: 10px 12px;
+       background: var(--surface); border: 1px solid var(--line); border-radius: 10px; }
+.mgr .face { width: 44px; height: 44px; border-radius: 50%; flex: 0 0 44px;
+             object-fit: cover; background: var(--bg); border: 1px solid var(--line); }
+.mgr .face.blank { display: grid; place-items: center; font-weight: 700;
+                   color: var(--faint); font-size: 17px; }
+.mgr .who { display: flex; flex-direction: column; min-width: 0; flex: 1; }
+.mgr .who strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mgr .sub { color: var(--faint); font-size: 12px; }
+.mgr .meta { display: flex; flex-direction: column; align-items: flex-end; gap: 2px;
+             text-align: right; }
+
 /* Point-calculation chart: grouped, in plain English, raw stat code alongside. */
 .rulegroups { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
               gap: 10px 22px; margin-top: 14px; align-items: start; }

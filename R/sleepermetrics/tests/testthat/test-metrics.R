@@ -42,3 +42,36 @@ test_that("sl_summary_career stays length 1 even with tied titles (regression)",
   expect_equal(nrow(ct), 3L)                  # 3 managers across 2 seasons
   expect_equal(max(ct$titles), 1L)
 })
+
+# --- per-account import: team names + icons ---------------------------------
+
+test_that("sl_avatar_url handles both Sleeper shapes", {
+  # An account avatar is a bare id and must be turned into a CDN url...
+  expect_equal(sl_avatar_url("abc"), "https://sleepercdn.com/avatars/abc")
+  # ...but a custom TEAM avatar is already a url: don't double-prefix it.
+  u <- "https://sleepercdn.com/uploads/xyz.jpg"
+  expect_equal(sl_avatar_url(u), u)
+  expect_true(is.na(sl_avatar_url(NA)))
+  expect_true(is.na(sl_avatar_url("")))
+})
+
+test_that("sl_league_accounts keys on the persistent user_id", {
+  mk <- function(season, name, team, champ) list(
+    season = season,
+    accounts = tibble::tibble(
+      roster_id = 1L, user_id = "u1", user_name = name, team_name = team,
+      avatar_url = paste0("pic-", season), team_avatar_url = NA_character_,
+      team = team),
+    standings = tibble::tibble(user_name = name, champion = champ))
+
+  # Same account, renamed between seasons: one row, not two.
+  d <- sl_league_accounts(list(`2024` = mk("2024", "Old", "Old FC", TRUE),
+                               `2025` = mk("2025", "New", "New FC", FALSE)))
+  expect_equal(nrow(d), 1)
+  expect_equal(d$user_name, "New")        # current identity wins
+  expect_equal(d$avatar_url, "pic-2025")  # ...including the current picture
+  expect_equal(d$seasons, 2L)
+  expect_equal(d$titles, 1L)
+  expect_equal(d$first_season, "2024")
+  expect_equal(d$last_season, "2025")
+})
