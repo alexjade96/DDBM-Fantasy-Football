@@ -1,0 +1,14 @@
+{% if summary %}
+<section class="card prose">
+  {{ summary | md }}
+</section>
+{% endif %}
+
+<section class="grid">
+  {% for c in charts %}
+  <figure class="card chart">
+    <img src="/chart/{{ c }}?league={{ league }}&season={{ season }}&_={{ bust }}"
+         alt="{{ c }}" loading="lazy">
+  </figure>
+  {% endfor %}
+</section>

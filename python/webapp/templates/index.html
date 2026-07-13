@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sleeper League Analytics</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <script src="https://unpkg.com/htmx.org@1.9.12" defer></script>
+</head>
+<body hx-indicator="#bar">
+  <div id="bar"></div>
+
+  <header class="top">
+    <div class="brand">
+      <span class="mark"></span>
+      <div>
+        <h1>{{ league_name }}</h1>
+        <p class="sub">Sleeper league analytics · metrics computed live</p>
+      </div>
+    </div>
+
+    <form class="controls" hx-get="/tab/overview" hx-target="#panel" hx-swap="innerHTML"
+          hx-trigger="change from:#season, submit">
+      <label>
+        <span>League ID</span>
+        <input type="text" name="league" id="league" value="{{ league }}">
+      </label>
+      <label>
+        <span>Season</span>
+        <select name="season" id="season">
+          {% for s in seasons %}
+          <option value="{{ s }}" {% if s == season %}selected{% endif %}>{{ s }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <button type="submit">Load</button>
+    </form>
+  </header>
+
+  <nav class="tabs" role="tablist"
+       hx-target="#panel" hx-swap="innerHTML" hx-include="#league, #season">
+    {% for id, label in tabs %}
+    <button role="tab" hx-get="/tab/{{ id }}"
+            class="{% if loop.first %}active{% endif %}"
+            onclick="document.querySelectorAll('.tabs button').forEach(b=>b.classList.remove('active'));this.classList.add('active')">
+      {{ label }}
+    </button>
+    {% endfor %}
+  </nav>
+
+  <main id="panel"
+        hx-get="/tab/overview" hx-trigger="load" hx-include="#league, #season">
+    <p class="empty">Loading…</p>
+  </main>
+
+  <footer>
+    Data: public Sleeper API. Champions come from the stored playoff brackets, not
+    Sleeper&rsquo;s <code>winners_bracket</code> — see <code>playoffs/README.md</code>.
+  </footer>
+</body>
+</html>

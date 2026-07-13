@@ -1,6 +1,9 @@
 #!/usr/bin/env python
-"""Single access point to run the Sleeper analytics Discord bot for either
-instance (R or Python).
+"""Single access point to run the Sleeper analytics apps for either instance
+(R or Python).
+
+    python launch.py python dashboard            # Python web app (FastAPI + HTMX)
+    python launch.py r dashboard                 # R web app (Shiny)
 
     python launch.py python serve                # Python slash-command bot
     python launch.py python weekly --dry-run     # Python weekly recap (preview)
@@ -8,11 +11,12 @@ instance (R or Python).
     python launch.py r weekly --dry-run           # R weekly recap (preview)
 
 Instances live in separate subdirectories:
-    python/   -> venv + Python package (sleepermetrics) + bot.py
+    python/   -> venv + Python package (sleepermetrics) + bot.py + webapp/
     r/        -> launcher for the R package (../sleepermetrics)
 
-Anything after the mode is passed through to that instance's runner. Config is
-read from each instance's .env (python/.env, r/.env) or the environment.
+Anything after the mode is passed through to that instance's runner (e.g.
+`dashboard --port 8000`). Config is read from each instance's .env
+(python/.env, r/.env) or the environment.
 """
 from __future__ import annotations
 
@@ -39,17 +43,44 @@ def _find_rscript() -> str:
     sys.exit("Could not find Rscript on PATH or under C:\\Program Files\\R.")
 
 
+def _parse_port(extra: list[str], default: int) -> tuple[int, list[str]]:
+    port, rest = default, []
+    it = iter(range(len(extra)))
+    i = 0
+    while i < len(extra):
+        if extra[i] in ("--port", "-p") and i + 1 < len(extra):
+            port = int(extra[i + 1])
+            i += 2
+            continue
+        rest.append(extra[i])
+        i += 1
+    return port, rest
+
+
 def _run_python(mode: str, extra: list[str]) -> int:
     venv_py = PY_DIR / ("venv/Scripts/python.exe" if os.name == "nt" else "venv/bin/python")
     if not venv_py.exists():
         sys.exit("Python venv missing. Set it up:\n"
                  "  python -m venv python/venv && "
                  "python/venv/Scripts/pip install -r python/requirements.txt")
+    if mode == "dashboard":
+        port, _rest = _parse_port(extra, 8000)
+        env = dict(os.environ, SLEEPERMETRICS_PLAYOFFS=str(BASE / "playoffs"))
+        print(f"Dashboard: http://127.0.0.1:{port}  (Ctrl+C to stop)")
+        return subprocess.run(
+            [str(venv_py), "-m", "uvicorn", "webapp.app:app",
+             "--host", "127.0.0.1", "--port", str(port)],
+            cwd=str(PY_DIR), env=env).returncode
     return subprocess.run([str(venv_py), "bot.py", mode, *extra], cwd=str(PY_DIR)).returncode
 
 
 def _run_r(mode: str, extra: list[str]) -> int:
     rscript = _find_rscript()
+    if mode == "dashboard":
+        port, _rest = _parse_port(extra, 8100)
+        print(f"Dashboard: http://127.0.0.1:{port}  (Ctrl+C to stop)")
+        return subprocess.run([rscript, "tools/run_dashboard.R", str(port)],
+                              cwd=str(BASE)).returncode
     return subprocess.run([rscript, "R/run_bot.R", mode, *extra], cwd=str(BASE)).returncode
 
 

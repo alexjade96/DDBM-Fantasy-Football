@@ -1,0 +1,120 @@
+{% if missing %}
+<p class="empty">No stored bracket for {{ missing }}. Add <code>playoffs/{{ missing }}.json</code>
+   (see <code>playoffs/README.md</code>).</p>
+{% else %}
+
+<section class="stats">
+  <div class="stat gold">
+    <span class="k">Champion</span>
+    <span class="v">{{ champion }}</span>
+  </div>
+  <div class="stat">
+    <span class="k">Playoff games</span>
+    <span class="v">{{ games }}</span>
+  </div>
+  <div class="stat">
+    <span class="k">Highest playoff score</span>
+    <span class="v">{{ top }}</span>
+  </div>
+  <div class="stat">
+    <span class="k">Biggest blowout</span>
+    <span class="v">{{ blow }}</span>
+  </div>
+</section>
+
+<div class="rowhead">
+  <h2>Bracket</h2>
+  <button class="ghost"
+          hx-get="/tab/playoffs?refresh=1" hx-target="#panel" hx-swap="innerHTML"
+          hx-include="#league, #season">
+    Re-score from live stats
+  </button>
+</div>
+<figure class="card chart">
+  <img src="/chart/bracket?league={{ league }}&season={{ season }}&_={{ bust }}"
+       alt="Playoff bracket">
+</figure>
+
+<h2>Matchup detail</h2>
+<form class="controls inline" hx-get="/tab/playoffs" hx-target="#panel"
+      hx-swap="innerHTML" hx-include="#league, #season" hx-trigger="change">
+  <label>
+    <span>Matchup</span>
+    <select name="matchup">
+      {% for m in matchups %}
+      <option value="{{ m }}" {% if m == matchup %}selected{% endif %}>{{ m }}</option>
+      {% endfor %}
+    </select>
+  </label>
+</form>
+<figure class="card chart">
+  <img src="/chart/playoff_matchup?league={{ league }}&season={{ season }}&matchup={{ matchup }}&_={{ bust }}"
+       alt="Matchup breakdown">
+</figure>
+
+<h2>Playoff analytics</h2>
+<div class="grid two">
+  <figure class="card chart">
+    <img src="/chart/playoff_stats?league={{ league }}&season={{ season }}&_={{ bust }}"
+         alt="Career playoff record" loading="lazy">
+  </figure>
+  <div class="card">
+    <h3>Postseason résumé</h3>
+    <p class="hint">Playoff-only metrics across every stored bracket.</p>
+    <div class="tablewrap">
+      <table>
+        <thead><tr>
+          <th>Manager</th><th class="n">Apps</th><th class="n">W</th><th class="n">L</th>
+          <th class="n">Win%</th><th class="n">Titles</th><th class="n">PPG</th>
+        </tr></thead>
+        <tbody>
+        {% for r in stats %}
+          <tr>
+            <td>{{ r.user_name }}</td>
+            <td class="n">{{ r.appearances }}</td>
+            <td class="n">{{ r.wins }}</td>
+            <td class="n">{{ r.losses }}</td>
+            <td class="n">{{ r.win_pct }}</td>
+            <td class="n">{% if r.titles %}<span class="chip">{{ r.titles }}</span>{% else %}—{% endif %}</td>
+            <td class="n">{{ r.ppg }}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<h2>This season&rsquo;s run</h2>
+<div class="card tablewrap">
+  <table>
+    <thead><tr>
+      <th>Team</th><th class="n">Games</th><th class="n">W</th><th class="n">L</th>
+      <th class="n">Points</th><th>Eliminated in</th>
+    </tr></thead>
+    <tbody>
+    {% for r in summary %}
+      <tr>
+        <td>{{ r.team }}</td>
+        <td class="n">{{ r.games }}</td>
+        <td class="n">{{ r.wins }}</td>
+        <td class="n">{{ r.losses }}</td>
+        <td class="n">{{ r.points }}</td>
+        <td>{{ r.eliminated_in or "— champion" }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<details class="card">
+  <summary>League point-calculation chart ({{ rules | length }} rules, stored with the bracket)</summary>
+  <p class="hint">Every playoff score above is <code>Σ(stat × weight)</code> from these rules —
+     which is what lets a hand-submitted lineup be scored at all.</p>
+  <div class="rules">
+    {% for k, v in rules %}
+    <div class="rule"><code>{{ k }}</code><span class="n">{{ v }}</span></div>
+    {% endfor %}
+  </div>
+</details>
+{% endif %}
