@@ -36,13 +36,13 @@
       <button type="submit">Load</button>
     </form>
 
-    <!-- The export deliverable: a self-contained HTML report of the whole
-         season. Generated on demand (draws every chart), so it opens in a new
-         tab and takes a few seconds. -->
+    <!-- The full season report, shown as its own rendered page (with a Download
+         button on it). Opens in a new tab so the dashboard stays put; drawn on
+         demand, so it takes a few seconds. -->
     <a class="report-btn" id="report-link" href="/report?league={{ league }}"
        target="_blank" rel="noopener"
-       title="Download a standalone HTML report of this season"
-       onclick="this.href='/report?league='+encodeURIComponent(document.getElementById('league').value)+'&season='+encodeURIComponent(document.getElementById('season').value)">Season report &darr;</a>
+       title="Open the full season report"
+       onclick="this.href='/report?league='+encodeURIComponent(document.getElementById('league').value)+'&season='+encodeURIComponent(document.getElementById('season').value)">View season report</a>
   </header>
 
   <nav class="tabs" role="tablist"

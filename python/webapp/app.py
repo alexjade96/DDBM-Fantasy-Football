@@ -18,7 +18,7 @@ from pathlib import Path
 
 import matplotlib
 from fastapi import FastAPI, Query, Request
-from fastapi.responses import FileResponse, HTMLResponse, Response
+from fastapi.responses import HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
@@ -328,21 +328,49 @@ def tab(name: str, request: Request, league: str = DEFAULT_LEAGUE,
     return tpl.TemplateResponse(request, "tab_charts.html", ctx)
 
 
-@app.get("/report")
-def report(league: str = DEFAULT_LEAGUE, season: str | None = None):
-    """Generate and download the standalone HTML season report.
-
-    Rendered on demand (it draws ~19 charts), so it takes a few seconds -- the
-    file it returns is fully self-contained and needs the server for nothing
-    afterwards.
-    """
+def _report_html(d, s, key) -> str:
+    """Generate the season report and return its HTML (drawn on demand)."""
+    import os
     import tempfile
-    d, s, key = pick(league, season)
     tmp = tempfile.NamedTemporaryFile(suffix=".html", delete=False)
     tmp.close()
-    sm.season_report(s, tmp.name, seasons=d["seasons"], playoffs=d["playoffs"])
-    fname = f"{s.name}_{key}_report.html".replace(" ", "_")
-    return FileResponse(tmp.name, media_type="text/html", filename=fname)
+    try:
+        sm.season_report(s, tmp.name, seasons=d["seasons"], playoffs=d["playoffs"])
+        with open(tmp.name, encoding="utf-8") as fh:
+            return fh.read()
+    finally:
+        os.unlink(tmp.name)
+
+
+@app.get("/report")
+def report(league: str = DEFAULT_LEAGUE, season: str | None = None,
+           download: int = 0):
+    """The season report, displayed inline as a page by default.
+
+    The primary action is to *show* the report; `download=1` returns the same
+    self-contained file as an attachment instead. Rendered on demand (it draws
+    ~19 charts), so either way takes a few seconds.
+    """
+    from urllib.parse import quote
+    d, s, key = pick(league, season)
+    doc = _report_html(d, s, key)
+    if download:
+        fname = f"{s.name}_{key}_report.html".replace(" ", "_")
+        return Response(doc, media_type="text/html", headers={
+            "Content-Disposition": f'attachment; filename="{fname}"'})
+    # Inline view: float a Download button over the report (styled with the
+    # report's own --accent token so it adapts to its light/dark theme). The
+    # button links back to download=1, which regenerates the pristine file --
+    # the on-screen toolbar never ends up in the saved copy.
+    dl = f"/report?league={quote(league)}&season={quote(key)}&download=1"
+    bar = (
+        '<div style="position:fixed;top:14px;right:16px;z-index:99999;'
+        'font-family:system-ui,-apple-system,sans-serif">'
+        f'<a href="{dl}" style="display:inline-flex;align-items:center;gap:6px;'
+        'background:var(--accent);color:#fff;text-decoration:none;font-weight:600;'
+        'font-size:13px;padding:8px 14px;border-radius:9px;'
+        'box-shadow:0 2px 10px rgba(0,0,0,.18)">&#8595; Download</a></div>')
+    return HTMLResponse(doc.replace("</body>", bar + "</body>"))
 
 
 @app.get("/health")
