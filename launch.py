@@ -5,6 +5,9 @@
     python launch.py python dashboard            # Python web app (FastAPI + HTMX)
     python launch.py r dashboard                 # R web app (Shiny)
 
+    python launch.py python report               # standalone HTML season report
+    python launch.py r report <league> --all     # one report per season
+
     python launch.py python serve                # Python slash-command bot
     python launch.py python weekly --dry-run     # Python weekly recap (preview)
     python launch.py r serve                      # R interactions endpoint (plumber)
@@ -76,6 +79,12 @@ def _run_python(mode: str, extra: list[str]) -> int:
             [str(venv_py), "-m", "uvicorn", "webapp.app:app",
              "--host", "127.0.0.1", "--port", str(port), *reload],
             cwd=str(PY_DIR), env=env).returncode
+    if mode == "report":
+        env = dict(os.environ, SLEEPERMETRICS_PLAYOFFS=str(BASE / "playoffs"))
+        # Reports land in the repo root, not python/, so run from BASE with the
+        # package importable via the venv's site-packages editable install.
+        return subprocess.run([str(venv_py), str(PY_DIR / "make_report.py"), *extra],
+                              cwd=str(BASE), env=env).returncode
     return subprocess.run([str(venv_py), "bot.py", mode, *extra], cwd=str(PY_DIR)).returncode
 
 
@@ -86,6 +95,10 @@ def _run_r(mode: str, extra: list[str]) -> int:
         print(f"Dashboard: http://127.0.0.1:{port}  (Ctrl+C to stop)")
         return subprocess.run([rscript, "tools/run_dashboard.R", str(port)],
                               cwd=str(BASE)).returncode
+    if mode == "report":
+        env = dict(os.environ, SLEEPERMETRICS_PLAYOFFS=str(BASE / "playoffs"))
+        return subprocess.run([rscript, "R/make_report.R", *extra],
+                              cwd=str(BASE), env=env).returncode
     return subprocess.run([rscript, "R/run_bot.R", mode, *extra], cwd=str(BASE)).returncode
 
 

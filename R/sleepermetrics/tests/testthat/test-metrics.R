@@ -4,6 +4,21 @@ test_that("sl_luck computes expected wins and luck", {
   expect_equal(nrow(d), 3L)
 })
 
+test_that("sl_season_report writes self-contained html", {
+  skip_if_not_installed("base64enc")
+  f <- withr::local_tempfile(fileext = ".html")
+  sl_season_report(make_season(), f)
+  doc <- paste(readLines(f, warn = FALSE), collapse = "\n")
+  expect_match(doc, "^<!doctype html>", ignore.case = TRUE)
+  expect_match(doc, "Test League")
+  expect_match(doc, "class='tile'")                       # KPI tiles
+  expect_equal(lengths(regmatches(doc, gregexpr("<td class='rank'>", doc))), 3L)
+  expect_match(doc, "data:image/png", fixed = TRUE)       # >=1 chart embedded
+  # Self-contained: no external assets, no scripts.
+  expect_false(grepl('src="http', doc, fixed = TRUE))
+  expect_false(grepl("<script", doc, fixed = TRUE))
+})
+
 test_that("sl_efficiency computes a percentage and bench points", {
   d <- sl_efficiency(make_season())
   expect_true(all(d$eff <= 100))

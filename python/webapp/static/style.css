@@ -44,6 +44,12 @@ input { width: 210px; font-family: ui-monospace, Consolas, monospace; font-size:
 button { cursor: pointer; background: var(--turf); border-color: var(--turf); color: #fff; font-weight: 600; }
 button:hover { filter: brightness(1.06); }
 button.ghost { background: var(--surface); color: var(--ink); border-color: var(--line); font-weight: 500; }
+/* The season-report export lives beside the load form, styled as a quiet button
+   so it reads as a secondary action next to the primary "Load". */
+.report-btn { align-self: flex-end; text-decoration: none; white-space: nowrap;
+  background: var(--surface); color: var(--ink); border: 1px solid var(--line);
+  border-radius: 8px; padding: 7px 12px; font-weight: 600; font-size: 13px; }
+.report-btn:hover { border-color: var(--turf); color: var(--turf); }
 :focus-visible { outline: 2px solid var(--turf); outline-offset: 2px; }
 
 .tabs {

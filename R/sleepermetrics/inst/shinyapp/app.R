@@ -25,6 +25,9 @@ ui <- page_sidebar(
     actionButton("load", "Load league", icon = icon("download"), class = "btn-primary"),
     hr(),
     selectInput("season", "Season", choices = NULL),
+    # The export deliverable: one self-contained HTML file of the whole season.
+    # Draws every chart, so it takes a few seconds.
+    downloadButton("report_dl", "Download season report", class = "btn-outline-secondary btn-sm"),
     uiOutput("league_info"),
     hr(),
     markdown("<small>Data: public Sleeper API. Metrics computed live.</small>")
@@ -167,6 +170,18 @@ server <- function(input, output, session) {
                 paste(d$season_names, collapse = ", "), "</small>"))
   })
   output$season_summary <- renderUI({ req(cur()); markdown(sm$sl_summary_season(cur())) })
+
+  # Export: a standalone HTML report of the whole season (draws every chart).
+  output$report_dl <- downloadHandler(
+    filename = function() {
+      s <- cur(); sprintf("%s_%s_report.html",
+                          gsub("\\s+", "_", s$name %||% "league"), s$season)
+    },
+    content = function(file) {
+      pos <- tryCatch(all_playoffs(), error = function(e) NULL)
+      withProgress(message = "Building season report...", value = 0.3,
+        sm$sl_season_report(cur(), file, seasons = seasons(), playoffs = pos))
+    })
   output$career_summary <- renderUI({ req(seasons()); markdown(sm$sl_summary_career(seasons())) })
   output$p_standings <- renderPlot({ req(cur()); sm$sl_plot_standings(cur()) }, res = 96)
   output$p_power     <- renderPlot({ req(cur()); sm$sl_plot_power_rank(cur()) }, res = 96)

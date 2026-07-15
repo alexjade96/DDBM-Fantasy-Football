@@ -18,7 +18,7 @@ from pathlib import Path
 
 import matplotlib
 from fastapi import FastAPI, Query, Request
-from fastapi.responses import HTMLResponse, Response
+from fastapi.responses import FileResponse, HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
@@ -326,6 +326,23 @@ def tab(name: str, request: Request, league: str = DEFAULT_LEAGUE,
         return HTMLResponse("<p class='empty'>Unknown tab.</p>", status_code=404)
 
     return tpl.TemplateResponse(request, "tab_charts.html", ctx)
+
+
+@app.get("/report")
+def report(league: str = DEFAULT_LEAGUE, season: str | None = None):
+    """Generate and download the standalone HTML season report.
+
+    Rendered on demand (it draws ~19 charts), so it takes a few seconds -- the
+    file it returns is fully self-contained and needs the server for nothing
+    afterwards.
+    """
+    import tempfile
+    d, s, key = pick(league, season)
+    tmp = tempfile.NamedTemporaryFile(suffix=".html", delete=False)
+    tmp.close()
+    sm.season_report(s, tmp.name, seasons=d["seasons"], playoffs=d["playoffs"])
+    fname = f"{s.name}_{key}_report.html".replace(" ", "_")
+    return FileResponse(tmp.name, media_type="text/html", filename=fname)
 
 
 @app.get("/health")

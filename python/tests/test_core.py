@@ -63,6 +63,20 @@ def test_manager_profile(season_obj):
     assert al["lineup_iq"] == pytest.approx((100 / 110 + 130 / 140) / 2 * 100)
 
 
+def test_season_report_is_self_contained_html(tmp_path, season_obj):
+    from sleepermetrics import season_report
+    out = tmp_path / "report.html"
+    season_report(season_obj, str(out))
+    doc = out.read_text(encoding="utf-8")
+    assert doc.lower().startswith("<!doctype html>")
+    assert "Test League" in doc
+    assert "class='tile'" in doc                      # KPI tiles rendered
+    assert doc.count("<td class='rank'>") == 3        # one row per team
+    assert "data:image/png" in doc                    # >=1 chart embedded inline
+    # Self-contained: no external assets to fetch (charts are data URIs).
+    assert 'src="http' not in doc and "<script" not in doc
+
+
 def test_week_stats(season_obj):
     d = metrics.week_stats(season_obj, 2)
     assert len(d) == 3
