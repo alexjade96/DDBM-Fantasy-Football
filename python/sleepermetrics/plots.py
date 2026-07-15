@@ -172,6 +172,79 @@ def plot_pf_pa(s: Season):
                    "Points For", "Points Against", caption=_cap(s), grid_axis="both")
 
 
+def plot_allplay(s: Season):
+    """All-play standings (mirrors R sl_plot_allplay)."""
+    d = metrics.allplay(s).sort_values("allplay_pct").reset_index(drop=True)
+    fill = {"helped": "#2ca02c", "hurt": "#d62728", "even": "#9aa0a6"}
+    fig, ax = plt.subplots(figsize=(9.5, 6))
+    colors = ["#9aa0a6" if v == 0 else ("#2ca02c" if v > 0 else "#d62728")
+              for v in d["rank_delta"]]
+    ax.barh(range(len(d)), d["allplay_pct"], color=colors, height=0.72, zorder=2)
+    ax.set_yticks(range(len(d)))
+    ax.set_yticklabels(d["user_name"])
+    for i, (_, r) in enumerate(d.iterrows()):
+        gap = "even" if r["rank_delta"] == 0 else f"{r['rank_delta']:+d}"
+        ax.text(r["allplay_pct"] + 0.01, i,
+                f"{r['allplay_pct'] * 100:.0f}%  ·  finished {int(r['final_position'])} ({gap})",
+                va="center", fontsize=9, color="#333333")
+    ax.set_xlim(0, 1.38)
+    ax.xaxis.set_major_formatter(lambda v, _: f"{v * 100:.0f}%")
+    from matplotlib.patches import Patch
+    ax.legend(handles=[Patch(color=fill["helped"], label="schedule helped"),
+                       Patch(color=fill["hurt"], label="schedule hurt"),
+                       Patch(color=fill["even"], label="as deserved")],
+              loc="lower right", frameon=False, fontsize=9)
+    return _finish(fig, ax, "All-Play Standings",
+                   "If everyone played everyone every week  ·  colour = did the real schedule flatter or rob them",
+                   "All-Play Win %", caption=_cap(s))
+
+
+def plot_power_rank(s: Season):
+    """Composite power ranking (mirrors R sl_plot_power_rank)."""
+    d = metrics.power_rank(s).sort_values("power").reset_index(drop=True)
+    fig, ax = plt.subplots(figsize=(9.5, 6))
+    colors = ["#2c7fb8" if v > 0 else "#c0563f" for v in d["power"]]
+    ax.barh(range(len(d)), d["power"], color=colors, height=0.72, zorder=2)
+    ax.axvline(0, color="#b0b0b0", zorder=3)
+    ax.set_yticks(range(len(d)))
+    ax.set_yticklabels(d["user_name"])
+    span = d["power"].max() - d["power"].min()
+    # d is already in bar order (power ascending); _medals positions by row index,
+    # so it must NOT be re-sorted or the medals land on the wrong rows.
+    _medals(ax, d, "power_rank", d["power"].min() - span * 0.04)
+    for i, (_, r) in enumerate(d.iterrows()):
+        off = span * 0.012
+        ha = "left" if r["power"] > 0 else "right"
+        ax.text(r["power"] + (off if r["power"] > 0 else -off), i,
+                f"{r['power']:+.2f}", va="center", ha=ha, fontsize=9, color="#404040")
+    ax.set_xlim(d["power"].min() - span * 0.18, d["power"].max() + span * 0.16)
+    return _finish(fig, ax, "Power Rankings",
+                   "Composite of points, all-play win%, recent form and lineup efficiency  ·  0 = league average",
+                   "Power Score (standardised)", caption=_cap(s))
+
+
+def plot_manager_profile(s: Season):
+    """Manager-identity quadrant (mirrors R sl_plot_manager_profile)."""
+    d = metrics.manager_profile(s)
+    pal = palette(d["user_name"])
+    mx, my = d["moves_per_wk"].median(), d["lineup_iq"].median()
+    fig, ax = plt.subplots(figsize=(9, 6.4))
+    ax.axvline(mx, ls="--", color="#c7c7c7", zorder=1)
+    ax.axhline(my, ls="--", color="#c7c7c7", zorder=1)
+    tmax = max(d["trades"].max(), 1)
+    sizes = 60 + d["trades"] / tmax * 300
+    ax.scatter(d["moves_per_wk"], d["lineup_iq"], s=sizes,
+               c=[pal[n] for n in d["user_name"]], alpha=0.85, zorder=3,
+               edgecolors="white", linewidths=1)
+    for _, r in d.iterrows():
+        ax.annotate(r["user_name"], (r["moves_per_wk"], r["lineup_iq"]),
+                    textcoords="offset points", xytext=(8, 5), fontsize=8, color="#404040")
+    return _finish(fig, ax, "Manager Tendencies",
+                   "Right = works the wire  ·  up = sets a sharp lineup  ·  bubble = trades made",
+                   "Roster Moves per Week", "Lineup IQ (% of optimal)",
+                   caption=_cap(s), grid_axis="both")
+
+
 def plot_consistency(s: Season):
     order = metrics.consistency(s).sort_values("median")["user_name"].tolist()
     pal = palette(s.team_wk["user_name"])

@@ -163,6 +163,97 @@ sl_plot_pf_pa <- function(season) {
     ggplot2::theme(panel.grid.major.y = ggplot2::element_line(colour = "grey92", linewidth = 0.4))
 }
 
+#' All-play standings chart
+#'
+#' Bars = all-play win% (what your record would be if you played everyone every
+#' week), ordered by all-play rank. Each bar is annotated with the actual finish
+#' and the rank gap, and coloured by whether the real standing beat all-play
+#' merit (the schedule helped) or fell short of it (the schedule hurt).
+#' @param season A [sleeper_season] object.
+#' @return A ggplot.
+#' @export
+sl_plot_allplay <- function(season) {
+  d <- sl_allplay(season) %>%
+    dplyr::mutate(
+      user_name = fct_reorder(user_name, allplay_pct),
+      helped = dplyr::case_when(rank_delta > 0 ~ "schedule helped",
+                                rank_delta < 0 ~ "schedule hurt",
+                                TRUE ~ "as deserved"),
+      lbl = sprintf("%.0f%%  ·  finished %d (%s)", allplay_pct * 100,
+                    final_position,
+                    ifelse(rank_delta == 0, "even",
+                           sprintf("%+d", rank_delta))))
+  ggplot2::ggplot(d, ggplot2::aes(allplay_pct, user_name)) +
+    ggplot2::geom_col(ggplot2::aes(fill = helped), width = 0.72) +
+    ggplot2::geom_text(ggplot2::aes(label = lbl), hjust = -0.03, size = 3,
+                       colour = "grey20") +
+    ggplot2::scale_fill_manual(
+      values = c("schedule helped" = "#2ca02c", "schedule hurt" = "#d62728",
+                 "as deserved" = "#9aa0a6"), name = NULL) +
+    ggplot2::scale_x_continuous(labels = scales::percent,
+                                expand = ggplot2::expansion(c(0, 0.38)), limits = c(0, 1)) +
+    ggplot2::labs(title = "All-Play Standings",
+                  subtitle = "If everyone played everyone every week  ·  colour = did the real schedule flatter or rob them",
+                  x = "All-Play Win %", y = NULL, caption = .sl_cap(season)) +
+    theme_sleeper() +
+    ggplot2::theme(legend.position = "top", legend.justification = "left")
+}
+
+#' Power ranking chart
+#'
+#' The composite power score as a diverging bar around the league average (0):
+#' z-scored blend of scoring, all-play quality, recent form and coaching. Podium
+#' medals on the top three.
+#' @param season A [sleeper_season] object.
+#' @return A ggplot.
+#' @export
+sl_plot_power_rank <- function(season) {
+  d <- sl_power_rank(season) %>%
+    dplyr::mutate(user_name = fct_reorder(user_name, power))
+  x0 <- min(d$power) - diff(range(d$power)) * 0.04
+  ggplot2::ggplot(d, ggplot2::aes(power, user_name, fill = power > 0)) +
+    ggplot2::geom_col(width = 0.72, show.legend = FALSE) +
+    ggplot2::geom_vline(xintercept = 0, colour = "grey70") +
+    .sl_medals(d, "power_rank", x0) +
+    ggplot2::geom_text(ggplot2::aes(label = sprintf("%+.2f", power),
+                                    hjust = ifelse(power > 0, -0.25, 1.25)),
+                       size = 3, colour = "grey25") +
+    ggplot2::scale_fill_manual(values = c(`TRUE` = "#2c7fb8", `FALSE` = "#c0563f")) +
+    ggplot2::scale_x_continuous(expand = ggplot2::expansion(c(0.16, 0.14))) +
+    ggplot2::labs(title = "Power Rankings",
+                  subtitle = "Composite of points, all-play win%, recent form and lineup efficiency  ·  0 = league average",
+                  x = "Power Score (standardised)", y = NULL, caption = .sl_cap(season)) +
+    theme_sleeper()
+}
+
+#' Manager tendencies chart
+#'
+#' The manager-identity quadrant: activity (roster moves per week) against lineup
+#' IQ (how close to the optimal lineup they set), with bubble size = trades.
+#' Splits the league into active/passive and sharp/loose managers.
+#' @param season A [sleeper_season] object.
+#' @return A ggplot.
+#' @export
+sl_plot_manager_profile <- function(season) {
+  d <- sl_manager_profile(season)
+  mx <- stats::median(d$moves_per_wk); my <- stats::median(d$lineup_iq)
+  ggplot2::ggplot(d, ggplot2::aes(moves_per_wk, lineup_iq)) +
+    ggplot2::geom_vline(xintercept = mx, linetype = "dashed", colour = "grey78") +
+    ggplot2::geom_hline(yintercept = my, linetype = "dashed", colour = "grey78") +
+    ggplot2::geom_point(ggplot2::aes(colour = user_name, size = trades),
+                        alpha = 0.85, show.legend = FALSE) +
+    ggrepel::geom_text_repel(ggplot2::aes(label = user_name), size = 3,
+                             colour = "grey25", point.padding = 6) +
+    ggplot2::scale_colour_manual(values = sl_palette(d$user_name)) +
+    ggplot2::scale_size(range = c(3, 10)) +
+    ggplot2::labs(title = "Manager Tendencies",
+                  subtitle = "Right = works the wire  ·  up = sets a sharp lineup  ·  bubble = trades made",
+                  x = "Roster Moves per Week", y = "Lineup IQ (% of optimal)",
+                  caption = .sl_cap(season)) +
+    theme_sleeper() +
+    ggplot2::theme(panel.grid.major.y = ggplot2::element_line(colour = "grey92", linewidth = 0.4))
+}
+
 #' Career standings chart
 #' @param seasons A list of [sleeper_season] objects.
 #' @return A ggplot.

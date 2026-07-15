@@ -10,6 +10,29 @@ test_that("sl_efficiency computes a percentage and bench points", {
   expect_equal(d$eff[d$user_name == "Cy"], round(160 / 200 * 100, 1))
 })
 
+test_that("sl_allplay ranks by all-play win% and reports the schedule gap", {
+  d <- sl_allplay(make_season())
+  expect_true(all(c("allplay_pct", "allplay_rank", "rank_delta") %in% names(d)))
+  # rank_delta is the gap between all-play rank and actual finish.
+  expect_equal(d$rank_delta, d$allplay_rank - d$final_position)
+  expect_equal(d$allplay_rank, seq_len(nrow(d)))    # ranked 1..n
+})
+
+test_that("sl_power_rank z-scores centre at 0 and the best team leads", {
+  d <- sl_power_rank(make_season())
+  expect_equal(names(d), c("user_name", "points", "allplay_pct", "form",
+                           "eff", "power", "power_rank"))
+  expect_equal(d$user_name[d$power_rank == 1], "Al")  # highest points + all-play
+  expect_lt(abs(sum(d$power)), 1e-9)                  # weighted z-scores sum to 0
+})
+
+test_that("sl_manager_profile: no transactions -> zero moves, IQ from lineups", {
+  d <- sl_manager_profile(make_season())
+  expect_equal(sum(d$moves, d$trades, d$drops), 0L)
+  # Al: mean(100/110, 100/110) * 100
+  expect_equal(d$lineup_iq[d$user_name == "Al"], mean(c(100/110, 100/110)) * 100)
+})
+
 test_that("sl_consistency and sl_high_scores return one row per team", {
   s <- make_season()
   expect_equal(nrow(sl_consistency(s)), 3L)

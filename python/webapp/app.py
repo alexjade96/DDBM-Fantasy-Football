@@ -175,6 +175,8 @@ SEASON_CHARTS = {
     "efficiency": plots.plot_efficiency, "consistency": plots.plot_consistency,
     "pf_pa": plots.plot_pf_pa, "table_position": plots.plot_table_position,
     "team_points": plots.plot_team_points,
+    "allplay": plots.plot_allplay, "power_rank": plots.plot_power_rank,
+    "manager_profile": plots.plot_manager_profile,
     "position_scoring": plots.plot_position_scoring,
     "roster_heatmap": plots.plot_roster_heatmap,
     "starter_bench": plots.plot_starter_bench,
@@ -240,7 +242,7 @@ def load(request: Request, league: str = DEFAULT_LEAGUE, season: str | None = No
     ctx = {"league": league, "season": key, "scope": "title", "bust": 0,
            "league_name": s.name, "seasons": list(reversed(d["names"])),
            "summary": summaries.summary_season(s),
-           "charts": ["standings", "luck"]}
+           "charts": ["standings", "power_rank", "allplay", "luck"]}
     return tpl.TemplateResponse(request, "load.html", ctx)
 
 
@@ -260,7 +262,7 @@ def tab(name: str, request: Request, league: str = DEFAULT_LEAGUE,
 
     if name == "overview":
         ctx["summary"] = summaries.summary_season(s)
-        ctx["charts"] = ["standings", "luck"]
+        ctx["charts"] = ["standings", "power_rank", "allplay", "luck"]
     elif name == "weekly":
         ctx["charts"] = ["table_position", "team_points"]
     elif name == "coaching":
@@ -269,7 +271,7 @@ def tab(name: str, request: Request, league: str = DEFAULT_LEAGUE,
         ctx["charts"] = ["position_scoring", "roster_counts", "roster_heatmap",
                          "starter_bench", "position_box"]
     elif name == "transactions":
-        ctx["charts"] = ["trade_performance", "waiver_performance"]
+        ctx["charts"] = ["manager_profile", "trade_performance", "waiver_performance"]
     elif name == "career":
         ctx["summary"] = summaries.summary_career(d["seasons"])
         ctx["charts"] = ["career", "trajectory"]

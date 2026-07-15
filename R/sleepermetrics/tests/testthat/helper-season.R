@@ -33,6 +33,7 @@ make_season <- function(season = "2025", champ_roster = 1L) {
   structure(list(season = season, name = "Test League", league_id = "0",
                  last_week = 2, slots = list(), team_wk = team_wk,
                  pl_wk = tibble::tibble(), lineup = lineup,
-                 standings = standings, user_map = tibble::tibble()),
+                 standings = standings, user_map = tibble::tibble(),
+                 transactions = tibble::tibble()),
             class = "sleeper_season")
 }

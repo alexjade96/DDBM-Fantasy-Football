@@ -303,6 +303,119 @@ sl_trade_performance <- function(season) {
     dplyr::arrange(dplyr::desc(total), player_name, user_name)
 }
 
+#' Regular-season all-play standings
+#'
+#' What the standings would be if every team played every other team every week.
+#' All-play win% is schedule-independent, so comparing all-play rank with the
+#' actual finish shows who the schedule flattered and who it robbed.
+#'
+#' `rank_delta = allplay_rank - final_position`: positive means the real standing
+#' is better than all-play merit (a friendly schedule / good timing), negative
+#' means the team was better than its record.
+#'
+#' @param season A [sleeper_season] object.
+#' @return Tibble: `user_name`, `allplay_w`, `allplay_l`, `allplay_pct`,
+#'   `final_position`, `allplay_rank`, `rank_delta`.
+#' @export
+sl_allplay <- function(season) {
+  season$standings %>%
+    dplyr::transmute(user_name, allplay_w, allplay_l,
+                     allplay_pct = allplay_w / pmax(allplay_w + allplay_l, 1),
+                     final_position) %>%
+    dplyr::arrange(dplyr::desc(allplay_pct), dplyr::desc(allplay_w)) %>%
+    dplyr::mutate(allplay_rank = dplyr::row_number(),
+                  rank_delta = allplay_rank - final_position)
+}
+
+#' Power ranking (composite)
+#'
+#' A transparent blend of four z-scored components: points for (scoring power),
+#' all-play win% (schedule-independent quality), recent form (mean points over
+#' the last `recent` weeks), and lineup efficiency (coaching). Each is
+#' standardised across the league then weighted, so the number answers "how
+#' strong is this team, all things considered" rather than just "what is its
+#' record". Weights are explicit and tunable.
+#'
+#' The composite is deliberately left unrounded (z-scores are mean/sd derived);
+#' round only when displaying, per the project's parity discipline.
+#'
+#' @param season A [sleeper_season] object.
+#' @param weights Named numeric with `points`, `allplay`, `form`, `eff`.
+#' @param recent Number of most recent weeks that count as "form".
+#' @return Tibble: `user_name`, `points`, `allplay_pct`, `form`, `eff`, `power`,
+#'   `power_rank`.
+#' @export
+sl_power_rank <- function(season,
+                          weights = c(points = 0.35, allplay = 0.30,
+                                      form = 0.20, eff = 0.15),
+                          recent = 3) {
+  # z across the league; a league where everyone is equal (sd 0) contributes 0.
+  z <- function(x) {
+    s <- stats::sd(x)
+    if (is.na(s) || s == 0) rep(0, length(x)) else (x - mean(x)) / s
+  }
+  maxwk <- max(season$team_wk$week)
+  form <- season$team_wk %>%
+    dplyr::filter(week > maxwk - recent) %>%
+    dplyr::group_by(user_name) %>%
+    dplyr::summarise(form = mean(points), .groups = "drop")
+  eff <- sl_efficiency(season) %>% dplyr::select(user_name, eff)
+  season$standings %>%
+    dplyr::transmute(user_name, points,
+                     allplay_pct = allplay_w / pmax(allplay_w + allplay_l, 1)) %>%
+    dplyr::left_join(form, by = "user_name") %>%
+    dplyr::left_join(eff, by = "user_name") %>%
+    dplyr::mutate(power = weights[["points"]]  * z(points) +
+                          weights[["allplay"]] * z(allplay_pct) +
+                          weights[["form"]]    * z(form) +
+                          weights[["eff"]]     * z(eff)) %>%
+    dplyr::arrange(dplyr::desc(power)) %>%
+    dplyr::mutate(power_rank = dplyr::row_number())
+}
+
+#' Manager tendencies
+#'
+#' A behavioural profile from the season's transactions and lineups: roster churn
+#' (waiver / free-agent adds), trade activity, drops, and how well each manager
+#' actually set their lineup (mean weekly start/sit efficiency). Answers "what
+#' kind of manager is this" rather than "how good is the team".
+#'
+#' `lineup_iq` is mean-derived, so it is returned unrounded; round on display.
+#'
+#' @param season A [sleeper_season] object.
+#' @return Tibble: `user_name`, `moves` (waiver+FA adds), `trades` (players
+#'   acquired via trade), `drops`, `moves_per_wk`, `lineup_iq`.
+#' @export
+sl_manager_profile <- function(season) {
+  tx <- season$transactions
+  weeks <- max(season$team_wk$week)
+  managers <- season$standings %>% dplyr::distinct(user_name)
+
+  tally <- function(pred) {
+    if (!nrow(tx)) return(tibble(user_name = character(), n = integer()))
+    dplyr::count(dplyr::filter(tx, pred & status != "failed"), user_name, name = "n")
+  }
+  moves  <- dplyr::rename(tally(tx$type %in% c("waiver", "free_agent") &
+                                  tx$transaction == "add"), moves = n)
+  trades <- dplyr::rename(tally(tx$type == "trade" & tx$transaction == "add"),
+                          trades = n)
+  drops  <- dplyr::rename(tally(tx$transaction == "drop"), drops = n)
+  iq <- season$lineup %>%
+    dplyr::group_by(user_name) %>%
+    dplyr::summarise(lineup_iq = mean(actual / pmax(optimal, 1e-9)) * 100,
+                     .groups = "drop")
+
+  managers %>%
+    dplyr::left_join(moves, by = "user_name") %>%
+    dplyr::left_join(trades, by = "user_name") %>%
+    dplyr::left_join(drops, by = "user_name") %>%
+    dplyr::left_join(iq, by = "user_name") %>%
+    dplyr::mutate(dplyr::across(c(moves, trades, drops),
+                                ~ tidyr::replace_na(.x, 0L)),
+                  moves_per_wk = moves / weeks) %>%
+    dplyr::arrange(dplyr::desc(moves), dplyr::desc(lineup_iq))
+}
+
 #' Waiver / free-agent pickup performance
 #'
 #' Points scored by players a manager acquired off waivers or free agency, while

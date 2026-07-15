@@ -169,6 +169,94 @@ def roster_counts(s: Season) -> pd.DataFrame:
     return _pos_cat(g).sort_values(["position", "status"]).reset_index(drop=True)
 
 
+# --- Composite / behavioural metrics -------------------------------------
+
+def allplay(s: Season) -> pd.DataFrame:
+    """Regular-season all-play standings (mirrors R sl_allplay).
+
+    What the standings would be if every team played every other team every
+    week. `rank_delta = allplay_rank - final_position`: positive means the real
+    standing beats all-play merit (a friendly schedule), negative means the team
+    was better than its record.
+    """
+    d = s.standings.copy()
+    out = pd.DataFrame({
+        "user_name": d["user_name"],
+        "allplay_w": d["allplay_w"], "allplay_l": d["allplay_l"],
+        "allplay_pct": d["allplay_w"] / (d["allplay_w"] + d["allplay_l"]).clip(lower=1),
+        "final_position": d["final_position"],
+    })
+    out = out.sort_values(["allplay_pct", "allplay_w"], ascending=False).reset_index(drop=True)
+    out["allplay_rank"] = out.index + 1
+    out["rank_delta"] = out["allplay_rank"] - out["final_position"]
+    return out
+
+
+def power_rank(s: Season, weights: dict | None = None, recent: int = 3) -> pd.DataFrame:
+    """Composite power ranking (mirrors R sl_power_rank).
+
+    A z-scored blend of points for, all-play win%, recent form, and lineup
+    efficiency. The composite is left unrounded (mean/sd derived); round on
+    display, per the project's parity discipline.
+    """
+    w = weights or {"points": 0.35, "allplay": 0.30, "form": 0.20, "eff": 0.15}
+
+    def z(x: pd.Series) -> pd.Series:
+        sd = x.std()
+        if pd.isna(sd) or sd == 0:
+            return pd.Series(0.0, index=x.index)
+        return (x - x.mean()) / sd
+
+    maxwk = s.team_wk["week"].max()
+    form = (s.team_wk[s.team_wk["week"] > maxwk - recent]
+            .groupby("user_name", as_index=False).agg(form=("points", "mean")))
+    eff = efficiency(s)[["user_name", "eff"]]
+    d = s.standings[["user_name", "points", "allplay_w", "allplay_l"]].copy()
+    d["allplay_pct"] = d["allplay_w"] / (d["allplay_w"] + d["allplay_l"]).clip(lower=1)
+    d = d.merge(form, on="user_name", how="left").merge(eff, on="user_name", how="left")
+    d["power"] = (w["points"] * z(d["points"]) + w["allplay"] * z(d["allplay_pct"])
+                  + w["form"] * z(d["form"]) + w["eff"] * z(d["eff"]))
+    d = d.sort_values("power", ascending=False).reset_index(drop=True)
+    d["power_rank"] = d.index + 1
+    return d[["user_name", "points", "allplay_pct", "form", "eff", "power", "power_rank"]]
+
+
+def manager_profile(s: Season) -> pd.DataFrame:
+    """Manager tendencies (mirrors R sl_manager_profile).
+
+    Behavioural profile from transactions and lineups: roster churn, trades,
+    drops, and mean weekly start/sit efficiency. `lineup_iq` is mean-derived and
+    returned unrounded; round on display.
+    """
+    tx = s.transactions
+    weeks = s.team_wk["week"].max()
+    managers = s.standings[["user_name"]].drop_duplicates()
+
+    def tally(mask_fn, name):
+        # mask_fn is deferred so a column-less empty transactions frame (a season
+        # with no moves) short-circuits before any column is touched.
+        if not len(tx):
+            return pd.DataFrame({"user_name": [], name: []})
+        sub = tx[mask_fn(tx) & (tx["status"] != "failed")]
+        return sub.groupby("user_name", as_index=False).size().rename(columns={"size": name})
+
+    moves = tally(lambda t: t["type"].isin(["waiver", "free_agent"]) & (t["transaction"] == "add"), "moves")
+    trades = tally(lambda t: (t["type"] == "trade") & (t["transaction"] == "add"), "trades")
+    drops = tally(lambda t: t["transaction"] == "drop", "drops")
+    iq = (s.lineup.assign(r=s.lineup["actual"] / s.lineup["optimal"].clip(lower=1e-9))
+          .groupby("user_name", as_index=False).agg(lineup_iq=("r", "mean")))
+    iq["lineup_iq"] = iq["lineup_iq"] * 100
+
+    out = (managers.merge(moves, on="user_name", how="left")
+           .merge(trades, on="user_name", how="left")
+           .merge(drops, on="user_name", how="left")
+           .merge(iq, on="user_name", how="left"))
+    for c in ("moves", "trades", "drops"):
+        out[c] = out[c].fillna(0).astype(int)
+    out["moves_per_wk"] = out["moves"] / weeks
+    return out.sort_values(["moves", "lineup_iq"], ascending=False).reset_index(drop=True)
+
+
 # --- Transaction analytics (ported from ddbmFF.R) -------------------------
 
 def transactions(s: Season) -> pd.DataFrame:

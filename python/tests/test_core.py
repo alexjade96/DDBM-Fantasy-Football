@@ -1,6 +1,7 @@
 import os
 
 import pandas as pd
+import pytest
 
 from sleepermetrics import metrics, plots, summaries
 from sleepermetrics.discord_bot import _render_command
@@ -35,6 +36,31 @@ def test_luck_and_efficiency(season_obj):
     eff = metrics.efficiency(season_obj)
     cy = eff.loc[eff["user_name"] == "Cy", "eff"].iloc[0]
     assert cy == round(200 / 240 * 100, 1)
+
+
+def test_allplay(season_obj):
+    d = metrics.allplay(season_obj)
+    assert set(["user_name", "allplay_pct", "allplay_rank", "rank_delta"]).issubset(d.columns)
+    al = d[d["user_name"] == "Al"].iloc[0]
+    assert al["allplay_pct"] == 1.0 and al["allplay_rank"] == 1
+    # rank_delta is the gap between all-play rank and actual finish.
+    assert (d["rank_delta"] == d["allplay_rank"] - d["final_position"]).all()
+
+
+def test_power_rank(season_obj):
+    d = metrics.power_rank(season_obj)
+    assert list(d.columns) == ["user_name", "points", "allplay_pct", "form",
+                               "eff", "power", "power_rank"]
+    assert d.loc[d["power_rank"] == 1, "user_name"].iloc[0] == "Al"   # best team
+    assert abs(d["power"].sum()) < 1e-9                               # z-scores centre at 0
+
+
+def test_manager_profile(season_obj):
+    d = metrics.manager_profile(season_obj)
+    # No transactions in the fixture -> all move counts zero, lineup IQ from lineup.
+    assert (d[["moves", "trades", "drops"]].sum().sum()) == 0
+    al = d[d["user_name"] == "Al"].iloc[0]
+    assert al["lineup_iq"] == pytest.approx((100 / 110 + 130 / 140) / 2 * 100)
 
 
 def test_week_stats(season_obj):

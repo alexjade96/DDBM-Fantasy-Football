@@ -33,6 +33,8 @@ ui <- page_sidebar(
     nav_panel("Season overview", icon = icon("table-list"),
       card(card_header("What the numbers say"), uiOutput("season_summary")),
       layout_columns(card(full_screen = TRUE, plotOutput("p_standings", height = 430)),
+                     card(full_screen = TRUE, plotOutput("p_power", height = 430))),
+      layout_columns(card(full_screen = TRUE, plotOutput("p_allplay", height = 430)),
                      card(full_screen = TRUE, plotOutput("p_luck", height = 430)))),
     nav_panel("Weekly trends", icon = icon("chart-line"),
       card(full_screen = TRUE, plotOutput("p_tablepos", height = 470)),
@@ -48,6 +50,9 @@ ui <- page_sidebar(
       card(full_screen = TRUE, plotOutput("p_starter", height = 400)),
       card(full_screen = TRUE, plotOutput("p_posbox", height = 470))),
     nav_panel("Transactions", icon = icon("right-left"),
+      card(full_screen = TRUE, card_header("Manager tendencies"),
+           markdown("<small>Activity (roster moves per week) vs lineup IQ (how close to the optimal lineup they set)  ·  bubble = trades made.</small>"),
+           plotOutput("p_mgr", height = 480)),
       markdown("Value **while rostered**, read from weekly roster membership. Trades show every team that held the player; waivers/FA show the acquiring team."),
       card(full_screen = TRUE, plotOutput("p_trade", height = 520)),
       card(full_screen = TRUE, plotOutput("p_waiver", height = 560))),
@@ -164,6 +169,8 @@ server <- function(input, output, session) {
   output$season_summary <- renderUI({ req(cur()); markdown(sm$sl_summary_season(cur())) })
   output$career_summary <- renderUI({ req(seasons()); markdown(sm$sl_summary_career(seasons())) })
   output$p_standings <- renderPlot({ req(cur()); sm$sl_plot_standings(cur()) }, res = 96)
+  output$p_power     <- renderPlot({ req(cur()); sm$sl_plot_power_rank(cur()) }, res = 96)
+  output$p_allplay   <- renderPlot({ req(cur()); sm$sl_plot_allplay(cur()) }, res = 96)
   output$p_luck      <- renderPlot({ req(cur()); sm$sl_plot_luck(cur()) }, res = 96)
   output$p_eff       <- renderPlot({ req(cur()); sm$sl_plot_efficiency(cur()) }, res = 96)
   output$p_cons      <- renderPlot({ req(cur()); sm$sl_plot_consistency(cur()) }, res = 96)
@@ -370,6 +377,8 @@ server <- function(input, output, session) {
     })
     do.call(layout_column_wrap, c(list(width = 1/2, heights_equal = "row"), panels))
   })
+
+  output$p_mgr <- renderPlot({ req(cur()); sm$sl_plot_manager_profile(cur()) }, res = 96)
 
   # Transaction charts: guard seasons with no trades / pickups.
   output$p_trade <- renderPlot({
