@@ -1,7 +1,13 @@
+import os
+
 import pandas as pd
 import pytest
 
-from sleepermetrics.season import Season
+# Portraits are fetched from a CDN. The suite is network-free, so turn them off
+# for every test: charts fall back to plain text labels.
+os.environ["SLEEPERMETRICS_NO_IMAGES"] = "1"
+
+from sleepermetrics.season import Season  # noqa: E402
 
 
 def make_season(season="2025", champ_roster=1):

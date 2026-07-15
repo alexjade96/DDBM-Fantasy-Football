@@ -396,8 +396,14 @@ sl_plot_roster_counts <- function(season) {
   d <- d %>% dplyr::mutate(player_name = fct_reorder(player_name, total))
   totals <- d %>% dplyr::distinct(player_name, total)
   span <- max(totals$total)
+  # One portrait per player row (a traded player appears under several managers,
+  # so take the first -- it is the same player either way).
+  faces <- d %>% dplyr::distinct(player_name, .keep_all = TRUE) %>%
+    dplyr::mutate(yfac = player_name)
   ggplot2::ggplot(d, ggplot2::aes(points, player_name, fill = user_name)) +
     ggplot2::geom_col(width = 0.72, colour = "white", linewidth = 0.3) +
+    .sl_portraits(faces, span) +
+    ggplot2::coord_cartesian(clip = "off") +
     ggplot2::geom_text(ggplot2::aes(label = ifelse(points >= span * 0.06,
                                     paste0(round(points), " (", weeks, "w)"), "")),
                        position = ggplot2::position_stack(vjust = 0.5), size = 2.5,
@@ -406,12 +412,14 @@ sl_plot_roster_counts <- function(season) {
                        label = paste0(round(total))), inherit.aes = FALSE,
                        hjust = -0.2, size = 3, fontface = "bold", colour = "grey30") +
     ggplot2::scale_fill_manual(values = sl_palette(d$user_name), name = "Team") +
-    ggplot2::scale_x_continuous(expand = ggplot2::expansion(c(0, 0.12))) +
+    ggplot2::scale_x_continuous(expand = ggplot2::expansion(c(0.07, 0.12))) +
     ggplot2::labs(title = title, subtitle = subtitle,
                   x = "Points While Rostered", y = NULL, caption = .sl_cap(season)) +
     theme_sleeper() +
     ggplot2::theme(legend.position = "top", legend.justification = "left",
-                   legend.key.size = ggplot2::unit(0.9, "lines"))
+                   legend.key.size = ggplot2::unit(0.9, "lines"),
+                   axis.text.y = ggplot2::element_text(
+                     margin = ggplot2::margin(r = 16)))   # room for the portrait
 }
 
 #' Traded-player performance chart
@@ -572,15 +580,20 @@ sl_plot_playoff_stats <- function(playoffs, scope = "title") {
 sl_plot_playoff_players <- function(playoffs, n = 15, scope = "title") {
   d <- sl_playoff_players(playoffs, scope) %>%
     dplyr::slice_max(points, n = n, with_ties = FALSE) %>%
-    dplyr::mutate(player_name = fct_reorder(player_name, points))
-  ggplot2::ggplot(d, ggplot2::aes(points, player_name, fill = position)) +
+    dplyr::mutate(label = paste0(player_name, "  \U00B7  ", position),
+                  label = fct_reorder(label, points),
+                  yfac = label)
+  ggplot2::ggplot(d, ggplot2::aes(points, label, fill = position)) +
     ggplot2::geom_col(width = 0.72) +
+    .sl_portraits(d, max(d$points)) +
     ggplot2::geom_text(ggplot2::aes(label = sprintf("%.0f  (%.1f ppg)%s", points, ppg,
                        ifelse(rings > 0, paste0("  ", strrep("\U0001F48D", rings)), ""))),
                        hjust = -0.03, size = 3, colour = "grey20",
                        family = "Segoe UI Emoji") +
     ggplot2::scale_fill_manual(values = .sl_pos_colors, name = NULL) +
-    ggplot2::scale_x_continuous(expand = ggplot2::expansion(c(0, 0.34))) +
+    ggplot2::scale_x_continuous(expand = ggplot2::expansion(c(0.06, 0.34))) +
+    # clip = "off" so the portraits, which sit at negative x, are not cut away.
+    ggplot2::coord_cartesian(clip = "off") +
     ggplot2::labs(title = "Best Playoff Players (All Time)",
                   subtitle = paste0("Total points scored in the postseason  \U00B7  ",
                                     if (scope == "title") "championship path only"
@@ -589,6 +602,8 @@ sl_plot_playoff_players <- function(playoffs, n = 15, scope = "title") {
                   x = "Playoff Points", y = NULL) +
     theme_sleeper() +
     ggplot2::theme(legend.position = "top", legend.justification = "left",
+                   axis.text.y = ggplot2::element_text(
+                     margin = ggplot2::margin(r = 16)),   # room for the portrait
                    plot.subtitle = ggplot2::element_text(family = "Segoe UI Emoji",
                                                          colour = "grey40"))
 }
@@ -634,7 +649,7 @@ sl_plot_playoff_matchup <- function(playoff, matchup_id) {
   d <- playoff$players %>% dplyr::filter(matchup_id == !!matchup_id)
   if (!nrow(d)) stop("No scored players for matchup '", matchup_id,
                      "' (is it still pending?)", call. = FALSE)
-  d <- d %>% dplyr::group_by(team, player_name, position) %>%
+  d <- d %>% dplyr::group_by(team, player_id, player_name, position) %>%
     dplyr::summarise(points = sum(points), .groups = "drop")
   tm <- unique(d$team)
   tot <- d %>% dplyr::group_by(team) %>%
@@ -642,19 +657,25 @@ sl_plot_playoff_matchup <- function(playoff, matchup_id) {
   # Mirror the left-hand team so the two lineups face each other.
   d <- d %>% dplyr::mutate(
     signed = ifelse(team == tm[1], -points, points),
-    lbl = paste0(player_name, " (", position, ")"))
+    lbl = paste0(player_name, " (", position, ")"),
+    yfac = stats::reorder(lbl, abs(signed)))
   hdr <- paste0(tot$team, ": ", sprintf("%.1f", tot$total), collapse = "   vs   ")
-  ggplot2::ggplot(d, ggplot2::aes(signed, stats::reorder(lbl, abs(signed)), fill = team)) +
+  ggplot2::ggplot(d, ggplot2::aes(signed, yfac, fill = team)) +
     ggplot2::geom_col(width = 0.72) +
+    # Portraits hang off the far left, clear of the mirrored bars.
+    .sl_portraits(d, max(abs(d$signed)), size_mm = 5, at = -1.19) +
+    ggplot2::coord_cartesian(clip = "off") +
     ggplot2::geom_vline(xintercept = 0, colour = "grey70") +
     ggplot2::geom_text(ggplot2::aes(label = sprintf("%.1f", points),
                        hjust = ifelse(signed < 0, 1.15, -0.15)),
                        size = 2.9, colour = "grey25") +
     ggplot2::scale_fill_manual(values = sl_palette(d$team), name = NULL) +
     ggplot2::scale_x_continuous(labels = function(x) abs(x),
-                                expand = ggplot2::expansion(c(0.16, 0.16))) +
+                                expand = ggplot2::expansion(c(0.27, 0.16))) +
     ggplot2::labs(title = paste0("Matchup ", matchup_id),
                   subtitle = hdr, x = "Points", y = NULL) +
     theme_sleeper() +
-    ggplot2::theme(legend.position = "top", legend.justification = "left")
+    ggplot2::theme(legend.position = "top", legend.justification = "left",
+                   axis.text.y = ggplot2::element_text(
+                     margin = ggplot2::margin(r = 14)))   # room for the portrait
 }

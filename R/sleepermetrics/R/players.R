@@ -14,7 +14,8 @@
 #'
 #' @param refresh Force a re-download even if today's cache exists.
 #' @param cache_path RDS cache location.
-#' @return A tibble with `player_id`, `player_name`, `position`, `gsis_id`.
+#' @return A tibble with `player_id`, `player_name`, `position`, `team`,
+#'   `gsis_id`.
 #' @export
 sl_players <- function(refresh = FALSE,
                        cache_path = "sleeperPlayerData.rds") {
@@ -35,11 +36,15 @@ sl_players <- function(refresh = FALSE,
   df <- purrr::map_dfr(clean(unname(raw)),
                        ~ tibble::as_tibble(jsonlite::flatten(as.data.frame(.x))))
   info <- df %>%
+    ensure_cols("team") %>%
     dplyr::transmute(
       player_id,
       player_name = dplyr::if_else(position == "DEF",
                                    as.character(player_id), full_name),
       position,
+      # A team defense IS its team; Sleeper leaves `team` set for it too.
+      team = dplyr::if_else(position == "DEF", as.character(player_id),
+                            as.character(team)),
       gsis_id = as.character(gsis_id))
   .sl_player_cache[[key]] <- info
   info

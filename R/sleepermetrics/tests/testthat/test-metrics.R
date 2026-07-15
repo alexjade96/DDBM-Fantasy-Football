@@ -75,3 +75,22 @@ test_that("sl_league_accounts keys on the persistent user_id", {
   expect_equal(d$first_season, "2024")
   expect_equal(d$last_season, "2025")
 })
+
+# --- player portraits -------------------------------------------------------
+
+test_that("sl_headshot_url uses the team logo for a team defense", {
+  expect_equal(sl_headshot_url("4034"),
+               "https://sleepercdn.com/content/nfl/players/4034.jpg")
+  # A team defense has no face -- its "player_id" IS its team.
+  expect_equal(sl_headshot_url("SF", "DEF"),
+               "https://sleepercdn.com/images/team_logos/nfl/sf.png")
+  expect_equal(sl_headshot_url("NE"),
+               "https://sleepercdn.com/images/team_logos/nfl/ne.png")
+})
+
+test_that("portraits degrade to NULL when disabled", {
+  withr::local_envvar(SLEEPERMETRICS_NO_IMAGES = "1")
+  # Charts must render offline: no image is a NULL, never an error.
+  expect_null(sl_headshot("4034"))
+  expect_null(sl_headshot_grob("4034"))
+})

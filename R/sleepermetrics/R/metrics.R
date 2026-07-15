@@ -269,7 +269,9 @@ sl_transactions <- function(season) season$transactions
     dplyr::semi_join(keep, by = by) %>%
     dplyr::left_join(dplyr::select(season$user_map, roster_id, user_name), by = "roster_id") %>%
     dplyr::filter(position %in% .sl_positions, !is.na(player_name)) %>%
-    dplyr::group_by(player_name, position, user_name) %>%
+    # player_id rides along: it is the only safe key for a portrait (names are
+    # neither unique nor stable).
+    dplyr::group_by(player_id, player_name, position, user_name) %>%
     dplyr::summarise(weeks = dplyr::n_distinct(week), points = sum(points),
                      avg = sum(points) / dplyr::n_distinct(week), .groups = "drop") %>%
     dplyr::group_by(player_name) %>%

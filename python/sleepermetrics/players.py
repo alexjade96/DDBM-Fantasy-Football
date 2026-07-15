@@ -13,7 +13,7 @@ _cache: pd.DataFrame | None = None
 
 
 def players(refresh: bool = False, cache_path: str = "sleeperPlayerData_py.pkl") -> pd.DataFrame:
-    """Return a DataFrame: player_id, player_name, position, gsis_id.
+    """Return a DataFrame: player_id, player_name, position, team, gsis_id.
 
     DEF "players" are team defenses; their name is the team abbreviation.
     The full player dump is cached on disk (refetched at most once/day) and
@@ -42,6 +42,8 @@ def players(refresh: bool = False, cache_path: str = "sleeperPlayerData_py.pkl")
             "player_id": pid,
             "player_name": pid if pos == "DEF" else p.get("full_name"),
             "position": pos,
+            # A team defense IS its team; Sleeper leaves `team` set for it too.
+            "team": pid if pos == "DEF" else p.get("team"),
             "gsis_id": p.get("gsis_id"),
         })
     _cache = pd.DataFrame(rows)

@@ -419,9 +419,11 @@ sl_playoff_performances <- function(playoffs, scope = "title") {
       dplyr::mutate(season = s, champion = team == (p$champion %||% ""))
   }))
   if (!nrow(d)) return(d)
+  # player_id rides along: it is the only safe key for a portrait (names are
+  # neither unique nor stable).
   sl_scope(d, scope) %>%
-    dplyr::select(season, round, bracket, matchup_id, team, player_name, position,
-                  week, points, champion) %>%
+    dplyr::select(season, round, bracket, matchup_id, team, player_id, player_name,
+                  position, week, points, champion) %>%
     dplyr::arrange(dplyr::desc(points))
 }
 
@@ -439,7 +441,7 @@ sl_playoff_players <- function(playoffs, scope = "title") {
   d <- sl_playoff_performances(playoffs, scope)
   if (!nrow(d)) return(d)
   d %>%
-    dplyr::group_by(player_name, position) %>%
+    dplyr::group_by(player_id, player_name, position) %>%
     # NOTE: dplyr evaluates summarise() expressions in order, so `best` and `ppg`
     # must be computed BEFORE `points` is redefined -- otherwise they read the
     # summed column and `best` silently becomes the season total.

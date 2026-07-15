@@ -140,3 +140,44 @@ def test_league_accounts_keys_on_the_persistent_user_id():
     assert row["avatar_url"] == "pic-2025"    # ...including the current picture
     assert row["seasons"] == 2 and row["titles"] == 1
     assert row["first_season"] == "2024" and row["last_season"] == "2025"
+
+
+# --- player portraits -------------------------------------------------------
+def test_headshot_url_uses_the_team_logo_for_a_team_defense():
+    from sleepermetrics.headshots import headshot_url
+    assert headshot_url("4034") == "https://sleepercdn.com/content/nfl/players/4034.jpg"
+    # A team defense has no face -- its "player_id" IS its team.
+    assert headshot_url("SF", "DEF") == "https://sleepercdn.com/images/team_logos/nfl/sf.png"
+    assert headshot_url("NE") == "https://sleepercdn.com/images/team_logos/nfl/ne.png"
+
+
+def test_portraits_are_off_and_degrade_to_none_when_disabled(monkeypatch):
+    from sleepermetrics import headshots
+    monkeypatch.setenv("SLEEPERMETRICS_NO_IMAGES", "1")
+    assert headshots.disabled()
+    # Charts must render offline: no image is a None, never an exception.
+    assert headshots.headshot("4034") is None
+    assert headshots.load("4034") is None
+
+
+def test_a_player_with_no_photo_is_remembered_as_a_miss(monkeypatch):
+    """Sleeper answers 403 + text/html (not 404) for a player with no photo, so
+    status alone is not enough -- and 20 dead players must not mean 20 retries."""
+    from sleepermetrics import headshots
+    monkeypatch.delenv("SLEEPERMETRICS_NO_IMAGES", raising=False)
+    headshots.clear_cache()
+    calls = []
+
+    class Resp:
+        status_code = 403
+        headers = {"content-type": "text/html; charset=utf-8"}
+        content = b"<html>nope</html>"
+
+    def fake_get(url, timeout=None):
+        calls.append(url)
+        return Resp()
+
+    monkeypatch.setattr("requests.get", fake_get)
+    assert headshots.headshot("99999999") is None
+    assert headshots.headshot("99999999") is None      # asked twice...
+    assert len(calls) == 1                             # ...fetched once

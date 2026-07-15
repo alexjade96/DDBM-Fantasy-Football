@@ -185,7 +185,10 @@ def _rostered_perf(s: Season, keep: pd.DataFrame, on: list) -> pd.DataFrame:
     d = s.pl_wk.merge(s.user_map[["roster_id", "user_name"]], on="roster_id", how="left")
     d = d.merge(keep, on=on, how="inner")
     d = d[d["position"].isin(POSITIONS) & d["player_name"].notna()]
-    g = d.groupby(["player_name", "position", "user_name"], as_index=False).agg(
+    # player_id rides along: it is the only safe key for a portrait (names are
+    # neither unique nor stable).
+    g = d.groupby(["player_id", "player_name", "position", "user_name"],
+                  as_index=False).agg(
         weeks=("week", "nunique"), points=("points", "sum"))
     g["avg"] = g["points"] / g["weeks"]
     g["total"] = g.groupby("player_name")["points"].transform("sum")

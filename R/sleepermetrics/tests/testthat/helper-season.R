@@ -1,3 +1,7 @@
+# Portraits are fetched from a CDN. The suite is network-free, so turn them off
+# for every test: charts fall back to plain text labels.
+Sys.setenv(SLEEPERMETRICS_NO_IMAGES = "1")
+
 # Build a synthetic sleeper_season (no network) for tests.
 make_season <- function(season = "2025", champ_roster = 1L) {
   team_wk <- tibble::tibble(

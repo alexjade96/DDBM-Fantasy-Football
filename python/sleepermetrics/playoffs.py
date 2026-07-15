@@ -305,8 +305,10 @@ def playoff_performances(playoffs: dict, scope: str = "title") -> pd.DataFrame:
     if not frames:
         return pd.DataFrame()
     d = scope_frame(pd.concat(frames, ignore_index=True), scope)
-    cols = ["season", "round", "bracket", "matchup_id", "team", "player_name",
-            "position", "week", "points", "champion"]
+    # player_id rides along: it is the only safe key for a portrait (names are
+    # neither unique nor stable).
+    cols = ["season", "round", "bracket", "matchup_id", "team", "player_id",
+            "player_name", "position", "week", "points", "champion"]
     return d[cols].sort_values("points", ascending=False).reset_index(drop=True)
 
 
@@ -319,7 +321,7 @@ def playoff_players(playoffs: dict, scope: str = "title") -> pd.DataFrame:
     # (counting weeks gave players more rings than seasons played).
     d = d.copy()
     d["_champ_season"] = d["season"].where(d["champion"])
-    g = d.groupby(["player_name", "position"], as_index=False).agg(
+    g = d.groupby(["player_id", "player_name", "position"], as_index=False).agg(
         seasons=("season", "nunique"), games=("points", "size"),
         points=("points", "sum"), best=("points", "max"),
         rings=("_champ_season", "nunique"))

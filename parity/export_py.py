@@ -69,10 +69,10 @@ def main():
             ["position", "status", "avg_count"]),
         "trade_performance": recs(
             metrics.trade_performance(latest).sort_values(["player_name", "user_name"]),
-            ["player_name", "user_name", "weeks", "points", "avg", "total"]),
+            ["player_id", "player_name", "user_name", "weeks", "points", "avg", "total"]),
         "waiver_performance": recs(
             metrics.waiver_performance(latest).sort_values(["player_name", "user_name"]),
-            ["player_name", "user_name", "weeks", "points", "avg", "total"]),
+            ["player_id", "player_name", "user_name", "weeks", "points", "avg", "total"]),
         "playoff_stats": recs(
             sm.playoff_stats(pos).sort_values("user_name"),
             ["user_name", "appearances", "games", "wins", "losses",
@@ -83,8 +83,8 @@ def main():
             .sort_values("season"), ["season", "champion"]),
         "playoff_players": recs(
             sm.playoff_players(pos).head(25).sort_values("player_name"),
-            ["player_name", "position", "seasons", "games", "points", "ppg",
-             "best", "rings"]),
+            ["player_id", "player_name", "position", "seasons", "games", "points",
+             "ppg", "best", "rings"]),
         "playoff_all_stars": recs(
             sm.playoff_all_stars(pos).sort_values("position"),
             ["position", "player_name", "points", "ppg"]),

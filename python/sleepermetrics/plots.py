@@ -7,8 +7,28 @@ matplotlib.use("Agg")
 import matplotlib.colors as mcolors  # noqa: E402
 import matplotlib.pyplot as plt  # noqa: E402
 
-from . import metrics  # noqa: E402
+from . import headshots, metrics  # noqa: E402
 from .season import Season  # noqa: E402
+
+
+def _portraits(ax, ids, positions, zoom=0.28, x=-0.018):
+    """Hang each row's player portrait just outside the axis, beside its bar.
+
+    Best-effort: a player with no photo (or no network) simply has no portrait
+    and keeps their text label. Charts must render offline.
+    """
+    from matplotlib.offsetbox import AnnotationBbox, OffsetImage
+    from matplotlib.transforms import blended_transform_factory
+    tr = blended_transform_factory(ax.transAxes, ax.transData)  # x=axes, y=data
+    for i, (pid, pos) in enumerate(zip(ids, positions)):
+        img = headshots.load(pid, pos, size=72)
+        if img is None:
+            continue
+        ab = AnnotationBbox(OffsetImage(img, zoom=zoom), (x, i), xycoords=tr,
+                            frameon=False, box_alignment=(1.0, 0.5),
+                            pad=0, annotation_clip=False)
+        ab.set_zorder(5)
+        ax.add_artist(ab)
 
 POS_COLORS = {"QB": "#d62728", "RB": "#2ca02c", "WR": "#1f77b4",
               "TE": "#ff7f0e", "K": "#9467bd", "DEF": "#8c564b"}
@@ -447,6 +467,12 @@ def _plot_acq(d, s: Season, title, subtitle):
                 fontsize=8, fontweight="bold", color="#4d4d4d")
     ax.set_yticks(list(y.values()))
     ax.set_yticklabels(players, fontsize=8.5)
+    # One id/position per player row (a traded player appears under several
+    # managers, so take the first -- it is the same player either way).
+    first = d.drop_duplicates("player_name").set_index("player_name")
+    _portraits(ax, first["player_id"].reindex(players),
+               first["position"].reindex(players), zoom=0.28)
+    ax.tick_params(axis="y", pad=34)
     ax.set_xlim(0, span * 1.12)
     ax.legend(loc="lower right", frameon=False, fontsize=8, title="Team", ncol=2)
     return _finish(fig, ax, title, subtitle, "Points While Rostered", caption=_cap(s))
@@ -537,7 +563,11 @@ def plot_playoff_players(playoffs: dict, n: int = 15, scope: str = "title"):
     ax.barh(range(len(d)), d["points"], height=0.72,
             color=[POS_COLORS.get(str(p), "#999999") for p in d["position"]])
     ax.set_yticks(range(len(d)))
-    ax.set_yticklabels(d["player_name"])
+    ax.set_yticklabels([f"{n}  ·  {p}" for n, p in zip(d["player_name"], d["position"])],
+                       fontsize=8.5)
+    # Portraits sit between the labels and the bars, so pad the labels out.
+    _portraits(ax, d["player_id"], d["position"])
+    ax.tick_params(axis="y", pad=36)
     xmax = float(d["points"].max())
     for i, r in d.iterrows():
         rings = "★" * int(r["rings"])
@@ -583,7 +613,8 @@ def plot_playoff_matchup(p, matchup_id):
     d = p.players[p.players["matchup_id"] == matchup_id]
     if not len(d):
         raise ValueError(f"No scored players for matchup '{matchup_id}'")
-    g = (d.groupby(["team", "player_name", "position"], as_index=False)["points"].sum())
+    g = (d.groupby(["team", "player_id", "player_name", "position"],
+                   as_index=False)["points"].sum())
     teams = list(dict.fromkeys(g["team"]))
     pal = palette(teams)
     tot = g.groupby("team")["points"].sum()
@@ -601,6 +632,8 @@ def plot_playoff_matchup(p, matchup_id):
     ax.axvline(0, color="#b0b0b0", lw=1)
     ax.set_yticks(range(len(g)))
     ax.set_yticklabels(g["lbl"], fontsize=8.5)
+    _portraits(ax, g["player_id"], g["position"], zoom=0.20, x=-0.008)
+    ax.tick_params(axis="y", pad=30)
     lim = float(g["points"].max()) * 1.35
     ax.set_xlim(-lim, lim)
     ax.set_xticklabels([f"{abs(t):.0f}" for t in ax.get_xticks()])
