@@ -44,25 +44,62 @@ theme_sleeper <- function() {
                        inherit.aes = FALSE, size = 3, fontface = "bold", colour = "grey20"))
 }
 
-# Manager avatars beside each row of a horizontal chart: the tokens themselves,
-# plus clip = "off" (they hang outside the panel) and a right margin on the axis
-# text that opens the gap they sit in. NULL when no avatar loaded, so a
-# text-only chart keeps its normal label spacing.
+# Icon-then-name identity axis for a horizontal chart. Each row reads
+# [icon] name  |  bar -- the same order as the Career tab's Managers panel.
+#
+# The names stay real axis text (so ggplot keeps auto-sizing the column) but are
+# left-aligned, which lines their left edges up. The icon is then hung at an
+# absolute offset from the panel's left edge, stepped back by the width of the
+# LONGEST label: grid resolves grobWidth() at draw time, so the icon column lands
+# exactly beside the name column without us having to guess how wide the names
+# render. plot.margin gains a fixed amount (the icon is a fixed size) to make
+# room, since ggplot reserves nothing for annotations outside the panel.
+#
+# `token(j, x)` returns row j's rasterGrob (already right-justified at `x`), or
+# NULL -- so a row with no image simply keeps its plain name.
 #
 # Add this AFTER theme_sleeper() in the chain: theme_sleeper() is a *complete*
-# theme, so adding it later would replace this margin outright.
-.sl_row_avatars <- function(season, levels, x, size_mm = 5, margin_r = 26) {
-  av <- .sl_team_avatars(season, levels, x, size_mm)
-  if (!length(av)) return(NULL)
-  # NOTE axis.text.y.left, not axis.text.y: the complete theme defines the
-  # .left element, which shadows its axis.text.y parent -- setting the parent
-  # alone renders identically (verified byte-for-byte) and the gap never opens.
-  c(av, list(ggplot2::coord_cartesian(clip = "off"),
-             ggplot2::theme(axis.text.y.left = ggplot2::element_text(
-               margin = ggplot2::margin(r = margin_r)))))
+# theme, so adding it later would replace these settings outright. And note
+# axis.text.y.left, not axis.text.y: the complete theme defines the .left child,
+# which shadows its parent -- setting the parent alone renders byte-identically.
+# `fontsize` must match what the axis text ACTUALLY renders at, or the icon
+# column lands on top of the names. theme_sleeper()'s %+replace% swaps axis.text
+# out wholesale, which drops theme_minimal's size = rel(0.8) -- so the labels
+# inherit `text`'s size, i.e. the 13pt base size, not 10.4.
+.sl_identity_axis <- function(labels, token, size_mm = 5, gap_pt = 8,
+                              fontsize = 13) {
+  labels <- as.character(labels)
+  longest <- labels[which.max(nchar(labels))]
+  maxw <- grid::grobWidth(grid::textGrob(longest, gp = grid::gpar(fontsize = fontsize)))
+  x <- grid::unit(0, "npc") - grid::unit(gap_pt, "pt") - maxw - grid::unit(2.6, "mm")
+  lays <- list()
+  for (j in seq_along(labels)) {
+    g <- token(j, x)
+    if (is.null(g)) next
+    lays[[length(lays) + 1L]] <- ggplot2::annotation_custom(
+      g, xmin = -Inf, xmax = Inf, ymin = j, ymax = j)
+  }
+  if (!length(lays)) return(NULL)
+  c(lays, list(
+    ggplot2::coord_cartesian(clip = "off"),
+    ggplot2::theme(
+      axis.text.y.left = ggplot2::element_text(
+        hjust = 0, margin = ggplot2::margin(r = gap_pt)),
+      plot.margin = ggplot2::margin(14, 18, 10, 14 + size_mm * 3.8))))
 }
 
-# Manager avatars drawn as the markers of a scatter.
+# Icon-then-name axis for a team chart: token = the manager's account avatar.
+.sl_row_avatars <- function(season, levels, size_mm = 5, ...) {
+  urls <- .sl_avatar_map(season)
+  lv <- as.character(levels)
+  .sl_identity_axis(lv, function(j, x) {
+    if (!lv[j] %in% names(urls)) return(NULL)
+    sl_avatar_grob(urls[[lv[j]]], size_mm, x = x, just = "right")
+  }, size_mm = size_mm, ...)
+}
+
+# Manager avatars drawn as the markers of a scatter (name already sits to the
+# right of the token there, so the icon-then-name order needs nothing extra).
 .sl_scatter_avatars <- function(season, d, xcol, ycol, size_mm = 5) {
   av <- .sl_point_avatars(season, d, xcol, ycol, size_mm)
   if (!length(av)) return(NULL)
@@ -93,7 +130,7 @@ sl_plot_standings <- function(season) {
                   subtitle = "Bars = total points, in standing order  ·  \U0001F947\U0001F948\U0001F949 podium  ·  \U0001F451 champion",
                   x = "Season Points", y = NULL, caption = .sl_cap(season)) +
     theme_sleeper() +
-    .sl_row_avatars(season, levels(d$user_name), x = -max(d$points) * 0.022)
+    .sl_row_avatars(season, levels(d$user_name))
 }
 
 #' Luck (actual vs all-play expected wins) dumbbell
@@ -102,7 +139,6 @@ sl_plot_standings <- function(season) {
 #' @export
 sl_plot_luck <- function(season) {
   d <- sl_luck(season) %>% dplyr::mutate(user_name = fct_reorder(user_name, luck))
-  lo <- min(c(d$exp_w, d$wins)); hi <- max(c(d$exp_w, d$wins))
   ggplot2::ggplot(d, ggplot2::aes(y = user_name)) +
     ggplot2::geom_segment(ggplot2::aes(x = exp_w, xend = wins, yend = user_name,
                                        colour = luck > 0), linewidth = 1.3, alpha = 0.5) +
@@ -119,10 +155,7 @@ sl_plot_luck <- function(season) {
                   x = "Wins", y = NULL, caption = .sl_cap(season)) +
     theme_sleeper() +
     ggplot2::theme(legend.position = "top", legend.justification = "left") +
-    # Wider gap than the bar charts: this x scale keeps its default expansion, so
-    # the token lands further out from the panel edge.
-    .sl_row_avatars(season, levels(d$user_name), x = lo - (hi - lo) * 0.09,
-                    margin_r = 34)
+    .sl_row_avatars(season, levels(d$user_name))
 }
 
 #' Lineup efficiency chart
@@ -143,7 +176,7 @@ sl_plot_efficiency <- function(season) {
                   subtitle = "Started points as % of the optimal lineup each week  ·  100% = optimal  ·  darker = better",
                   x = "Efficiency %", y = NULL, caption = .sl_cap(season)) +
     theme_sleeper() +
-    .sl_row_avatars(season, levels(d$user_name), x = -2.2)
+    .sl_row_avatars(season, levels(d$user_name))
 }
 
 #' Weekly score distribution (consistency) chart
@@ -231,7 +264,7 @@ sl_plot_allplay <- function(season) {
                   x = "All-Play Win %", y = NULL, caption = .sl_cap(season)) +
     theme_sleeper() +
     ggplot2::theme(legend.position = "top", legend.justification = "left") +
-    .sl_row_avatars(season, levels(d$user_name), x = -0.022)
+    .sl_row_avatars(season, levels(d$user_name))
 }
 
 #' Power ranking chart
@@ -259,10 +292,7 @@ sl_plot_power_rank <- function(season) {
                   subtitle = "Composite of points, all-play win%, recent form and lineup efficiency  ·  0 = league average",
                   x = "Power Score (standardised)", y = NULL, caption = .sl_cap(season)) +
     theme_sleeper() +
-    # Past the 0.16 left expansion, so the token sits outside the panel like the
-    # other charts rather than inside it next to the medals.
-    .sl_row_avatars(season, levels(d$user_name),
-                    x = min(d$power) - diff(range(d$power)) * 0.20)
+    .sl_row_avatars(season, levels(d$user_name))
 }
 
 #' Manager tendencies chart
@@ -530,12 +560,11 @@ sl_plot_roster_counts <- function(season) {
   span <- max(totals$total)
   # One portrait per player row (a traded player appears under several managers,
   # so take the first -- it is the same player either way).
-  faces <- d %>% dplyr::distinct(player_name, .keep_all = TRUE) %>%
-    dplyr::mutate(yfac = player_name)
+  faces <- d %>% dplyr::distinct(player_name, .keep_all = TRUE)
+  lv <- levels(d$player_name)
+  idx <- match(lv, as.character(faces$player_name))
   ggplot2::ggplot(d, ggplot2::aes(points, player_name, fill = user_name)) +
     ggplot2::geom_col(width = 0.72, colour = "white", linewidth = 0.3) +
-    .sl_portraits(faces, span) +
-    ggplot2::coord_cartesian(clip = "off") +
     ggplot2::geom_text(ggplot2::aes(label = ifelse(points >= span * 0.06,
                                     paste0(round(points), " (", weeks, "w)"), "")),
                        position = ggplot2::position_stack(vjust = 0.5), size = 2.5,
@@ -549,9 +578,12 @@ sl_plot_roster_counts <- function(season) {
                   x = "Points While Rostered", y = NULL, caption = .sl_cap(season)) +
     theme_sleeper() +
     ggplot2::theme(legend.position = "top", legend.justification = "left",
-                   legend.key.size = ggplot2::unit(0.9, "lines"),
-                   axis.text.y = ggplot2::element_text(
-                     margin = ggplot2::margin(r = 16)))   # room for the portrait
+                   legend.key.size = ggplot2::unit(0.9, "lines")) +
+    .sl_identity_axis(lv, function(j, x) {
+      if (is.na(idx[j])) return(NULL)
+      sl_headshot_grob(faces$player_id[idx[j]], as.character(faces$position[idx[j]]),
+                       size_mm = 5, x = x, just = "right")
+    })
 }
 
 #' Traded-player performance chart
@@ -713,19 +745,17 @@ sl_plot_playoff_players <- function(playoffs, n = 15, scope = "title") {
   d <- sl_playoff_players(playoffs, scope) %>%
     dplyr::slice_max(points, n = n, with_ties = FALSE) %>%
     dplyr::mutate(label = paste0(player_name, "  \U00B7  ", position),
-                  label = fct_reorder(label, points),
-                  yfac = label)
+                  label = fct_reorder(label, points))
+  lv <- levels(d$label)
+  idx <- match(lv, as.character(d$label))
   ggplot2::ggplot(d, ggplot2::aes(points, label, fill = position)) +
     ggplot2::geom_col(width = 0.72) +
-    .sl_portraits(d, max(d$points)) +
     ggplot2::geom_text(ggplot2::aes(label = sprintf("%.0f  (%.1f ppg)%s", points, ppg,
                        ifelse(rings > 0, paste0("  ", strrep("\U0001F48D", rings)), ""))),
                        hjust = -0.03, size = 3, colour = "grey20",
                        family = "Segoe UI Emoji") +
     ggplot2::scale_fill_manual(values = .sl_pos_colors, name = NULL) +
     ggplot2::scale_x_continuous(expand = ggplot2::expansion(c(0.06, 0.34))) +
-    # clip = "off" so the portraits, which sit at negative x, are not cut away.
-    ggplot2::coord_cartesian(clip = "off") +
     ggplot2::labs(title = "Best Playoff Players (All Time)",
                   subtitle = paste0("Total points scored in the postseason  \U00B7  ",
                                     if (scope == "title") "championship path only"
@@ -734,10 +764,12 @@ sl_plot_playoff_players <- function(playoffs, n = 15, scope = "title") {
                   x = "Playoff Points", y = NULL) +
     theme_sleeper() +
     ggplot2::theme(legend.position = "top", legend.justification = "left",
-                   axis.text.y = ggplot2::element_text(
-                     margin = ggplot2::margin(r = 16)),   # room for the portrait
                    plot.subtitle = ggplot2::element_text(family = "Segoe UI Emoji",
-                                                         colour = "grey40"))
+                                                         colour = "grey40")) +
+    .sl_identity_axis(lv, function(j, x) {
+      sl_headshot_grob(d$player_id[idx[j]], as.character(d$position[idx[j]]),
+                       size_mm = 5, x = x, just = "right")
+    })
 }
 
 #' Clutch chart: playoff scoring vs regular-season scoring
@@ -792,11 +824,10 @@ sl_plot_playoff_matchup <- function(playoff, matchup_id) {
     lbl = paste0(player_name, " (", position, ")"),
     yfac = stats::reorder(lbl, abs(signed)))
   hdr <- paste0(tot$team, ": ", sprintf("%.1f", tot$total), collapse = "   vs   ")
+  lv <- levels(d$yfac)
+  idx <- match(lv, as.character(d$yfac))
   ggplot2::ggplot(d, ggplot2::aes(signed, yfac, fill = team)) +
     ggplot2::geom_col(width = 0.72) +
-    # Portraits hang off the far left, clear of the mirrored bars.
-    .sl_portraits(d, max(abs(d$signed)), size_mm = 5, at = -1.19) +
-    ggplot2::coord_cartesian(clip = "off") +
     ggplot2::geom_vline(xintercept = 0, colour = "grey70") +
     ggplot2::geom_text(ggplot2::aes(label = sprintf("%.1f", points),
                        hjust = ifelse(signed < 0, 1.15, -0.15)),
@@ -807,7 +838,9 @@ sl_plot_playoff_matchup <- function(playoff, matchup_id) {
     ggplot2::labs(title = paste0("Matchup ", matchup_id),
                   subtitle = hdr, x = "Points", y = NULL) +
     theme_sleeper() +
-    ggplot2::theme(legend.position = "top", legend.justification = "left",
-                   axis.text.y = ggplot2::element_text(
-                     margin = ggplot2::margin(r = 14)))   # room for the portrait
+    ggplot2::theme(legend.position = "top", legend.justification = "left") +
+    .sl_identity_axis(lv, function(j, x) {
+      sl_headshot_grob(d$player_id[idx[j]], as.character(d$position[idx[j]]),
+                       size_mm = 5, x = x, just = "right")
+    })
 }

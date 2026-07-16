@@ -93,8 +93,9 @@ sl_headshot <- function(player_id, position = NULL) {
 }
 
 # A cached image file -> a circular rasterGrob (or NULL). Shared by the player
-# portrait and manager avatar grobs.
-.sl_circle_grob <- function(path, size_mm) {
+# portrait and manager avatar grobs. `x`/`just` let the caller place the token
+# itself (the identity axis right-aligns it against the name column).
+.sl_circle_grob <- function(path, size_mm, x = NULL, just = "centre") {
   if (is.null(path)) return(NULL)
   tryCatch({
     # Sniff the magic bytes rather than trust the extension: Sleeper happily
@@ -122,9 +123,11 @@ sl_headshot <- function(player_id, position = NULL) {
     inside <- ((ax - ctr)^2 + (ay - ctr)^2) <= (n / 2)^2
     alpha <- own * ifelse(inside, 1, 0)
     rgb <- grDevices::rgb(img[, , 1], img[, , 2], img[, , 3], alpha = alpha)
-    grid::rasterGrob(matrix(rgb, n, n), interpolate = TRUE,
-                     width = grid::unit(size_mm, "mm"),
-                     height = grid::unit(size_mm, "mm"))
+    args <- list(image = matrix(rgb, n, n), interpolate = TRUE,
+                 width = grid::unit(size_mm, "mm"),
+                 height = grid::unit(size_mm, "mm"))
+    if (!is.null(x)) args <- c(args, list(x = x, just = just))
+    do.call(grid::rasterGrob, args)
   }, error = function(e) NULL)
 }
 
@@ -137,10 +140,14 @@ sl_headshot <- function(player_id, position = NULL) {
 #' @param position Player position (`"DEF"` -> team logo).
 #' @param size_mm Drawn size. Fixed in mm rather than data units so the portrait
 #'   stays a circle instead of being stretched to whatever box it lands in.
+#' @param x Optional grid unit for the token's own x position within its
+#'   viewport; `just` sets which edge that position refers to.
+#' @param just Justification used with `x`.
 #' @return A `rasterGrob`, or `NULL` when there is no image.
 #' @export
-sl_headshot_grob <- function(player_id, position = NULL, size_mm = 6.5) {
-  .sl_circle_grob(sl_headshot(player_id, position), size_mm)
+sl_headshot_grob <- function(player_id, position = NULL, size_mm = 6.5,
+                             x = NULL, just = "centre") {
+  .sl_circle_grob(sl_headshot(player_id, position), size_mm, x, just)
 }
 
 #' A manager/team account avatar as a circular grid raster
@@ -148,34 +155,17 @@ sl_headshot_grob <- function(player_id, position = NULL, size_mm = 6.5) {
 #' @param url Account avatar url (from the season's `accounts` frame). The
 #'   Sleeper `/avatars/<id>` form is fetched via its `/thumbs/` thumbnail.
 #' @param size_mm Drawn size (mm).
+#' @param x Optional grid unit for the token's own x position within its
+#'   viewport; `just` sets which edge that position refers to.
+#' @param just Justification used with `x`.
 #' @return A `rasterGrob`, or `NULL` when there is no image / no network.
 #' @export
-sl_avatar_grob <- function(url, size_mm = 6.5) {
+sl_avatar_grob <- function(url, size_mm = 6.5, x = NULL, just = "centre") {
   if (is.null(url) || is.na(url) || !nzchar(url)) return(NULL)
   u <- .sl_avatar_thumb(url)
   # Key the cache on the avatar id (the url basename) -- unique and stable, and
   # matches the Python side so both instances share one downloaded set.
-  .sl_circle_grob(.sl_fetch_image(u, paste0("av_", basename(u))), size_mm)
-}
-
-# Portrait layers for a horizontal bar chart: one raster per row, hung just left
-# of x = 0 (outside the panel -- the caller must set coord clip = "off").
-#
-# `d` needs player_id, position, and `yfac` (the factor the y axis is built on).
-# Rows with no portrait simply get no layer and keep their text label.
-.sl_portraits <- function(d, xspan, size_mm = 6.5, at = -0.045) {
-  lays <- list()
-  for (i in seq_len(nrow(d))) {
-    g <- sl_headshot_grob(d$player_id[i], as.character(d$position[i]), size_mm)
-    if (is.null(g)) next
-    y <- as.integer(d$yfac[i])
-    x <- xspan * at
-    # Equal xmin/xmax and ymin/ymax centre the grob at that point and let it keep
-    # its own (fixed, square) size rather than being stretched to a box.
-    lays[[length(lays) + 1L]] <- ggplot2::annotation_custom(
-      g, xmin = x, xmax = x, ymin = y, ymax = y)
-  }
-  lays
+  .sl_circle_grob(.sl_fetch_image(u, paste0("av_", basename(u))), size_mm, x, just)
 }
 
 # {user_name -> avatar url} from the season's accounts frame (best-effort).
@@ -191,34 +181,16 @@ sl_avatar_grob <- function(url, size_mm = 6.5) {
   stats::setNames(url, a$user_name)
 }
 
-# Avatar layers for a horizontal chart: each manager's circular token hung at a
-# fixed x (data coord), just left of their row. `levels` is the y-axis order (the
-# user_name factor levels); level j sits at y = j. Caller sets coord clip = "off".
-.sl_team_avatars <- function(season, levels, x, size_mm = 5) {
-  urls <- .sl_avatar_map(season)
-  lays <- list()
-  for (j in seq_along(levels)) {
-    # `[[` on a named atomic vector ERRORS on a missing name rather than
-    # returning NULL, so check membership first: a season with no accounts (or a
-    # manager absent from it) must degrade to a text label, not blow up.
-    if (!levels[j] %in% names(urls)) next
-    u <- urls[[levels[j]]]
-    if (is.null(u) || is.na(u) || !nzchar(u)) next
-    g <- sl_avatar_grob(u, size_mm)
-    if (is.null(g)) next
-    lays[[length(lays) + 1L]] <- ggplot2::annotation_custom(
-      g, xmin = x, xmax = x, ymin = j, ymax = j)
-  }
-  lays
-}
-
 # Avatar layers for a scatter: each manager's token drawn as the marker at their
 # (xcol, ycol) point. `d` needs a user_name column. Caller sets clip = "off".
 .sl_point_avatars <- function(season, d, xcol, ycol, size_mm = 5) {
   urls <- .sl_avatar_map(season)
   lays <- list()
   for (i in seq_len(nrow(d))) {
-    if (!d$user_name[i] %in% names(urls)) next   # see .sl_team_avatars: `[[` errors
+    # `[[` on a named atomic vector ERRORS on a missing name rather than
+    # returning NULL, so check membership first: a manager absent from the
+    # accounts frame must degrade to their plain dot, not blow the chart up.
+    if (!d$user_name[i] %in% names(urls)) next
     u <- urls[[d$user_name[i]]]
     if (is.null(u) || is.na(u) || !nzchar(u)) next
     g <- sl_avatar_grob(u, size_mm)

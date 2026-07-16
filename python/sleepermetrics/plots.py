@@ -11,24 +11,49 @@ from . import headshots, metrics  # noqa: E402
 from .season import Season  # noqa: E402
 
 
-def _portraits(ax, ids, positions, zoom=0.28, x=-0.018):
-    """Hang each row's player portrait just outside the axis, beside its bar.
+def _identity_rows(ax, labels, images, zoom=0.30, gap_pt=6):
+    """Icon-then-name axis: every row reads [icon] name  |  bar.
 
-    Best-effort: a player with no photo (or no network) simply has no portrait
-    and keeps their text label. Charts must render offline.
+    The names stay real tick labels (so nothing has to re-implement them) but are
+    left-aligned into a column, and each row's circular token is hung just to
+    their left. Finding where that column starts needs the *rendered* label
+    width, so this draws once and measures rather than guessing from character
+    counts.
+
+    Best-effort: a row with no image keeps its plain name, and if nothing loaded
+    at all the axis is left exactly as it was.
     """
     from matplotlib.offsetbox import AnnotationBbox, OffsetImage
     from matplotlib.transforms import blended_transform_factory
+    if not any(im is not None for im in images):
+        return
+    fig = ax.figure
+    ax.set_yticks(range(len(labels)))
+    ax.set_yticklabels(labels)
+    for t in ax.get_yticklabels():
+        t.set_ha("left")
+    fig.canvas.draw()                       # realise the text extents
+    maxw_px = max(t.get_window_extent().width for t in ax.get_yticklabels())
+    pad = maxw_px * 72.0 / fig.dpi + gap_pt   # px -> pt: where the name column starts
+    ax.tick_params(axis="y", pad=pad)
     tr = blended_transform_factory(ax.transAxes, ax.transData)  # x=axes, y=data
-    for i, (pid, pos) in enumerate(zip(ids, positions)):
-        img = headshots.load(pid, pos, size=72)
+    for i, img in enumerate(images):
         if img is None:
             continue
-        ab = AnnotationBbox(OffsetImage(img, zoom=zoom), (x, i), xycoords=tr,
+        # 7.4pt clear of the name column -- matches the R side's 2.6mm.
+        ab = AnnotationBbox(OffsetImage(img, zoom=zoom), (0, i), xycoords=tr,
+                            xybox=(-(pad + 7.4), 0), boxcoords="offset points",
                             frameon=False, box_alignment=(1.0, 0.5),
                             pad=0, annotation_clip=False)
         ab.set_zorder(5)
         ax.add_artist(ab)
+
+
+def _portraits(ax, labels, ids, positions, zoom=0.30):
+    """Icon-then-name axis for a player chart (token = the player's headshot)."""
+    _identity_rows(ax, list(labels),
+                   [headshots.load(pid, pos, size=72) for pid, pos in zip(ids, positions)],
+                   zoom=zoom)
 
 POS_COLORS = {"QB": "#d62728", "RB": "#2ca02c", "WR": "#1f77b4",
               "TE": "#ff7f0e", "K": "#9467bd", "DEF": "#8c564b"}
@@ -55,31 +80,12 @@ def _avatar_map(s) -> dict:
     return out
 
 
-def _row_avatars(ax, names, s, zoom=0.30, x=-0.012):
-    """Hang each manager's avatar in the gap between their name and their bar.
-
-    Mirrors the player-portrait treatment: a circular token just outside the
-    axis, with the tick labels padded left to open a gap for it. Best-effort --
-    a manager with no avatar (or no network) keeps their plain text label, and
-    the labels are only padded when a token actually landed.
-    """
-    from matplotlib.offsetbox import AnnotationBbox, OffsetImage
-    from matplotlib.transforms import blended_transform_factory
+def _row_avatars(ax, names, s, zoom=0.30):
+    """Icon-then-name axis for a team chart (token = the manager's avatar)."""
     urls = _avatar_map(s)
-    tr = blended_transform_factory(ax.transAxes, ax.transData)  # x=axes, y=data
-    placed = False
-    for i, n in enumerate(names):
-        img = headshots.avatar_image(urls.get(n))
-        if img is None:
-            continue
-        ab = AnnotationBbox(OffsetImage(img, zoom=zoom), (x, i), xycoords=tr,
-                            frameon=False, box_alignment=(1.0, 0.5), pad=0,
-                            annotation_clip=False)
-        ab.set_zorder(5)
-        ax.add_artist(ab)
-        placed = True
-    if placed:
-        ax.tick_params(axis="y", pad=34)   # open a gap wide enough for the token
+    names = list(names)
+    _identity_rows(ax, names, [headshots.avatar_image(urls.get(n)) for n in names],
+                   zoom=zoom)
 
 
 def _point_avatars(ax, xs, ys, names, s, zoom=0.5):
@@ -621,9 +627,8 @@ def _plot_acq(d, s: Season, title, subtitle):
     # One id/position per player row (a traded player appears under several
     # managers, so take the first -- it is the same player either way).
     first = d.drop_duplicates("player_name").set_index("player_name")
-    _portraits(ax, first["player_id"].reindex(players),
+    _portraits(ax, players, first["player_id"].reindex(players),
                first["position"].reindex(players), zoom=0.28)
-    ax.tick_params(axis="y", pad=34)
     ax.set_xlim(0, span * 1.12)
     ax.legend(loc="lower right", frameon=False, fontsize=8, title="Team", ncol=2)
     return _finish(fig, ax, title, subtitle, "Points While Rostered", caption=_cap(s))
@@ -713,12 +718,10 @@ def plot_playoff_players(playoffs: dict, n: int = 15, scope: str = "title"):
     fig, ax = plt.subplots(figsize=(10, 6.4))
     ax.barh(range(len(d)), d["points"], height=0.72,
             color=[POS_COLORS.get(str(p), "#999999") for p in d["position"]])
+    labels = [f"{n}  ·  {p}" for n, p in zip(d["player_name"], d["position"])]
     ax.set_yticks(range(len(d)))
-    ax.set_yticklabels([f"{n}  ·  {p}" for n, p in zip(d["player_name"], d["position"])],
-                       fontsize=8.5)
-    # Portraits sit between the labels and the bars, so pad the labels out.
-    _portraits(ax, d["player_id"], d["position"])
-    ax.tick_params(axis="y", pad=36)
+    ax.set_yticklabels(labels, fontsize=8.5)
+    _portraits(ax, labels, d["player_id"], d["position"])
     xmax = float(d["points"].max())
     for i, r in d.iterrows():
         rings = "★" * int(r["rings"])
@@ -783,8 +786,7 @@ def plot_playoff_matchup(p, matchup_id):
     ax.axvline(0, color="#b0b0b0", lw=1)
     ax.set_yticks(range(len(g)))
     ax.set_yticklabels(g["lbl"], fontsize=8.5)
-    _portraits(ax, g["player_id"], g["position"], zoom=0.20, x=-0.008)
-    ax.tick_params(axis="y", pad=30)
+    _portraits(ax, list(g["lbl"]), g["player_id"], g["position"], zoom=0.22)
     lim = float(g["points"].max()) * 1.35
     ax.set_xlim(-lim, lim)
     ax.set_xticklabels([f"{abs(t):.0f}" for t in ax.get_xticks()])
