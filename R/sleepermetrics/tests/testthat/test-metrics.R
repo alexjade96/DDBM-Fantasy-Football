@@ -25,6 +25,16 @@ test_that("sl_efficiency computes a percentage and bench points", {
   expect_equal(d$eff[d$user_name == "Cy"], round(160 / 200 * 100, 1))
 })
 
+test_that("team charts degrade to text when the season has no accounts", {
+  s <- make_season()                        # fixture carries no accounts frame
+  expect_length(.sl_avatar_map(s), 0L)
+  # Regression: `[[` on a named vector ERRORS on a missing name rather than
+  # returning NULL, so an empty avatar map used to blow these up entirely.
+  expect_s3_class(sl_plot_standings(s), "ggplot")
+  expect_s3_class(sl_plot_power_rank(s), "ggplot")
+  expect_s3_class(sl_plot_manager_profile(s), "ggplot")
+})
+
 test_that("sl_allplay ranks by all-play win% and reports the schedule gap", {
   d <- sl_allplay(make_season())
   expect_true(all(c("allplay_pct", "allplay_rank", "rank_delta") %in% names(d)))

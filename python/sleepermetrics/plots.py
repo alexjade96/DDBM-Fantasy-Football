@@ -35,6 +35,74 @@ POS_COLORS = {"QB": "#d62728", "RB": "#2ca02c", "WR": "#1f77b4",
 MEDAL = ["#f1c40f", "#c8cdd0", "#cd7f32"]  # gold, silver, bronze
 
 
+def _avatar_map(s) -> dict:
+    """{user_name: avatar url} from the season's accounts frame (best-effort).
+
+    Prefers the account picture (as the Managers panel does), then a custom team
+    picture. pandas NaN is truthy, so guard it explicitly or a missing avatar
+    would resolve to the float nan.
+    """
+    import pandas as pd
+    a = getattr(s, "accounts", None)
+    if a is None or a.empty:
+        return {}
+    out = {}
+    for _, r in a.iterrows():
+        url = (r["avatar_url"] if pd.notna(r.get("avatar_url"))
+               else r["team_avatar_url"] if pd.notna(r.get("team_avatar_url"))
+               else None)
+        out[r["user_name"]] = url
+    return out
+
+
+def _row_avatars(ax, names, s, zoom=0.30, x=-0.012):
+    """Hang each manager's avatar in the gap between their name and their bar.
+
+    Mirrors the player-portrait treatment: a circular token just outside the
+    axis, with the tick labels padded left to open a gap for it. Best-effort --
+    a manager with no avatar (or no network) keeps their plain text label, and
+    the labels are only padded when a token actually landed.
+    """
+    from matplotlib.offsetbox import AnnotationBbox, OffsetImage
+    from matplotlib.transforms import blended_transform_factory
+    urls = _avatar_map(s)
+    tr = blended_transform_factory(ax.transAxes, ax.transData)  # x=axes, y=data
+    placed = False
+    for i, n in enumerate(names):
+        img = headshots.avatar_image(urls.get(n))
+        if img is None:
+            continue
+        ab = AnnotationBbox(OffsetImage(img, zoom=zoom), (x, i), xycoords=tr,
+                            frameon=False, box_alignment=(1.0, 0.5), pad=0,
+                            annotation_clip=False)
+        ab.set_zorder(5)
+        ax.add_artist(ab)
+        placed = True
+    if placed:
+        ax.tick_params(axis="y", pad=34)   # open a gap wide enough for the token
+
+
+def _point_avatars(ax, xs, ys, names, s, zoom=0.5):
+    """Draw each manager's avatar as the marker at their (x, y) point.
+
+    Overlays the existing scatter dots, so a manager with no avatar still shows
+    their coloured dot underneath. Returns True if any avatar was drawn.
+    """
+    from matplotlib.offsetbox import AnnotationBbox, OffsetImage
+    urls = _avatar_map(s)
+    drawn = False
+    for x, y, n in zip(xs, ys, names):
+        img = headshots.avatar_image(urls.get(n))
+        if img is None:
+            continue
+        ab = AnnotationBbox(OffsetImage(img, zoom=zoom), (x, y), frameon=False,
+                            pad=0, annotation_clip=False)
+        ab.set_zorder(5)
+        ax.add_artist(ab)
+        drawn = True
+    return drawn
+
+
 def palette(names) -> dict:
     """A stable colour per manager (matplotlib 'Paired', like R sl_palette)."""
     names = sorted(set(names))
@@ -94,6 +162,7 @@ def plot_standings(s: Season):
             height=0.72, zorder=2)
     ax.set_yticks(range(len(d)))
     ax.set_yticklabels(d["user_name"])
+    _row_avatars(ax, d["user_name"], s)
     xmax = d["points"].max()
     _medals(ax, d, "final_position", xmax * 0.035)
     for i, (_, r) in enumerate(d.iterrows()):
@@ -121,6 +190,7 @@ def plot_luck(s: Season):
                 fontsize=8, fontweight="bold", color=colors[yi])
     ax.set_yticks(list(y))
     ax.set_yticklabels(d["user_name"])
+    _row_avatars(ax, d["user_name"], s)
     ax.legend(loc="lower right", frameon=False, fontsize=8)
     return _finish(fig, ax, "Luck: Actual vs All-Play Expected Wins",
                    "Grey dot = expected wins vs the whole league each week; coloured = actual",
@@ -136,6 +206,7 @@ def plot_efficiency(s: Season):
             color=[cmap(norm(min(max(v, 70), 100))) for v in d["eff"]])
     ax.set_yticks(range(len(d)))
     ax.set_yticklabels(d["user_name"])
+    _row_avatars(ax, d["user_name"], s)
     ax.axvline(100, ls="--", color="#b0b0b0", zorder=1)
     ax.text(100, len(d) - 0.4, "optimal", ha="right", va="top", fontsize=8, color="#8c8c8c")
     for i, (_, r) in enumerate(d.iterrows()):
@@ -157,9 +228,11 @@ def plot_pf_pa(s: Season):
     sizes = 40 + (d["wins"] - d["wins"].min()) / max(d["wins"].max() - d["wins"].min(), 1) * 220
     ax.scatter(d["points"], d["pa"], s=sizes, c=[pal[n] for n in d["user_name"]],
                alpha=0.9, zorder=3, edgecolors="white", linewidths=1)
+    _point_avatars(ax, d["points"], d["pa"], d["user_name"], s, zoom=0.44)
     for _, r in d.iterrows():
         ax.annotate(f"{r['user_name']} ({r['wins']}W)", (r["points"], r["pa"]),
-                    textcoords="offset points", xytext=(7, 4), fontsize=8, color="#404040")
+                    textcoords="offset points", xytext=(21, 0), va="center",
+                    fontsize=8, color="#404040")
     xr = ax.get_xlim(); yr = ax.get_ylim()
     for (xx, yy, ha, va, lab) in [
         (xr[1], yr[0], "right", "bottom", "Dominant"),
@@ -182,6 +255,7 @@ def plot_allplay(s: Season):
     ax.barh(range(len(d)), d["allplay_pct"], color=colors, height=0.72, zorder=2)
     ax.set_yticks(range(len(d)))
     ax.set_yticklabels(d["user_name"])
+    _row_avatars(ax, d["user_name"], s)
     for i, (_, r) in enumerate(d.iterrows()):
         gap = "even" if r["rank_delta"] == 0 else f"{r['rank_delta']:+d}"
         ax.text(r["allplay_pct"] + 0.01, i,
@@ -208,6 +282,7 @@ def plot_power_rank(s: Season):
     ax.axvline(0, color="#b0b0b0", zorder=3)
     ax.set_yticks(range(len(d)))
     ax.set_yticklabels(d["user_name"])
+    _row_avatars(ax, d["user_name"], s)
     span = d["power"].max() - d["power"].min()
     # d is already in bar order (power ascending); _medals positions by row index,
     # so it must NOT be re-sorted or the medals land on the wrong rows.
@@ -236,9 +311,12 @@ def plot_manager_profile(s: Season):
     ax.scatter(d["moves_per_wk"], d["lineup_iq"], s=sizes,
                c=[pal[n] for n in d["user_name"]], alpha=0.85, zorder=3,
                edgecolors="white", linewidths=1)
+    # Avatar as each manager's marker (dot shows through where none loads).
+    _point_avatars(ax, d["moves_per_wk"], d["lineup_iq"], d["user_name"], s, zoom=0.46)
     for _, r in d.iterrows():
         ax.annotate(r["user_name"], (r["moves_per_wk"], r["lineup_iq"]),
-                    textcoords="offset points", xytext=(8, 5), fontsize=8, color="#404040")
+                    textcoords="offset points", xytext=(22, 0), va="center",
+                    fontsize=8, color="#404040")
     return _finish(fig, ax, "Manager Tendencies",
                    "Right = works the wire  ·  up = sets a sharp lineup  ·  bubble = trades made",
                    "Roster Moves per Week", "Lineup IQ (% of optimal)",

@@ -44,6 +44,31 @@ theme_sleeper <- function() {
                        inherit.aes = FALSE, size = 3, fontface = "bold", colour = "grey20"))
 }
 
+# Manager avatars beside each row of a horizontal chart: the tokens themselves,
+# plus clip = "off" (they hang outside the panel) and a right margin on the axis
+# text that opens the gap they sit in. NULL when no avatar loaded, so a
+# text-only chart keeps its normal label spacing.
+#
+# Add this AFTER theme_sleeper() in the chain: theme_sleeper() is a *complete*
+# theme, so adding it later would replace this margin outright.
+.sl_row_avatars <- function(season, levels, x, size_mm = 5, margin_r = 26) {
+  av <- .sl_team_avatars(season, levels, x, size_mm)
+  if (!length(av)) return(NULL)
+  # NOTE axis.text.y.left, not axis.text.y: the complete theme defines the
+  # .left element, which shadows its axis.text.y parent -- setting the parent
+  # alone renders identically (verified byte-for-byte) and the gap never opens.
+  c(av, list(ggplot2::coord_cartesian(clip = "off"),
+             ggplot2::theme(axis.text.y.left = ggplot2::element_text(
+               margin = ggplot2::margin(r = margin_r)))))
+}
+
+# Manager avatars drawn as the markers of a scatter.
+.sl_scatter_avatars <- function(season, d, xcol, ycol, size_mm = 5) {
+  av <- .sl_point_avatars(season, d, xcol, ycol, size_mm)
+  if (!length(av)) return(NULL)
+  c(av, list(ggplot2::coord_cartesian(clip = "off")))
+}
+
 #' Season standings bar chart
 #'
 #' Bars in standing order (1st on top), podium medals on the top three, and a
@@ -67,7 +92,8 @@ sl_plot_standings <- function(season) {
     ggplot2::labs(title = paste(season$season, "Standings"),
                   subtitle = "Bars = total points, in standing order  ·  \U0001F947\U0001F948\U0001F949 podium  ·  \U0001F451 champion",
                   x = "Season Points", y = NULL, caption = .sl_cap(season)) +
-    theme_sleeper()
+    theme_sleeper() +
+    .sl_row_avatars(season, levels(d$user_name), x = -max(d$points) * 0.022)
 }
 
 #' Luck (actual vs all-play expected wins) dumbbell
@@ -76,6 +102,7 @@ sl_plot_standings <- function(season) {
 #' @export
 sl_plot_luck <- function(season) {
   d <- sl_luck(season) %>% dplyr::mutate(user_name = fct_reorder(user_name, luck))
+  lo <- min(c(d$exp_w, d$wins)); hi <- max(c(d$exp_w, d$wins))
   ggplot2::ggplot(d, ggplot2::aes(y = user_name)) +
     ggplot2::geom_segment(ggplot2::aes(x = exp_w, xend = wins, yend = user_name,
                                        colour = luck > 0), linewidth = 1.3, alpha = 0.5) +
@@ -91,7 +118,11 @@ sl_plot_luck <- function(season) {
                   subtitle = "Grey dot = expected wins vs the whole league each week; coloured = actual",
                   x = "Wins", y = NULL, caption = .sl_cap(season)) +
     theme_sleeper() +
-    ggplot2::theme(legend.position = "top", legend.justification = "left")
+    ggplot2::theme(legend.position = "top", legend.justification = "left") +
+    # Wider gap than the bar charts: this x scale keeps its default expansion, so
+    # the token lands further out from the panel edge.
+    .sl_row_avatars(season, levels(d$user_name), x = lo - (hi - lo) * 0.09,
+                    margin_r = 34)
 }
 
 #' Lineup efficiency chart
@@ -111,7 +142,8 @@ sl_plot_efficiency <- function(season) {
     ggplot2::labs(title = "Lineup Efficiency (Coaching)",
                   subtitle = "Started points as % of the optimal lineup each week  ·  100% = optimal  ·  darker = better",
                   x = "Efficiency %", y = NULL, caption = .sl_cap(season)) +
-    theme_sleeper()
+    theme_sleeper() +
+    .sl_row_avatars(season, levels(d$user_name), x = -2.2)
 }
 
 #' Weekly score distribution (consistency) chart
@@ -152,8 +184,10 @@ sl_plot_pf_pa <- function(season) {
     ggplot2::geom_text(data = quad, ggplot2::aes(x = x, y = y, label = lab, hjust = h, vjust = v),
                        inherit.aes = FALSE, size = 3.2, fontface = "italic", colour = "grey78") +
     ggplot2::geom_point(ggplot2::aes(colour = user_name, size = wins), show.legend = FALSE) +
+    # Avatar as each manager's marker; the dot shows through where none loads.
+    .sl_scatter_avatars(season, d, "points", "pa") +
     ggrepel::geom_text_repel(ggplot2::aes(label = paste0(user_name, " (", wins, "W)")),
-                             size = 3, colour = "grey25", point.padding = 6) +
+                             size = 3, colour = "grey25", point.padding = 10) +
     ggplot2::scale_colour_manual(values = sl_palette(d$user_name)) +
     ggplot2::scale_size(range = c(3, 9)) +
     ggplot2::labs(title = "Points For vs Points Against",
@@ -196,7 +230,8 @@ sl_plot_allplay <- function(season) {
                   subtitle = "If everyone played everyone every week  ·  colour = did the real schedule flatter or rob them",
                   x = "All-Play Win %", y = NULL, caption = .sl_cap(season)) +
     theme_sleeper() +
-    ggplot2::theme(legend.position = "top", legend.justification = "left")
+    ggplot2::theme(legend.position = "top", legend.justification = "left") +
+    .sl_row_avatars(season, levels(d$user_name), x = -0.022)
 }
 
 #' Power ranking chart
@@ -223,7 +258,11 @@ sl_plot_power_rank <- function(season) {
     ggplot2::labs(title = "Power Rankings",
                   subtitle = "Composite of points, all-play win%, recent form and lineup efficiency  ·  0 = league average",
                   x = "Power Score (standardised)", y = NULL, caption = .sl_cap(season)) +
-    theme_sleeper()
+    theme_sleeper() +
+    # Past the 0.16 left expansion, so the token sits outside the panel like the
+    # other charts rather than inside it next to the medals.
+    .sl_row_avatars(season, levels(d$user_name),
+                    x = min(d$power) - diff(range(d$power)) * 0.20)
 }
 
 #' Manager tendencies chart
@@ -242,6 +281,8 @@ sl_plot_manager_profile <- function(season) {
     ggplot2::geom_hline(yintercept = my, linetype = "dashed", colour = "grey78") +
     ggplot2::geom_point(ggplot2::aes(colour = user_name, size = trades),
                         alpha = 0.85, show.legend = FALSE) +
+    # Avatar as each manager's marker; the dot shows through where none loads.
+    .sl_scatter_avatars(season, d, "moves_per_wk", "lineup_iq") +
     ggrepel::geom_text_repel(ggplot2::aes(label = user_name), size = 3,
                              colour = "grey25", point.padding = 6) +
     ggplot2::scale_colour_manual(values = sl_palette(d$user_name)) +

@@ -1,7 +1,8 @@
-"""Player portraits for the charts (mirrors R headshots.R).
+"""Player portraits and manager avatars for the charts (mirrors R headshots.R).
 
 Sleeper hosts a headshot per player id, and a logo per team -- a team defense has
-no face, so it gets its team's logo instead.
+no face, so it gets its team's logo instead. Managers/teams have an account
+avatar url (from the accounts frame), fetched the same way.
 
 Everything here is best-effort by design. Chart rendering must never depend on
 the network being up, so a fetch that fails (offline, 403 for a player with no
@@ -39,42 +40,35 @@ def headshot_url(player_id: str, position: str | None = None) -> str:
     return f"{PLAYER_CDN}/{pid}.jpg"
 
 
-def headshot(player_id, position: str | None = None) -> str | None:
-    """Local path to a player's portrait, downloading it once. None if there is none."""
-    if player_id is None or disabled():
+def _fetch(url: str, key: str) -> str | None:
+    """Download `url` to the cache once, keyed by `key`. None on any failure."""
+    if not url or disabled() or key in _misses:
         return None
-    pid = str(player_id)
-    if pid in _misses:
-        return None
-
-    url = headshot_url(pid, position)
-    dest = CACHE_DIR / f"{pid}{Path(url).suffix}"
+    dest = CACHE_DIR / f"{key}{Path(url).suffix or '.png'}"
     if dest.exists():
         return str(dest)
-
     try:
         import requests
         r = requests.get(url, timeout=6)
-        # A player with no photo answers 403 with an HTML error page, not a 404,
-        # so status alone is not enough -- insist on actually being handed an image.
+        # A missing image answers 403 with an HTML error page, not a 404, so
+        # status alone is not enough -- insist on actually being handed an image.
         if r.status_code != 200 or not r.headers.get("content-type", "").startswith("image/"):
-            _misses.add(pid)
+            _misses.add(key)
             return None
         CACHE_DIR.mkdir(parents=True, exist_ok=True)
         dest.write_bytes(r.content)
         return str(dest)
     except Exception:
-        _misses.add(pid)          # offline, timeout, whatever: degrade to text
+        _misses.add(key)          # offline, timeout, whatever: degrade to text
         return None
 
 
-def load(player_id, position: str | None = None, size: int = 96):
-    """The portrait as an RGBA array ready for matplotlib, or None.
+def _circle(path: str | None, size: int):
+    """A cached image file as a centre-cropped, circular RGBA array (or None).
 
-    Cropped to a square and rounded off, so a portrait sits in the chart as a
-    circular token rather than a photo with a hard rectangular edge.
+    Rounding it off lets a portrait/avatar sit in a chart as a circular token
+    rather than a photo with a hard rectangular edge.
     """
-    path = headshot(player_id, position)
     if path is None:
         return None
     try:
@@ -96,6 +90,48 @@ def load(player_id, position: str | None = None, size: int = 96):
         return np.asarray(im) / 255.0
     except Exception:
         return None
+
+
+def headshot(player_id, position: str | None = None) -> str | None:
+    """Local path to a player's portrait, downloading it once. None if there is none."""
+    if player_id is None:
+        return None
+    pid = str(player_id)
+    return _fetch(headshot_url(pid, position), pid)
+
+
+def load(player_id, position: str | None = None, size: int = 96):
+    """A player's portrait as a circular RGBA array ready for matplotlib, or None."""
+    return _circle(headshot(player_id, position), size)
+
+
+def avatar_thumb(url: str) -> str:
+    """The small thumbnail form of a Sleeper avatar url.
+
+    A full `/avatars/<id>` is served as application/octet-stream (~400KB) which
+    the image-type guard rejects; the `/avatars/thumbs/<id>` form is a ~15KB
+    image/png -- smaller and correctly typed, exactly what a chart token wants.
+    Non-Sleeper (custom team) urls pass through unchanged.
+    """
+    u = str(url)
+    if "sleepercdn.com/avatars/" in u and "/thumbs/" not in u:
+        return u.replace("/avatars/", "/avatars/thumbs/")
+    return u
+
+
+def avatar_image(url, size: int = 96):
+    """A manager/team account avatar (by url) as a circular RGBA array, or None.
+
+    Keyed by a hash of the url since avatars have no stable id; same best-effort,
+    same disk cache and miss-cache as player portraits.
+    """
+    if not url or (isinstance(url, float) and url != url):     # None / NaN
+        return None
+    u = avatar_thumb(url)
+    # Key the cache on the avatar id (the url basename) -- unique and stable, and
+    # matches the R side so both instances share one downloaded set.
+    key = "av_" + os.path.basename(u.split("?")[0])
+    return _circle(_fetch(u, key), size)
 
 
 def clear_cache(disk: bool = False) -> None:

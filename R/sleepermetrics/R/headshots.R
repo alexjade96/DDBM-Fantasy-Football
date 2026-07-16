@@ -46,6 +46,31 @@ sl_headshot_url <- function(player_id, position = NULL) {
   else paste0(SL_PLAYER_CDN, "/", pid, ".jpg")
 }
 
+# Download `url` to the cache once, keyed by `key`. NULL on any failure.
+.sl_fetch_image <- function(url, key) {
+  if (is.null(url) || is.na(url) || !nzchar(url) || .sl_images_off()) return(NULL)
+  if (!is.null(.sl_shot_miss[[key]])) return(NULL)
+  dir <- .sl_cache_dir()
+  ext <- tools::file_ext(url)
+  dest <- file.path(dir, paste0(key, if (nzchar(ext)) paste0(".", ext) else ".png"))
+  if (file.exists(dest)) return(dest)
+  ok <- tryCatch({
+    if (!dir.exists(dir)) dir.create(dir, recursive = TRUE, showWarnings = FALSE)
+    tmp <- tempfile()
+    resp <- curl::curl_fetch_disk(url, tmp, handle = curl::new_handle(timeout = 6L))
+    # A missing image answers 403 with an HTML error page, not a 404, so status
+    # alone is not enough -- insist on actually being handed an image.
+    if (resp$status_code == 200 && grepl("^image/", resp$type %||% "")) {
+      file.rename(tmp, dest); TRUE
+    } else FALSE
+  }, error = function(e) FALSE)         # offline, timeout, whatever
+  if (!isTRUE(ok)) {
+    .sl_shot_miss[[key]] <- TRUE        # degrade to text, and stop trying
+    return(NULL)
+  }
+  dest
+}
+
 #' Local path to a player's portrait, downloading it once
 #'
 #' @param player_id Sleeper player id.
@@ -53,48 +78,23 @@ sl_headshot_url <- function(player_id, position = NULL) {
 #' @return Path to a cached image, or `NULL` when there is no image / no network.
 #' @export
 sl_headshot <- function(player_id, position = NULL) {
-  if (is.null(player_id) || is.na(player_id) || .sl_images_off()) return(NULL)
-  pid <- as.character(player_id)
-  if (!is.null(.sl_shot_miss[[pid]])) return(NULL)
-
-  url <- sl_headshot_url(pid, position)
-  dir <- .sl_cache_dir()
-  dest <- file.path(dir, paste0(pid, tools::file_ext(url) |> (\(e) paste0(".", e))()))
-  if (file.exists(dest)) return(dest)
-
-  ok <- tryCatch({
-    if (!dir.exists(dir)) dir.create(dir, recursive = TRUE, showWarnings = FALSE)
-    h <- curl::new_handle(timeout = 6L)
-    tmp <- tempfile()
-    resp <- curl::curl_fetch_disk(url, tmp, handle = h)
-    # A player with no photo answers 403 with an HTML error page, not a 404, so
-    # status alone is not enough -- insist on actually being handed an image.
-    ctype <- resp$type %||% ""
-    if (resp$status_code == 200 && grepl("^image/", ctype)) {
-      file.rename(tmp, dest); TRUE
-    } else FALSE
-  }, error = function(e) FALSE)         # offline, timeout, whatever
-
-  if (!isTRUE(ok)) {
-    .sl_shot_miss[[pid]] <- TRUE        # degrade to text, and stop trying
-    return(NULL)
-  }
-  dest
+  if (is.null(player_id) || is.na(player_id)) return(NULL)
+  .sl_fetch_image(sl_headshot_url(player_id, position), as.character(player_id))
 }
 
-#' A player's portrait as a grid raster, ready to draw on a plot
-#'
-#' Cropped to a square and rounded off, so a portrait sits in the chart as a
-#' circular token rather than a photo with a hard rectangular edge.
-#'
-#' @param player_id Sleeper player id.
-#' @param position Player position (`"DEF"` -> team logo).
-#' @param size_mm Drawn size. Fixed in mm rather than data units so the portrait
-#'   stays a circle instead of being stretched to whatever box it lands in.
-#' @return A `rasterGrob`, or `NULL` when there is no image.
-#' @export
-sl_headshot_grob <- function(player_id, position = NULL, size_mm = 6.5) {
-  path <- sl_headshot(player_id, position)
+# The small thumbnail form of a Sleeper avatar url: the full /avatars/<id> is
+# served as octet-stream (~400KB, rejected by the image-type guard); the
+# /avatars/thumbs/<id> form is a ~15KB image/png. Custom urls pass through.
+.sl_avatar_thumb <- function(url) {
+  if (grepl("sleepercdn.com/avatars/", url, fixed = TRUE) &&
+      !grepl("/thumbs/", url, fixed = TRUE)) {
+    sub("/avatars/", "/avatars/thumbs/", url, fixed = TRUE)
+  } else url
+}
+
+# A cached image file -> a circular rasterGrob (or NULL). Shared by the player
+# portrait and manager avatar grobs.
+.sl_circle_grob <- function(path, size_mm) {
   if (is.null(path)) return(NULL)
   tryCatch({
     # Sniff the magic bytes rather than trust the extension: Sleeper happily
@@ -111,8 +111,8 @@ sl_headshot_grob <- function(player_id, position = NULL, size_mm = 6.5) {
     c0 <- floor((dim(img)[2] - n) / 2) + 1
     img <- img[r0:(r0 + n - 1), c0:(c0 + n - 1), , drop = FALSE]
 
-    # A team logo is a PNG with its own transparency; keep it, or the logo comes
-    # out sitting on a black square.
+    # A team logo / avatar png has its own transparency; keep it, or it comes out
+    # sitting on a black square.
     own <- if (dim(img)[3] >= 4L) img[, , 4] else matrix(1, n, n)
 
     # Round it off: alpha 0 outside the inscribed circle.
@@ -126,6 +126,36 @@ sl_headshot_grob <- function(player_id, position = NULL, size_mm = 6.5) {
                      width = grid::unit(size_mm, "mm"),
                      height = grid::unit(size_mm, "mm"))
   }, error = function(e) NULL)
+}
+
+#' A player's portrait as a grid raster, ready to draw on a plot
+#'
+#' Cropped to a square and rounded off, so a portrait sits in the chart as a
+#' circular token rather than a photo with a hard rectangular edge.
+#'
+#' @param player_id Sleeper player id.
+#' @param position Player position (`"DEF"` -> team logo).
+#' @param size_mm Drawn size. Fixed in mm rather than data units so the portrait
+#'   stays a circle instead of being stretched to whatever box it lands in.
+#' @return A `rasterGrob`, or `NULL` when there is no image.
+#' @export
+sl_headshot_grob <- function(player_id, position = NULL, size_mm = 6.5) {
+  .sl_circle_grob(sl_headshot(player_id, position), size_mm)
+}
+
+#' A manager/team account avatar as a circular grid raster
+#'
+#' @param url Account avatar url (from the season's `accounts` frame). The
+#'   Sleeper `/avatars/<id>` form is fetched via its `/thumbs/` thumbnail.
+#' @param size_mm Drawn size (mm).
+#' @return A `rasterGrob`, or `NULL` when there is no image / no network.
+#' @export
+sl_avatar_grob <- function(url, size_mm = 6.5) {
+  if (is.null(url) || is.na(url) || !nzchar(url)) return(NULL)
+  u <- .sl_avatar_thumb(url)
+  # Key the cache on the avatar id (the url basename) -- unique and stable, and
+  # matches the Python side so both instances share one downloaded set.
+  .sl_circle_grob(.sl_fetch_image(u, paste0("av_", basename(u))), size_mm)
 }
 
 # Portrait layers for a horizontal bar chart: one raster per row, hung just left
@@ -144,6 +174,58 @@ sl_headshot_grob <- function(player_id, position = NULL, size_mm = 6.5) {
     # its own (fixed, square) size rather than being stretched to a box.
     lays[[length(lays) + 1L]] <- ggplot2::annotation_custom(
       g, xmin = x, xmax = x, ymin = y, ymax = y)
+  }
+  lays
+}
+
+# {user_name -> avatar url} from the season's accounts frame (best-effort).
+# Prefers the account picture (as the Managers panel does), then a custom team
+# picture. Returns a named character vector.
+.sl_avatar_map <- function(season) {
+  a <- season$accounts
+  need <- c("user_name", "avatar_url", "team_avatar_url")
+  if (is.null(a) || !nrow(a) || !all(need %in% names(a))) {
+    return(stats::setNames(character(0), character(0)))
+  }
+  url <- ifelse(!is.na(a$avatar_url), a$avatar_url, a$team_avatar_url)
+  stats::setNames(url, a$user_name)
+}
+
+# Avatar layers for a horizontal chart: each manager's circular token hung at a
+# fixed x (data coord), just left of their row. `levels` is the y-axis order (the
+# user_name factor levels); level j sits at y = j. Caller sets coord clip = "off".
+.sl_team_avatars <- function(season, levels, x, size_mm = 5) {
+  urls <- .sl_avatar_map(season)
+  lays <- list()
+  for (j in seq_along(levels)) {
+    # `[[` on a named atomic vector ERRORS on a missing name rather than
+    # returning NULL, so check membership first: a season with no accounts (or a
+    # manager absent from it) must degrade to a text label, not blow up.
+    if (!levels[j] %in% names(urls)) next
+    u <- urls[[levels[j]]]
+    if (is.null(u) || is.na(u) || !nzchar(u)) next
+    g <- sl_avatar_grob(u, size_mm)
+    if (is.null(g)) next
+    lays[[length(lays) + 1L]] <- ggplot2::annotation_custom(
+      g, xmin = x, xmax = x, ymin = j, ymax = j)
+  }
+  lays
+}
+
+# Avatar layers for a scatter: each manager's token drawn as the marker at their
+# (xcol, ycol) point. `d` needs a user_name column. Caller sets clip = "off".
+.sl_point_avatars <- function(season, d, xcol, ycol, size_mm = 5) {
+  urls <- .sl_avatar_map(season)
+  lays <- list()
+  for (i in seq_len(nrow(d))) {
+    if (!d$user_name[i] %in% names(urls)) next   # see .sl_team_avatars: `[[` errors
+    u <- urls[[d$user_name[i]]]
+    if (is.null(u) || is.na(u) || !nzchar(u)) next
+    g <- sl_avatar_grob(u, size_mm)
+    if (is.null(g)) next
+    lays[[length(lays) + 1L]] <- ggplot2::annotation_custom(
+      g, xmin = d[[xcol]][i], xmax = d[[xcol]][i],
+      ymin = d[[ycol]][i], ymax = d[[ycol]][i])
   }
   lays
 }
