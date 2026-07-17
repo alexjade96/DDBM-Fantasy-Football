@@ -7,11 +7,25 @@
 <section class="grid">
   {% for c in charts %}
   <figure class="card chart">
-    <img src="/chart/{{ c }}?league={{ league }}&season={{ season }}&_={{ bust }}"
+    <img src="/chart/{{ c }}?league={{ league }}&season={{ season }}&theme={{ theme }}&_={{ bust }}"
          alt="{{ c }}" loading="lazy">
   </figure>
   {% endfor %}
 </section>
+
+{% if records %}
+<h2>Record book</h2>
+<p class="hint">League superlatives across every season on record.</p>
+<section class="stats">
+  {% for r in records %}
+  <div class="stat {% if loop.index0 == 0 %}gold{% endif %}">
+    <span class="k">{{ r.label }}</span>
+    <span class="v">{{ r.value }}</span>
+    <span class="sub">{{ r.holder }}{% if r.detail %} · {{ r.detail }}{% endif %}</span>
+  </div>
+  {% endfor %}
+</section>
+{% endif %}
 
 {% if managers %}
 <h2>Managers</h2>

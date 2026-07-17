@@ -12,6 +12,46 @@ from sleepermetrics.weekly import summary_week
 from conftest import make_season
 
 
+def test_boom_bust_has_avg_and_spread():
+    d = metrics.boom_bust(make_season())
+    assert set(["user_name", "avg", "sd", "floor", "ceiling"]).issubset(d.columns)
+    al = d[d["user_name"] == "Al"].iloc[0]
+    assert al["avg"] == 115.0                      # mean(100, 130)
+    assert al["ceiling"] == 130.0 and al["floor"] == 100.0
+
+
+def test_strength_of_schedule_uses_opponent_ppg():
+    d = metrics.strength_of_schedule(make_season())
+    # Al faced Bo both weeks; Bo's season PPG = mean(90, 70) = 80.
+    assert d[d["user_name"] == "Al"].iloc[0]["sos"] == 80.0
+    assert list(d["rank"]) == sorted(d["rank"])
+
+
+def test_schedule_swap_diagonal_is_the_real_record():
+    d = metrics.schedule_swap(make_season())
+    # Al under Al's own schedule = the real record: beat Bo twice.
+    al = d[(d["team"] == "Al") & (d["schedule_of"] == "Al")].iloc[0]
+    assert al["wins"] == 2 and al["losses"] == 0
+    # Al under Cy's schedule: Cy had no opponent, so no games are counted.
+    alcy = d[(d["team"] == "Al") & (d["schedule_of"] == "Cy")].iloc[0]
+    assert alcy["wins"] == 0 and alcy["losses"] == 0
+
+
+def test_head_to_head_is_symmetric_and_named():
+    d = metrics.head_to_head({"2025": make_season()})
+    ab = d[(d["user_name"] == "Al") & (d["opp_name"] == "Bo")].iloc[0]
+    ba = d[(d["user_name"] == "Bo") & (d["opp_name"] == "Al")].iloc[0]
+    assert ab["wins"] == 2 and ab["losses"] == 0    # Al beat Bo twice
+    assert ba["wins"] == 0 and ba["losses"] == 2    # ...and the mirror
+
+
+def test_record_book_reports_superlatives():
+    recs = metrics.record_book({"2025": make_season()})
+    labels = {r["label"]: r for r in recs}
+    assert labels["Highest score"]["holder"] == "Al"       # 130 in wk2
+    assert labels["Highest score"]["value"] == "130.0"
+
+
 def test_starter_slots():
     rp = ["QB", "RB", "RB", "WR", "WR", "TE", "FLEX", "K", "DEF", "BN", "BN"]
     s = starter_slots(rp)

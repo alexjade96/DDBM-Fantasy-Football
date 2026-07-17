@@ -10,6 +10,43 @@
 <body hx-indicator="#bar">
   <div id="bar"></div>
 
+  <!-- Charts are server-rendered PNGs, so the viewer's colour scheme has to ride
+       along in the request. This hidden field carries it; hx-include pulls it
+       into every panel/chart fetch. Set synchronously at parse time so it is
+       already correct before htmx fires the initial `load` trigger below. -->
+  <input type="hidden" id="theme" name="theme" value="light">
+  <script>
+    (function () {
+      var mq = matchMedia('(prefers-color-scheme: dark)');
+      var el = document.getElementById('theme');
+      el.value = mq.matches ? 'dark' : 'light';
+      // Follow the OS toggle live: update the field, then reload the open tab so
+      // its charts re-fetch in the new theme.
+      mq.addEventListener('change', function (e) {
+        el.value = e.matches ? 'dark' : 'light';
+        var b = document.querySelector('.tabs button.active');
+        if (b) b.click();
+      });
+    })();
+
+    // Per-chart loading skeleton: after each panel swap, give every chart figure
+    // a shimmer placeholder until its PNG loads (or errors), then fade the image
+    // in. Runs once per image (data-sk guard), and handles the cached case where
+    // the image is already complete.
+    function prepCharts() {
+      document.querySelectorAll('.card.chart img:not([data-sk])').forEach(function (img) {
+        img.setAttribute('data-sk', '1');
+        var fig = img.closest('.card.chart');
+        var done = function () { fig.classList.remove('skeleton'); img.classList.add('loaded'); };
+        if (img.complete && img.naturalWidth) { done(); return; }
+        fig.classList.add('skeleton');
+        img.addEventListener('load', done);
+        img.addEventListener('error', done);   // a failed chart shouldn't shimmer forever
+      });
+    }
+    document.body.addEventListener('htmx:afterSwap', prepCharts);
+  </script>
+
   <header class="top">
     <div class="brand">
       <span class="mark"></span>
@@ -23,7 +60,7 @@
          just the panel: /load swaps those back out-of-band. Changing only the
          season is a plain tab reload -- the shell is already correct. -->
     <form class="controls" hx-get="/load" hx-target="#panel" hx-swap="innerHTML"
-          hx-trigger="change from:#season, submit"
+          hx-include="#theme" hx-trigger="change from:#season, submit"
           hx-on="htmx:afterRequest: document.querySelectorAll('.tabs button').forEach((b,i)=>b.classList.toggle('active', i===0))">
       <label>
         <span>League ID</span>
@@ -46,7 +83,7 @@
   </header>
 
   <nav class="tabs" role="tablist"
-       hx-target="#panel" hx-swap="innerHTML" hx-include="#league, #season">
+       hx-target="#panel" hx-swap="innerHTML" hx-include="#league, #season, #theme">
     {% for id, label in tabs %}
     <button role="tab" hx-get="/tab/{{ id }}"
             class="{% if loop.first %}active{% endif %}"
@@ -57,7 +94,7 @@
   </nav>
 
   <main id="panel"
-        hx-get="/tab/overview" hx-trigger="load" hx-include="#league, #season">
+        hx-get="/tab/overview" hx-trigger="load" hx-include="#league, #season, #theme">
     <p class="empty">Loading…</p>
   </main>
 

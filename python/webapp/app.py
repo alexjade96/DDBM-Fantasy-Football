@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import io
 import os
+import threading
 import time
 from html import escape as html_escape
 from pathlib import Path
@@ -25,7 +26,7 @@ from fastapi.templating import Jinja2Templates
 matplotlib.use("Agg")
 
 import sleepermetrics as sm  # noqa: E402
-from sleepermetrics import metrics, plots, scoring, summaries  # noqa: E402
+from sleepermetrics import draft, metrics, plots, scoring, summaries  # noqa: E402
 
 BASE = Path(__file__).resolve().parent
 ROOT = BASE.parent.parent                       # repo root
@@ -128,8 +129,8 @@ def _grouped_rules(settings: dict) -> list[tuple[str, list[dict]]]:
 TABS = [
     ("overview", "Season overview"), ("weekly", "Weekly trends"),
     ("coaching", "Coaching & scoring"), ("roster", "Roster & positions"),
-    ("transactions", "Transactions"), ("playoffs", "Playoffs"),
-    ("career", "Career"),
+    ("transactions", "Transactions"), ("draft", "Draft"),
+    ("playoffs", "Playoffs"), ("career", "Career"),
 ]
 
 # --- cache ----------------------------------------------------------------
@@ -159,12 +160,25 @@ def pick(league_id: str, season: str | None, fresh: bool = False):
     return d, d["seasons"][key], key
 
 
+# matplotlib's pyplot state is global and not thread-safe, and the chart theme
+# is a module-level token that a request flips before drawing -- so every render
+# path holds this lock, or two concurrent requests could draw on each other's
+# theme (a dark chart saved with a light facecolor, say).
+_render_lock = threading.Lock()
+
+
 def png(fig) -> Response:
     buf = io.BytesIO()
-    fig.savefig(buf, format="png", dpi=110, bbox_inches="tight", facecolor="white")
+    # Match the saved facecolor to the active theme so a dark chart isn't matted
+    # onto a white rectangle. plots.T is already the theme set under the lock.
+    fig.savefig(buf, format="png", dpi=110, bbox_inches="tight",
+                facecolor=plots.T["bg"])
     matplotlib.pyplot.close(fig)
+    # Cacheable per (url incl. theme + bust): the browser reuses charts across
+    # tab visits instead of re-fetching every switch. `bust` changes on a live
+    # re-score, so a refreshed week is never served stale.
     return Response(buf.getvalue(), media_type="image/png",
-                    headers={"Cache-Control": "no-cache"})
+                    headers={"Cache-Control": "private, max-age=120"})
 
 
 # --- chart registry -------------------------------------------------------
@@ -184,32 +198,45 @@ SEASON_CHARTS = {
     "roster_counts": plots.plot_roster_counts,
     "trade_performance": plots.plot_trade_performance,
     "waiver_performance": plots.plot_waiver_performance,
+    "boom_bust": plots.plot_boom_bust, "sos": plots.plot_sos,
+    "schedule_swap": plots.plot_schedule_swap,
+    "draft_value": plots.plot_draft_value, "draft_grades": plots.plot_draft_grades,
 }
 
 
 @app.get("/chart/{name}")
 def chart(name: str, league: str = DEFAULT_LEAGUE, season: str | None = None,
-          matchup: str | None = None, scope: str = "title", _: str | None = None):
+          matchup: str | None = None, scope: str = "title",
+          theme: str = "light", _: str | None = None):
     d, s, key = pick(league, season)
-    if name in SEASON_CHARTS:
-        return png(SEASON_CHARTS[name](s))
-    if name == "career":
-        return png(plots.plot_career(d["seasons"]))
-    if name == "trajectory":
-        return png(plots.plot_trajectory(d["seasons"]))
-    if name == "playoff_stats":
-        return png(plots.plot_playoff_stats(d["playoffs"], scope))
-    if name == "playoff_players":
-        return png(plots.plot_playoff_players(d["playoffs"], scope=scope))
-    if name == "clutch":
-        return png(plots.plot_clutch(d["seasons"], d["playoffs"], scope))
-    if name == "bracket":
-        p = d["playoffs"].get(key)
-        return png(plots.plot_playoff_bracket(p))
-    if name == "playoff_matchup":
-        p = d["playoffs"].get(key)
-        mid = matchup or p.config.get("final")
-        return png(plots.plot_playoff_matchup(p, mid))
+    # Build + save under the lock, with the requested theme active, so the
+    # structural palette and the saved facecolor can't be crossed by a
+    # concurrent request drawing in the other theme.
+    with _render_lock:
+        plots.set_chart_theme(theme)
+        if name in SEASON_CHARTS:
+            return png(SEASON_CHARTS[name](s))
+        if name == "career":
+            return png(plots.plot_career(d["seasons"]))
+        if name == "trajectory":
+            return png(plots.plot_trajectory(d["seasons"]))
+        if name == "loyalty":
+            return png(plots.plot_loyalty(d["seasons"]))
+        if name == "head_to_head":
+            return png(plots.plot_head_to_head(d["seasons"]))
+        if name == "playoff_stats":
+            return png(plots.plot_playoff_stats(d["playoffs"], scope))
+        if name == "playoff_players":
+            return png(plots.plot_playoff_players(d["playoffs"], scope=scope))
+        if name == "clutch":
+            return png(plots.plot_clutch(d["seasons"], d["playoffs"], scope))
+        if name == "bracket":
+            p = d["playoffs"].get(key)
+            return png(plots.plot_playoff_bracket(p))
+        if name == "playoff_matchup":
+            p = d["playoffs"].get(key)
+            mid = matchup or p.config.get("final")
+            return png(plots.plot_playoff_matchup(p, mid))
     return Response(status_code=404)
 
 
@@ -225,7 +252,8 @@ def index(request: Request, league: str = DEFAULT_LEAGUE):
 
 
 @app.get("/load", response_class=HTMLResponse)
-def load(request: Request, league: str = DEFAULT_LEAGUE, season: str | None = None):
+def load(request: Request, league: str = DEFAULT_LEAGUE, season: str | None = None,
+         theme: str = "light"):
     """Load a league (or a season of it): overview panel + a refreshed shell.
 
     A typo'd or private league id is a normal thing for a user to do, so it
@@ -240,7 +268,8 @@ def load(request: Request, league: str = DEFAULT_LEAGUE, season: str | None = No
             f"{html_escape(league)}</code>. Check the id is a Sleeper league "
             "that has at least one scored week.</p>")
     ctx = {"league": league, "season": key, "scope": "title", "bust": 0,
-           "league_name": s.name, "seasons": list(reversed(d["names"])),
+           "theme": theme, "league_name": s.name,
+           "seasons": list(reversed(d["names"])),
            "summary": summaries.summary_season(s),
            "charts": ["standings", "power_rank", "allplay", "luck"]}
     return tpl.TemplateResponse(request, "load.html", ctx)
@@ -249,7 +278,8 @@ def load(request: Request, league: str = DEFAULT_LEAGUE, season: str | None = No
 @app.get("/tab/{name}", response_class=HTMLResponse)
 def tab(name: str, request: Request, league: str = DEFAULT_LEAGUE,
         season: str | None = None, refresh: int = 0, scope: str = "title",
-        matchup: str | None = None):
+        matchup: str | None = None, theme: str = "light",
+        week: str | None = None):
     if refresh:
         scoring.clear_stats_cache()      # a live week must not serve stale points
     try:
@@ -257,24 +287,90 @@ def tab(name: str, request: Request, league: str = DEFAULT_LEAGUE,
     except Exception:
         return HTMLResponse("<p class='empty'>Couldn&rsquo;t load league <code>"
                             f"{html_escape(league)}</code>.</p>")
-    ctx = {"league": league, "season": key, "scope": scope,
+    ctx = {"league": league, "season": key, "scope": scope, "theme": theme,
            "bust": int(time.time()) if refresh else 0}
 
     if name == "overview":
         ctx["summary"] = summaries.summary_season(s)
-        ctx["charts"] = ["standings", "power_rank", "allplay", "luck"]
+        ctx["charts"] = ["standings", "power_rank", "allplay", "luck",
+                         "sos", "schedule_swap"]
     elif name == "weekly":
-        ctx["charts"] = ["table_position", "team_points"]
+        # Season-long trend charts, plus a drill-down into a single week: its
+        # scoreboard and the week's superlatives, from the week_stats metric.
+        last = s.last_week
+        wk = last
+        if week:
+            try:
+                wk = max(1, min(int(week), last))
+            except ValueError:
+                pass
+        ws = sm.metrics.week_stats(s, wk)
+        decided = ws[ws["result"].isin(["W", "L", "T"])]
+        wins = decided[decided["margin"] > 0]
+
+        def _one(row, val):
+            return f"{val} · {row['user_name']}" if row is not None else "—"
+
+        top = ws.iloc[0] if len(ws) else None
+        blow = wins.loc[wins["margin"].idxmax()] if len(wins) else None
+        close = wins.loc[wins["margin"].idxmin()] if len(wins) else None
+        bench = (ws.loc[ws["left_on_bench"].idxmax()]
+                 if ws["left_on_bench"].notna().any() else None)
+        ctx.update({
+            "charts": ["table_position", "team_points"],
+            "week": wk, "weeks": list(range(1, last + 1)),
+            "wk_rows": ws.to_dict("records"),
+            "kpi_top": _one(top, f"{top['points']:.1f}") if top is not None else "—",
+            "kpi_blow": (f"+{blow['margin']:.1f} · {blow['user_name']}"
+                         if blow is not None else "—"),
+            "kpi_close": (f"+{close['margin']:.1f} · {close['user_name']}"
+                          if close is not None else "—"),
+            "kpi_bench": (f"{bench['left_on_bench']:.1f} · {bench['user_name']}"
+                          if bench is not None else "—"),
+        })
+        return tpl.TemplateResponse(request, "tab_weekly.html", ctx)
     elif name == "coaching":
-        ctx["charts"] = ["efficiency", "consistency", "pf_pa"]
+        ctx["charts"] = ["efficiency", "consistency", "pf_pa", "boom_bust"]
     elif name == "roster":
         ctx["charts"] = ["position_scoring", "roster_counts", "roster_heatmap",
                          "starter_bench", "position_box"]
     elif name == "transactions":
         ctx["charts"] = ["manager_profile", "trade_performance", "waiver_performance"]
+    elif name == "draft":
+        # Historical draft board (round x slot) + value/grade charts. A season
+        # rail lets past drafts be walked without leaving the tab.
+        ctx["seasons"] = list(reversed(d["names"]))
+        ctx["draft_seasons"] = list(reversed(d["names"]))
+        ctx["charts"] = ["draft_value", "draft_grades"]
+        db = draft.draft_board(s)
+        if db.empty:
+            ctx["no_draft"] = True
+        else:
+            db = db[db["draft_slot"].notna()].copy()
+            db["draft_slot"] = db["draft_slot"].astype(int)
+            slots = sorted(db["draft_slot"].unique())
+            # A slot belongs to one team all draft, so the column header is that
+            # manager; take the first row seen per slot.
+            slot_user = (db.drop_duplicates("draft_slot")
+                         .set_index("draft_slot")["user_name"].to_dict())
+            rounds = []
+            for rnd, g in db.groupby("round"):
+                cells = {int(r["draft_slot"]): {
+                    "pick_no": int(r["pick_no"]) if pd_notna(r["pick_no"]) else None,
+                    "player": r["player_name"] or "—",
+                    "pos": (r["position"] or "").upper(),
+                    "points": round(float(r["points"]), 1),
+                } for _, r in g.iterrows()}
+                rounds.append({"round": int(rnd),
+                               "cells": [cells.get(sl) for sl in slots]})
+            ctx.update({"slots": slots,
+                        "slot_user": [slot_user.get(sl) for sl in slots],
+                        "rounds": rounds})
+        return tpl.TemplateResponse(request, "tab_draft.html", ctx)
     elif name == "career":
         ctx["summary"] = summaries.summary_career(d["seasons"])
-        ctx["charts"] = ["career", "trajectory"]
+        ctx["charts"] = ["career", "trajectory", "head_to_head", "loyalty"]
+        ctx["records"] = metrics.record_book(d["seasons"])
         mg = sm.league_accounts(d["seasons"])
         # NaN is TRUTHY in Jinja, so a missing avatar would sail through
         # `{% if m.avatar_url %}` and render src="nan". Hand the template None.
@@ -335,23 +431,73 @@ def _report_html(d, s, key) -> str:
     tmp = tempfile.NamedTemporaryFile(suffix=".html", delete=False)
     tmp.close()
     try:
-        sm.season_report(s, tmp.name, seasons=d["seasons"], playoffs=d["playoffs"])
+        # The report bakes its charts as PNGs, so they can't adapt to the
+        # viewer's theme after the fact -- render them light (the report's own
+        # historical look). The lock + explicit theme keep a prior dark chart
+        # request from leaving the global palette dark under us.
+        with _render_lock:
+            plots.set_chart_theme("light")
+            sm.season_report(s, tmp.name, seasons=d["seasons"], playoffs=d["playoffs"])
         with open(tmp.name, encoding="utf-8") as fh:
             return fh.read()
     finally:
         os.unlink(tmp.name)
 
 
+def _report_loader(league: str, season: str | None) -> HTMLResponse:
+    """A fast, styled 'building…' page that then navigates to the real render.
+
+    The report draws ~19 charts and takes a few seconds, which otherwise shows
+    as a blank tab. This returns immediately with a spinner and redirects to
+    `render=1`; the browser keeps the spinner on screen until that response
+    arrives, so the wait is covered instead of blank. Theme-aware so it matches
+    whichever mode the viewer opened it in.
+    """
+    from urllib.parse import quote
+    q = f"league={quote(league)}&render=1"
+    if season:
+        q += f"&season={quote(season)}"
+    return HTMLResponse(f"""<!doctype html><html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Building season report…</title>
+<style>
+  :root {{ --bg:#f6f7f5; --ink:#1d2321; --faint:#8b938f; --turf:#2f7d4f; --line:#e2e6e3; }}
+  @media (prefers-color-scheme: dark) {{
+    :root {{ --bg:#121614; --ink:#e6ebe8; --faint:#6b7570; --turf:#5fbf85; --line:#28302c; }} }}
+  html,body {{ height:100%; margin:0; }}
+  body {{ display:grid; place-items:center; background:var(--bg); color:var(--ink);
+    font-family:ui-sans-serif,-apple-system,"Segoe UI",Roboto,sans-serif; }}
+  .box {{ text-align:center; }}
+  .ring {{ width:42px; height:42px; margin:0 auto 18px; border-radius:50%;
+    border:3px solid var(--line); border-top-color:var(--turf);
+    animation:spin .8s linear infinite; }}
+  @keyframes spin {{ to {{ transform:rotate(360deg); }} }}
+  @media (prefers-reduced-motion:reduce) {{ .ring {{ animation-duration:2s; }} }}
+  h1 {{ font-size:16px; font-weight:600; margin:0 0 4px; }}
+  p {{ color:var(--faint); font-size:13px; margin:0; }}
+</style></head><body>
+  <div class="box">
+    <div class="ring" role="status" aria-label="Building report"></div>
+    <h1>Building your season report…</h1>
+    <p>Drawing ~19 charts — this takes a few seconds.</p>
+  </div>
+  <script>location.replace("/report?{q}");</script>
+</body></html>""")
+
+
 @app.get("/report")
 def report(league: str = DEFAULT_LEAGUE, season: str | None = None,
-           download: int = 0):
+           download: int = 0, render: int = 0):
     """The season report, displayed inline as a page by default.
 
     The primary action is to *show* the report; `download=1` returns the same
     self-contained file as an attachment instead. Rendered on demand (it draws
-    ~19 charts), so either way takes a few seconds.
+    ~19 charts), so the first hit returns a loader (`render=0`) that navigates
+    to the real render, keeping a spinner on screen during the wait.
     """
     from urllib.parse import quote
+    if not download and not render:
+        return _report_loader(league, season)
     d, s, key = pick(league, season)
     doc = _report_html(d, s, key)
     if download:

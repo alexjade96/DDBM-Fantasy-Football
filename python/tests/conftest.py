@@ -17,6 +17,8 @@ def make_season(season="2025", champ_roster=1):
         "user_id":    ["1", "2", "3", "1", "2", "3"],
         "user_name":  ["Al", "Bo", "Cy", "Al", "Bo", "Cy"],
         "matchup_id": [1, 1, None, 1, 1, None],
+        # opponent roster_id (self-join in the real assembler); Cy has no game.
+        "opp":        [2, 1, None, 2, 1, None],
         "points":     [100.0, 90.0, 80.0, 130.0, 70.0, 120.0],
         "pa":         [90.0, 100.0, None, 70.0, 130.0, None],
         "result":     ["W", "L", None, "W", "L", None],
@@ -46,8 +48,11 @@ def make_season(season="2025", champ_roster=1):
         "optimal":       [110.0, 140.0, 100.0, 80.0, 100.0, 140.0],
         "left_on_bench": [10.0, 10.0, 10.0, 10.0, 20.0, 20.0],
     })
+    user_map = pd.DataFrame({
+        "roster_id": [1, 2, 3], "user_id": ["1", "2", "3"],
+        "user_name": ["Al", "Bo", "Cy"]})
     return Season(season, "Test League", "0", 2, {},
-                  team_wk, pd.DataFrame(), lineup, standings, pd.DataFrame())
+                  team_wk, pd.DataFrame(), lineup, standings, user_map)
 
 
 @pytest.fixture

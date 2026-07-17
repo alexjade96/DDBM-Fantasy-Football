@@ -303,3 +303,162 @@ def waiver_performance(s: Season) -> pd.DataFrame:
     g = _rostered_perf(s, keep, ["player_id", "roster_id"])
     return _pos_cat(g).sort_values(["total", "player_name", "user_name"],
                                    ascending=[False, True, True]).reset_index(drop=True)
+
+
+# --- Schedule, rivalry & records (webapp analytics) ----------------------
+
+def boom_bust(s: Season) -> pd.DataFrame:
+    """Each team's scoring average vs its week-to-week volatility.
+
+    Separates the steady teams (high floor) from the boom-or-bust ones (high
+    ceiling, high spread) -- the two axes a single average hides.
+    """
+    g = s.team_wk.groupby("user_name", as_index=False).agg(
+        avg=("points", "mean"), sd=("points", "std"),
+        floor=("points", "min"), ceiling=("points", "max"))
+    g["avg"] = g["avg"].round(1)
+    g["sd"] = g["sd"].fillna(0.0).round(1)
+    return g.sort_values("avg", ascending=False).reset_index(drop=True)
+
+
+def strength_of_schedule(s: Season) -> pd.DataFrame:
+    """Average scoring strength of the opponents each team actually faced.
+
+    Opponent strength is that opponent's season-long PPG (not their score in the
+    one week you met), so a team that keeps drawing the league's best has a high
+    SOS regardless of the weekly noise.
+    """
+    ppg = s.team_wk.groupby("roster_id")["points"].mean()
+    d = s.team_wk.dropna(subset=["opp"]).copy()
+    d["opp_ppg"] = d["opp"].map(ppg)
+    g = d.groupby("user_name", as_index=False).agg(sos=("opp_ppg", "mean"))
+    own = (s.team_wk.groupby("user_name", as_index=False)["points"].mean()
+           .rename(columns={"points": "own_ppg"}))
+    g = g.merge(own, on="user_name", how="left")
+    g["sos"] = g["sos"].round(1)
+    g["own_ppg"] = g["own_ppg"].round(1)
+    g = g.sort_values("sos", ascending=False).reset_index(drop=True)
+    g["rank"] = range(1, len(g) + 1)
+    return g
+
+
+def schedule_swap(s: Season) -> pd.DataFrame:
+    """Every team's record played against every other team's schedule.
+
+    For team A under team B's schedule: each week, replace A's real opponent
+    with the one B faced that week and re-decide with A's own scores. The
+    diagonal (A under A's schedule) is the real record; the row spread shows how
+    much the actual schedule flattered or robbed a team.
+    """
+    tw = s.team_wk
+    pts = {(w, r): p for w, r, p in zip(tw["week"], tw["roster_id"], tw["points"])}
+    opp = {(w, r): o for w, r, o in zip(tw["week"], tw["roster_id"], tw["opp"])}
+    weeks = sorted(tw["week"].unique())
+    name = dict(zip(s.user_map["roster_id"], s.user_map["user_name"]))
+    rosters = sorted(tw["roster_id"].unique())
+    rows = []
+    for a in rosters:
+        for b in rosters:
+            w = l = 0
+            for wk in weeks:
+                o = opp.get((wk, b))
+                if pd.isna(o) or o == a:          # bye week, or would face self
+                    continue
+                pa_, po = pts.get((wk, a)), pts.get((wk, o))
+                if pa_ is None or po is None:
+                    continue
+                if pa_ > po:
+                    w += 1
+                elif pa_ < po:
+                    l += 1
+            rows.append({"team": name.get(a), "schedule_of": name.get(b),
+                         "wins": w, "losses": l})
+    return pd.DataFrame(rows)
+
+
+def head_to_head(seasons: dict) -> pd.DataFrame:
+    """All-time manager-vs-manager record, keyed on the persistent user_id.
+
+    Every decided game across the whole chain (regular season + playoffs),
+    aggregated both ways so the matrix is complete. Names are the managers'
+    current display names (they change season to season; the id does not).
+    """
+    canon = _canonical_names(_bind_standings(seasons))
+    frames = []
+    for s in seasons.values():
+        um = s.user_map.rename(columns={
+            "roster_id": "opp", "user_id": "opp_user_id"})
+        d = (s.team_wk.dropna(subset=["opp", "result"])
+             .merge(um[["opp", "opp_user_id"]], on="opp", how="left"))
+        frames.append(d[["user_id", "opp_user_id", "points", "pa", "result"]])
+    allg = pd.concat(frames, ignore_index=True).dropna(subset=["opp_user_id"])
+    g = allg.groupby(["user_id", "opp_user_id"], as_index=False).agg(
+        wins=("result", lambda x: int((x == "W").sum())),
+        losses=("result", lambda x: int((x == "L").sum())),
+        ties=("result", lambda x: int((x == "T").sum())),
+        pf=("points", "sum"), pa=("pa", "sum"))
+    g["games"] = g["wins"] + g["losses"] + g["ties"]
+    g["win_pct"] = (g["wins"] / g["games"].clip(lower=1) * 100).round(1)
+    g["margin"] = ((g["pf"] - g["pa"]) / g["games"].clip(lower=1)).round(1)
+    g = (g.merge(canon, on="user_id", how="left")
+         .merge(canon.rename(columns={"user_id": "opp_user_id",
+                                      "user_name": "opp_name"}), on="opp_user_id", how="left"))
+    return g.reset_index(drop=True)
+
+
+def record_book(seasons: dict) -> list[dict]:
+    """League superlatives across every season -- the screenshot-and-argue page.
+
+    Each entry is {label, value, holder, detail} so it renders as a tile without
+    the template knowing how it was computed.
+    """
+    tw = []
+    for s in seasons.values():
+        d = s.team_wk.dropna(subset=["result"]).copy()
+        d["season"] = s.season
+        d["margin"] = d["points"] - d["pa"]
+        tw.append(d)
+    g = pd.concat(tw, ignore_index=True) if tw else pd.DataFrame()
+    out: list[dict] = []
+    if g.empty:
+        return out
+
+    def tile(label, row, value, extra=""):
+        wk = f"wk {int(row['week'])}" if "week" in row and pd.notna(row["week"]) else ""
+        detail = "  ·  ".join(x for x in (f"{row['season']} {wk}".strip(), extra) if x)
+        out.append({"label": label, "value": value,
+                    "holder": row["user_name"], "detail": detail})
+
+    hi = g.loc[g["points"].idxmax()]
+    tile("Highest score", hi, f"{hi['points']:.1f}")
+    blow = g.loc[g["margin"].idxmax()]
+    tile("Biggest blowout", blow, f"+{blow['margin']:.1f}", f"beat by {blow['margin']:.0f}")
+    losses = g[g["result"] == "L"]
+    if len(losses):
+        tl = losses.loc[losses["points"].idxmax()]
+        tile("Highest-scoring loss", tl, f"{tl['points']:.1f}", "and still lost")
+    wins = g[g["result"] == "W"]
+    if len(wins):
+        lw = wins.loc[wins["points"].idxmin()]
+        tile("Lowest-scoring win", lw, f"{lw['points']:.1f}", "and still won")
+
+    # Best single-season points total.
+    season_tot = (g.groupby(["season", "user_name"], as_index=False)["points"].sum()
+                  .sort_values("points", ascending=False))
+    if len(season_tot):
+        st = season_tot.iloc[0]
+        out.append({"label": "Best season total", "value": f"{st['points']:.0f}",
+                    "holder": st["user_name"], "detail": str(st["season"])})
+
+    # Longest win streak within a season (chronological by week).
+    best = {"len": 0}
+    for (sea, uid), grp in g.sort_values("week").groupby(["season", "user_id"]):
+        run = 0
+        for res, nm in zip(grp["result"], grp["user_name"]):
+            run = run + 1 if res == "W" else 0
+            if run > best["len"]:
+                best = {"len": run, "holder": nm, "season": sea}
+    if best["len"] >= 2:
+        out.append({"label": "Longest win streak", "value": f"{best['len']} in a row",
+                    "holder": best["holder"], "detail": str(best["season"])})
+    return out

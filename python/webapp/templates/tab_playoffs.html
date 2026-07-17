@@ -1,7 +1,7 @@
 {# The season rail: jump between postseasons without leaving the tab. Shown even
    when this season has no bracket, so it is always a way back to one. #}
 {% if bracket_seasons %}
-<nav class="rail" hx-target="#panel" hx-swap="innerHTML" hx-include="#league">
+<nav class="rail" hx-target="#panel" hx-swap="innerHTML" hx-include="#league, #theme">
   <span class="k">Postseason</span>
   {% for y in bracket_seasons %}
   <button class="year {% if y == season %}on{% endif %}"
@@ -38,7 +38,7 @@
 <div class="rowhead">
   <h2>Bracket</h2>
   <form class="controls inline" hx-get="/tab/playoffs" hx-target="#panel"
-        hx-swap="innerHTML" hx-include="#league, #season" hx-trigger="change">
+        hx-swap="innerHTML" hx-include="#league, #season, #theme" hx-trigger="change">
     <label>
       <span>Count which games?</span>
       <select name="scope">
@@ -50,18 +50,18 @@
   </form>
   <button class="ghost"
           hx-get="/tab/playoffs?refresh=1" hx-target="#panel" hx-swap="innerHTML"
-          hx-include="#league, #season">
+          hx-include="#league, #season, #theme">
     Re-score from live stats
   </button>
 </div>
 <figure class="card chart">
-  <img src="/chart/bracket?league={{ league }}&season={{ season }}&_={{ bust }}"
+  <img src="/chart/bracket?league={{ league }}&season={{ season }}&theme={{ theme }}&_={{ bust }}"
        alt="Playoff bracket">
 </figure>
 
 <h2>Walk the bracket</h2>
 {% if walk %}
-<div class="walk" hx-target="#panel" hx-swap="innerHTML" hx-include="#league, #season">
+<div class="walk" hx-target="#panel" hx-swap="innerHTML" hx-include="#league, #season, #theme">
   <div class="walkbar">
     {# No hx-get at all at the ends -- a disabled button must not carry a live
        url with matchup=None in it. #}
@@ -98,7 +98,7 @@
 </div>
 
 <figure class="card chart">
-  <img src="/chart/playoff_matchup?league={{ league }}&season={{ season }}&matchup={{ matchup }}&_={{ bust }}"
+  <img src="/chart/playoff_matchup?league={{ league }}&season={{ season }}&matchup={{ matchup }}&theme={{ theme }}&_={{ bust }}"
        alt="Matchup breakdown">
 </figure>
 {% else %}
@@ -108,17 +108,17 @@
 <h2>Playoff analytics</h2>
 <div class="grid two">
   <figure class="card chart">
-    <img src="/chart/playoff_players?league={{ league }}&season={{ season }}&scope={{ scope }}&_={{ bust }}"
+    <img src="/chart/playoff_players?league={{ league }}&season={{ season }}&scope={{ scope }}&theme={{ theme }}&_={{ bust }}"
          alt="Best playoff players" loading="lazy">
   </figure>
   <figure class="card chart">
-    <img src="/chart/clutch?league={{ league }}&season={{ season }}&scope={{ scope }}&_={{ bust }}"
+    <img src="/chart/clutch?league={{ league }}&season={{ season }}&scope={{ scope }}&theme={{ theme }}&_={{ bust }}"
          alt="Clutch index" loading="lazy">
   </figure>
 </div>
 <div class="grid two">
   <figure class="card chart">
-    <img src="/chart/playoff_stats?league={{ league }}&season={{ season }}&scope={{ scope }}&_={{ bust }}"
+    <img src="/chart/playoff_stats?league={{ league }}&season={{ season }}&scope={{ scope }}&theme={{ theme }}&_={{ bust }}"
          alt="Career playoff record" loading="lazy">
   </figure>
   <div class="card">

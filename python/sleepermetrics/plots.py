@@ -59,6 +59,46 @@ POS_COLORS = {"QB": "#d62728", "RB": "#2ca02c", "WR": "#1f77b4",
               "TE": "#ff7f0e", "K": "#9467bd", "DEF": "#8c564b"}
 MEDAL = ["#f1c40f", "#c8cdd0", "#cd7f32"]  # gold, silver, bronze
 
+# --- theme ----------------------------------------------------------------
+# The *structural* chart colours (surface, text, grid, spines, marker edges,
+# neutral fills) as switchable tokens, so a dark-mode viewer gets dark charts
+# instead of white rectangles punched into a dark page. Semantic hues (position
+# colours, medals, luck green/red) read on either ground and stay fixed.
+#
+# Tokens mirror the web app's CSS variables (style.css) so the charts sit on the
+# same surface as the page around them. `set_chart_theme` also pushes the
+# implicit colours (legend text, un-themed labels) through matplotlib rcParams,
+# so nothing is left defaulting to black-on-dark.
+_THEMES = {
+    "light": {"bg": "#ffffff", "ink": "#262626", "ink2": "#333333",
+              "muted": "#666666", "faint": "#999999", "tick": "#4d4d4d",
+              "grid": "#ececec", "spine": "#cccccc", "rule": "#b8b8b8",
+              "edge": "#ffffff", "neutral": "#c3c9d0"},
+    "dark":  {"bg": "#1a201d", "ink": "#e6ebe8", "ink2": "#d3dad6",
+              "muted": "#9aa5a0", "faint": "#7c867f", "tick": "#9aa5a0",
+              "grid": "#2b332f", "spine": "#3a443f", "rule": "#4a544f",
+              "edge": "#1a201d", "neutral": "#3f4a45"},
+}
+T = dict(_THEMES["light"])
+
+
+def set_chart_theme(name: str) -> None:
+    """Select the light/dark structural palette for subsequent renders.
+
+    Reassigns the module-level `T` (read by every plot fn) and syncs the
+    implicit matplotlib colours via rcParams. Renders are serialised by a lock
+    on the caller's side, so the two never cross for concurrent requests.
+    """
+    global T
+    T = dict(_THEMES.get(name, _THEMES["light"]))
+    matplotlib.rcParams.update({
+        "text.color": T["ink"], "axes.labelcolor": T["muted"],
+        "xtick.color": T["tick"], "ytick.color": T["tick"],
+        "axes.edgecolor": T["spine"],
+        "figure.facecolor": T["bg"], "axes.facecolor": T["bg"],
+        "savefig.facecolor": T["bg"], "legend.labelcolor": T["ink2"],
+    })
+
 
 def _avatar_map(s) -> dict:
     """{user_name: avatar url} from the season's accounts frame (best-effort).
@@ -119,22 +159,22 @@ def palette(names) -> dict:
 def _finish(fig, ax, title, subtitle=None, xlabel=None, ylabel=None, caption=None,
             grid_axis="x"):
     ax.set_title(title, loc="left", fontsize=16, fontweight="bold",
-                 color="#262626", pad=20)
+                 color=T["ink"], pad=20)
     if subtitle:
         ax.text(0, 1.015, subtitle, transform=ax.transAxes, fontsize=9.5,
-                color="#666666", va="bottom")
+                color=T["muted"], va="bottom")
     if xlabel:
-        ax.set_xlabel(xlabel, fontsize=10, color="#666666")
+        ax.set_xlabel(xlabel, fontsize=10, color=T["muted"])
     if ylabel:
-        ax.set_ylabel(ylabel, fontsize=10, color="#666666")
+        ax.set_ylabel(ylabel, fontsize=10, color=T["muted"])
     if caption:
-        fig.text(0.99, 0.01, caption, ha="right", fontsize=7, color="#999999")
-    ax.grid(axis=grid_axis, color="#ececec", linewidth=0.7)
+        fig.text(0.99, 0.01, caption, ha="right", fontsize=7, color=T["faint"])
+    ax.grid(axis=grid_axis, color=T["grid"], linewidth=0.7)
     ax.set_axisbelow(True)
-    ax.tick_params(colors="#4d4d4d", labelsize=9.5)
+    ax.tick_params(colors=T["tick"], labelsize=9.5)
     for sp in ("top", "right", "left"):
         ax.spines[sp].set_visible(False)
-    ax.spines["bottom"].set_color("#cccccc")
+    ax.spines["bottom"].set_color(T["spine"])
     fig.tight_layout()
     return fig
 
@@ -148,14 +188,15 @@ def _medals(ax, d, rank_col, x0):
     for i, (_, r) in enumerate(d.iterrows()):
         rk = int(r[rank_col])
         if rk <= 3:
-            ax.scatter([x0], [i], s=200, c=MEDAL[rk - 1], edgecolors="white",
+            ax.scatter([x0], [i], s=200, c=MEDAL[rk - 1], edgecolors=T["edge"],
                        linewidths=1.2, zorder=5)
+            # Stays dark on both themes: the disc under it is always bright.
             ax.text(x0, i, str(rk), ha="center", va="center", fontsize=8,
-                    fontweight="bold", color="#333333", zorder=6)
+                    fontweight="bold", color="#2b2b2b", zorder=6)
 
 
 def save(fig, path: str) -> str:
-    fig.savefig(path, dpi=110, bbox_inches="tight", facecolor="white")
+    fig.savefig(path, dpi=110, bbox_inches="tight", facecolor=T["bg"])
     plt.close(fig)
     return path
 
@@ -174,7 +215,7 @@ def plot_standings(s: Season):
     for i, (_, r) in enumerate(d.iterrows()):
         star = "  ★" if r["champion"] else ""
         ax.text(r["points"] + xmax * 0.01, i, f"{r['wins']}-{r['losses']}{star}",
-                va="center", fontsize=9, color="#333333")
+                va="center", fontsize=9, color=T["ink2"])
     ax.set_xlim(0, xmax * 1.16)
     return _finish(fig, ax, f"{s.season} Standings",
                    "Bars = total points, in standing order  ·  1-2-3 podium  ·  ★ champion",
@@ -213,11 +254,11 @@ def plot_efficiency(s: Season):
     ax.set_yticks(range(len(d)))
     ax.set_yticklabels(d["user_name"])
     _row_avatars(ax, d["user_name"], s)
-    ax.axvline(100, ls="--", color="#b0b0b0", zorder=1)
-    ax.text(100, len(d) - 0.4, "optimal", ha="right", va="top", fontsize=8, color="#8c8c8c")
+    ax.axvline(100, ls="--", color=T["rule"], zorder=1)
+    ax.text(100, len(d) - 0.4, "optimal", ha="right", va="top", fontsize=8, color=T["rule"])
     for i, (_, r) in enumerate(d.iterrows()):
         ax.text(r["eff"] + 0.5, i, f"{r['eff']:.1f}%  ({round(r['bench'])} pts benched)",
-                va="center", fontsize=8, color="#333333")
+                va="center", fontsize=8, color=T["ink2"])
     ax.set_xlim(0, 100)
     return _finish(fig, ax, "Lineup Efficiency (Coaching)",
                    "Started points as % of the optimal lineup each week (darker = better)",
@@ -229,16 +270,16 @@ def plot_pf_pa(s: Season):
     pal = palette(d["user_name"])
     mx, my = d["points"].median(), d["pa"].median()
     fig, ax = plt.subplots(figsize=(9, 6))
-    ax.axvline(mx, ls="--", color="#c0c0c0", zorder=1)
-    ax.axhline(my, ls="--", color="#c0c0c0", zorder=1)
+    ax.axvline(mx, ls="--", color=T["rule"], zorder=1)
+    ax.axhline(my, ls="--", color=T["rule"], zorder=1)
     sizes = 40 + (d["wins"] - d["wins"].min()) / max(d["wins"].max() - d["wins"].min(), 1) * 220
     ax.scatter(d["points"], d["pa"], s=sizes, c=[pal[n] for n in d["user_name"]],
-               alpha=0.9, zorder=3, edgecolors="white", linewidths=1)
+               alpha=0.9, zorder=3, edgecolors=T["edge"], linewidths=1)
     _point_avatars(ax, d["points"], d["pa"], d["user_name"], s, zoom=0.44)
     for _, r in d.iterrows():
         ax.annotate(f"{r['user_name']} ({r['wins']}W)", (r["points"], r["pa"]),
                     textcoords="offset points", xytext=(21, 0), va="center",
-                    fontsize=8, color="#404040")
+                    fontsize=8, color=T["ink2"])
     xr = ax.get_xlim(); yr = ax.get_ylim()
     for (xx, yy, ha, va, lab) in [
         (xr[1], yr[0], "right", "bottom", "Dominant"),
@@ -254,9 +295,9 @@ def plot_pf_pa(s: Season):
 def plot_allplay(s: Season):
     """All-play standings (mirrors R sl_plot_allplay)."""
     d = metrics.allplay(s).sort_values("allplay_pct").reset_index(drop=True)
-    fill = {"helped": "#2ca02c", "hurt": "#d62728", "even": "#9aa0a6"}
+    fill = {"helped": "#2ca02c", "hurt": "#d62728", "even": T["neutral"]}
     fig, ax = plt.subplots(figsize=(9.5, 6))
-    colors = ["#9aa0a6" if v == 0 else ("#2ca02c" if v > 0 else "#d62728")
+    colors = [T["neutral"] if v == 0 else ("#2ca02c" if v > 0 else "#d62728")
               for v in d["rank_delta"]]
     ax.barh(range(len(d)), d["allplay_pct"], color=colors, height=0.72, zorder=2)
     ax.set_yticks(range(len(d)))
@@ -266,7 +307,7 @@ def plot_allplay(s: Season):
         gap = "even" if r["rank_delta"] == 0 else f"{r['rank_delta']:+d}"
         ax.text(r["allplay_pct"] + 0.01, i,
                 f"{r['allplay_pct'] * 100:.0f}%  ·  finished {int(r['final_position'])} ({gap})",
-                va="center", fontsize=9, color="#333333")
+                va="center", fontsize=9, color=T["ink2"])
     ax.set_xlim(0, 1.38)
     ax.xaxis.set_major_formatter(lambda v, _: f"{v * 100:.0f}%")
     from matplotlib.patches import Patch
@@ -285,7 +326,7 @@ def plot_power_rank(s: Season):
     fig, ax = plt.subplots(figsize=(9.5, 6))
     colors = ["#2c7fb8" if v > 0 else "#c0563f" for v in d["power"]]
     ax.barh(range(len(d)), d["power"], color=colors, height=0.72, zorder=2)
-    ax.axvline(0, color="#b0b0b0", zorder=3)
+    ax.axvline(0, color=T["rule"], zorder=3)
     ax.set_yticks(range(len(d)))
     ax.set_yticklabels(d["user_name"])
     _row_avatars(ax, d["user_name"], s)
@@ -297,7 +338,7 @@ def plot_power_rank(s: Season):
         off = span * 0.012
         ha = "left" if r["power"] > 0 else "right"
         ax.text(r["power"] + (off if r["power"] > 0 else -off), i,
-                f"{r['power']:+.2f}", va="center", ha=ha, fontsize=9, color="#404040")
+                f"{r['power']:+.2f}", va="center", ha=ha, fontsize=9, color=T["ink2"])
     ax.set_xlim(d["power"].min() - span * 0.18, d["power"].max() + span * 0.16)
     return _finish(fig, ax, "Power Rankings",
                    "Composite of points, all-play win%, recent form and lineup efficiency  ·  0 = league average",
@@ -310,19 +351,19 @@ def plot_manager_profile(s: Season):
     pal = palette(d["user_name"])
     mx, my = d["moves_per_wk"].median(), d["lineup_iq"].median()
     fig, ax = plt.subplots(figsize=(9, 6.4))
-    ax.axvline(mx, ls="--", color="#c7c7c7", zorder=1)
-    ax.axhline(my, ls="--", color="#c7c7c7", zorder=1)
+    ax.axvline(mx, ls="--", color=T["rule"], zorder=1)
+    ax.axhline(my, ls="--", color=T["rule"], zorder=1)
     tmax = max(d["trades"].max(), 1)
     sizes = 60 + d["trades"] / tmax * 300
     ax.scatter(d["moves_per_wk"], d["lineup_iq"], s=sizes,
                c=[pal[n] for n in d["user_name"]], alpha=0.85, zorder=3,
-               edgecolors="white", linewidths=1)
+               edgecolors=T["edge"], linewidths=1)
     # Avatar as each manager's marker (dot shows through where none loads).
     _point_avatars(ax, d["moves_per_wk"], d["lineup_iq"], d["user_name"], s, zoom=0.46)
     for _, r in d.iterrows():
         ax.annotate(r["user_name"], (r["moves_per_wk"], r["lineup_iq"]),
                     textcoords="offset points", xytext=(22, 0), va="center",
-                    fontsize=8, color="#404040")
+                    fontsize=8, color=T["ink2"])
     return _finish(fig, ax, "Manager Tendencies",
                    "Right = works the wire  ·  up = sets a sharp lineup  ·  bubble = trades made",
                    "Roster Moves per Week", "Lineup IQ (% of optimal)",
@@ -335,7 +376,7 @@ def plot_consistency(s: Season):
     fig, ax = plt.subplots(figsize=(9, 6))
     data = [s.team_wk.loc[s.team_wk["user_name"] == n, "points"].values for n in order]
     bp = ax.boxplot(data, vert=False, patch_artist=True, widths=0.55,
-                    showfliers=False, medianprops=dict(color="#555555"))
+                    showfliers=False, medianprops=dict(color=T["ink2"]))
     for patch, n in zip(bp["boxes"], order):
         patch.set_facecolor(pal[n])
         patch.set_alpha(0.5)
@@ -363,7 +404,7 @@ def plot_career(seasons: dict):
     for i, (_, r) in enumerate(d.iterrows()):
         stars = "★" * int(r["titles"])
         ax.text(r["win_pct"] + 1, i, f"{r['record']}  {r['win_pct']}%  {stars}",
-                va="center", fontsize=8, color="#333333")
+                va="center", fontsize=8, color=T["ink2"])
     ax.set_xlim(0, 100)
     return _finish(fig, ax, "Career Standings (All Seasons)",
                    "Ranked by win %  ·  1-2-3 podium  ·  ★ per title", "Career Win %")
@@ -387,14 +428,14 @@ def plot_trajectory(seasons: dict):
                    marker=["o", "*"][0], color=pal[nm], s=45, zorder=3)
         star = g[g["champion"]]
         ax.scatter(star["season_int"], star["final_position"], marker="*",
-                   color=pal[nm], s=180, zorder=4, edgecolors="white", linewidths=0.5)
+                   color=pal[nm], s=180, zorder=4, edgecolors=T["edge"], linewidths=0.5)
         last = g.loc[g["season_int"].idxmax()]
         ax.text(last["season_int"] + 0.08, last["final_position"], nm, va="center",
                 fontsize=8, color=pal[nm])
     ax.set_ylim(mp + 0.5, 0.5)
     ax.set_yticks(range(1, mp + 1))
     ax.set_xticks(sorted(d["season_int"].unique()))
-    ax.text(d["season_int"].min(), 1, " podium", va="center", fontsize=8, color="#999999")
+    ax.text(d["season_int"].min(), 1, " podium", va="center", fontsize=8, color=T["faint"])
     return _finish(fig, ax, "Finish Trajectory by Season",
                    "1 = top  ·  gold band = podium  ·  ★ = champion",
                    "Season", "Final Position", grid_axis="y")
@@ -415,7 +456,7 @@ def plot_position_scoring(s: Season):
     xmax = d["points"].max()
     for i, (_, r) in enumerate(d.iterrows()):
         ax.text(r["points"] + xmax * 0.01, i, f"{round(r['points'])} pts  ·  {r['share']:.0f}%",
-                va="center", fontsize=9, color="#333333")
+                va="center", fontsize=9, color=T["ink2"])
     ax.set_xlim(0, xmax * 1.22)
     return _finish(fig, ax, "Where the Points Come From",
                    "Total started points by position  ·  share of league scoring",
@@ -447,13 +488,13 @@ def plot_roster_heatmap(s: Season):
                         fontsize=7.5, color=col, linespacing=0.95)
     for sp in ax.spines.values():
         sp.set_visible(False)
-    ax.tick_params(length=0, colors="#4d4d4d", labelsize=9.5)
+    ax.tick_params(length=0, colors=T["tick"], labelsize=9.5)
     fig.colorbar(im, ax=ax, fraction=0.035, pad=0.02, label="Avg pts")
     ax.set_title("Roster Construction", loc="left", fontsize=16, fontweight="bold",
-                 color="#262626", pad=24)
+                 color=T["ink"], pad=24)
     ax.text(0, 1.06, "Player-weeks rostered and average points, by team and position",
-            transform=ax.transAxes, fontsize=9.5, color="#666666")
-    fig.text(0.99, 0.01, _cap(s), ha="right", fontsize=7, color="#999999")
+            transform=ax.transAxes, fontsize=9.5, color=T["muted"])
+    fig.text(0.99, 0.01, _cap(s), ha="right", fontsize=7, color=T["faint"])
     fig.tight_layout()
     return fig
 
@@ -468,24 +509,24 @@ def plot_starter_bench(s: Season):
         st = sub[sub["status"] == "Starters"].set_index("user_name")["avg"].reindex(users).fillna(0)
         bn = sub[sub["status"] == "Bench"].set_index("user_name")["avg"].reindex(users).fillna(0)
         ax.barh([y + 0.2 for y in yy], st.values, height=0.38, color="#2f9e44", label="Starters")
-        ax.barh([y - 0.2 for y in yy], bn.values, height=0.38, color="#c3c9d0", label="Bench")
-        ax.set_title(p, fontsize=12, fontweight="bold", color="#404040")
-        ax.grid(axis="x", color="#ececec", linewidth=0.7)
+        ax.barh([y - 0.2 for y in yy], bn.values, height=0.38, color=T["neutral"], label="Bench")
+        ax.set_title(p, fontsize=12, fontweight="bold", color=T["ink2"])
+        ax.grid(axis="x", color=T["grid"], linewidth=0.7)
         ax.set_axisbelow(True)
-        ax.tick_params(length=0, colors="#4d4d4d", labelsize=9)
+        ax.tick_params(length=0, colors=T["tick"], labelsize=9)
         for sp in ("top", "right", "left"):
             ax.spines[sp].set_visible(False)
-        ax.spines["bottom"].set_color("#cccccc")
+        ax.spines["bottom"].set_color(T["spine"])
     axes[0].set_yticks(yy)
     axes[0].set_yticklabels(users)
     h, l = axes[0].get_legend_handles_labels()
     fig.legend(h, l, loc="upper right", frameon=False, fontsize=9,
                bbox_to_anchor=(0.99, 1.0))
     fig.suptitle("Starters vs Bench   ", x=0.01, ha="left", fontsize=16,
-                 fontweight="bold", color="#262626")
+                 fontweight="bold", color=T["ink"])
     fig.text(0.01, 0.945, "Average points by position  ·  are the right players in the lineup?",
-             fontsize=9.5, color="#666666")
-    fig.text(0.99, 0.005, _cap(s), ha="right", fontsize=7, color="#999999")
+             fontsize=9.5, color=T["muted"])
+    fig.text(0.99, 0.005, _cap(s), ha="right", fontsize=7, color=T["faint"])
     fig.tight_layout(rect=[0, 0.01, 1, 0.93])
     return fig
 
@@ -536,12 +577,12 @@ def plot_team_points(s: Season):
         vals = piv[wk]
         ax.barh(list(y), vals.values, left=left.values, height=0.7,
                 color=mcolors.to_hex(ramp(i / max(len(weeks) - 1, 1))),
-                edgecolor="white", linewidth=0.3)
+                edgecolor=T["edge"], linewidth=0.3)
         left += vals
     for i, nm in enumerate(order):
         t = tot.loc[tot["user_name"] == nm, "points"].iloc[0]
         ax.text(t * 1.01, i, f"{round(t)}", va="center", fontsize=8.5,
-                fontweight="bold", color="#404040")
+                fontweight="bold", color=T["ink2"])
     ax.set_yticks(list(y))
     ax.set_yticklabels(order)
     ax.invert_yaxis()
@@ -557,9 +598,9 @@ def plot_position_box(s: Season):
     fig, ax = plt.subplots(figsize=(9, 6))
     data = [d.loc[d["position"] == p, "avg"].values for p in POSITIONS]
     ax.boxplot(data, positions=range(len(POSITIONS)), widths=0.55, showfliers=False,
-               patch_artist=True, boxprops=dict(facecolor="#ececec", color="#8c8c8c"),
-               medianprops=dict(color="#555555"), whiskerprops=dict(color="#8c8c8c"),
-               capprops=dict(color="#8c8c8c"))
+               patch_artist=True, boxprops=dict(facecolor=T["grid"], color=T["rule"]),
+               medianprops=dict(color=T["ink2"]), whiskerprops=dict(color=T["rule"]),
+               capprops=dict(color=T["rule"]))
     import numpy as np
     seen = set()
     for j, p in enumerate(POSITIONS):
@@ -584,7 +625,7 @@ def plot_roster_counts(s: Season):
     bench = [d[(d["position"] == p) & (d["status"] == "Bench")]["avg_count"].sum() for p in POSITIONS]
     start = [d[(d["position"] == p) & (d["status"] == "Starters")]["avg_count"].sum() for p in POSITIONS]
     ax.bar(list(x), start, width=0.7, color="#2f9e44", label="Starters")
-    ax.bar(list(x), bench, width=0.7, bottom=start, color="#c3c9d0", label="Bench")
+    ax.bar(list(x), bench, width=0.7, bottom=start, color=T["neutral"], label="Bench")
     for j in x:
         if start[j] > 0:
             ax.text(j, start[j] / 2, f"{start[j]:.1f}", ha="center", va="center",
@@ -613,7 +654,7 @@ def _plot_acq(d, s: Season, title, subtitle):
         row = d[d["user_name"] == nm].set_index("player_name")["points"].reindex(players).fillna(0)
         wk = d[d["user_name"] == nm].set_index("player_name")["weeks"].reindex(players)
         ax.barh([y[p] for p in players], row.values, left=left.values, height=0.72,
-                color=pal[nm], edgecolor="white", linewidth=0.3, label=nm)
+                color=pal[nm], edgecolor=T["edge"], linewidth=0.3, label=nm)
         for p in players:
             if row[p] >= span * 0.06:
                 ax.text(left[p] + row[p] / 2, y[p], f"{round(row[p])} ({int(wk[p])}w)",
@@ -621,7 +662,7 @@ def _plot_acq(d, s: Season, title, subtitle):
         left += row.values
     for p in players:
         ax.text(totals[p] + span * 0.01, y[p], f"{round(totals[p])}", va="center",
-                fontsize=8, fontweight="bold", color="#4d4d4d")
+                fontsize=8, fontweight="bold", color=T["ink2"])
     ax.set_yticks(list(y.values()))
     ax.set_yticklabels(players, fontsize=8.5)
     # One id/position per player row (a traded player appears under several
@@ -662,16 +703,18 @@ def plot_playoff_bracket(p):
         if len(nxt):
             n = nxt.iloc[0]
             ax.plot([a["rx"] + 0.44, n["rx"] - 0.44], [a["cy"], n["y"]],
-                    color="#d2d2d2", lw=1, zorder=1)
+                    color=T["rule"], lw=1, zorder=1)
     for _, r in d.iterrows():
         ax.add_patch(plt.Rectangle((r["rx"] - 0.43, r["y"] - 0.15), 0.86, 0.30,
                                    facecolor=COL.get(r["result"], "#e6e8ea"),
-                                   edgecolor="white", lw=1.2, zorder=2))
+                                   edgecolor=T["edge"], lw=1.2, zorder=2))
         sd = seed_of.get(r["team"], "")
         pts = "–" if pd.isna(r["points"]) else f"{r['points']:.1f}"
+        # Node fills (COL) are always light, so their label stays dark on both
+        # themes -- following T["ink"] here would vanish on a light node in dark.
         ax.text(r["rx"], r["y"], f"{sd}  {r['team']}   {pts}".strip(), ha="center",
                 va="center", fontsize=9, zorder=3,
-                fontweight="bold" if r["result"] == "W" else "normal", color="#262626")
+                fontweight="bold" if r["result"] == "W" else "normal", color="#242424")
     ax.set_xlim(-0.6, len(rounds) - 0.4)
     ax.set_ylim(span + 0.25, -0.25)
     ax.set_xticks(range(len(rounds)))
@@ -680,12 +723,12 @@ def plot_playoff_bracket(p):
     ax.set_yticks([])
     for sp in ax.spines.values():
         sp.set_visible(False)
-    ax.tick_params(length=0, colors="#4d4d4d")
+    ax.tick_params(length=0, colors=T["tick"])
     ax.set_title(f"{p.name} · {p.season} Bracket", loc="left", fontsize=16,
-                 fontweight="bold", color="#262626", pad=26)
+                 fontweight="bold", color=T["ink"], pad=26)
     ax.text(0, 1.02, f"Champion: {p.champion or 'undecided'}  ·  every score computed "
             "from the submitted lineups under the league's own scoring chart",
-            transform=ax.transAxes, fontsize=9.5, color="#666666", va="bottom")
+            transform=ax.transAxes, fontsize=9.5, color=T["muted"], va="bottom")
     fig.tight_layout()
     return fig
 
@@ -703,7 +746,7 @@ def plot_playoff_stats(playoffs: dict, scope: str = "title"):
     for i, r in d.iterrows():
         stars = "★" * int(r["titles"])
         ax.text(r["win_pct"] + 1, i, f"{int(r['wins'])}-{int(r['losses'])}  "
-                f"{r['win_pct']:.0f}%  {stars}", va="center", fontsize=8.5, color="#333333")
+                f"{r['win_pct']:.0f}%  {stars}", va="center", fontsize=8.5, color=T["ink2"])
     ax.set_xlim(0, 100)
     sub = "championship path only" if scope == "title" else f"scope: {scope}"
     return _finish(fig, ax, "Career Playoff Record",
@@ -727,7 +770,7 @@ def plot_playoff_players(playoffs: dict, n: int = 15, scope: str = "title"):
         rings = "★" * int(r["rings"])
         ax.text(r["points"] + xmax * 0.01, i,
                 f"{r['points']:.0f}  ({r['ppg']:.1f} ppg)  {rings}",
-                va="center", fontsize=8.5, color="#333333")
+                va="center", fontsize=8.5, color=T["ink2"])
     ax.set_xlim(0, xmax * 1.34)
     sub = "championship path only" if scope == "title" else f"scope: {scope}"
     seen = [p for p in POSITIONS if p in set(d["position"])]
@@ -782,8 +825,8 @@ def plot_playoff_matchup(p, matchup_id):
         off = -1.5 if r["signed"] < 0 else 1.5
         ha = "right" if r["signed"] < 0 else "left"
         ax.text(r["signed"] + off, i, f"{r['points']:.1f}", va="center", ha=ha,
-                fontsize=8, color="#404040")
-    ax.axvline(0, color="#b0b0b0", lw=1)
+                fontsize=8, color=T["ink2"])
+    ax.axvline(0, color=T["rule"], lw=1)
     ax.set_yticks(range(len(g)))
     ax.set_yticklabels(g["lbl"], fontsize=8.5)
     _portraits(ax, list(g["lbl"]), g["player_id"], g["position"], zoom=0.22)
@@ -810,3 +853,263 @@ def plot_waiver_performance(s: Season, top_n=15):
     return _plot_acq(d[d["player_name"].isin(keep)], s,
                      "Best Waiver & Free-Agent Pickups",
                      "Points managers got from players added off waivers / FA")
+
+
+def plot_loyalty(seasons: dict, top_n: int = 14, min_seasons: int = 2):
+    """Manager-player bonds: who a manager keeps re-rostering, season after season.
+
+    A career-scope chart (reads the whole season chain via `player_loyalty`).
+    Best-effort: a league where no one has re-rostered the same player yet gets a
+    plain "nothing to show" panel instead of an empty axis.
+    """
+    from matplotlib.ticker import MaxNLocator
+    d = metrics.player_loyalty(seasons, min_seasons=min_seasons)
+    fig, ax = plt.subplots(figsize=(10, 6.4))
+    if d.empty:
+        ax.axis("off")
+        ax.set_title("Manager · Player Loyalty", loc="left", fontsize=16,
+                     fontweight="bold", color=T["ink"], pad=20)
+        ax.text(0.5, 0.5, "No player has been re-rostered by the same manager in "
+                f"{min_seasons}+ seasons yet.", ha="center", va="center",
+                transform=ax.transAxes, fontsize=11.5, color=T["muted"])
+        return fig
+    d = d.head(top_n).iloc[::-1].reset_index(drop=True)
+    ax.barh(range(len(d)), d["seasons_kept"], height=0.72, zorder=2,
+            color=[POS_COLORS.get(str(p), T["neutral"]) for p in d["position"]])
+    labels = [f"{pn}  ·  {un}" for pn, un in zip(d["player_name"], d["user_name"])]
+    ax.set_yticks(range(len(d)))
+    ax.set_yticklabels(labels, fontsize=8.5)
+    _portraits(ax, labels, d["player_id"], d["position"])
+    xmax = float(d["seasons_kept"].max())
+    for i, r in d.iterrows():
+        ax.text(r["seasons_kept"] + xmax * 0.02, i,
+                f"{int(r['seasons_kept'])} seasons  ({r['season_list']})",
+                va="center", fontsize=8, color=T["ink2"])
+    ax.set_xlim(0, xmax * 1.6)
+    ax.xaxis.set_major_locator(MaxNLocator(integer=True))
+    seen = [p for p in POSITIONS if p in set(d["position"])]
+    handles = [plt.Rectangle((0, 0), 1, 1, color=POS_COLORS[p]) for p in seen]
+    ax.legend(handles, seen, loc="lower right", frameon=False, fontsize=8, ncol=3)
+    return _finish(fig, ax, "Manager · Player Loyalty",
+                   f"Players a manager kept re-rostering in {min_seasons}+ seasons"
+                   "  ·  bar = seasons kept  ·  colour = position",
+                   "Seasons Rostered")
+
+
+# --- Schedule, rivalry & records charts -----------------------------------
+
+def plot_boom_bust(s: Season):
+    """Scoring average vs volatility -- steady teams vs boom-or-bust ones."""
+    d = metrics.boom_bust(s)
+    pal = palette(d["user_name"])
+    fig, ax = plt.subplots(figsize=(9, 6))
+    mx, my = d["avg"].median(), d["sd"].median()
+    ax.axvline(mx, ls="--", color=T["rule"], zorder=1)
+    ax.axhline(my, ls="--", color=T["rule"], zorder=1)
+    ax.scatter(d["avg"], d["sd"], s=95, c=[pal[n] for n in d["user_name"]],
+               edgecolors=T["edge"], linewidths=1, zorder=3)
+    _point_avatars(ax, d["avg"], d["sd"], d["user_name"], s, zoom=0.44)
+    for _, r in d.iterrows():
+        ax.text(r["avg"], r["sd"] + (d["sd"].max() - d["sd"].min()) * 0.03,
+                r["user_name"], ha="center", va="bottom", fontsize=8, color=T["ink2"])
+    xr = (d["avg"].max() - d["avg"].min()) or 1
+    yr = (d["sd"].max() - d["sd"].min()) or 1
+    ax.set_xlim(d["avg"].min() - xr * 0.12, d["avg"].max() + xr * 0.12)
+    ax.set_ylim(d["sd"].min() - yr * 0.18, d["sd"].max() + yr * 0.2)
+    for x, y, ha, va, txt in [
+        (ax.get_xlim()[1], ax.get_ylim()[1], "right", "top", "boom or bust"),
+        (ax.get_xlim()[1], ax.get_ylim()[0], "right", "bottom", "elite & steady"),
+        (ax.get_xlim()[0], ax.get_ylim()[0], "left", "bottom", "quietly steady"),
+        (ax.get_xlim()[0], ax.get_ylim()[1], "left", "top", "low & volatile")]:
+        ax.text(x, y, txt, ha=ha, va=va, fontsize=8, style="italic",
+                color=T["faint"], zorder=1)
+    return _finish(fig, ax, "Boom or Bust: Average vs Volatility",
+                   "Right = scores more  ·  up = swingier week to week",
+                   "Average points per week", "Std. dev of weekly points",
+                   caption=_cap(s), grid_axis="both")
+
+
+def plot_sos(s: Season):
+    """Strength of schedule: how strong the opponents each team faced were."""
+    d = metrics.strength_of_schedule(s).sort_values("sos").reset_index(drop=True)
+    fig, ax = plt.subplots(figsize=(9, 6))
+    mean_sos = d["sos"].mean()
+    cmap = matplotlib.colormaps["OrRd"]
+    lo, hi = d["sos"].min(), d["sos"].max()
+    norm = mcolors.Normalize(vmin=lo - (hi - lo) * 0.2, vmax=hi)
+    ax.barh(range(len(d)), d["sos"], height=0.72, zorder=2,
+            color=[cmap(norm(v)) for v in d["sos"]])
+    ax.set_yticks(range(len(d)))
+    ax.set_yticklabels(d["user_name"])
+    _row_avatars(ax, d["user_name"], s)
+    ax.axvline(mean_sos, ls="--", color=T["rule"], zorder=3)
+    ax.text(mean_sos, len(d) - 0.4, "league avg", ha="center", va="top",
+            fontsize=8, color=T["muted"])
+    for i, r in d.iterrows():
+        ax.scatter([r["own_ppg"]], [i], marker="D", s=42, color=T["ink2"],
+                   zorder=4, edgecolors=T["edge"], linewidths=0.8)
+        ax.text(r["sos"] + (hi - lo) * 0.02, i, f"{r['sos']:.1f}", va="center",
+                fontsize=8, color=T["ink2"])
+    ax.set_xlim(lo - (hi - lo) * 0.35, hi + (hi - lo) * 0.18)
+    return _finish(fig, ax, "Strength of Schedule",
+                   "Bar = average PPG of opponents faced (higher = tougher)  ·  "
+                   "◆ = the team's own PPG", "Avg opponent points per game",
+                   caption=_cap(s))
+
+
+def plot_schedule_swap(s: Season):
+    """Each team's win total under every other team's schedule (diagonal = real)."""
+    d = metrics.schedule_swap(s)
+    order = (d[d["team"] == d["schedule_of"]]
+             .sort_values("wins", ascending=False)["team"].tolist())
+    piv = d.pivot(index="team", columns="schedule_of", values="wins").reindex(
+        index=order, columns=order)
+    fig, ax = plt.subplots(figsize=(9.5, 7.5))
+    cmap = mcolors.LinearSegmentedColormap.from_list("sw", ["#c0563f", "#f0f0e6", "#2c7fb8"])
+    im = ax.imshow(piv.values, aspect="auto", cmap=cmap)
+    ax.set_xticks(range(len(order)))
+    ax.set_xticklabels(order, rotation=40, ha="left")
+    ax.xaxis.set_ticks_position("top")
+    ax.set_yticks(range(len(order)))
+    ax.set_yticklabels(order)
+    for i in range(len(order)):
+        for j in range(len(order)):
+            v = piv.values[i, j]
+            if v != v:
+                continue
+            ax.text(j, i, f"{int(v)}", ha="center", va="center", fontsize=8.5,
+                    color="#1a1a1a", fontweight="bold" if i == j else "normal")
+            if i == j:                                    # ring the real record
+                ax.add_patch(plt.Rectangle((j - 0.5, i - 0.5), 1, 1, fill=False,
+                                           edgecolor=T["ink"], lw=1.8, zorder=4))
+    for sp in ax.spines.values():
+        sp.set_visible(False)
+    ax.tick_params(length=0, colors=T["tick"], labelsize=9)
+    ax.set_ylabel("this team's scores", fontsize=10, color=T["muted"])
+    ax.set_title("Schedule Swap: Wins Under Everyone's Schedule", loc="left",
+                 fontsize=15.5, fontweight="bold", color=T["ink"], pad=40)
+    ax.set_xlabel("…played against this team's schedule", fontsize=10, color=T["muted"])
+    ax.xaxis.set_label_position("top")
+    # Explanation goes at the bottom so it can't collide with the rotated column
+    # labels along the top edge.
+    fig.text(0.01, 0.01, "Row = a team's own weekly scores replayed against each "
+             "column team's opponents  ·  boxed = real record", ha="left",
+             fontsize=8.5, color=T["muted"])
+    fig.text(0.99, 0.01, _cap(s), ha="right", fontsize=7, color=T["faint"])
+    fig.tight_layout(rect=(0, 0.03, 1, 1))
+    return fig
+
+
+def plot_head_to_head(seasons: dict):
+    """All-time manager-vs-manager win% matrix, W-L annotated."""
+    d = metrics.head_to_head(seasons)
+    if d.empty:
+        fig, ax = plt.subplots(figsize=(9, 6))
+        ax.axis("off")
+        ax.text(0.5, 0.5, "No head-to-head games yet.", ha="center", va="center",
+                transform=ax.transAxes, fontsize=12, color=T["muted"])
+        return fig
+    order = (d.groupby("user_name")["wins"].sum()
+             .sort_values(ascending=False).index.tolist())
+    win = d.pivot(index="user_name", columns="opp_name", values="win_pct").reindex(
+        index=order, columns=order)
+    rec = {(r["user_name"], r["opp_name"]): f"{r['wins']}-{r['losses']}"
+           for _, r in d.iterrows()}
+    fig, ax = plt.subplots(figsize=(9.5, 7.8))
+    cmap = mcolors.LinearSegmentedColormap.from_list("h2h", ["#c0563f", "#f0f0e6", "#2c7fb8"])
+    im = ax.imshow(win.values, aspect="auto", cmap=cmap, vmin=0, vmax=100)
+    ax.set_xticks(range(len(order)))
+    ax.set_xticklabels(order, rotation=40, ha="left")
+    ax.xaxis.set_ticks_position("top")
+    ax.set_yticks(range(len(order)))
+    ax.set_yticklabels(order)
+    for i, a in enumerate(order):
+        for j, b in enumerate(order):
+            if i == j:
+                ax.add_patch(plt.Rectangle((j - 0.5, i - 0.5), 1, 1,
+                                           facecolor=T["grid"], zorder=2))
+                continue
+            lab = rec.get((a, b))
+            if lab:
+                ax.text(j, i, lab, ha="center", va="center", fontsize=8.5,
+                        color="#1a1a1a", zorder=3)
+    for sp in ax.spines.values():
+        sp.set_visible(False)
+    ax.tick_params(length=0, colors=T["tick"], labelsize=9)
+    ax.set_title("Head to Head (All Time)", loc="left", fontsize=16,
+                 fontweight="bold", color=T["ink"], pad=40)
+    # Explanation at the bottom, clear of the rotated column labels up top.
+    fig.text(0.01, 0.01, "Each cell = the row manager's record vs the column "
+             "manager  ·  blue = row wins the rivalry", ha="left",
+             fontsize=8.5, color=T["muted"])
+    fig.tight_layout(rect=(0, 0.03, 1, 1))
+    return fig
+
+
+def plot_draft_value(s: Season):
+    """Pick number vs points returned -- where the steals and busts landed."""
+    from . import draft as _draft
+    d = _draft.draft_board(s)
+    fig, ax = plt.subplots(figsize=(10, 6))
+    if d.empty:
+        ax.axis("off")
+        ax.set_title("Draft Value", loc="left", fontsize=16, fontweight="bold",
+                     color=T["ink"], pad=20)
+        ax.text(0.5, 0.5, "No draft data for this season.", ha="center",
+                va="center", transform=ax.transAxes, fontsize=11.5, color=T["muted"])
+        return fig
+    ax.scatter(d["pick_no"], d["points"], s=55, zorder=3, edgecolors=T["edge"],
+               linewidths=0.5, c=[POS_COLORS.get(str(p), T["neutral"]) for p in d["position"]])
+    # A faint decay trend: rolling median of points by pick order.
+    dd = d.sort_values("pick_no")
+    trend = dd["points"].rolling(10, min_periods=3, center=True).median()
+    ax.plot(dd["pick_no"], trend, color=T["rule"], lw=1.6, zorder=2, alpha=0.8)
+    xr = d["pick_no"].max()
+    for _, r in d.nlargest(3, "steal").iterrows():
+        ax.annotate(f"{r['player_name']} (#{int(r['pick_no'])})",
+                    (r["pick_no"], r["points"]), textcoords="offset points",
+                    xytext=(6, 4), fontsize=7.5, color="#2ca02c", fontweight="bold")
+    early = d[d["pick_no"] <= max(24, xr * 0.25)]
+    for _, r in early.nsmallest(2, "points").iterrows():
+        ax.annotate(f"{r['player_name']} (#{int(r['pick_no'])})",
+                    (r["pick_no"], r["points"]), textcoords="offset points",
+                    xytext=(6, -8), fontsize=7.5, color="#d62728", fontweight="bold")
+    seen = [p for p in POSITIONS if p in set(d["position"].dropna())]
+    handles = [plt.Rectangle((0, 0), 1, 1, color=POS_COLORS[p]) for p in seen]
+    ax.legend(handles, seen, loc="upper right", frameon=False, fontsize=8, ncol=3)
+    return _finish(fig, ax, f"{s.season} Draft Value",
+                   "Each dot = a pick  ·  green tags = biggest steals  ·  "
+                   "red = early busts  ·  line = value decay by pick",
+                   "Overall pick number", "Started points returned", caption=_cap(s))
+
+
+def plot_draft_grades(s: Season):
+    """Total started points each manager got out of their draft."""
+    from . import draft as _draft
+    d = _draft.draft_grades(s)
+    fig, ax = plt.subplots(figsize=(9, 6))
+    if d.empty:
+        ax.axis("off")
+        ax.set_title("Draft Grades", loc="left", fontsize=16, fontweight="bold",
+                     color=T["ink"], pad=20)
+        ax.text(0.5, 0.5, "No draft data for this season.", ha="center",
+                va="center", transform=ax.transAxes, fontsize=11.5, color=T["muted"])
+        return fig
+    d = d.sort_values("points").reset_index(drop=True)
+    cmap = matplotlib.colormaps["Greens"]
+    lo, hi = d["points"].min(), d["points"].max()
+    norm = mcolors.Normalize(vmin=lo - (hi - lo) * 0.5, vmax=hi)
+    ax.barh(range(len(d)), d["points"], height=0.72, zorder=2,
+            color=[cmap(norm(v)) for v in d["points"]])
+    ax.set_yticks(range(len(d)))
+    ax.set_yticklabels(d["user_name"])
+    _row_avatars(ax, d["user_name"], s)
+    for i, r in d.iterrows():
+        ax.text(r["points"] + hi * 0.01, i,
+                f"{r['points']:.0f}  ({int(r['hits'])} hits · {r['ppp']:.0f}/pick)",
+                va="center", fontsize=8, color=T["ink2"])
+    ax.set_xlim(0, hi * 1.28)
+    return _finish(fig, ax, f"{s.season} Draft Grades",
+                   "Total started points from drafted players  ·  "
+                   "hit = a 100+ point season", "Started points from the draft",
+                   caption=_cap(s))

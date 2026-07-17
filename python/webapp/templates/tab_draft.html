@@ -1,0 +1,57 @@
+{# Draft tab: the historical draft board (round x slot) + value/grade charts. #}
+{# Moving to another season here also moves the header's season picker, so the
+   other tabs follow the draft season just chosen. #}
+{% with oob = true %}{% include "_seasons.html" %}{% endwith %}
+<nav class="rail" hx-target="#panel" hx-swap="innerHTML" hx-include="#league, #theme">
+  <span class="k">Draft</span>
+  {% for y in draft_seasons %}
+  <button class="year {% if y == season %}on{% endif %}"
+          hx-get="/tab/draft?season={{ y }}">{{ y }}</button>
+  {% endfor %}
+</nav>
+
+{% if no_draft %}
+<p class="empty">No draft data for {{ season }}. Sleeper only serves a draft board for
+   seasons whose draft ran on its platform.</p>
+{% else %}
+<div class="rowhead"><h2>{{ season }} draft board</h2></div>
+<p class="hint">Each column is a manager's draft slot, each row a round. The number under a
+   pick is the started points that player returned to the drafting team this season —
+   colour marks the position.</p>
+<div class="card tablewrap">
+  <table class="draftboard">
+    <thead>
+      <tr>
+        <th class="rnd">R</th>
+        {% for u in slot_user %}<th>{{ u or "—" }}</th>{% endfor %}
+      </tr>
+    </thead>
+    <tbody>
+      {% for rnd in rounds %}
+      <tr>
+        <td class="rnd">{{ rnd.round }}</td>
+        {% for c in rnd.cells %}
+        <td class="pick">
+          {% if c %}
+          <span class="pk">#{{ c.pick_no }}</span>
+          <span class="pl pos-{{ c.pos }}">{{ c.player }}</span>
+          <span class="pts">{{ "%.0f"|format(c.points) }} pts</span>
+          {% else %}<span class="pk">—</span>{% endif %}
+        </td>
+        {% endfor %}
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<h2>Draft value &amp; grades</h2>
+<section class="grid">
+  {% for c in charts %}
+  <figure class="card chart">
+    <img src="/chart/{{ c }}?league={{ league }}&season={{ season }}&theme={{ theme }}&_={{ bust }}"
+         alt="{{ c }}" loading="lazy">
+  </figure>
+  {% endfor %}
+</section>
+{% endif %}
