@@ -333,32 +333,35 @@
       "matchups": [
         {
           "id": "R4M1",
+          "_comment": "Lineups as submitted to the commissioner. Sleeper's rosters were locked by week 18, so these were collated by hand and do NOT come from a Sleeper matchup -- the engine scores them from raw week-18 stat lines times scoring_settings. Verified against the commissioner's final sheet: LuckyHarm 132.40, SimonSmith 124.53.",
           "home": {
             "team": "LuckyHarm",
+            "_slots": "QB Dart / RB Chase Brown / RB Etienne / WR Smith-Njigba / WR M.Wilson / TE AJ Barner / FLEX Burden / K Fairbairn / DEF JAX",
             "starters": [
-              "12545",
-              "6813",
+              "12508",
               "9224",
+              "7543",
               "9488",
               "10232",
-              "12518",
-              "7543",
+              "11603",
+              "12519",
               "3451",
-              "NE"
+              "JAX"
             ]
           },
           "away": {
             "team": "SimonSmith",
+            "_slots": "QB Purdy / RB Estime / RB Blue / WR Chase / WR Pickens / TE McBride / FLEX Bigsby / K Little / DEF NE",
             "starters": [
               "8183",
-              "9226",
-              "12507",
+              "11579",
+              "12457",
               "7564",
               "8137",
               "8130",
-              "8151",
+              "9225",
               "11786",
-              "NO"
+              "NE"
             ]
           }
         }

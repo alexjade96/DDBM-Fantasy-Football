@@ -94,6 +94,63 @@ def draft_board(s: Season) -> pd.DataFrame:
     return _cache.setdefault(key, d[_COLS].copy())
 
 
+def _points_elsewhere(s: Season, d: pd.DataFrame) -> pd.Series:
+    """Started points each drafted player scored for OTHER rosters that season.
+
+    "Was he dropped?" is nearly circular for a bust -- returning little to the
+    drafting team usually means being cut. What actually separates a misjudged
+    player from a misjudged *decision* is whether he went on to produce for
+    somebody else, which is what this measures.
+    """
+    pl = s.pl_wk
+    if not {"roster_id", "player_id", "is_starter",
+            "points"}.issubset(getattr(pl, "columns", [])):
+        return pd.Series(0.0, index=d.index)
+    st = pl[pl["is_starter"]]
+    tot = st.groupby(st["player_id"].astype(str))["points"].sum()
+    mine = (st.groupby([st["player_id"].astype(str), st["roster_id"]])["points"]
+            .sum())
+    out = []
+    for pid, rid in zip(d["player_id"], d["roster_id"]):
+        pid = str(pid)
+        here = float(mine.get((pid, rid), 0.0))
+        out.append(round(float(tot.get(pid, 0.0)) - here, 1))
+    return pd.Series(out, index=d.index)
+
+
+def draft_extremes(s: Season, n: int = 8) -> dict:
+    """The draft's biggest gems and busts, by value against draft position.
+
+    Ranked on `steal` (pick number minus value rank), which self-corrects for
+    where a pick was taken: a late flier that returns nothing scores near zero,
+    while a first-rounder that returns nothing scores deeply negative. So busts
+    surface early picks that failed, not merely players who scored little.
+
+    Returns {"gems": [...], "busts": [...]} as plain records, or empty lists for
+    a season with no draft data.
+    """
+    d = draft_board(s)
+    if d.empty:
+        return {"gems": [], "busts": []}
+    d = d[d["player_name"].notna()].copy()
+    if d.empty:
+        return {"gems": [], "busts": []}
+    d["pick"] = d.apply(
+        lambda r: f"{int(r['round'])}.{int(r['pick_no'])}"
+        if pd.notna(r["round"]) and pd.notna(r["pick_no"]) else "—", axis=1)
+    # Value counts points started FOR THE DRAFTING ROSTER, so a player traded
+    # away in week 5 scores near zero here however well he played afterwards.
+    # Carrying what he scored elsewhere keeps that visible: it distinguishes a
+    # player who was simply bad from one the team gave up on.
+    d["elsewhere"] = _points_elsewhere(s, d)
+    cols = ["pick", "pick_no", "player_name", "position", "user_name",
+            "points", "steal", "elsewhere"]
+    gems = d.sort_values(["steal", "points"], ascending=[False, False]).head(n)
+    busts = d.sort_values(["steal", "points"], ascending=[True, True]).head(n)
+    return {"gems": gems[cols].to_dict("records"),
+            "busts": busts[cols].to_dict("records")}
+
+
 def draft_grades(s: Season) -> pd.DataFrame:
     """Per-manager draft production: total started points from drafted players."""
     d = draft_board(s)

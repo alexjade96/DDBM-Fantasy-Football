@@ -11,6 +11,78 @@ from .players import players
 
 POSITIONS = ["QB", "RB", "WR", "TE", "K", "DEF"]
 
+# How a lineup reads on a scoreboard: QB, RB1/RB2, WR1/WR2, TE, FLEX, K, DEF.
+# Note this is NOT POSITIONS order -- the flex slots sit before K/DEF here,
+# whereas optimal_lineup fills every fixed position (K and DEF included) before
+# any flex. That fill order is parity-sensitive and stays as it is; this is
+# purely how the result is presented.
+SLOT_ORDER = ["QB", "RB", "WR", "TE", "REC_FLEX", "FLEX", "WRRB_FLEX",
+              "SUPER_FLEX", "K", "DEF"]
+_FLEX_ELIG = {
+    "REC_FLEX": ["WR", "TE"],
+    "FLEX": ["RB", "WR", "TE"],
+    "WRRB_FLEX": ["RB", "WR", "TE"],
+    "SUPER_FLEX": ["QB", "RB", "WR", "TE"],
+}
+
+
+def slot_sort_key(slot) -> tuple:
+    """Sort key placing a slot label in lineup order (`RB2` after `RB1`)."""
+    s = str(slot)
+    base = s.rstrip("0123456789")
+    num = s[len(base):]
+    idx = SLOT_ORDER.index(base) if base in SLOT_ORDER else len(SLOT_ORDER)
+    return (idx, int(num) if num else 0, base)
+
+
+def assign_slots(df: pd.DataFrame, slots: dict) -> pd.DataFrame:
+    """Label an already-chosen lineup with the slot each player fills.
+
+    Unlike `optimal_lineup`, which *selects* players, this takes the lineup as
+    given -- the players someone actually started -- and works out which slot
+    each one occupies, so the roster can be shown in scoreboard order rather
+    than by position or points. Repeated slots are numbered (RB1, RB2).
+
+    Fixed positions fill first, then the flex slots from whoever is left, both
+    highest-scoring first, so RB1 outscores RB2. Anyone who fits no slot (odd
+    data, or more of a position than the league rosters) is kept and appended,
+    never dropped.
+    """
+    if df.empty or "position" not in df.columns:
+        return df
+    d = df.dropna(subset=["position"]).sort_values("points", ascending=False)
+    used: set = set()
+    picks: list = []
+
+    def take(elig, n, label):
+        if not n:
+            return
+        avail = d[d["position"].isin(elig) & ~d["player_id"].isin(used)].head(int(n))
+        used.update(avail["player_id"])
+        multi = int(n) > 1
+        for i, (_, r) in enumerate(avail.iterrows(), start=1):
+            picks.append({**r.to_dict(), "slot": f"{label}{i}" if multi else label})
+
+    for p in POSITIONS:
+        take([p], slots.get(p, 0), p)
+    for lab, elig in _FLEX_ELIG.items():
+        take(elig, slots.get(lab, 0), lab)
+    for _, r in d[~d["player_id"].isin(used)].iterrows():
+        picks.append({**r.to_dict(), "slot": str(r["position"])})
+    out = pd.DataFrame(picks)
+    if out.empty:
+        return out
+    return (out.assign(_k=out["slot"].map(slot_sort_key))
+            .sort_values("_k").drop(columns="_k").reset_index(drop=True))
+
+
+def order_by_slot(df: pd.DataFrame) -> pd.DataFrame:
+    """Sort a frame that already carries `slot` into lineup order."""
+    if df.empty or "slot" not in df.columns:
+        return df
+    return (df.assign(_k=df["slot"].map(slot_sort_key))
+            .sort_values("_k").drop(columns="_k").reset_index(drop=True))
+
 
 def optimal_lineup(df: pd.DataFrame, slots: dict) -> pd.DataFrame:
     """The best legal lineup for one team-week: the players picked, per slot.

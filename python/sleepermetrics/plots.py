@@ -733,8 +733,22 @@ def plot_playoff_bracket(p):
     return fig
 
 
+def _po_span(playoffs: dict) -> tuple:
+    """(title suffix, subtitle phrase) for a playoff chart.
+
+    These charts aggregate whatever brackets they are handed, so the same
+    function serves both the all-time view and a single-season one -- the
+    caller scopes by passing a one-entry dict. The labels have to follow, or a
+    2025-only chart still claims to be career-wide.
+    """
+    yrs = sorted(str(y) for y in playoffs)
+    if len(yrs) == 1:
+        return f" ({yrs[0]})", f"the {yrs[0]} postseason"
+    return " (All Time)", f"{len(yrs)} postseasons"
+
+
 def plot_playoff_stats(playoffs: dict, scope: str = "title"):
-    """Career playoff win %, gold for managers with a title."""
+    """Playoff win %, gold for managers with a title."""
     from .playoffs import playoff_stats
     d = playoff_stats(playoffs, scope)
     d = d[d["games"] > 0].sort_values("win_pct").reset_index(drop=True)
@@ -749,9 +763,10 @@ def plot_playoff_stats(playoffs: dict, scope: str = "title"):
                 f"{r['win_pct']:.0f}%  {stars}", va="center", fontsize=8.5, color=T["ink2"])
     ax.set_xlim(0, 100)
     sub = "championship path only" if scope == "title" else f"scope: {scope}"
-    return _finish(fig, ax, "Career Playoff Record",
-                   f"Win % across {len(playoffs)} postseasons  ·  {sub}  ·  "
-                   "gold = has won a title  ·  ★ per title", "Playoff Win %")
+    suffix, span = _po_span(playoffs)
+    return _finish(fig, ax, f"Playoff Record{suffix}",
+                   f"Win % across {span}  ·  {sub}  ·  "
+                   "gold = won a title  ·  ★ per title", "Playoff Win %")
 
 
 def plot_playoff_players(playoffs: dict, n: int = 15, scope: str = "title"):
@@ -776,8 +791,9 @@ def plot_playoff_players(playoffs: dict, n: int = 15, scope: str = "title"):
     seen = [p for p in POSITIONS if p in set(d["position"])]
     handles = [plt.Rectangle((0, 0), 1, 1, color=POS_COLORS[p]) for p in seen]
     ax.legend(handles, seen, loc="lower right", frameon=False, fontsize=8, ncol=3)
-    return _finish(fig, ax, "Best Playoff Players (All Time)",
-                   f"Total points scored in the postseason  ·  {sub}  ·  ★ per title",
+    suffix, span = _po_span(playoffs)
+    return _finish(fig, ax, f"Best Playoff Players{suffix}",
+                   f"Points scored across {span}  ·  {sub}  ·  ★ per title",
                    "Playoff Points")
 
 
@@ -800,9 +816,10 @@ def plot_clutch(seasons: dict, playoffs: dict, scope: str = "title"):
     ax.set_yticks(range(len(d)))
     ax.set_yticklabels(d["user_name"])
     ax.legend(loc="lower right", frameon=False, fontsize=8)
+    _, span = _po_span(playoffs)
     return _finish(fig, ax, "Clutch: Playoff vs Regular-Season Scoring",
-                   "Grey dot = regular-season PPG; coloured = playoff PPG",
-                   "Points per Game")
+                   f"Grey dot = regular-season PPG; coloured = playoff PPG  ·  "
+                   f"{span}", "Points per Game")
 
 
 def plot_playoff_matchup(p, matchup_id):
@@ -1113,3 +1130,157 @@ def plot_draft_grades(s: Season):
                    "Total started points from drafted players  ·  "
                    "hit = a 100+ point season", "Started points from the draft",
                    caption=_cap(s))
+
+
+# --- manager-scoped charts -------------------------------------------------
+# These take (season, manager) rather than just a season, so they are registered
+# under the "season+manager" kind in report._CHART_FNS and the web app passes
+# `manager` through to /chart. Everything below reads frames the season object
+# already carries -- no new fetches, no metric changes.
+
+def _no_data(msg: str):
+    """A titled blank panel, so a missing scope degrades instead of erroring."""
+    fig, ax = plt.subplots(figsize=(9, 3))
+    ax.axis("off")
+    ax.text(0.5, 0.5, msg, ha="center", va="center", fontsize=11.5,
+            color=T["muted"], transform=ax.transAxes)
+    return fig
+
+
+def _mgr_rid(s: Season, manager: str):
+    """roster_id for a manager name, or None if this season has no such team."""
+    um = getattr(s, "user_map", None)
+    if um is None or "user_name" not in getattr(um, "columns", []):
+        return None
+    m = um.loc[um["user_name"] == manager, "roster_id"]
+    return None if m.empty else m.iloc[0]
+
+
+def _mgr_weeks(s: Season, manager: str):
+    """(their team_wk rows sorted by week, roster_id) or (None, None)."""
+    rid = _mgr_rid(s, manager)
+    tw = s.team_wk
+    if rid is None or not {"roster_id", "week", "points"}.issubset(
+            getattr(tw, "columns", [])):
+        return None, None
+    mine = tw[tw["roster_id"] == rid].sort_values("week")
+    return (None, None) if mine.empty else (mine, rid)
+
+
+def plot_mgr_score_band(s: Season, manager: str):
+    """Their weekly score against the band every other team scored that week.
+
+    The band answers the question a bare points line can't: was a 95-point week
+    bad, or was it just a low-scoring week league-wide?
+    """
+    mine, _ = _mgr_weeks(s, manager)
+    if mine is None:
+        return _no_data(f"No weekly scores for {manager} in {s.season}.")
+    tw = s.team_wk
+    band = (tw.groupby("week")["points"]
+            .agg(lo="min", hi="max", mid="median").reset_index())
+    fig, ax = plt.subplots(figsize=(9.5, 5.5))
+    ax.fill_between(band["week"], band["lo"], band["hi"], color=T["neutral"],
+                    alpha=0.35, zorder=1, label="league range")
+    ax.plot(band["week"], band["mid"], ls="--", lw=1.6, color=T["rule"],
+            zorder=2, label="league median")
+    ax.plot(mine["week"], mine["points"], lw=2, color=T["ink2"], zorder=3)
+    res = list(mine["result"]) if "result" in mine.columns else [None] * len(mine)
+    cols = ["#2ca02c" if r == "W" else "#d62728" if r == "L" else T["neutral"]
+            for r in res]
+    ax.scatter(mine["week"], mine["points"], s=90, c=cols, zorder=4,
+               edgecolors=T["edge"], linewidths=1.2)
+    ax.set_xticks(list(mine["week"]))
+    ax.legend(loc="best", frameon=False, fontsize=8)
+    return _finish(fig, ax, f"{manager} · Weekly Score vs the League",
+                   "Band = every team's range that week  ·  green win, red loss",
+                   "Week", "Points", caption=_cap(s), grid_axis="y")
+
+
+def plot_mgr_optimal(s: Season, manager: str):
+    """Started vs optimal each week, over the running cost of the bench.
+
+    Two stacked panels rather than one chart with two y-scales: weekly points
+    and a season-cumulative total are different magnitudes, and a dual axis
+    would make their crossings meaningless.
+    """
+    lu = getattr(s, "lineup", None)
+    if lu is None or not {"user_name", "week", "actual", "optimal"}.issubset(
+            getattr(lu, "columns", [])):
+        return _no_data(f"No lineup data for {manager} in {s.season}.")
+    d = lu[lu["user_name"] == manager].sort_values("week")
+    if d.empty:
+        return _no_data(f"No lineup data for {manager} in {s.season}.")
+    lost = (d["optimal"] - d["actual"]).clip(lower=0)
+    # No explicit hspace: _finish runs tight_layout, which warns and overrides
+    # a hand-set gridspec spacing.
+    fig, (ax, ax2) = plt.subplots(
+        2, 1, figsize=(9.5, 6.4), sharex=True,
+        gridspec_kw={"height_ratios": [3, 1]})
+    w = d["week"]
+    ax.bar(w, d["optimal"], width=0.68, color=T["neutral"], alpha=0.55,
+           zorder=1, label="optimal")
+    ax.bar(w, d["actual"], width=0.68, color="#2ca02c", zorder=2, label="started")
+    # Only annotate weeks that actually cost something, so the labels stay scannable.
+    top = float(d["optimal"].max())
+    for wk, opt, gap in zip(w, d["optimal"], lost):
+        if gap >= top * 0.04:
+            ax.text(wk, opt + top * 0.015, f"-{gap:.0f}", ha="center",
+                    fontsize=7.5, color="#d62728", fontweight="bold")
+    ax.set_ylim(0, top * 1.12)
+    # No legend: the bars run full height, so any in-axes placement sits on the
+    # data, and the subtitle already names both series.
+    ax2.fill_between(w, lost.cumsum(), color="#d62728", alpha=0.28, zorder=1)
+    ax2.plot(w, lost.cumsum(), color="#d62728", lw=1.8, zorder=2)
+    ax2.set_xticks(list(w))
+    ax2.set_ylabel("Cumulative", fontsize=9, color=T["muted"])
+    ax2.set_xlabel("Week", fontsize=10, color=T["muted"])
+    ax2.grid(axis="y", color=T["grid"], linewidth=0.7)
+    ax2.set_axisbelow(True)
+    ax2.tick_params(colors=T["tick"], labelsize=9.5)
+    for sp in ("top", "right", "left"):
+        ax2.spines[sp].set_visible(False)
+    ax2.spines["bottom"].set_color(T["spine"])
+    total = float(lost.sum())
+    return _finish(fig, ax, f"{manager} · Started vs Optimal",
+                   "Grey = the best legal lineup that week; green = what they "
+                   f"started  ·  {total:.0f} pts left on the bench all season",
+                   None, "Points", caption=_cap(s), grid_axis="y")
+
+
+def plot_mgr_margins(s: Season, manager: str):
+    """Every week's margin as a diverging bar -- blowouts vs coin flips.
+
+    A game log shows the same numbers, but only the shape tells you whether a
+    losing season was four routs or four heartbreakers.
+    """
+    mine, _ = _mgr_weeks(s, manager)
+    if mine is None or "pa" not in mine.columns:
+        return _no_data(f"No margins for {manager} in {s.season}.")
+    d = mine[mine["pa"].notna()].copy()
+    if d.empty:
+        return _no_data(f"No completed games for {manager} in {s.season}.")
+    d["margin"] = d["points"] - d["pa"]
+    cols = ["#2ca02c" if m > 0 else "#d62728" for m in d["margin"]]
+    fig, ax = plt.subplots(figsize=(9.5, 5.5))
+    ax.bar(d["week"], d["margin"], width=0.66, color=cols, zorder=2)
+    ax.axhline(0, color=T["spine"], lw=1.2, zorder=3)
+    span = float(d["margin"].abs().max()) or 1.0
+    for wk, m in zip(d["week"], d["margin"]):
+        va = "bottom" if m > 0 else "top"
+        off = span * 0.03 * (1 if m > 0 else -1)
+        ax.text(wk, m + off, f"{m:+.0f}", ha="center", va=va, fontsize=7.5,
+                color=T["ink2"])
+    # Fit the data rather than forcing symmetry: an all-wins season would spend
+    # half the canvas on empty negative space. Zero stays in range, and the
+    # drawn baseline keeps the sign unambiguous.
+    lo, hi = float(d["margin"].min()), float(d["margin"].max())
+    pad = span * 0.18
+    ax.set_ylim(min(lo - pad, -pad), max(hi + pad, pad))
+    ax.set_xticks(list(d["week"]))
+    close = int((d["margin"].abs() <= 10).sum())
+    rout = int((d["margin"].abs() >= 40).sum())
+    return _finish(fig, ax, f"{manager} · Margin by Week",
+                   f"Points scored minus points allowed  ·  {close} game(s) "
+                   f"inside 10, {rout} decided by 40+",
+                   "Week", "Margin", caption=_cap(s), grid_axis="y")

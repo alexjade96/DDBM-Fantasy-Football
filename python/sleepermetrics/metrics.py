@@ -462,3 +462,126 @@ def record_book(seasons: dict) -> list[dict]:
         out.append({"label": "Longest win streak", "value": f"{best['len']} in a row",
                     "holder": best["holder"], "detail": str(best["season"])})
     return out
+
+
+# --- transaction ledgers (webapp analytics) ------------------------------
+# The Transactions tab's detail tables. These read the same frames as
+# trade_performance / waiver_performance but keep the *deal* intact -- who
+# traded with whom, and what each side got -- rather than reducing everything to
+# per-player rows. Webapp-only, so they are not part of the parity contract.
+
+_TRADE_COLS = ["week", "transaction_id", "user_name", "with", "received",
+               "gave", "got_pts", "gave_pts", "net"]
+_WAIVER_COLS = ["week", "user_name", "player_name", "position", "via",
+                "times", "points", "starts", "weeks_rostered"]
+
+
+def _pts_by_player_roster(s: Season) -> dict:
+    """{(player_id, roster_id): points scored while on that roster}.
+
+    pl_wk records roster membership week by week, so this already splits a
+    traded player's season between the teams that held him -- no transaction
+    stint reconstruction needed.
+    """
+    pl = s.pl_wk
+    if not {"player_id", "roster_id", "points"}.issubset(getattr(pl, "columns", [])):
+        return {}
+    g = pl.groupby([pl["player_id"].astype(str), pl["roster_id"]])["points"].sum()
+    return {k: float(v) for k, v in g.items()}
+
+
+def _live_tx(s: Season, kinds: list) -> pd.DataFrame:
+    """Completed transactions of the given types, with string player ids."""
+    tx = getattr(s, "transactions", None)
+    need = {"week", "transaction_id", "type", "transaction", "player_id",
+            "roster_id", "player_name"}
+    if tx is None or not need.issubset(getattr(tx, "columns", [])):
+        return pd.DataFrame()
+    t = tx[tx["type"].isin(kinds)]
+    if "status" in t.columns:
+        t = t[t["status"] != "failed"]
+    if t.empty:
+        return pd.DataFrame()
+    t = t.copy()
+    t["player_id"] = t["player_id"].astype(str)
+    return t
+
+
+def trade_ledger(s: Season) -> pd.DataFrame:
+    """Every completed trade, one row per team involved in it.
+
+    `net` is what the players a team received scored FOR THEM, minus what the
+    players they gave up scored for whoever received them -- so the two sides of
+    a two-team deal are mirror images, and a three-way deal still attributes
+    each player's points to the roster that actually got him.
+    """
+    t = _live_tx(s, ["trade"])
+    if t.empty:
+        return pd.DataFrame(columns=_TRADE_COLS)
+    pts = _pts_by_player_roster(s)
+    names = dict(zip(s.user_map["roster_id"], s.user_map["user_name"]))
+    rows = []
+    for tid, ev in t.groupby("transaction_id"):
+        adds = ev[ev["transaction"] == "add"]
+        dest = dict(zip(adds["player_id"], adds["roster_id"]))
+        wk = int(ev["week"].min())
+        for rid, g in ev.groupby("roster_id"):
+            got = g[g["transaction"] == "add"]
+            gave = g[g["transaction"] == "drop"]
+            got_pts = sum(pts.get((p, rid), 0.0) for p in got["player_id"])
+            gave_pts = sum(pts.get((p, dest.get(p)), 0.0) for p in gave["player_id"])
+            others = sorted({names.get(r, str(r)) for r in ev["roster_id"]
+                             if r != rid})
+            rows.append({
+                "week": wk, "transaction_id": str(tid),
+                "user_name": names.get(rid, str(rid)),
+                "with": ", ".join(others) or "—",
+                "received": ", ".join(got["player_name"].astype(str)) or "—",
+                "gave": ", ".join(gave["player_name"].astype(str)) or "—",
+                "got_pts": round(got_pts, 1), "gave_pts": round(gave_pts, 1),
+                "net": round(got_pts - gave_pts, 1),
+            })
+    return (pd.DataFrame(rows)
+            .sort_values(["week", "transaction_id", "net"],
+                         ascending=[True, True, False])
+            .reset_index(drop=True))
+
+
+def waiver_ledger(s: Season, top_n: int | None = 30) -> pd.DataFrame:
+    """Waiver / free-agent pickups, one row per player per manager.
+
+    Collapsed to unique (manager, player): a player picked up, cut and picked up
+    again is one story, and `points` is already a per-(player, roster) total, so
+    separate rows would repeat the same figure. `times` records the churn.
+    """
+    t = _live_tx(s, ["waiver", "free_agent"])
+    if t.empty:
+        return pd.DataFrame(columns=_WAIVER_COLS)
+    adds = t[t["transaction"] == "add"]
+    if adds.empty:
+        return pd.DataFrame(columns=_WAIVER_COLS)
+    pts = _pts_by_player_roster(s)
+    names = dict(zip(s.user_map["roster_id"], s.user_map["user_name"]))
+    pl = s.pl_wk
+    have = {"roster_id", "player_id", "is_starter", "week"}.issubset(
+        getattr(pl, "columns", []))
+    rows = []
+    for (rid, pid), g in adds.groupby(["roster_id", "player_id"]):
+        first = g.iloc[0]
+        kinds = sorted({("waiver" if k == "waiver" else "FA") for k in g["type"]})
+        starts = weeks = 0
+        if have:
+            w = pl[(pl["roster_id"] == rid) & (pl["player_id"].astype(str) == pid)]
+            starts = int(w["is_starter"].sum())
+            weeks = int(w["week"].nunique())
+        rows.append({
+            "week": int(g["week"].min()), "user_name": names.get(rid, str(rid)),
+            "player_name": first["player_name"],
+            "position": first.get("position"),
+            "via": "/".join(kinds), "times": len(g),
+            "points": round(pts.get((pid, rid), 0.0), 1),
+            "starts": starts, "weeks_rostered": weeks,
+        })
+    d = (pd.DataFrame(rows).sort_values("points", ascending=False)
+         .reset_index(drop=True))
+    return d.head(top_n) if top_n else d

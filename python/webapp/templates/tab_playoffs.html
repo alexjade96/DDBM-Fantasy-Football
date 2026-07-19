@@ -1,15 +1,6 @@
-{# The season rail: jump between postseasons without leaving the tab. Shown even
-   when this season has no bracket, so it is always a way back to one. #}
-{% if bracket_seasons %}
-<nav class="rail" hx-target="#panel" hx-swap="innerHTML" hx-include="#league, #theme">
-  <span class="k">Postseason</span>
-  {% for y in bracket_seasons %}
-  <button class="year {% if y == season %}on{% endif %}"
-          hx-get="/tab/playoffs?season={{ y }}&scope={{ scope }}">{{ y }}</button>
-  {% endfor %}
-</nav>
-{% endif %}
-
+{# No season rail: the header's season picker selects the season for every tab,
+   and a second switcher in here meant the postseason could sit on a different
+   season from the rest of the page. #}
 {% if missing %}
 <p class="empty">No stored bracket for {{ missing }}. Add <code>playoffs/{{ missing }}.json</code>
    (see <code>playoffs/README.md</code>).</p>
@@ -106,6 +97,8 @@
 {% endif %}
 
 <h2>Playoff analytics</h2>
+<p class="hint">Scoped to the {{ season }} postseason, like the rest of this tab —
+   switch season in the header to see another.</p>
 <div class="grid two">
   <figure class="card chart">
     <img src="/chart/playoff_players?league={{ league }}&season={{ season }}&scope={{ scope }}&theme={{ theme }}&_={{ bust }}"
@@ -119,23 +112,23 @@
 <div class="grid two">
   <figure class="card chart">
     <img src="/chart/playoff_stats?league={{ league }}&season={{ season }}&scope={{ scope }}&theme={{ theme }}&_={{ bust }}"
-         alt="Career playoff record" loading="lazy">
+         alt="{{ season }} playoff record" loading="lazy">
   </figure>
   <div class="card">
     <h3>Postseason résumé</h3>
-    <p class="hint">Playoff-only metrics across every stored bracket
-       (<strong>{{ scope }}</strong> games).</p>
+    <p class="hint">Playoff-only metrics for the {{ season }} bracket
+       (<strong>{{ scope }}</strong> games). Every manager here made this
+       postseason, so there is no appearance count to compare.</p>
     <div class="tablewrap">
       <table>
         <thead><tr>
-          <th>Manager</th><th class="n">Apps</th><th class="n">W</th><th class="n">L</th>
+          <th>Manager</th><th class="n">W</th><th class="n">L</th>
           <th class="n">Win%</th><th class="n">Titles</th><th class="n">PPG</th>
         </tr></thead>
         <tbody>
         {% for r in stats %}
           <tr>
             <td>{{ r.user_name }}</td>
-            <td class="n">{{ r.appearances }}</td>
             <td class="n">{{ r.wins }}</td>
             <td class="n">{{ r.losses }}</td>
             <td class="n">{{ r.win_pct | round(1) }}</td>

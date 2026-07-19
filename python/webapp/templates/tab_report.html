@@ -41,13 +41,15 @@
   {% for sec in sections %}
   <h2>{{ sec.title }}</h2>
   {% if sec.blurb %}<p class="hint">{{ sec.blurb }}</p>{% endif %}
+  {# A section can carry a table, charts, or both -- render whatever it has. #}
   {% if sec.html %}
   <div class="card tablewrap">{{ sec.html|safe }}</div>
-  {% else %}
+  {% endif %}
+  {% if sec.charts %}
   <section class="grid">
     {% for key, desc in sec.charts %}
     <figure class="card chart">
-      <img src="/chart/{{ key }}?league={{ league }}&season={{ season }}&theme={{ theme }}&_={{ bust }}"
+      <img src="/chart/{{ key }}?league={{ league }}&season={{ season }}&theme={{ theme }}&manager={{ (manager or '')|urlencode }}&_={{ bust }}"
            alt="{{ desc }}" loading="lazy">
       <figcaption>{{ desc }}</figcaption>
     </figure>

@@ -246,9 +246,13 @@ details summary { cursor: pointer; font-weight: 600; }
   background: color-mix(in srgb, var(--turf) 14%, transparent);
   font-weight: 650; box-shadow: inset 3px 0 0 var(--turf); }
 .reportpanel table.teams tr.gap td { text-align: center; color: var(--faint); padding: 4px 12px; }
-.reportpanel .res { font-weight: 700; }
-.reportpanel .res.w { color: #2f9e44; } .reportpanel .res.l { color: #e03131; }
-.reportpanel .q { color: var(--muted); font-size: 12.5px; font-variant-numeric: tabular-nums; }
+/* Global, not .reportpanel-scoped: the draft tab's gems/busts uses the same
+   good/bad badge, and a scoped rule would leave it silently unstyled there. */
+.res { font-weight: 700; }
+.res.w { color: #2f9e44; } .res.l { color: #e03131; }
+/* Global for the same reason as .res above: the draft tab reuses this muted
+   qualifier, and the report's own uses all sit inside .reportpanel anyway. */
+.q { color: var(--muted); font-size: 12.5px; font-variant-numeric: tabular-nums; }
 
 /* Row-level drill-downs (native <details>, no script). */
 .reportpanel .drilltable { border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }

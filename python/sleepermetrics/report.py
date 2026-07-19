@@ -23,7 +23,7 @@ import matplotlib.pyplot as plt  # noqa: E402
 import pandas as pd  # noqa: E402
 
 from . import metrics, plots, summaries  # noqa: E402
-from .season import Season, optimal_lineup  # noqa: E402
+from .season import Season, assign_slots, optimal_lineup  # noqa: E402
 
 
 def _fig_uri(fig, width=1100, height=None, dpi=112) -> str:
@@ -196,11 +196,15 @@ def _team_table(s: Season, highlight: str | None = None) -> str:
 
 
 def _section(title, blurb, *figs) -> str:
+    """A grid of figures. An empty title continues the section above it --
+    that's how a section carrying both a table and charts avoids a repeated
+    heading."""
     body = "".join(f for f in figs if f)
     if not body:
         return ""
+    head = f"<h2>{html.escape(title)}</h2>" if title else ""
     sub = f"<p class='blurb'>{html.escape(blurb)}</p>" if blurb else ""
-    return f"<section><h2>{html.escape(title)}</h2>{sub}<div class='grid'>{body}</div></section>"
+    return f"<section>{head}{sub}<div class='grid'>{body}</div></section>"
 
 
 def _html_section(title: str, blurb: str, inner: str) -> str:
@@ -315,33 +319,89 @@ def _mgr_postseason(s: Season, manager: str, playoffs: dict | None) -> str:
                    and last["result"] == "L" else "Reached the postseason.")
     rows = []
     for _, g in mine.iterrows():
+        rnd = html.escape(str(g["round"]))
         if g["result"] == "BYE":
-            rows.append(f"<tr><td class='name'>{html.escape(str(g['round']))}</td>"
-                        "<td class='q' colspan='3'>First-round bye</td>"
-                        "<td class='res'>—</td></tr>")
+            rows.append((
+                [(rnd, False), ("<span class='q'>First-round bye</span>", False),
+                 ("—", True), ("—", True), ("<span class='res'>—</span>", True)],
+                ""))
             continue
         cls = {"W": "w", "L": "l"}.get(str(g["result"]), "")
-        rows.append(
-            f"<tr><td class='name'>{html.escape(str(g['round']))}</td>"
-            f"<td>{html.escape(str(g['opponent']))}</td>"
-            f"<td class='n'>{g['points']:.1f}</td>"
-            f"<td class='n'>{g['opp_points']:.1f}</td>"
-            f"<td class='res {cls}'>{g['result']}</td></tr>")
-    table = (
-        "<table class='teams'><thead><tr><th>Round</th><th>Opponent</th>"
-        "<th class='n'>PF</th><th class='n'>PA</th><th>Result</th>"
-        "</tr></thead><tbody>" + "".join(rows) + "</tbody></table>")
+        cells = [
+            (rnd, False), (html.escape(str(g["opponent"])), False),
+            (f"{g['points']:.1f}", True), (f"{g['opp_points']:.1f}", True),
+            (f"<span class='res {cls}'>{g['result']}</span>", True)]
+        rows.append((cells, _playoff_round_detail(s, manager, p, g)))
+    table = _drill_table(
+        [("Round", False), ("Opponent", False), ("PF", True), ("PA", True),
+         ("Result", True)],
+        "minmax(150px,1.4fr) minmax(120px,1fr) 80px 80px 80px", rows)
     return (f"<p class='blurb'>{html.escape(outcome)}</p>" + table
-            + _mgr_playoff_roster(s, manager, p, mine))
+            + _mgr_playoff_roster(s, manager, p))
 
 
-def _mgr_playoff_roster(s: Season, manager: str, p, mine) -> str:
-    """Their playoff studs/duds, and — on a loss — the bench call that hurt.
+def _playoff_round_detail(s: Season, manager: str, p, g) -> str:
+    """One playoff round expanded: both lineups side by side, plus the facts.
 
-    Studs/duds come from the engine's own started-player scores (`p.players`);
-    bench regret needs the full roster, which `pl_wk` only has for weeks within
-    the scored season, so the final (a later week) contributes studs but no
-    bench analysis. Best-effort: any missing piece is simply skipped.
+    The lineups come from the engine's own scored starters (`p.players`), which
+    covers every round including the final -- unlike `pl_wk`, which stops at the
+    scored season. Bench regret is the exception: it needs the full roster, so it
+    only appears for rounds the scored season still reaches.
+    """
+    pp = getattr(p, "players", None)
+    if pp is None or not {"team", "matchup_id", "points",
+                          "player_name"}.issubset(getattr(pp, "columns", [])):
+        return ""
+    mu = pp[pp["matchup_id"] == g["matchup_id"]]
+    mine_pl = mu[mu["team"] == manager].sort_values("points", ascending=False)
+    opp_pl = mu[mu["team"] == g["opponent"]].sort_values("points", ascending=False)
+    if mine_pl.empty:
+        return ""
+    # Points order picks out the standouts for the facts above; the lineup
+    # tables below read in scoreboard order instead.
+    mine_lu = assign_slots(mine_pl, s.slots)
+    opp_lu = assign_slots(opp_pl, s.slots)
+
+    facts = []
+    top = mine_pl.iloc[0]
+    facts.append(("Top scorer", _player_fact(top)))
+    if len(mine_pl) > 1:
+        facts.append(("Quietest starter", _player_fact(mine_pl.iloc[-1])))
+    if not opp_pl.empty:
+        facts.append((f"{g['opponent']}'s best", _player_fact(opp_pl.iloc[0])))
+    if pd.notna(g.get("margin")):
+        m = float(g["margin"])
+        shape = ("a coin flip" if abs(m) <= 10 else
+                 "comfortable" if abs(m) <= 40 else "a rout")
+        facts.append(("Margin", f"<span class='pts'>{m:+.1f}</span> "
+                                f"<span class='q'>{shape}</span>"))
+    if pd.notna(g.get("weeks")):
+        facts.append(("Week(s)", html.escape(str(g["weeks"]))))
+    swap = _bench_regret(s, manager, g, mine_pl)
+    if swap:
+        facts.append(swap)
+
+    def lineup(df):
+        return _mini_table(
+            [("Slot", False), ("Player", False), ("Pts", True)],
+            [[(html.escape(str(r["slot"])), False),
+              (f"<strong>{html.escape(str(r['player_name']))}</strong>", False),
+              (f"{float(r['points']):.1f}", True)] for _, r in df.iterrows()])
+
+    tables = ("<div class='dt-tables'>"
+              + _labeled(f"{manager} · {g['points']:.1f} pts", lineup(mine_lu))
+              + _labeled(f"{g['opponent']} · {g['opp_points']:.1f} pts",
+                         lineup(opp_lu))
+              + "</div>")
+    return _facts(facts) + tables
+
+
+def _mgr_playoff_roster(s: Season, manager: str, p) -> str:
+    """Their studs and duds across the whole playoff run.
+
+    Scored from the engine's own started-player points (`p.players`), so it
+    spans every round including the final. Per-round detail -- lineups, margins,
+    bench calls -- belongs to that round's drill-down, not here.
     """
     pp = getattr(p, "players", None)
     if pp is None or "team" not in getattr(pp, "columns", []):
@@ -359,47 +419,57 @@ def _mgr_playoff_roster(s: Season, manager: str, p, mine) -> str:
         facts.append(("Quietest starter",
                       _player_fact(worst, str(rmap.get(worst["round_id"], "")))))
 
-    # Bench regret on losses: a benched player who outscored a same-position
-    # starter, for losing weeks the scored season still covers.
+    # Per-round bench regret now lives in that round's own drill-down, so this
+    # block stays the run-level summary.
+    return _facts(facts)
+
+
+def _bench_regret(s: Season, manager: str, g, started_pl):
+    """The bench call that cost them a playoff loss, as a (label, value) fact.
+
+    A benched player who outscored a same-position starter. Needs the full
+    roster, which `pl_wk` only carries for weeks inside the scored season -- the
+    final sits past that, so it returns None there rather than guessing.
+    """
+    if str(g.get("result")) != "L":
+        return None                      # "regret" only reads on a loss
     rid = _mgr_roster_id(s, manager)
     pl = s.pl_wk
-    regrets = []
-    if rid is not None and {"roster_id", "week", "player_id", "points",
-                            "position", "is_starter"}.issubset(pl.columns):
-        for _, g in mine[mine["result"] == "L"].iterrows():
-            try:
-                wk = int(str(g["weeks"]).split("-")[0])
-            except (ValueError, TypeError):
-                continue
-            if wk > s.last_week:
-                continue
-            started = set(mine_pl[mine_pl["round_id"] == g["round_id"]]["player_id"].astype(str))
-            wkr = pl[(pl["roster_id"] == rid) & (pl["week"] == wk)].copy()
-            wkr["player_id"] = wkr["player_id"].astype(str)
-            starters = wkr[wkr["player_id"].isin(started)]
-            bench = wkr[~wkr["player_id"].isin(started)]
-            swap = None
-            for _, b in bench.iterrows():
-                same = starters[starters["position"] == b["position"]]
-                if same.empty:
-                    continue
-                weak = same.loc[same["points"].idxmin()]
-                gain = float(b["points"]) - float(weak["points"])
-                if gain > 0 and (swap is None or gain > swap[0]):
-                    swap = (gain, b, weak)
-            if swap:
-                gain, b, weak = swap
-                margin = abs(float(g["margin"])) if pd.notna(g["margin"]) else None
-                flip = ("would have flipped it" if margin is not None and gain >= margin
-                        else f"+{gain:.1f} swing")
-                regrets.append((
-                    f"Bench call · {g['round']}",
-                    f"<strong>{html.escape(str(b['player_name']))}</strong> "
-                    f"<span class='pts'>{float(b['points']):.1f}</span> "
-                    f"<span class='q'>benched for "
-                    f"{html.escape(str(weak['player_name']))} "
-                    f"{float(weak['points']):.1f} · {flip}</span>"))
-    return _facts(facts + regrets)
+    if rid is None or not {"roster_id", "week", "player_id", "points",
+                           "position", "is_starter"}.issubset(pl.columns):
+        return None
+    try:
+        wk = int(str(g["weeks"]).split("-")[0])
+    except (ValueError, TypeError):
+        return None
+    if wk > s.last_week:
+        return None
+    started = set(started_pl["player_id"].astype(str))
+    wkr = pl[(pl["roster_id"] == rid) & (pl["week"] == wk)].copy()
+    wkr["player_id"] = wkr["player_id"].astype(str)
+    starters = wkr[wkr["player_id"].isin(started)]
+    bench = wkr[~wkr["player_id"].isin(started)]
+    swap = None
+    for _, b in bench.iterrows():
+        same = starters[starters["position"] == b["position"]]
+        if same.empty:
+            continue
+        weak = same.loc[same["points"].idxmin()]
+        gain = float(b["points"]) - float(weak["points"])
+        if gain > 0 and (swap is None or gain > swap[0]):
+            swap = (gain, b, weak)
+    if not swap:
+        return None
+    gain, b, weak = swap
+    margin = abs(float(g["margin"])) if pd.notna(g.get("margin")) else None
+    flip = ("would have flipped it" if margin is not None and gain >= margin
+            else f"+{gain:.1f} swing")
+    return ("Bench call",
+            f"<strong>{html.escape(str(b['player_name']))}</strong> "
+            f"<span class='pts'>{float(b['points']):.1f}</span> "
+            f"<span class='q'>benched for "
+            f"{html.escape(str(weak['player_name']))} "
+            f"{float(weak['points']):.1f} · {flip}</span>")
 
 
 def _mgr_career(s: Season, manager: str, seasons: dict | None) -> str:
@@ -514,6 +584,207 @@ def _player_fact(r, note: str = "") -> str:
                         f"{float(r['points']):.1f}", note)
 
 
+def _mgr_trade_ids(s: Season, rid, direction: str = "add") -> set:
+    """player_ids this roster acquired ("add") or gave up ("drop") in a trade.
+
+    The transactions frame is the only place the *direction* of a trade
+    survives -- trade_performance deliberately drops it so both sides of a deal
+    show on the league-wide chart.
+    """
+    tx = getattr(s, "transactions", None)
+    if rid is None or tx is None or not {
+            "type", "transaction", "roster_id",
+            "player_id"}.issubset(getattr(tx, "columns", [])):
+        return set()
+    t = tx[(tx["type"] == "trade") & (tx["transaction"] == direction)
+           & (tx["roster_id"] == rid)]
+    if "status" in tx.columns:
+        t = t[t["status"] != "failed"]
+    return set(t["player_id"].astype(str))
+
+
+def _pts_on_roster(s: Season) -> dict:
+    """{(player_id, roster_id): points scored while on that roster} from pl_wk.
+
+    pl_wk records roster membership week by week, so summing it per (player,
+    roster) already answers "what did they score for that team" -- no need to
+    reconstruct transaction stints, and a player traded mid-season contributes
+    to each roster separately.
+    """
+    pl = s.pl_wk
+    if not {"player_id", "roster_id", "points"}.issubset(getattr(pl, "columns", [])):
+        return {}
+    g = pl.groupby([pl["player_id"].astype(str), pl["roster_id"]])["points"].sum()
+    return {k: float(v) for k, v in g.items()}
+
+
+def _mgr_transactions(s: Season, manager: str) -> str:
+    """One manager's season of dealing: trades, then the waiver wire.
+
+    Trades are grouped by `transaction_id` so a deal reads as a deal -- what
+    they got against what they gave, and what each side went on to score -- and
+    pickups are listed by what they actually returned.
+    """
+    rid = _mgr_roster_id(s, manager)
+    tx = getattr(s, "transactions", None)
+    need = {"week", "transaction_id", "type", "transaction", "player_id",
+            "roster_id", "player_name", "position"}
+    if rid is None or tx is None or not need.issubset(getattr(tx, "columns", [])):
+        return ""
+    t = tx.copy()
+    if "status" in t.columns:
+        t = t[t["status"] != "failed"]
+    t["player_id"] = t["player_id"].astype(str)
+    pts = _pts_on_roster(s)
+    rname = dict(zip(s.user_map["roster_id"], s.user_map["user_name"]))
+
+    def plist(rows, holder_of):
+        """A mini-table of players with the points they scored for `holder_of`."""
+        return _mini_table(
+            [("Player", False), ("Pos", False), ("Pts", True)],
+            [[(f"<strong>{html.escape(str(r.player_name))}</strong>", False),
+              (html.escape(str(r.position)), False),
+              (f"{pts.get((r.player_id, holder_of(r)), 0.0):.1f}", True)]
+             for r in rows.itertuples()])
+
+    # --- trades, one row per deal ---
+    trade_rows = []
+    tr = t[t["type"] == "trade"]
+    mine_ids = set(tr.loc[tr["roster_id"] == rid, "transaction_id"])
+    for tid in sorted(mine_ids, key=lambda i: (tr.loc[tr["transaction_id"] == i,
+                                                      "week"].min(), str(i))):
+        ev = tr[tr["transaction_id"] == tid]
+        got = ev[(ev["roster_id"] == rid) & (ev["transaction"] == "add")]
+        gave = ev[(ev["roster_id"] == rid) & (ev["transaction"] == "drop")]
+        # Where each player I gave up ended up, so their points count against
+        # the right roster (a three-way trade has more than one counterparty).
+        dest = dict(zip(ev[(ev["transaction"] == "add")
+                           & (ev["roster_id"] != rid)]["player_id"],
+                        ev[(ev["transaction"] == "add")
+                           & (ev["roster_id"] != rid)]["roster_id"]))
+        others = sorted({rname.get(r, str(r)) for r in ev.loc[
+            ev["roster_id"] != rid, "roster_id"]})
+        wk = int(ev["week"].min())
+        mine_ret = sum(pts.get((p, rid), 0.0) for p in got["player_id"])
+        their_ret = sum(pts.get((p, dest.get(p)), 0.0) for p in gave["player_id"])
+        net = mine_ret - their_ret
+        cls = "w" if net > 0 else "l" if net < 0 else ""
+        cells = [
+            (str(wk), True),
+            (html.escape(", ".join(others)) or "—", False),
+            (html.escape(", ".join(got["player_name"].astype(str))) or "—", False),
+            (html.escape(", ".join(gave["player_name"].astype(str))) or "—", False),
+            (f"<span class='res {cls}'>{net:+.0f}</span>", True)]
+        detail = _facts([
+            ("Got back", f"<span class='pts'>{mine_ret:.1f}</span> "
+                         "<span class='q'>pts while on their roster</span>"),
+            ("Gave up", f"<span class='pts'>{their_ret:.1f}</span> "
+                        "<span class='q'>pts for the other side after the deal</span>"),
+            ("Net", f"<span class='pts'>{net:+.1f}</span>"),
+        ]) + ("<div class='dt-tables'>"
+              + _labeled("Got", plist(got, lambda r: rid))
+              + _labeled("Gave", plist(gave, lambda r: dest.get(r.player_id)))
+              + "</div>")
+        trade_rows.append((cells, detail))
+
+    # --- waiver / free-agent pickups, best return first ---
+    pl = s.pl_wk
+    have_pl = {"roster_id", "week", "player_id", "points"}.issubset(
+        getattr(pl, "columns", []))
+    adds = t[(t["type"].isin(["waiver", "free_agent"]))
+             & (t["transaction"] == "add") & (t["roster_id"] == rid)]
+    drops = t[(t["transaction"] == "drop") & (t["roster_id"] == rid)]
+    # Last drop wins: a player cut, re-added and cut again reads by his exit.
+    drop_wk = drops.groupby("player_id")["week"].max().to_dict()
+    final = (set(pl.loc[(pl["roster_id"] == rid) & (pl["week"] == s.last_week),
+                        "player_id"].astype(str))
+             if have_pl and "week" in pl.columns else set())
+
+    def still_on(pid):
+        """On the roster in the final scored week (ground truth for 'dropped')."""
+        return pid in final
+    # One row per player, not per transaction: a player picked up, dropped and
+    # picked up again is one story. Points are already a per-(player, roster)
+    # total, so separate rows would repeat the same figure and read as two hits.
+    picks = []
+    for pid, g in adds.groupby("player_id", sort=False):
+        first = g.iloc[0]
+        weeks = sorted(int(w) for w in g["week"])
+        kinds = sorted({("waiver" if k == "waiver" else "FA") for k in g["type"]})
+        picks.append((pts.get((pid, rid), 0.0), pid, first, weeks, kinds))
+    picks.sort(key=lambda x: -x[0])
+    shown = picks[:15]
+    waiver_rows = []
+    for total, pid, r, weeks, kinds in shown:
+        again = (f" <span class='q'>&times;{len(weeks)}</span>"
+                 if len(weeks) > 1 else "")
+        cells = [(str(weeks[0]), True),
+                 (f"<strong>{html.escape(str(r['player_name']))}</strong>{again}",
+                  False),
+                 (html.escape(str(r["position"])), False),
+                 (f"<span class='q'>{'/'.join(kinds)}</span>", False),
+                 (f"{total:.0f}", True)]
+        detail = ""
+        if have_pl:
+            wks = pl[(pl["roster_id"] == rid)
+                     & (pl["player_id"].astype(str) == pid)]
+            if not wks.empty:
+                facts = []
+                if len(weeks) > 1:
+                    facts.append(("Picked up",
+                                  f"<span class='pts'>{len(weeks)}&times;</span> "
+                                  f"<span class='q'>weeks "
+                                  f"{', '.join(str(w) for w in weeks)}</span>"))
+                facts += [("Weeks rostered",
+                           f"<span class='pts'>{wks['week'].nunique()}</span>"),
+                          ("Avg per week",
+                           f"<span class='pts'>{wks['points'].mean():.1f}</span>")]
+                best = wks.loc[wks["points"].idxmax()]
+                facts.append(("Best week",
+                              f"<span class='pts'>{best['points']:.1f}</span> "
+                              f"<span class='q'>wk {int(best['week'])}</span>"))
+                if "is_starter" in wks.columns:
+                    st = int(wks["is_starter"].sum())
+                    facts.append(("Starts", f"<span class='pts'>{st}</span> "
+                                            f"<span class='q'>of "
+                                            f"{wks['week'].nunique()}</span>"))
+                # Whether they actually left is roster membership in the final
+                # scored week, not transaction order: a cut followed by a re-add
+                # is churn, and an add and a drop in the SAME week can't be
+                # sequenced from week numbers at all.
+                if pid in drop_wk and not still_on(pid):
+                    facts.append(("Dropped", f"<span class='q'>week "
+                                             f"{int(drop_wk[pid])}</span>"))
+                detail = _facts(facts) + _mini_table(
+                    [("Wk", True), ("Pts", True), ("", False)],
+                    [[(f"{int(x['week'])}", True),
+                      (f"{float(x['points']):.1f}", True),
+                      ("<span class='q'>started</span>"
+                       if x.get("is_starter") else "", False)]
+                     for _, x in wks.sort_values("week").iterrows()])
+        waiver_rows.append((cells, detail))
+
+    out = []
+    if trade_rows:
+        out.append("<p class='blurb'>Trades — net is what the players they got "
+                   "scored for them, minus what the players they gave up scored "
+                   "for the other side.</p>")
+        out.append(_drill_table(
+            [("Wk", True), ("With", False), ("Got", False), ("Gave", False),
+             ("Net", True)],
+            "50px minmax(110px,1fr) minmax(140px,1.5fr) minmax(140px,1.5fr) 80px",
+            trade_rows))
+    if waiver_rows:
+        more = (f" Showing the top 15 of {len(picks)}." if len(picks) > 15 else "")
+        out.append(f"<p class='blurb'>Waiver &amp; free-agent pickups, by what "
+                   f"they returned while rostered.{more}</p>")
+        out.append(_drill_table(
+            [("Wk", True), ("Player", False), ("Pos", False), ("Via", False),
+             ("Pts", True)],
+            "50px minmax(150px,1.6fr) 60px 70px 80px", waiver_rows))
+    return "".join(out)
+
+
 def _mgr_standouts(s: Season, manager: str) -> str:
     """Who carried the team all season, and the best moves off waivers / trades."""
     rid = _mgr_roster_id(s, manager)
@@ -560,17 +831,29 @@ def _mgr_standouts(s: Season, manager: str) -> str:
             table = _drill_table(
                 [("Player", False), ("Pos", False), ("Started pts", True)],
                 "1.6fr 60px 110px", drows)
-    for label, fn in (("Best pickup", metrics.waiver_performance),
-                      ("Best trade add", metrics.trade_performance)):
+    # Waiver rows are already per acquiring roster (the metric joins on
+    # player_id + roster_id), so a row naming this manager is genuinely theirs.
+    # Trade rows are NOT: trade_performance joins on player_id alone so both
+    # sides of a deal appear, which is what the league-wide chart wants. Scoped
+    # to one manager it has to be narrowed to what they actually acquired, or a
+    # player they traded AWAY reads as their best add.
+    trade_adds = _mgr_trade_ids(s, rid, "add")
+    for label, fn, ids in (("Best pickup", metrics.waiver_performance, None),
+                           ("Best trade add", metrics.trade_performance, trade_adds)):
         try:
             t = fn(s)
             t = t[t["user_name"] == manager]
+            if ids is not None:
+                t = t[t["player_id"].astype(str).isin(ids)]
         except Exception:
             t = None
         if t is not None and len(t):
-            b = t.loc[t["total"].idxmax()]
+            # `points` is this manager's own points while rostering the player;
+            # `total` is the player's across every team that held them, so it
+            # both ranks wrong and overstates the figure here.
+            b = t.loc[t["points"].idxmax()]
             facts.append((label, _fact_player(
-                b["player_name"], b["position"], f"{b['total']:.0f} pts",
+                b["player_name"], b["position"], f"{b['points']:.0f} pts",
                 "while rostered")))
     if not facts:
         return ""
@@ -802,12 +1085,10 @@ def _game_log(s: Season, manager: str) -> str:
                     facts.append(("Coaching cost", "<span class='res l'>the optimal "
                                   "lineup would have won this</span>"))
         if not wp.empty:
-            order = {p: i for i, p in enumerate(metrics.POSITIONS)}
-            ws = wp.assign(_o=wp["position"].map(lambda x: order.get(str(x), 99)))
-            ws = ws.sort_values(["_o", "points"], ascending=[True, False])
+            ws = assign_slots(wp, s.slots)
             started = _mini_table(
-                [("Pos", False), ("Starter", False), ("Pts", True)],
-                [[(html.escape(str(x["position"])), False),
+                [("Slot", False), ("Starter", False), ("Pts", True)],
+                [[(html.escape(str(x["slot"])), False),
                   (f"<strong>{html.escape(str(x['player_name']))}</strong>", False),
                   (f"{float(x['points']):.1f}", True)] for _, x in ws.iterrows()])
             # …and what the best legal lineup from that roster would have been.
@@ -817,6 +1098,10 @@ def _game_log(s: Season, manager: str) -> str:
                 if len(ol):
                     opt_total = float(ol["points"].sum())
                     sids = set(wp["player_id"].astype(str))
+                    # Re-label the same chosen players through assign_slots so
+                    # both tables use one slot vocabulary and line up row for
+                    # row. The player set (and so the total) is untouched.
+                    ol = assign_slots(ol.drop(columns="slot"), s.slots)
                     opt_tbl = _mini_table(
                         [("Slot", False), ("Best available", False), ("Pts", True)],
                         [[(html.escape(str(x["slot"])), False),
@@ -888,7 +1173,15 @@ def _position_mix(s: Season, manager: str) -> str:
 # Chart key -> (plot function, what it takes). The keys match the web app's
 # /chart/<key> endpoint, so the dashboard can render the same report sections as
 # lazy <img> tags while the standalone file bakes them in as base64 PNGs.
+#
+# The kinds are "season", "seasons", "playoff" and "season+manager" -- the last
+# takes (season, manager), which is why the app's /chart endpoint has to accept
+# and forward a `manager` param. A key added here without that endpoint entry
+# renders in the standalone file but 404s in the report tab.
 _CHART_FNS = {
+    "mgr_score_band": (plots.plot_mgr_score_band, "season+manager"),
+    "mgr_optimal": (plots.plot_mgr_optimal, "season+manager"),
+    "mgr_margins": (plots.plot_mgr_margins, "season+manager"),
     "standings": (plots.plot_standings, "season"),
     "power_rank": (plots.plot_power_rank, "season"),
     "allplay": (plots.plot_allplay, "season"),
@@ -910,6 +1203,25 @@ _CHART_FNS = {
 }
 
 
+def _chart_args(kind, s, seasons=None, playoffs=None, manager=None):
+    """What a chart of this kind is called with, or None if unavailable here.
+
+    A report that lacks a kind's input -- no career chain, no stored bracket for
+    this season, no manager scope -- gets None and drops the panel, matching the
+    best-effort contract everywhere else in the report.
+    """
+    if kind == "season":
+        return (s,)
+    if kind == "seasons":
+        return (seasons,) if seasons else None
+    if kind == "season+manager":
+        return (s, manager) if manager else None
+    if kind == "playoff":
+        p = (playoffs or {}).get(s.season)
+        return (p,) if p is not None else None
+    return None
+
+
 def report_parts(s: Season, seasons: dict | None = None,
                  playoffs: dict | None = None, manager: str | None = None) -> dict:
     """The report's content as data, so any surface can render it.
@@ -927,13 +1239,19 @@ def report_parts(s: Season, seasons: dict | None = None,
         # the ranking table (their rank, plus the best/worst team per category).
         sections = [
             ("Week by week", "Their season game by game — expand a week for its detail.",
-             _game_log(s, manager), []),
+             _game_log(s, manager),
+             [("mgr_score_band", "Weekly score against the league's range"),
+              ("mgr_optimal", "Started vs optimal, and the running cost of the bench"),
+              ("mgr_margins", "Margin by week — blowouts vs coin flips")]),
             ("Where the points came from", "Started points by position for this "
              "roster, and how each ranks in the league.", _position_mix(s, manager), []),
             ("Season standouts", "Who carried the team, and the best moves off the "
              "waiver wire and in trades.", _mgr_standouts(s, manager), []),
             ("Draft class", "How their draft paid off — steals and reaches.",
              _mgr_draft(s, manager), []),
+            ("Trades & the waiver wire", "Every deal they made and every player "
+             "they picked up — expand one for what it returned.",
+             _mgr_transactions(s, manager), []),
             ("Rivalries", "Their record against the rest of the league — expand one "
              "for every meeting.", _mgr_rivalry(s, manager, seasons), []),
             ("Splits & awards", "The season sliced a few ways.",
@@ -1027,18 +1345,22 @@ def season_report(s: Season, path: str, seasons: dict | None = None,
 
     rendered = []
     for sec in parts["sections"]:
+        # A section may carry a table, charts, or both (the manager report's
+        # week-by-week is a game log followed by its charts), so never treat
+        # `html` as excluding `charts`.
         if sec["html"]:
             rendered.append(_html_section(sec["title"], sec["blurb"], sec["html"]))
-            continue
         figs = []
         for key, desc in sec["charts"]:
             fn, kind = _CHART_FNS.get(key, (None, None))
-            arg = (s if kind == "season" else seasons if kind == "seasons"
-                   else (playoffs or {}).get(s.season))
-            if fn is None or arg is None:
+            args = _chart_args(kind, s, seasons, playoffs, manager)
+            if fn is None or args is None:
                 continue
-            figs.append(_fig(fn, arg, _desc=desc))
-        rendered.append(_section(sec["title"], sec["blurb"], *figs))
+            figs.append(_fig(fn, *args, _desc=desc))
+        # Heading already emitted above if this section also had a table.
+        title = "" if sec["html"] else sec["title"]
+        blurb = "" if sec["html"] else sec["blurb"]
+        rendered.append(_section(title, blurb, *figs))
 
     body = "".join(sec for sec in rendered if sec)
     doc = _TEMPLATE.format(

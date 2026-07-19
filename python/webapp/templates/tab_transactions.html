@@ -1,0 +1,77 @@
+{# Transactions tab: the roster-building charts, then the deals themselves --
+   every trade kept intact as a deal, and the waiver wire by what it returned. #}
+<section class="grid">
+  {% for c in charts %}
+  <figure class="card chart">
+    <img src="/chart/{{ c }}?league={{ league }}&season={{ season }}&theme={{ theme }}&_={{ bust }}"
+         alt="{{ c }}" loading="lazy">
+  </figure>
+  {% endfor %}
+</section>
+
+<h2>Trades</h2>
+{% if trades %}
+<p class="hint">{{ n_deals }} trade{{ "" if n_deals == 1 else "s" }} in {{ season }}, one
+   row per team in each deal. <strong>Net</strong> is what the players a team received
+   scored <em>for them</em>, minus what the players they gave up scored for whoever got
+   them &mdash; so the two sides of a deal mirror each other, and a three-way trade still
+   credits each player to the roster that actually took him.</p>
+<div class="card tablewrap">
+  <table>
+    <thead><tr>
+      <th class="n">Wk</th><th>Manager</th><th>With</th>
+      <th>Received</th><th>Gave up</th><th class="n">Net</th>
+    </tr></thead>
+    <tbody>
+    {% for r in trades %}
+      <tr>
+        <td class="n">{{ r.week }}</td>
+        <td>{{ r.user_name }}</td>
+        <td>{{ r["with"] }}</td>
+        <td>{{ r.received }}
+            <span class="q">{{ "%.0f"|format(r.got_pts) }} pts</span></td>
+        <td>{{ r.gave }}
+            <span class="q">{{ "%.0f"|format(r.gave_pts) }} pts</span></td>
+        <td class="n">
+          <span class="res {% if r.net > 0 %}w{% elif r.net < 0 %}l{% endif %}">
+            {{ "%+.0f"|format(r.net) }}</span></td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<p class="empty">No trades were made in {{ season }}.</p>
+{% endif %}
+
+<h2>Waiver wire</h2>
+{% if waivers %}
+<p class="hint">The {{ waivers | length }} best pickups of {{ season }} by what they
+   returned while rostered, out of {{ n_adds }} total. One row per manager per player &mdash;
+   <strong>&times;n</strong> marks someone picked up more than once. <strong>Starts</strong>
+   against weeks rostered separates a real contributor from a bench stash.</p>
+<div class="card tablewrap">
+  <table>
+    <thead><tr>
+      <th class="n">Wk</th><th>Manager</th><th>Player</th><th>Pos</th>
+      <th>Via</th><th class="n">Starts</th><th class="n">Pts</th>
+    </tr></thead>
+    <tbody>
+    {% for r in waivers %}
+      <tr>
+        <td class="n">{{ r.week }}</td>
+        <td>{{ r.user_name }}</td>
+        <td>{{ r.player_name }}{% if r.times > 1 %}
+            <span class="q">&times;{{ r.times }}</span>{% endif %}</td>
+        <td>{{ r.position }}</td>
+        <td><span class="q">{{ r.via }}</span></td>
+        <td class="n">{{ r.starts }}<span class="q"> of {{ r.weeks_rostered }}</span></td>
+        <td class="n">{{ "%.0f"|format(r.points) }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<p class="empty">No waiver or free-agent moves recorded in {{ season }}.</p>
+{% endif %}

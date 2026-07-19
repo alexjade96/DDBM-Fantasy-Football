@@ -220,10 +220,21 @@ SEASON_CHARTS = {
 }
 
 
+# Manager-scoped charts take (season, manager) instead of just a season. They
+# back the manager report's sections, so this registry must stay in step with
+# the "season+manager" entries in report._CHART_FNS.
+MANAGER_CHARTS = {
+    "mgr_score_band": plots.plot_mgr_score_band,
+    "mgr_optimal": plots.plot_mgr_optimal,
+    "mgr_margins": plots.plot_mgr_margins,
+}
+
+
 @app.get("/chart/{name}")
 def chart(name: str, league: str = DEFAULT_LEAGUE, season: str | None = None,
           matchup: str | None = None, scope: str = "title",
-          theme: str = "light", _: str | None = None):
+          theme: str = "light", manager: str | None = None,
+          _: str | None = None):
     d, s, key = pick(league, season)
     # Build + save under the lock, with the requested theme active, so the
     # structural palette and the saved facecolor can't be crossed by a
@@ -232,6 +243,10 @@ def chart(name: str, league: str = DEFAULT_LEAGUE, season: str | None = None,
         plots.set_chart_theme(theme)
         if name in SEASON_CHARTS:
             return png(SEASON_CHARTS[name](s))
+        if name in MANAGER_CHARTS:
+            # The chart draws its own "no data" panel for a manager this season
+            # doesn't have, so an unknown scope degrades instead of 500ing.
+            return png(MANAGER_CHARTS[name](s, manager or ""))
         if name == "career":
             return png(plots.plot_career(d["seasons"]))
         if name == "trajectory":
@@ -240,11 +255,23 @@ def chart(name: str, league: str = DEFAULT_LEAGUE, season: str | None = None,
             return png(plots.plot_loyalty(d["seasons"]))
         if name == "head_to_head":
             return png(plots.plot_head_to_head(d["seasons"]))
+        # Playoff analytics come in two spans. The bare keys follow the selected
+        # season (the Playoffs tab); the `_all` keys aggregate every stored
+        # bracket (the Career tab). Same functions either way -- they aggregate
+        # whatever brackets they are given, and _po_span labels the result -- so
+        # the span is chosen here, by which dict gets passed.
+        po = {key: d["playoffs"][key]} if key in d["playoffs"] else {}
         if name == "playoff_stats":
-            return png(plots.plot_playoff_stats(d["playoffs"], scope))
+            return png(plots.plot_playoff_stats(po, scope))
         if name == "playoff_players":
-            return png(plots.plot_playoff_players(d["playoffs"], scope=scope))
+            return png(plots.plot_playoff_players(po, scope=scope))
         if name == "clutch":
+            return png(plots.plot_clutch({key: d["seasons"][key]}, po, scope))
+        if name == "playoff_stats_all":
+            return png(plots.plot_playoff_stats(d["playoffs"], scope))
+        if name == "playoff_players_all":
+            return png(plots.plot_playoff_players(d["playoffs"], scope=scope))
+        if name == "clutch_all":
             return png(plots.plot_clutch(d["seasons"], d["playoffs"], scope))
         if name == "bracket":
             p = d["playoffs"].get(key)
@@ -351,12 +378,20 @@ def tab(name: str, request: Request, league: str = DEFAULT_LEAGUE,
         ctx["charts"] = ["position_scoring", "roster_counts", "roster_heatmap",
                          "starter_bench", "position_box"]
     elif name == "transactions":
+        # Charts, then the deals themselves: trades kept whole (one row per team
+        # in each) and the waiver wire ranked by what it actually returned.
         ctx["charts"] = ["manager_profile", "trade_performance", "waiver_performance"]
+        tl = metrics.trade_ledger(s)
+        wl = metrics.waiver_ledger(s, top_n=None)   # full list; sliced below
+        ctx["trades"] = tl.to_dict("records")
+        ctx["n_deals"] = int(tl["transaction_id"].nunique()) if len(tl) else 0
+        ctx["waivers"] = wl.head(30).to_dict("records")
+        ctx["n_adds"] = len(wl)
+        return tpl.TemplateResponse(request, "tab_transactions.html", ctx)
     elif name == "draft":
-        # Historical draft board (round x slot) + value/grade charts. A season
-        # rail lets past drafts be walked without leaving the tab.
+        # Draft board (round x slot) + value/grade charts for the selected
+        # season; the header's picker is the only season control.
         ctx["seasons"] = list(reversed(d["names"]))
-        ctx["draft_seasons"] = list(reversed(d["names"]))
         ctx["charts"] = ["draft_value", "draft_grades"]
         db = draft.draft_board(s)
         if db.empty:
@@ -382,6 +417,7 @@ def tab(name: str, request: Request, league: str = DEFAULT_LEAGUE,
             ctx.update({"slots": slots,
                         "slot_user": [slot_user.get(sl) for sl in slots],
                         "rounds": rounds})
+            ctx.update(draft.draft_extremes(s))
         return tpl.TemplateResponse(request, "tab_draft.html", ctx)
     elif name == "report":
         # The report rendered natively into the tab: its tables come straight from
@@ -400,17 +436,23 @@ def tab(name: str, request: Request, league: str = DEFAULT_LEAGUE,
         ctx["summary"] = summaries.summary_career(d["seasons"])
         ctx["charts"] = ["career", "trajectory", "head_to_head", "loyalty"]
         ctx["records"] = metrics.record_book(d["seasons"])
+        # The all-time postseason lives here, on the league's cross-season tab;
+        # the Playoffs tab shows only the season selected in the header.
+        if d["playoffs"]:
+            ctx["po_charts"] = ["playoff_stats_all", "playoff_players_all",
+                                "clutch_all"]
+            ctx["po_seasons"] = sorted(d["playoffs"])
+            ctx["po_stats"] = (sm.playoff_stats(d["playoffs"], "title")
+                               .to_dict("records"))
         mg = sm.league_accounts(d["seasons"])
         # NaN is TRUTHY in Jinja, so a missing avatar would sail through
         # `{% if m.avatar_url %}` and render src="nan". Hand the template None.
         mg = mg.astype(object).where(mg.notna(), None)
         ctx["managers"] = mg.to_dict("records")
     elif name == "playoffs":
-        # The season rail: every season of this league that HAS a stored bracket,
-        # so the postseasons can be walked without leaving the tab.
-        ctx["bracket_seasons"] = [n for n in d["names"] if n in d["playoffs"]]
-        # Walking to another season from in here must also move the header's
-        # season picker, or the two disagree about what is on screen.
+        # No season rail here: the header's season picker is the one control that
+        # chooses the season, and a second in-tab switcher let the postseason
+        # show 2022-2024 data while the rest of the page was on 2025.
         ctx["seasons"] = list(reversed(d["names"]))
         p = d["playoffs"].get(key)
         if p is None:
@@ -442,7 +484,8 @@ def tab(name: str, request: Request, league: str = DEFAULT_LEAGUE,
             "step": (i + 1) if i >= 0 else 0,
             "n_steps": len(ids),
             "summary": sm.playoff_summary(p).to_dict("records"),
-            "stats": sm.playoff_stats(d["playoffs"], scope).to_dict("records"),
+            # Scoped to this season, matching the charts beside it.
+            "stats": sm.playoff_stats({key: p}, scope).to_dict("records"),
             "rules": _grouped_rules(p.config.get("scoring_settings", {})),
             "n_rules": len(p.config.get("scoring_settings", {})),
         })
