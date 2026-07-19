@@ -44,12 +44,6 @@ input { width: 210px; font-family: ui-monospace, Consolas, monospace; font-size:
 button { cursor: pointer; background: var(--turf); border-color: var(--turf); color: #fff; font-weight: 600; }
 button:hover { filter: brightness(1.06); }
 button.ghost { background: var(--surface); color: var(--ink); border-color: var(--line); font-weight: 500; }
-/* The season-report export lives beside the load form, styled as a quiet button
-   so it reads as a secondary action next to the primary "Load". */
-.report-btn { align-self: flex-end; text-decoration: none; white-space: nowrap;
-  background: var(--surface); color: var(--ink); border: 1px solid var(--line);
-  border-radius: 8px; padding: 7px 12px; font-weight: 600; font-size: 13px; }
-.report-btn:hover { border-color: var(--turf); color: var(--turf); }
 :focus-visible { outline: 2px solid var(--turf); outline-offset: 2px; }
 
 .tabs {
@@ -120,6 +114,14 @@ table { width: 100%; border-collapse: collapse; font-size: 14px; }
 th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); white-space: nowrap; }
 th.n, td.n { text-align: right; }
 th { font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: var(--faint); font-weight: 600; }
+/* Sortable column headers (wired up in index.html). */
+#panel table:not(.nosort) thead th[role="button"] { cursor: pointer; user-select: none;
+  position: relative; padding-right: 18px; }
+#panel table:not(.nosort) thead th[role="button"]:hover { color: var(--ink); }
+#panel thead th.sort-asc::after, #panel thead th.sort-desc::after {
+  position: absolute; right: 6px; font-size: 9px; color: var(--turf); }
+#panel thead th.sort-asc::after { content: '\25B2'; }
+#panel thead th.sort-desc::after { content: '\25BC'; }
 tbody tr:last-child td { border-bottom: 0; }
 .chip { background: color-mix(in srgb, var(--gold) 22%, transparent); border-radius: 20px;
         padding: 1px 8px; font-weight: 600; }
@@ -189,6 +191,136 @@ details summary { cursor: pointer; font-weight: 600; }
              color: var(--faint); }
 .rule .n { font-variant-numeric: tabular-nums; font-weight: 600; white-space: nowrap;
            min-width: 8.5em; text-align: right; }
+
+/* Season-report tab. The report's section HTML is built by sleepermetrics
+   (report.py) and dropped in as-is, so its class names are styled here against
+   the dashboard's own tokens -- scoped to .reportpanel so nothing leaks out. */
+.rail .dl { margin-left: auto; text-decoration: none; font-size: 12px; font-weight: 600;
+  padding: 4px 12px; border-radius: 20px; border: 1px solid var(--line); color: var(--muted); }
+.rail .dl:hover { border-color: var(--turf); color: var(--turf); }
+.reportpanel .eyebrow { text-transform: uppercase; letter-spacing: .12em; font-size: 11px;
+  font-weight: 700; color: var(--turf); margin: 0; }
+/* The report's own title keeps natural case (the site's h2 is an uppercase
+   section label; a manager's name shouldn't be shouted). */
+.reportpanel .rtitle { font-size: clamp(22px, 3vw, 30px); margin: 2px 0 0;
+  border: 0; padding: 0; letter-spacing: -.01em; text-transform: none;
+  color: var(--ink); font-weight: 700; }
+.reportpanel h2 { font-size: 17px; margin: 30px 0 2px; padding-top: 18px;
+  border-top: 1px solid var(--line); }
+.reportpanel .stats { margin: 18px 0; }
+.reportpanel .stat .sub { font-size: 12px; color: var(--muted); }
+.reportpanel .narrative { border-left: 3px solid var(--turf); padding: 4px 18px; }
+.reportpanel .narrative ul { margin: 10px 0; padding-left: 20px; }
+.reportpanel .narrative li, .reportpanel .narrative p { margin: 6px 0; }
+.reportpanel figcaption { color: var(--faint); font-size: 12px; margin-top: 6px; }
+.reportpanel p.blurb { color: var(--muted); font-size: 13px; margin: 0 0 10px; }
+
+/* Report tables (report.py emits table.teams). */
+.reportpanel table.teams { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+.reportpanel table.teams th, .reportpanel table.teams td { padding: 9px 12px;
+  text-align: left; border-bottom: 1px solid var(--line); white-space: nowrap; }
+.reportpanel table.teams th { font-size: 11px; text-transform: uppercase;
+  letter-spacing: .05em; color: var(--faint); font-weight: 700; }
+.reportpanel table.teams td.n, .reportpanel table.teams th.n { text-align: right;
+  font-variant-numeric: tabular-nums; }
+.reportpanel table.teams td.rank { color: var(--faint); font-variant-numeric: tabular-nums; }
+.reportpanel table.teams td.name { font-weight: 600; }
+.reportpanel table.teams tbody tr:last-child td { border-bottom: 0; }
+/* Stacked blocks inside one card (rank view, standouts, draft, postseason) need
+   real space between them. Margins only -- padding/border on a collapsed table
+   fights its own cell borders. */
+.reportpanel .tablewrap table + table,
+.reportpanel .tablewrap table + .drilltable,
+.reportpanel .tablewrap table + .dt-facts,
+.reportpanel .tablewrap .drilltable + table,
+.reportpanel .tablewrap .drilltable + .dt-facts,
+.reportpanel .tablewrap .dt-facts + table,
+.reportpanel .tablewrap .dt-facts + .drilltable { margin-top: 26px; }
+/* Blurbs lead into their block, and get air when they follow one. */
+.reportpanel .tablewrap p.blurb { margin: 2px 2px 14px; }
+.reportpanel .tablewrap table + p.blurb,
+.reportpanel .tablewrap .drilltable + p.blurb { margin-top: 20px; }
+.reportpanel table.teams.lead tbody tr:first-child td {
+  background: color-mix(in srgb, var(--gold) 12%, transparent); }
+.reportpanel table.teams tbody tr.me td {
+  background: color-mix(in srgb, var(--turf) 14%, transparent);
+  font-weight: 650; box-shadow: inset 3px 0 0 var(--turf); }
+.reportpanel table.teams tr.gap td { text-align: center; color: var(--faint); padding: 4px 12px; }
+.reportpanel .res { font-weight: 700; }
+.reportpanel .res.w { color: #2f9e44; } .reportpanel .res.l { color: #e03131; }
+.reportpanel .q { color: var(--muted); font-size: 12.5px; font-variant-numeric: tabular-nums; }
+
+/* Row-level drill-downs (native <details>, no script). */
+.reportpanel .drilltable { border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+.reportpanel .dt-head, .reportpanel .dt-row > summary { display: grid;
+  grid-template-columns: var(--cols); gap: 10px; padding: 9px 30px 9px 12px; align-items: center; }
+.reportpanel .dt-head { font-size: 11px; text-transform: uppercase; letter-spacing: .05em;
+  color: var(--faint); font-weight: 700; }
+.reportpanel .dt-row { border-top: 1px solid var(--line); }
+.reportpanel .dt-row > summary { position: relative; cursor: pointer; list-style: none;
+  font-size: 13.5px; }
+.reportpanel .dt-row > summary::-webkit-details-marker { display: none; }
+.reportpanel .dt-row > summary::after { content: '\25B8'; position: absolute; right: 12px;
+  top: 50%; transform: translateY(-50%); color: var(--faint); font-size: 10px; }
+.reportpanel .dt-row[open] > summary::after { content: '\25BE'; }
+.reportpanel .dt-row[open] > summary { background: color-mix(in srgb, var(--turf) 8%, transparent); }
+.reportpanel .dt-num { text-align: right; font-variant-numeric: tabular-nums; }
+/* The expanded body reads as a nested panel: inset tint, its own breathing room. */
+.reportpanel .dt-detail { padding: 15px 16px 17px; font-size: 12.5px; color: var(--muted);
+  border-top: 1px solid var(--line); line-height: 1.6; white-space: normal;
+  background: color-mix(in srgb, var(--ink) 3.5%, transparent); overflow-x: auto; }
+.reportpanel .dt-detail strong { color: var(--ink); }
+
+/* Drill bodies are labelled fields / mini-tables, never a run-on sentence.
+   Values wrap rather than truncate, and the grid re-flows on narrow panels. */
+.reportpanel .dt-facts { display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(168px, 1fr)); gap: 18px 32px; }
+.reportpanel .fact { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.reportpanel .fl { font-size: 10px; text-transform: uppercase; letter-spacing: .07em;
+  color: var(--faint); font-weight: 700; line-height: 1.3; }
+.reportpanel .fv { font-size: 13.5px; color: var(--ink); line-height: 1.45;
+  white-space: normal; overflow-wrap: anywhere; }
+.reportpanel .fv .pos { color: var(--muted); font-size: 11px; font-weight: 600;
+  margin: 0 2px; }
+.reportpanel .fv .pts { font-variant-numeric: tabular-nums; font-weight: 700; }
+.reportpanel table.dt-games { border-collapse: collapse; font-size: 12.5px; width: auto;
+  margin-top: 2px; }
+/* A drill body can hold facts and then mini-tables -- keep them apart. */
+.reportpanel .dt-detail .dt-facts + table.dt-games,
+.reportpanel .dt-detail .dt-facts + .dt-tables { margin-top: 16px; }
+/* Started vs optimal sit side by side when there's room. */
+.reportpanel .dt-tables { display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 18px 36px; }
+.reportpanel .dt-block { min-width: 0; }
+.reportpanel .dt-sub { font-size: 10px; text-transform: uppercase; letter-spacing: .07em;
+  color: var(--turf); font-weight: 700; margin-bottom: 6px; }
+.reportpanel table.dt-games th { font-size: 10px; text-transform: uppercase;
+  letter-spacing: .06em; color: var(--faint); font-weight: 700; text-align: left;
+  padding: 0 26px 8px 0; border: 0; }
+.reportpanel table.dt-games td { padding: 7px 26px 7px 0; white-space: nowrap;
+  border: 0; color: var(--ink); }
+.reportpanel table.dt-games tbody tr:not(:last-child) td {
+  border-bottom: 1px solid var(--line); }
+.reportpanel table.dt-games th:last-child, .reportpanel table.dt-games td:last-child {
+  padding-right: 0; }
+.reportpanel table.dt-games td.n, .reportpanel table.dt-games th.n { text-align: right;
+  font-variant-numeric: tabular-nums; }
+
+/* Rank badges: top third good, bottom third bad. */
+.reportpanel .rankpill { display: inline-block; padding: 1px 9px; border-radius: 20px;
+  font-size: 11.5px; font-weight: 700; font-variant-numeric: tabular-nums;
+  border: 1px solid transparent; }
+.reportpanel .rankpill .of { font-weight: 500; opacity: .65; }
+.reportpanel .rankpill.good { color: #37b24d; background: rgba(47,158,68,.16);
+  border-color: rgba(47,158,68,.4); }
+.reportpanel .rankpill.mid { color: var(--muted);
+  background: color-mix(in srgb, var(--ink) 8%, transparent); border-color: var(--line); }
+.reportpanel .rankpill.bad { color: #ff6b6b; background: rgba(224,49,49,.15);
+  border-color: rgba(224,49,49,.38); }
+.reportpanel table.teams td.val { font-weight: 700; color: var(--ink); font-size: 14.5px; }
+.reportpanel .peer { color: var(--muted); }
+.reportpanel .peer.is-me { color: var(--ink); font-weight: 700;
+  box-shadow: inset 0 -2px 0 var(--turf); }
 
 /* Draft board: a round x slot grid; each pick colour-marked by position. */
 .draftboard { font-size: 12px; }

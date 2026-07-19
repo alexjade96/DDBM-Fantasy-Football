@@ -4,7 +4,8 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Sleeper League Analytics</title>
-  <link rel="stylesheet" href="/static/style.css">
+  {# ?v=<mtime> so a CSS edit is never served from a stale browser cache #}
+  <link rel="stylesheet" href="/static/style.css?v={{ asset_v }}">
   <script src="https://unpkg.com/htmx.org@1.9.12" defer></script>
 </head>
 <body hx-indicator="#bar">
@@ -44,7 +45,73 @@
         img.addEventListener('error', done);   // a failed chart shouldn't shimmer forever
       });
     }
+    // Click a column header to sort any panel table. Cells are ranked by their
+    // first embedded number when the column has one ("#3 of 10" -> 3, "9-8" -> 9,
+    // "+41.4" -> 41.4), else alphabetically -- so ranks, records, scores and
+    // names all sort sensibly without per-table configuration. Opt out with
+    // class="nosort" (the draft board is a grid, not a ranking).
+    function sortValue(td) {
+      var t = (td.textContent || '').trim().replace(/,/g, '');
+      var m = t.match(/-?\d+(\.\d+)?/);
+      return m ? parseFloat(m[0]) : null;
+    }
+    function makeSortable(table) {
+      if (table.dataset.sortable || table.closest('.nosort')) return;
+      table.dataset.sortable = '1';
+      var head = table.tHead && table.tHead.rows[0];
+      var body = table.tBodies[0];
+      if (!head || !body || body.rows.length < 2) return;
+      Array.prototype.forEach.call(head.cells, function (th, i) {
+        th.tabIndex = 0;
+        th.setAttribute('role', 'button');
+        var run = function () {
+          var rows = Array.prototype.slice.call(body.rows);
+          // Rows that aren't data (the neighbourhood table's "⋯" gap) stay put.
+          if (rows.some(function (r) { return r.cells.length <= 1; })) return;
+          var asc = th.dataset.dir !== 'asc';
+          Array.prototype.forEach.call(head.cells, function (o) {
+            delete o.dataset.dir; o.classList.remove('sort-asc', 'sort-desc');
+          });
+          th.dataset.dir = asc ? 'asc' : 'desc';
+          th.classList.add(asc ? 'sort-asc' : 'sort-desc');
+          var numeric = rows.every(function (r) {
+            return !r.cells[i] || sortValue(r.cells[i]) !== null;
+          });
+          rows.sort(function (a, b) {
+            var x = a.cells[i], y = b.cells[i];
+            if (!x || !y) return 0;
+            var d = numeric
+              ? sortValue(x) - sortValue(y)
+              : x.textContent.trim().localeCompare(y.textContent.trim());
+            return asc ? d : -d;
+          });
+          rows.forEach(function (r) { body.appendChild(r); });
+        };
+        th.addEventListener('click', run);
+        th.addEventListener('keydown', function (e) {
+          if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); run(); }
+        });
+      });
+    }
+    function prepTables() {
+      document.querySelectorAll('#panel table').forEach(makeSortable);
+    }
     document.body.addEventListener('htmx:afterSwap', prepCharts);
+    document.body.addEventListener('htmx:afterSwap', prepTables);
+
+    // The Season-report tab hosts the report in a same-origin iframe. Size it to
+    // its content (no inner scrollbar) and keep it sized as the report's own
+    // drill-downs expand/collapse, via a ResizeObserver on the framed document.
+    function sizeReportFrame(f) {
+      try {
+        var doc = f.contentWindow.document;
+        var fit = function () { f.style.height = doc.body.scrollHeight + 'px'; };
+        fit();
+        if (f._ro) f._ro.disconnect();
+        f._ro = new ResizeObserver(fit);
+        f._ro.observe(doc.body);
+      } catch (e) { /* cross-navigation timing; the next load re-runs this */ }
+    }
   </script>
 
   <header class="top">
@@ -73,13 +140,6 @@
       <button type="submit">Load</button>
     </form>
 
-    <!-- The full season report, shown as its own rendered page (with a Download
-         button on it). Opens in a new tab so the dashboard stays put; drawn on
-         demand, so it takes a few seconds. -->
-    <a class="report-btn" id="report-link" href="/report?league={{ league }}"
-       target="_blank" rel="noopener"
-       title="Open the full season report"
-       onclick="this.href='/report?league='+encodeURIComponent(document.getElementById('league').value)+'&season='+encodeURIComponent(document.getElementById('season').value)">View season report</a>
   </header>
 
   <nav class="tabs" role="tablist"

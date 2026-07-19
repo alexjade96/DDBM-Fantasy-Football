@@ -51,6 +51,10 @@ def make_season(season="2025", champ_roster=1):
     user_map = pd.DataFrame({
         "roster_id": [1, 2, 3], "user_id": ["1", "2", "3"],
         "user_name": ["Al", "Bo", "Cy"]})
+    # Seed the draft cache empty so the manager report's draft section never
+    # reaches for the network in tests (the suite stays offline).
+    from sleepermetrics import draft as _draft
+    _draft._cache[f"0:{season}"] = _draft._empty()
     return Season(season, "Test League", "0", 2, {},
                   team_wk, pd.DataFrame(), lineup, standings, user_map)
 

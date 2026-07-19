@@ -27,6 +27,8 @@ matplotlib.use("Agg")
 
 import sleepermetrics as sm  # noqa: E402
 from sleepermetrics import draft, metrics, plots, scoring, summaries  # noqa: E402
+# Aliased: the `/report` route function below would otherwise shadow the module.
+from sleepermetrics import report as sm_report  # noqa: E402
 
 BASE = Path(__file__).resolve().parent
 ROOT = BASE.parent.parent                       # repo root
@@ -37,6 +39,19 @@ TTL = int(os.environ.get("SLEEPERMETRICS_TTL", "900"))   # cache seasons 15 min
 app = FastAPI(title="Sleeper League Analytics")
 app.mount("/static", StaticFiles(directory=BASE / "static"), name="static")
 tpl = Jinja2Templates(directory=str(BASE / "templates"))
+
+
+def asset_v() -> str:
+    """Cache-busting stamp for style.css.
+
+    Browsers hold onto the stylesheet hard, and a stale one silently strips the
+    report's layout (a grid degrades to run-together text). Stamping the mtime
+    onto the URL means a CSS edit is always picked up.
+    """
+    try:
+        return str(int((BASE / "static" / "style.css").stat().st_mtime))
+    except OSError:
+        return "0"
 
 
 def _md(text: str):
@@ -131,6 +146,7 @@ TABS = [
     ("coaching", "Coaching & scoring"), ("roster", "Roster & positions"),
     ("transactions", "Transactions"), ("draft", "Draft"),
     ("playoffs", "Playoffs"), ("career", "Career"),
+    ("report", "Season report"),
 ]
 
 # --- cache ----------------------------------------------------------------
@@ -245,7 +261,7 @@ def chart(name: str, league: str = DEFAULT_LEAGUE, season: str | None = None,
 def index(request: Request, league: str = DEFAULT_LEAGUE):
     d = league_data(league)
     return tpl.TemplateResponse(request, "index.html", {
-        "tabs": TABS, "league": league,
+        "tabs": TABS, "league": league, "asset_v": asset_v(),
         "seasons": list(reversed(d["names"])), "season": d["names"][-1],
         "league_name": d["seasons"][d["names"][-1]].name,
     })
@@ -279,7 +295,7 @@ def load(request: Request, league: str = DEFAULT_LEAGUE, season: str | None = No
 def tab(name: str, request: Request, league: str = DEFAULT_LEAGUE,
         season: str | None = None, refresh: int = 0, scope: str = "title",
         matchup: str | None = None, theme: str = "light",
-        week: str | None = None):
+        week: str | None = None, manager: str | None = None):
     if refresh:
         scoring.clear_stats_cache()      # a live week must not serve stale points
     try:
@@ -367,6 +383,19 @@ def tab(name: str, request: Request, league: str = DEFAULT_LEAGUE,
                         "slot_user": [slot_user.get(sl) for sl in slots],
                         "rounds": rounds})
         return tpl.TemplateResponse(request, "tab_draft.html", ctx)
+    elif name == "report":
+        # The report rendered natively into the tab: its tables come straight from
+        # report_parts, and its charts are ordinary /chart <img> so they stream in
+        # with the same skeletons and follow the dashboard theme (the standalone
+        # download bakes the same sections as embedded PNGs instead).
+        mgr = manager or None
+        if mgr and not (s.standings["user_name"] == mgr).any():
+            mgr = None                      # scope doesn't exist in this season
+        ctx.update(sm_report.report_parts(s, d["seasons"], d["playoffs"], mgr))
+        ctx["manager"] = mgr
+        ctx["managers"] = list(
+            s.standings.sort_values("final_position")["user_name"])
+        return tpl.TemplateResponse(request, "tab_report.html", ctx)
     elif name == "career":
         ctx["summary"] = summaries.summary_career(d["seasons"])
         ctx["charts"] = ["career", "trajectory", "head_to_head", "loyalty"]
@@ -424,7 +453,7 @@ def tab(name: str, request: Request, league: str = DEFAULT_LEAGUE,
     return tpl.TemplateResponse(request, "tab_charts.html", ctx)
 
 
-def _report_html(d, s, key) -> str:
+def _report_html(d, s, key, manager: str | None = None) -> str:
     """Generate the season report and return its HTML (drawn on demand)."""
     import os
     import tempfile
@@ -437,14 +466,16 @@ def _report_html(d, s, key) -> str:
         # request from leaving the global palette dark under us.
         with _render_lock:
             plots.set_chart_theme("light")
-            sm.season_report(s, tmp.name, seasons=d["seasons"], playoffs=d["playoffs"])
+            sm.season_report(s, tmp.name, seasons=d["seasons"], playoffs=d["playoffs"],
+                             manager=manager)
         with open(tmp.name, encoding="utf-8") as fh:
             return fh.read()
     finally:
         os.unlink(tmp.name)
 
 
-def _report_loader(league: str, season: str | None) -> HTMLResponse:
+def _report_loader(league: str, season: str | None,
+                   manager: str | None = None) -> HTMLResponse:
     """A fast, styled 'building…' page that then navigates to the real render.
 
     The report draws ~19 charts and takes a few seconds, which otherwise shows
@@ -457,6 +488,8 @@ def _report_loader(league: str, season: str | None) -> HTMLResponse:
     q = f"league={quote(league)}&render=1"
     if season:
         q += f"&season={quote(season)}"
+    if manager:
+        q += f"&manager={quote(manager)}"
     return HTMLResponse(f"""<!doctype html><html lang="en"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Building season report…</title>
@@ -487,36 +520,69 @@ def _report_loader(league: str, season: str | None) -> HTMLResponse:
 
 @app.get("/report")
 def report(league: str = DEFAULT_LEAGUE, season: str | None = None,
-           download: int = 0, render: int = 0):
+           download: int = 0, render: int = 0, manager: str | None = None):
     """The season report, displayed inline as a page by default.
 
     The primary action is to *show* the report; `download=1` returns the same
-    self-contained file as an attachment instead. Rendered on demand (it draws
-    ~19 charts), so the first hit returns a loader (`render=0`) that navigates
-    to the real render, keeping a spinner on screen during the wait.
+    self-contained file as an attachment instead. `manager` scopes the report to
+    one team. Rendered on demand (it draws ~19 charts), so the first hit returns
+    a loader (`render=0`) that navigates to the real render, keeping a spinner on
+    screen during the wait.
     """
+    import html as _html
     from urllib.parse import quote
+    manager = manager or None
     if not download and not render:
-        return _report_loader(league, season)
+        return _report_loader(league, season, manager)
     d, s, key = pick(league, season)
-    doc = _report_html(d, s, key)
+    # A manager the current season doesn't have (e.g. after switching season)
+    # falls back to the whole-league report rather than erroring.
+    if manager and not (s.standings["user_name"] == manager).any():
+        manager = None
+    doc = _report_html(d, s, key, manager)
+    base = f"/report?league={quote(league)}&season={quote(key)}"
     if download:
-        fname = f"{s.name}_{key}_report.html".replace(" ", "_")
+        who = f"_{manager}" if manager else ""
+        fname = f"{s.name}_{key}{who}_report.html".replace(" ", "_")
         return Response(doc, media_type="text/html", headers={
             "Content-Disposition": f'attachment; filename="{fname}"'})
-    # Inline view: float a Download button over the report (styled with the
-    # report's own --accent token so it adapts to its light/dark theme). The
-    # button links back to download=1, which regenerates the pristine file --
-    # the on-screen toolbar never ends up in the saved copy.
-    dl = f"/report?league={quote(league)}&season={quote(key)}&download=1"
+    # Inline view: a sticky manager-scope tab strip across the top (matching the
+    # app's own tab/rail pattern), plus a Download button, styled with the
+    # report's own tokens so it adapts to light/dark. Download links back to
+    # download=1, which regenerates the pristine file, so this bar never ends up
+    # in the saved copy.
+    dl = base + (f"&manager={quote(manager)}" if manager else "") + "&download=1"
+
+    def _tab(href, label, active):
+        return f'<a href="{href}" class="mtab{" on" if active else ""}">{label}</a>'
+
+    tabs = [_tab(base, "Whole league", manager is None)]
+    for nm in s.standings.sort_values("final_position")["user_name"]:
+        tabs.append(_tab(f"{base}&manager={quote(str(nm))}",
+                         _html.escape(str(nm)), manager == nm))
     bar = (
-        '<div style="position:fixed;top:14px;right:16px;z-index:99999;'
-        'font-family:system-ui,-apple-system,sans-serif">'
-        f'<a href="{dl}" style="display:inline-flex;align-items:center;gap:6px;'
-        'background:var(--accent);color:#fff;text-decoration:none;font-weight:600;'
-        'font-size:13px;padding:8px 14px;border-radius:9px;'
-        'box-shadow:0 2px 10px rgba(0,0,0,.18)">&#8595; Download</a></div>')
-    return HTMLResponse(doc.replace("</body>", bar + "</body>"))
+        "<style>"
+        ".mbar{position:sticky;top:0;z-index:99999;display:flex;align-items:center;"
+        "gap:10px;background:var(--card);border-bottom:1px solid var(--line);"
+        "padding:8px 14px;font-family:system-ui,-apple-system,sans-serif;"
+        "box-shadow:0 1px 10px rgba(0,0,0,.07)}"
+        ".mbar .lbl{font-size:11px;font-weight:700;text-transform:uppercase;"
+        "letter-spacing:.06em;color:var(--faint)}"
+        ".mtabs{display:flex;gap:4px;overflow-x:auto;flex:1;scrollbar-width:thin}"
+        ".mtab{white-space:nowrap;text-decoration:none;color:var(--muted);"
+        "font-size:13px;font-weight:600;padding:7px 12px;border-radius:8px;"
+        "border:1px solid transparent}"
+        ".mtab:hover{color:var(--ink);background:color-mix(in srgb,var(--ink) 6%,transparent)}"
+        ".mtab.on{color:#fff;background:var(--accent);border-color:var(--accent)}"
+        ".mdl{white-space:nowrap;display:inline-flex;align-items:center;gap:6px;"
+        "background:var(--accent);color:#fff;text-decoration:none;font-weight:600;"
+        "font-size:13px;padding:8px 14px;border-radius:9px}"
+        "</style>"
+        '<nav class="mbar"><span class="lbl">Report</span>'
+        f'<div class="mtabs">{"".join(tabs)}</div>'
+        f'<a class="mdl" href="{dl}">&#8595; Download</a></nav>')
+    # Inject at the top of the flow so `position:sticky` anchors to the viewport.
+    return HTMLResponse(doc.replace('<div class="wrap">', bar + '<div class="wrap">', 1))
 
 
 @app.get("/health")

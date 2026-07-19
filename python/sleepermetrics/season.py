@@ -12,27 +12,39 @@ from .players import players
 POSITIONS = ["QB", "RB", "WR", "TE", "K", "DEF"]
 
 
-def optimal_points(df: pd.DataFrame, slots: dict) -> float:
-    """Best legal lineup points for one team-week given starter-slot counts."""
+def optimal_lineup(df: pd.DataFrame, slots: dict) -> pd.DataFrame:
+    """The best legal lineup for one team-week: the players picked, per slot.
+
+    Fills the fixed positions first, then the flex slots from what's left --
+    greedy by points, which is optimal because every flex is a superset of the
+    fixed positions it draws from. Rows carry the input's columns plus `slot`.
+    """
     d = df.dropna(subset=["position"]).sort_values("points", ascending=False)
     used: set = set()
-    total = 0.0
+    picks: list = []
 
-    def take(elig, n):
-        nonlocal total, used
+    def take(elig, n, label):
+        nonlocal used
         if not n:
             return
         avail = d[d["position"].isin(elig) & ~d["player_id"].isin(used)].head(int(n))
         used |= set(avail["player_id"])
-        total += float(avail["points"].sum())
+        for _, r in avail.iterrows():
+            picks.append({**r.to_dict(), "slot": label})
 
     for p in POSITIONS:
-        take([p], slots.get(p, 0))
-    take(["WR", "TE"], slots.get("REC_FLEX", 0))
-    take(["RB", "WR", "TE"], slots.get("FLEX", 0))
-    take(["RB", "WR", "TE"], slots.get("WRRB_FLEX", 0))
-    take(["QB", "RB", "WR", "TE"], slots.get("SUPER_FLEX", 0))
-    return total
+        take([p], slots.get(p, 0), p)
+    take(["WR", "TE"], slots.get("REC_FLEX", 0), "REC_FLEX")
+    take(["RB", "WR", "TE"], slots.get("FLEX", 0), "FLEX")
+    take(["RB", "WR", "TE"], slots.get("WRRB_FLEX", 0), "WRRB_FLEX")
+    take(["QB", "RB", "WR", "TE"], slots.get("SUPER_FLEX", 0), "SUPER_FLEX")
+    return pd.DataFrame(picks)
+
+
+def optimal_points(df: pd.DataFrame, slots: dict) -> float:
+    """Best legal lineup points for one team-week given starter-slot counts."""
+    lu = optimal_lineup(df, slots)
+    return float(lu["points"].sum()) if len(lu) else 0.0
 
 
 @dataclass

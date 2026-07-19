@@ -1,0 +1,58 @@
+{# Season report, rendered natively into the tab (no iframe). Tables come from
+   report_parts; charts are ordinary /chart <img> so they stream in lazily with
+   the shared skeleton and follow the dashboard theme. The Download button still
+   hands over the self-contained file. #}
+<nav class="rail" hx-target="#panel" hx-swap="innerHTML"
+     hx-include="#league, #season, #theme">
+  <span class="k">Scope</span>
+  <button class="year {% if not manager %}on{% endif %}"
+          hx-get="/tab/report">Whole league</button>
+  {% for m in managers %}
+  <button class="year {% if m == manager %}on{% endif %}"
+          hx-get="/tab/report?manager={{ m|urlencode }}">{{ m }}</button>
+  {% endfor %}
+  <a class="dl" target="_blank" rel="noopener"
+     href="/report?league={{ league }}&season={{ season }}{% if manager %}&manager={{ manager|urlencode }}{% endif %}&download=1"
+     title="Download the self-contained HTML report">&darr; Download</a>
+</nav>
+
+<div class="reportpanel">
+  <p class="eyebrow">{{ eyebrow }}</p>
+  <h2 class="rtitle">{{ heading_text }}</h2>
+  <p class="hint">{{ subhead }}</p>
+
+  <section class="stats">
+    {% for k, v, sub in tiles %}
+    <div class="stat {% if loop.first %}gold{% endif %}">
+      <span class="k">{{ k }}</span>
+      <span class="v">{{ v }}</span>
+      <span class="sub">{{ sub }}</span>
+    </div>
+    {% endfor %}
+  </section>
+
+  {# not class "lead" -- the report's ranked tables already use .teams.lead #}
+  <div class="card narrative">{{ narrative|safe }}</div>
+
+  <h2>{{ table_title }}</h2>
+  <p class="hint">{{ table_blurb }}</p>
+  <div class="card tablewrap">{{ table_html|safe }}</div>
+
+  {% for sec in sections %}
+  <h2>{{ sec.title }}</h2>
+  {% if sec.blurb %}<p class="hint">{{ sec.blurb }}</p>{% endif %}
+  {% if sec.html %}
+  <div class="card tablewrap">{{ sec.html|safe }}</div>
+  {% else %}
+  <section class="grid">
+    {% for key, desc in sec.charts %}
+    <figure class="card chart">
+      <img src="/chart/{{ key }}?league={{ league }}&season={{ season }}&theme={{ theme }}&_={{ bust }}"
+           alt="{{ desc }}" loading="lazy">
+      <figcaption>{{ desc }}</figcaption>
+    </figure>
+    {% endfor %}
+  </section>
+  {% endif %}
+  {% endfor %}
+</div>

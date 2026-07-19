@@ -117,6 +117,20 @@ def test_season_report_is_self_contained_html(tmp_path, season_obj):
     assert 'src="http' not in doc and "<script" not in doc
 
 
+def test_season_report_scopes_to_one_manager(tmp_path, season_obj):
+    from sleepermetrics import season_report
+    out = tmp_path / "mgr.html"
+    season_report(season_obj, str(out), seasons={"2025": season_obj}, manager="Al")
+    doc = out.read_text(encoding="utf-8")
+    assert "Manager Report" in doc              # header reframed for the manager
+    assert "class='me'" in doc                  # the manager's row is highlighted
+    assert "wins vs merit" in doc               # manager-scoped narrative
+    # An unknown manager falls back to the whole-league report, not an error.
+    out2 = tmp_path / "unknown.html"
+    season_report(season_obj, str(out2), manager="Nobody")
+    assert "Manager Report" not in out2.read_text(encoding="utf-8")
+
+
 def test_week_stats(season_obj):
     d = metrics.week_stats(season_obj, 2)
     assert len(d) == 3

@@ -1,0 +1,48 @@
+# Keep the build context small: the image only needs python/requirements.txt,
+# python/sleepermetrics, python/webapp, and playoffs/ (see Dockerfile). Anything
+# not COPYed just slows the context upload -- and secrets must never enter it.
+
+# VCS / CI / editor
+.git
+.github
+.vscode
+.idea
+*.code-workspace
+
+# The R instance and its analytics artifacts (the site is Python-only)
+R/
+results/
+*.Rproj
+.Rproj.user/
+.RData
+.RData*
+.Rhistory
+.Rhistory*
+*.rds
+sleeperPlayerData.rds
+
+# Python build/venv/cache cruft
+**/__pycache__/
+*.py[cod]
+python/venv/
+venv/
+.venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+*.egg-info/
+python/tests/
+
+# Secrets and local config -- never bake these into an image
+**/.env
+**/.env.*
+!**/*.env.example
+
+# Agent / scratch / docs not needed at runtime
+.claude/
+scratchpad/
+references.txt
+
+# OS junk
+.DS_Store
+Thumbs.db
