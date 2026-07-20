@@ -4,14 +4,6 @@
 </section>
 {% endif %}
 
-<section class="grid">
-  {% for c in charts %}
-  <figure class="card chart">
-    <img src="/chart/{{ c }}?league={{ league }}&season={{ season }}&theme={{ theme }}&_={{ bust }}"
-         alt="{{ c }}" loading="lazy">
-  </figure>
-  {% endfor %}
-</section>
 
 {% if records %}
 <h2>Record book</h2>
@@ -26,6 +18,15 @@
   {% endfor %}
 </section>
 {% endif %}
+
+<section class="grid">
+  {% for c in charts %}
+  <figure class="card chart">
+    <img src="/chart/{{ c }}?league={{ league }}&season={{ season }}&theme={{ theme }}&_={{ bust }}"
+         alt="{{ c }}" loading="lazy">
+  </figure>
+  {% endfor %}
+</section>
 
 {% if po_charts %}
 <h2>Postseason, all time</h2>

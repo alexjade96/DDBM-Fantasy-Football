@@ -54,6 +54,22 @@ def asset_v() -> str:
         return "0"
 
 
+@app.middleware("http")
+async def _stamp_asset_version(request: Request, call_next):
+    """Tell an already-open page which stylesheet build the server is on.
+
+    `?v=<mtime>` only helps on a FULL page load, and this is an htmx app: a tab
+    click swaps #panel and never re-reads the <link> in <head>. So a page left
+    open across a CSS edit keeps serving the old stylesheet indefinitely, and
+    markup relying on a new rule renders unstyled -- grid rows collapse to
+    inline spans separated by a single space. The client compares this header on
+    every swap and re-points the link when it differs.
+    """
+    resp = await call_next(request)
+    resp.headers["X-Asset-V"] = asset_v()
+    return resp
+
+
 def _md(text: str):
     """Render the summaries' small markdown subset (###, -, **bold**, `code`).
 
@@ -373,18 +389,33 @@ def tab(name: str, request: Request, league: str = DEFAULT_LEAGUE,
         })
         return tpl.TemplateResponse(request, "tab_weekly.html", ctx)
     elif name == "coaching":
+        # Charts, then the decisions behind them: per-manager lineup weeks and
+        # the individual bench calls that cost the most.
         ctx["charts"] = ["efficiency", "consistency", "pf_pa", "boom_bust"]
+        ctx["standouts"] = metrics.coaching_standouts(s)
+        ctx["coaching"] = metrics.coaching_detail(s)
+        ctx["regrets"] = metrics.bench_regrets(s)
+        return tpl.TemplateResponse(request, "tab_coaching.html", ctx)
     elif name == "roster":
+        # Charts, then the rosters themselves: per manager and per week, each
+        # row expanding into its detail.
         ctx["charts"] = ["position_scoring", "roster_counts", "roster_heatmap",
                          "starter_bench", "position_box"]
+        ctx["standouts"] = metrics.roster_standouts(s)
+        ctx["rosters"] = metrics.roster_detail(s)
+        ctx["weeks"] = metrics.roster_weeks(s)
+        return tpl.TemplateResponse(request, "tab_roster.html", ctx)
     elif name == "transactions":
         # Charts, then the deals themselves: trades kept whole (one row per team
         # in each) and the waiver wire ranked by what it actually returned.
         ctx["charts"] = ["manager_profile", "trade_performance", "waiver_performance"]
-        tl = metrics.trade_ledger(s)
+        # One card per deal, not one row per team: the ledger's mirror-image
+        # rows read as duplicates and print every player's name twice.
+        ctx["standouts"] = metrics.transaction_standouts(s)
+        deals = metrics.trade_deals(s)
         wl = metrics.waiver_ledger(s, top_n=None)   # full list; sliced below
-        ctx["trades"] = tl.to_dict("records")
-        ctx["n_deals"] = int(tl["transaction_id"].nunique()) if len(tl) else 0
+        ctx["deals"] = deals
+        ctx["n_deals"] = len(deals)
         ctx["waivers"] = wl.head(30).to_dict("records")
         ctx["n_adds"] = len(wl)
         return tpl.TemplateResponse(request, "tab_transactions.html", ctx)

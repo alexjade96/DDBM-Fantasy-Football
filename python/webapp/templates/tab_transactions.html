@@ -1,5 +1,20 @@
 {# Transactions tab: the roster-building charts, then the deals themselves --
    every trade kept intact as a deal, and the waiver wire by what it returned. #}
+{% if standouts %}
+<h2>Transaction standouts</h2>
+<p class="hint">Who dealt, who worked the wire, and what it returned &mdash; the season&rsquo;s
+   roster moves at a glance before the deal-by-deal detail below.</p>
+<section class="stats">
+  {% for t in standouts %}
+  <div class="stat {% if loop.index0 == 0 %}gold{% endif %}">
+    <span class="k">{{ t.label }}</span>
+    <span class="v">{{ t.value }}</span>
+    <span class="sub">{{ t.holder }}{% if t.detail %} · {{ t.detail }}{% endif %}</span>
+  </div>
+  {% endfor %}
+</section>
+{% endif %}
+
 <section class="grid">
   {% for c in charts %}
   <figure class="card chart">
@@ -10,35 +25,43 @@
 </section>
 
 <h2>Trades</h2>
-{% if trades %}
+{% if deals %}
 <p class="hint">{{ n_deals }} trade{{ "" if n_deals == 1 else "s" }} in {{ season }}, one
-   row per team in each deal. <strong>Net</strong> is what the players a team received
-   scored <em>for them</em>, minus what the players they gave up scored for whoever got
-   them &mdash; so the two sides of a deal mirror each other, and a three-way trade still
-   credits each player to the roster that actually took him.</p>
-<div class="card tablewrap">
-  <table>
-    <thead><tr>
-      <th class="n">Wk</th><th>Manager</th><th>With</th>
-      <th>Received</th><th>Gave up</th><th class="n">Net</th>
-    </tr></thead>
-    <tbody>
-    {% for r in trades %}
-      <tr>
-        <td class="n">{{ r.week }}</td>
-        <td>{{ r.user_name }}</td>
-        <td>{{ r["with"] }}</td>
-        <td>{{ r.received }}
-            <span class="q">{{ "%.0f"|format(r.got_pts) }} pts</span></td>
-        <td>{{ r.gave }}
-            <span class="q">{{ "%.0f"|format(r.gave_pts) }} pts</span></td>
-        <td class="n">
-          <span class="res {% if r.net > 0 %}w{% elif r.net < 0 %}l{% endif %}">
-            {{ "%+.0f"|format(r.net) }}</span></td>
-      </tr>
-    {% endfor %}
-    </tbody>
-  </table>
+   card per deal. Each side lists only what that team <strong>received</strong>, so every
+   player appears once, under whoever got him. <strong>Net</strong> is what those players
+   went on to score <em>for them</em> minus what they gave up scored for whoever took it
+   &mdash; a deal's nets always sum to zero, which is what makes a three-way trade add up.</p>
+<div class="deals">
+  {% for d in deals %}
+  <article class="deal">
+    <header>
+      <span class="wk">Week {{ d.week }}</span>
+      {% if d.n_teams > 2 %}<span class="tag">{{ d.n_teams }}-team</span>{% endif %}
+      {% if d.winner %}
+      <span class="verdict"><b>{{ d.winner }}</b> won it by {{ "%.0f"|format(d.margin) }}</span>
+      {% else %}
+      <span class="verdict even">a wash</span>
+      {% endif %}
+    </header>
+    <div class="sides">
+      {% for sd in d.sides %}
+      <div class="side {% if sd.net > 0 %}up{% elif sd.net < 0 %}down{% endif %}">
+        <div class="who">
+          <span>{{ sd.user_name }}</span>
+          <span class="res {% if sd.net > 0 %}w{% elif sd.net < 0 %}l{% endif %}">{{ "%+.0f"|format(sd.net) }}</span>
+        </div>
+        <div class="got">
+          {%- if sd.received and sd.received != "—" -%}
+            {{ sd.received }} <span class="q">{{ "%.0f"|format(sd.got_pts) }} pts</span>
+          {%- else -%}
+            <span class="q">no players &mdash; picks or FAAB only</span>
+          {%- endif -%}
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+  </article>
+  {% endfor %}
 </div>
 {% else %}
 <p class="empty">No trades were made in {{ season }}.</p>

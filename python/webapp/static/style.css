@@ -255,71 +255,79 @@ details summary { cursor: pointer; font-weight: 600; }
 .q { color: var(--muted); font-size: 12.5px; font-variant-numeric: tabular-nums; }
 
 /* Row-level drill-downs (native <details>, no script). */
-.reportpanel .drilltable { border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
-.reportpanel .dt-head, .reportpanel .dt-row > summary { display: grid;
+/* Promoted out of .reportpanel: the Roster and other tabs reuse this drill
+   markup, and a scoped rule leaves it silently unstyled there. */
+.drilltable { border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+.dt-head, .dt-row > summary { display: grid;
   grid-template-columns: var(--cols); gap: 10px; padding: 9px 30px 9px 12px; align-items: center; }
-.reportpanel .dt-head { font-size: 11px; text-transform: uppercase; letter-spacing: .05em;
+/* Grid items default to min-width:auto, so one long value (a player name, a
+   manager name) pushes its column past the minmax() minimum and squeezes every
+   other column. Let cells shrink, and ellipsis the overflow rather than wrap a
+   summary row onto two lines. */
+.dt-head > *, .dt-row > summary > * { min-width: 0; overflow: hidden;
+  text-overflow: ellipsis; white-space: nowrap; }
+.dt-head { font-size: 11px; text-transform: uppercase; letter-spacing: .05em;
   color: var(--faint); font-weight: 700; }
-.reportpanel .dt-row { border-top: 1px solid var(--line); }
-.reportpanel .dt-row > summary { position: relative; cursor: pointer; list-style: none;
+.dt-row { border-top: 1px solid var(--line); }
+.dt-row > summary { position: relative; cursor: pointer; list-style: none;
   font-size: 13.5px; }
-.reportpanel .dt-row > summary::-webkit-details-marker { display: none; }
-.reportpanel .dt-row > summary::after { content: '\25B8'; position: absolute; right: 12px;
+.dt-row > summary::-webkit-details-marker { display: none; }
+.dt-row > summary::after { content: '\25B8'; position: absolute; right: 12px;
   top: 50%; transform: translateY(-50%); color: var(--faint); font-size: 10px; }
-.reportpanel .dt-row[open] > summary::after { content: '\25BE'; }
-.reportpanel .dt-row[open] > summary { background: color-mix(in srgb, var(--turf) 8%, transparent); }
-.reportpanel .dt-num { text-align: right; font-variant-numeric: tabular-nums; }
+.dt-row[open] > summary::after { content: '\25BE'; }
+.dt-row[open] > summary { background: color-mix(in srgb, var(--turf) 8%, transparent); }
+.dt-num { text-align: right; font-variant-numeric: tabular-nums; }
 /* The expanded body reads as a nested panel: inset tint, its own breathing room. */
-.reportpanel .dt-detail { padding: 15px 16px 17px; font-size: 12.5px; color: var(--muted);
+.dt-detail { padding: 15px 16px 17px; font-size: 12.5px; color: var(--muted);
   border-top: 1px solid var(--line); line-height: 1.6; white-space: normal;
   background: color-mix(in srgb, var(--ink) 3.5%, transparent); overflow-x: auto; }
-.reportpanel .dt-detail strong { color: var(--ink); }
+.dt-detail strong { color: var(--ink); }
 
 /* Drill bodies are labelled fields / mini-tables, never a run-on sentence.
    Values wrap rather than truncate, and the grid re-flows on narrow panels. */
-.reportpanel .dt-facts { display: grid;
+.dt-facts { display: grid;
   grid-template-columns: repeat(auto-fit, minmax(168px, 1fr)); gap: 18px 32px; }
-.reportpanel .fact { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
-.reportpanel .fl { font-size: 10px; text-transform: uppercase; letter-spacing: .07em;
+.fact { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.fl { font-size: 10px; text-transform: uppercase; letter-spacing: .07em;
   color: var(--faint); font-weight: 700; line-height: 1.3; }
-.reportpanel .fv { font-size: 13.5px; color: var(--ink); line-height: 1.45;
+.fv { font-size: 13.5px; color: var(--ink); line-height: 1.45;
   white-space: normal; overflow-wrap: anywhere; }
-.reportpanel .fv .pos { color: var(--muted); font-size: 11px; font-weight: 600;
+.fv .pos { color: var(--muted); font-size: 11px; font-weight: 600;
   margin: 0 2px; }
-.reportpanel .fv .pts { font-variant-numeric: tabular-nums; font-weight: 700; }
-.reportpanel table.dt-games { border-collapse: collapse; font-size: 12.5px; width: auto;
+.fv .pts { font-variant-numeric: tabular-nums; font-weight: 700; }
+table.dt-games { border-collapse: collapse; font-size: 12.5px; width: auto;
   margin-top: 2px; }
 /* A drill body can hold facts and then mini-tables -- keep them apart. */
-.reportpanel .dt-detail .dt-facts + table.dt-games,
-.reportpanel .dt-detail .dt-facts + .dt-tables { margin-top: 16px; }
+.dt-detail .dt-facts + table.dt-games,
+.dt-detail .dt-facts + .dt-tables { margin-top: 16px; }
 /* Started vs optimal sit side by side when there's room. */
-.reportpanel .dt-tables { display: grid;
+.dt-tables { display: grid;
   grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 18px 36px; }
-.reportpanel .dt-block { min-width: 0; }
-.reportpanel .dt-sub { font-size: 10px; text-transform: uppercase; letter-spacing: .07em;
+.dt-block { min-width: 0; }
+.dt-sub { font-size: 10px; text-transform: uppercase; letter-spacing: .07em;
   color: var(--turf); font-weight: 700; margin-bottom: 6px; }
-.reportpanel table.dt-games th { font-size: 10px; text-transform: uppercase;
+table.dt-games th { font-size: 10px; text-transform: uppercase;
   letter-spacing: .06em; color: var(--faint); font-weight: 700; text-align: left;
   padding: 0 26px 8px 0; border: 0; }
-.reportpanel table.dt-games td { padding: 7px 26px 7px 0; white-space: nowrap;
+table.dt-games td { padding: 7px 26px 7px 0; white-space: nowrap;
   border: 0; color: var(--ink); }
-.reportpanel table.dt-games tbody tr:not(:last-child) td {
+table.dt-games tbody tr:not(:last-child) td {
   border-bottom: 1px solid var(--line); }
-.reportpanel table.dt-games th:last-child, .reportpanel table.dt-games td:last-child {
+table.dt-games th:last-child, table.dt-games td:last-child {
   padding-right: 0; }
-.reportpanel table.dt-games td.n, .reportpanel table.dt-games th.n { text-align: right;
+table.dt-games td.n, table.dt-games th.n { text-align: right;
   font-variant-numeric: tabular-nums; }
 
 /* Rank badges: top third good, bottom third bad. */
-.reportpanel .rankpill { display: inline-block; padding: 1px 9px; border-radius: 20px;
+.rankpill { display: inline-block; padding: 1px 9px; border-radius: 20px;
   font-size: 11.5px; font-weight: 700; font-variant-numeric: tabular-nums;
   border: 1px solid transparent; }
-.reportpanel .rankpill .of { font-weight: 500; opacity: .65; }
-.reportpanel .rankpill.good { color: #37b24d; background: rgba(47,158,68,.16);
+.rankpill .of { font-weight: 500; opacity: .65; }
+.rankpill.good { color: #37b24d; background: rgba(47,158,68,.16);
   border-color: rgba(47,158,68,.4); }
-.reportpanel .rankpill.mid { color: var(--muted);
+.rankpill.mid { color: var(--muted);
   background: color-mix(in srgb, var(--ink) 8%, transparent); border-color: var(--line); }
-.reportpanel .rankpill.bad { color: #ff6b6b; background: rgba(224,49,49,.15);
+.rankpill.bad { color: #ff6b6b; background: rgba(224,49,49,.15);
   border-color: rgba(224,49,49,.38); }
 .reportpanel table.teams td.val { font-weight: 700; color: var(--ink); font-size: 14.5px; }
 .reportpanel .peer { color: var(--muted); }
@@ -351,3 +359,97 @@ details summary { cursor: pointer; font-weight: 600; }
 footer { max-width: 1260px; margin: 0 auto; padding: 18px clamp(16px, 4vw, 40px) 40px;
          border-top: 1px solid var(--line); color: var(--faint); font-size: 12.5px; }
 footer code { font-family: ui-monospace, Consolas, monospace; }
+
+/* --- Trade deals (Transactions tab) ---------------------------------------
+   One card per deal. Each side shows only what that team RECEIVED, so a
+   player is named once, under whoever got him -- the ledger's per-team rows
+   would print a two-team trade twice as mirror images. Sides are ordered best
+   net first, and tinted so who came out ahead reads before the numbers do. */
+.deals { display: grid; gap: 14px; }
+.deal { border: 1px solid var(--line); border-radius: 12px; overflow: hidden;
+  background: var(--surface); box-shadow: var(--shadow); }
+/* .tag is otherwise scoped to .game (the playoff walk), so it needs its own
+   rule here or the "3-team" marker renders as bare text. */
+.deal .tag { font-size: 10px; text-transform: uppercase; letter-spacing: .05em;
+  color: var(--muted); border: 1px solid var(--line); border-radius: 20px;
+  padding: 1px 8px; }
+.deal > header { display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  padding: 9px 14px; border-bottom: 1px solid var(--line);
+  background: color-mix(in srgb, var(--ink) 3%, transparent); }
+.deal .wk { font-size: 11px; font-weight: 700; letter-spacing: .06em;
+  text-transform: uppercase; color: var(--faint); }
+.deal .verdict { margin-left: auto; font-size: 12.5px; color: var(--muted); }
+.deal .verdict b { color: var(--ink); }
+.deal .verdict.even { font-style: italic; }
+/* Sides sit side by side and wrap to stacked on a narrow panel; a 3-team deal
+   simply gets a third column. */
+.deal .sides { display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); }
+.deal .side { padding: 12px 14px; min-width: 0; border-top: 1px solid transparent; }
+.deal .side + .side { box-shadow: inset 1px 0 0 var(--line); }
+.deal .side.up { background: color-mix(in srgb, #2f9e44 8%, transparent); }
+.deal .side.down { background: color-mix(in srgb, #e03131 6%, transparent); }
+.deal .who { display: flex; justify-content: space-between; align-items: baseline;
+  gap: 10px; font-weight: 650; font-size: 13.5px; }
+.deal .got { margin-top: 6px; font-size: 13px; line-height: 1.5; }
+@media (max-width: 620px) {
+  .deal .side + .side { box-shadow: none; border-top-color: var(--line); }
+}
+
+/* Drill listings that ARE the panel's table (the Roster tab's player and team
+   listings), as opposed to one of a side-by-side `.dt-tables` pair.
+   Two fixes, both visible only outside the report:
+   1. table.dt-games is width:auto, which is right for a narrow side-by-side
+      mini table but packs content-width columns against the left edge of a
+      full-width panel -- they read as one run-on block. Fill the width instead.
+   2. The sortable-header rule (#panel table ... th[role="button"]) carries an
+      id, so it beats `table.dt-games th` and forces padding-right:18px on the
+      header while the cells keep 26px. Right-aligned numeric columns then sit
+      8px off from their own heading. Match them back up.
+   The selectors below carry `thead`/`tbody` deliberately: the sortable rule
+   scores (1,2,3), so a (1,2,2) selector would lose the race. Matching its
+   score and sitting later in the file wins deterministically. */
+#panel .dt-detail > table.dt-games { width: 100%; }
+#panel .dt-detail > table.dt-games thead th,
+#panel .dt-detail > table.dt-games tbody td { padding-right: 28px; }
+#panel .dt-detail > table.dt-games thead th:last-child,
+#panel .dt-detail > table.dt-games tbody td:last-child { padding-right: 0; }
+/* Give the listing room to breathe under the facts row above it. */
+#panel .dt-detail .dt-facts + table.dt-games { margin-top: 18px; }
+
+/* Titular rows: the head + each summary. Fixed-width columns beside an `fr`
+   column let the fr one absorb ALL the slack -- the name column sprawled to
+   ~590px while five numeric columns stayed pinned at ~90px and bunched against
+   the right edge. The templates now give every column an fr share, so width is
+   distributed rather than dumped into one. This is a little extra vertical room
+   to match. */
+#panel .drilltable .dt-head,
+#panel .drilltable .dt-row > summary { padding-top: 11px; padding-bottom: 11px; }
+#panel .drilltable .dt-head { padding-bottom: 10px; }
+
+/* A drilltable that is NOT inside a .card is its own card: it already draws a
+   border and radius, so wrapping it in .card framed it twice (a frame in a
+   frame). Give it the surface + shadow instead and wrap it in a plain
+   .tablewrap for the overflow. Scoped with :not(.card) so the report's drill
+   tables -- which DO live inside a card -- keep their flat look. */
+.tablewrap:not(.card) > .drilltable { background: var(--surface);
+  box-shadow: var(--shadow); }
+/* Same for the draft board: every cell carries a border, so the grid draws its
+   own frame -- inside .card that reads as a frame in a frame. The gems/busts
+   and other plain tables only have cell bottom-borders, so they still want the
+   card. */
+.tablewrap:not(.card) > .draftboard { background: var(--surface); }
+
+/* --- vertical rhythm between top-level panel blocks ----------------------
+   Spacing used to come ONLY from h2's margin-top, and .stats/.grid/.card/
+   .tablewrap/.deals/.rowhead all carry zero margin. So any section without a
+   heading -- every chart grid -- sat flush against the block above it: on the
+   Coaching and Roster tabs the tiles ran straight into the charts with 0px
+   between them. Space siblings by default; a heading takes a wider gap above
+   and hugs the block it titles below. Margins between adjacent siblings
+   collapse, so these compose rather than add. */
+#panel > * + * { margin-top: 22px; }
+#panel > h2 { margin-top: 34px; }
+#panel > h2 + *, #panel > p.hint + * { margin-top: 10px; }
+/* .rowhead wraps its own h2; the wrapper already took the gap. */
+#panel > .rowhead h2 { margin-top: 0; }

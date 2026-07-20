@@ -585,3 +585,376 @@ def waiver_ledger(s: Season, top_n: int | None = 30) -> pd.DataFrame:
     d = (pd.DataFrame(rows).sort_values("points", ascending=False)
          .reset_index(drop=True))
     return d.head(top_n) if top_n else d
+
+
+def trade_deals(s: Season) -> list[dict]:
+    """Every trade as ONE entry, carrying a side per team involved.
+
+    `trade_ledger` is one row per team, so a two-team deal appears twice as
+    mirror images -- convenient for sorting and filtering, roundabout to read,
+    and it prints every player's name twice. This folds each `transaction_id`
+    into a single deal whose sides list only what that team RECEIVED, so each
+    player appears exactly once, under whoever got him. Sides are ordered best
+    net first, which is also who "won" the deal.
+    """
+    led = trade_ledger(s)
+    if led.empty:
+        return []
+    out = []
+    for tid, g in led.groupby("transaction_id", sort=False):
+        g = g.sort_values("net", ascending=False)
+        sides = g[["user_name", "received", "got_pts", "net"]].to_dict("records")
+        best = sides[0]
+        margin = round(abs(float(best["net"])), 1)
+        out.append({
+            "week": int(g["week"].iloc[0]),
+            "transaction_id": str(tid),
+            "sides": sides,
+            "n_teams": len(sides),
+            # A near-even deal shouldn't crown anybody; 10 points across a whole
+            # season is noise.
+            "winner": best["user_name"] if margin >= 10 else None,
+            "margin": margin,
+        })
+    return sorted(out, key=lambda x: (x["week"], x["transaction_id"]))
+
+
+# --- roster detail (webapp analytics) ------------------------------------
+# The Roster tab's drill-downs: the same pl_wk frame the roster charts use,
+# aggregated per manager, per week, and into a handful of superlatives.
+
+def _roster_ok(s: Season) -> bool:
+    return {"roster_id", "week", "player_name", "position", "points",
+            "is_starter"}.issubset(getattr(s.pl_wk, "columns", []))
+
+
+def roster_detail(s: Season) -> list[dict]:
+    """Per manager: roster shape, plus every player they rostered.
+
+    `bench_pts` is points scored by players on their bench that week -- the
+    cost of the roster, not of the lineup decision (that is `efficiency`).
+    """
+    if not _roster_ok(s):
+        return []
+    pl = s.pl_wk.merge(s.user_map[["roster_id", "user_name"]], on="roster_id",
+                       how="left")
+    out = []
+    for name, g in pl.groupby("user_name"):
+        st, bn = g[g["is_starter"]], g[~g["is_starter"]]
+        players = []
+        for (pn, pos), pg in g.groupby(["player_name", "position"]):
+            pst = pg[pg["is_starter"]]
+            players.append({
+                "player_name": pn, "position": pos,
+                "weeks": int(pg["week"].nunique()), "starts": int(len(pst)),
+                "started_pts": round(float(pst["points"].sum()), 1),
+                "bench_pts": round(float(pg.loc[~pg["is_starter"], "points"].sum()), 1),
+            })
+        players.sort(key=lambda x: -x["started_pts"])
+        counts = (st["position"].value_counts().to_dict() if len(st) else {})
+        out.append({
+            "user_name": name,
+            "players_used": int(g["player_name"].nunique()),
+            "starts": int(len(st)),
+            "started_pts": round(float(st["points"].sum()), 1),
+            "bench_pts": round(float(bn["points"].sum()), 1),
+            "bench_share": round(float(bn["points"].sum())
+                                 / max(float(g["points"].sum()), 1) * 100, 1),
+            "pos_counts": {p: int(counts.get(p, 0)) for p in POSITIONS},
+            "players": players,
+        })
+    return sorted(out, key=lambda x: -x["started_pts"])
+
+
+def roster_weeks(s: Season) -> list[dict]:
+    """Per week: who got the most out of their roster, and who left the most on it."""
+    if not _roster_ok(s):
+        return []
+    pl = s.pl_wk.merge(s.user_map[["roster_id", "user_name"]], on="roster_id",
+                       how="left")
+    lu = s.lineup if {"user_name", "week", "actual", "optimal"}.issubset(
+        getattr(s.lineup, "columns", [])) else None
+    out = []
+    for wk, g in pl.groupby("week"):
+        teams = []
+        for name, tg in g.groupby("user_name"):
+            st = tg[tg["is_starter"]]
+            row = {"user_name": name,
+                   "started": round(float(st["points"].sum()), 1),
+                   "bench": round(float(tg.loc[~tg["is_starter"], "points"].sum()), 1)}
+            if lu is not None:
+                m = lu[(lu["user_name"] == name) & (lu["week"] == wk)]
+                if len(m):
+                    row["optimal"] = round(float(m["optimal"].iloc[0]), 1)
+                    row["eff"] = round(row["started"]
+                                       / max(row["optimal"], 1) * 100, 1)
+            teams.append(row)
+        teams.sort(key=lambda x: -x["started"])
+        st = g[g["is_starter"]]
+        top = st.loc[st["points"].idxmax()] if len(st) else None
+        benched = g[~g["is_starter"]]
+        bb = benched.loc[benched["points"].idxmax()] if len(benched) else None
+        out.append({
+            "week": int(wk), "teams": teams,
+            "league_pts": round(float(st["points"].sum()), 1),
+            "best": teams[0] if teams else None,
+            "worst": teams[-1] if teams else None,
+            "top_player": (None if top is None else
+                           {"player_name": top["player_name"],
+                            "position": top["position"],
+                            "user_name": top["user_name"],
+                            "points": round(float(top["points"]), 1)}),
+            "best_benched": (None if bb is None else
+                             {"player_name": bb["player_name"],
+                              "position": bb["position"],
+                              "user_name": bb["user_name"],
+                              "points": round(float(bb["points"]), 1)}),
+        })
+    return out
+
+
+def roster_standouts(s: Season) -> list[dict]:
+    """Roster superlatives as {label, value, holder, detail} tiles."""
+    if not _roster_ok(s):
+        return []
+    pl = s.pl_wk.merge(s.user_map[["roster_id", "user_name"]], on="roster_id",
+                       how="left")
+    st, bn = pl[pl["is_starter"]], pl[~pl["is_starter"]]
+    out = []
+
+    def tile(label, value, holder, detail=""):
+        out.append({"label": label, "value": value, "holder": holder,
+                    "detail": detail})
+
+    if len(st):
+        r = st.loc[st["points"].idxmax()]
+        tile("Best player-week", f"{r['points']:.1f}", r["user_name"],
+             f"{r['player_name']} · {r['position']} · wk {int(r['week'])}")
+    if len(bn):
+        r = bn.loc[bn["points"].idxmax()]
+        tile("Most points benched (one player)", f"{r['points']:.1f}",
+             r["user_name"], f"{r['player_name']} · {r['position']} · wk {int(r['week'])}")
+        g = bn.groupby("user_name")["points"].sum()
+        tile("Most points on the bench (season)", f"{g.max():.0f}", g.idxmax(),
+             "across every week")
+    used = pl.groupby("user_name")["player_name"].nunique()
+    if len(used):
+        tile("Most players used", f"{int(used.max())}", used.idxmax(),
+             "roster churn")
+        tile("Fewest players used", f"{int(used.min())}", used.idxmin(),
+             "stood pat")
+    if len(st):
+        # The most lopsided team: the largest share of started points from one
+        # position group.
+        share = (st.groupby(["user_name", "position"])["points"].sum()
+                 / st.groupby("user_name")["points"].sum())
+        if len(share):
+            idx = share.idxmax()
+            tile("Most one-position team", f"{share.max() * 100:.0f}%", idx[0],
+                 f"of started points from {idx[1]}")
+        ppw = st.groupby(["user_name", "week"])["points"].sum()
+        if len(ppw):
+            tile("Best starting week", f"{ppw.max():.1f}", ppw.idxmax()[0],
+                 f"week {int(ppw.idxmax()[1])}")
+    return out
+
+
+# --- coaching detail (webapp analytics) ----------------------------------
+# The Coaching tab's drill-downs. `efficiency` says how well a manager set
+# lineups; these say WHICH weeks and WHICH decisions, and what they cost.
+
+def _coach_frames(s: Season):
+    """(lineup, team_wk) if both carry what the coaching views need, else None."""
+    lu, tw = s.lineup, s.team_wk
+    if not {"user_name", "week", "actual", "optimal",
+            "left_on_bench"}.issubset(getattr(lu, "columns", [])):
+        return None
+    if not {"user_name", "week", "points"}.issubset(getattr(tw, "columns", [])):
+        return None
+    return lu, tw
+
+
+def coaching_detail(s: Season) -> list[dict]:
+    """Per manager: their lineup weeks, and what the misses actually cost.
+
+    `cost_losses` counts weeks they LOST while their best legal lineup would
+    have won -- the only benched points that changed an outcome. `perfect`
+    counts weeks they left nothing on the bench at all.
+    """
+    fr = _coach_frames(s)
+    if fr is None:
+        return []
+    lu, tw = fr
+    res = (tw[["user_name", "week", "points", "pa", "result"]]
+           if {"pa", "result"}.issubset(tw.columns) else None)
+    out = []
+    for name, g in lu.groupby("user_name"):
+        g = g.sort_values("week")
+        weeks, flipped = [], 0
+        for r in g.itertuples():
+            row = {"week": int(r.week), "actual": round(float(r.actual), 1),
+                   "optimal": round(float(r.optimal), 1),
+                   "cost": round(float(r.left_on_bench), 1),
+                   "eff": round(float(r.actual) / max(float(r.optimal), 1) * 100, 1)}
+            if res is not None:
+                m = res[(res["user_name"] == name) & (res["week"] == r.week)]
+                if len(m) and pd.notna(m["pa"].iloc[0]):
+                    pa = float(m["pa"].iloc[0])
+                    row["pa"] = round(pa, 1)
+                    row["result"] = str(m["result"].iloc[0])
+                    row["would_have_won"] = bool(row["result"] == "L"
+                                                 and float(r.optimal) > pa)
+                    flipped += row["would_have_won"]
+            weeks.append(row)
+        act, opt = float(g["actual"].sum()), float(g["optimal"].sum())
+        worst = max(weeks, key=lambda w: w["cost"]) if weeks else None
+        out.append({
+            "user_name": name,
+            "eff": round(act / max(opt, 1) * 100, 1),
+            "actual": round(act, 1), "optimal": round(opt, 1),
+            "bench": round(float(g["left_on_bench"].sum()), 1),
+            "perfect": int((g["left_on_bench"] < 0.05).sum()),
+            "cost_losses": int(flipped),
+            "worst_week": worst,
+            "weeks": weeks,
+        })
+    return sorted(out, key=lambda x: -x["eff"])
+
+
+def bench_regrets(s: Season, top_n: int = 15) -> list[dict]:
+    """The season's costliest single bench calls, league-wide.
+
+    For each team-week, the benched player who most outscored a same-position
+    starter -- a swap that was legal at the time. `flipped` marks the ones where
+    that one change alone would have turned a loss into a win.
+    """
+    pl = s.pl_wk
+    need = {"roster_id", "week", "player_name", "position", "points", "is_starter"}
+    if not need.issubset(getattr(pl, "columns", [])) or s.user_map.empty:
+        return []
+    d = pl.merge(s.user_map[["roster_id", "user_name"]], on="roster_id", how="left")
+    tw = s.team_wk
+    have_res = {"user_name", "week", "points", "pa", "result"}.issubset(
+        getattr(tw, "columns", []))
+    out = []
+    for (name, wk), g in d.groupby(["user_name", "week"]):
+        starters, bench = g[g["is_starter"]], g[~g["is_starter"]]
+        if starters.empty or bench.empty:
+            continue
+        best = None
+        for b in bench.itertuples():
+            same = starters[starters["position"] == b.position]
+            if same.empty:
+                continue
+            weak = same.loc[same["points"].idxmin()]
+            gain = float(b.points) - float(weak["points"])
+            if gain > 0 and (best is None or gain > best["swing"]):
+                best = {"swing": round(gain, 1), "benched": b.player_name,
+                        "benched_pts": round(float(b.points), 1),
+                        "position": b.position, "started": weak["player_name"],
+                        "started_pts": round(float(weak["points"]), 1)}
+        if best is None:
+            continue
+        best.update({"user_name": name, "week": int(wk), "flipped": False,
+                     "margin": None})
+        if have_res:
+            m = tw[(tw["user_name"] == name) & (tw["week"] == wk)]
+            if len(m) and pd.notna(m["pa"].iloc[0]):
+                margin = float(m["points"].iloc[0]) - float(m["pa"].iloc[0])
+                best["margin"] = round(margin, 1)
+                best["flipped"] = bool(margin < 0 and best["swing"] >= abs(margin))
+        out.append(best)
+    # Decisions that changed a result first, then by raw cost.
+    out.sort(key=lambda x: (not x["flipped"], -x["swing"]))
+    return out[:top_n]
+
+
+def coaching_standouts(s: Season) -> list[dict]:
+    """Coaching superlatives as {label, value, holder, detail} tiles."""
+    det = coaching_detail(s)
+    if not det:
+        return []
+    out = []
+
+    def tile(label, value, holder, detail=""):
+        out.append({"label": label, "value": value, "holder": holder,
+                    "detail": detail})
+
+    tile("Best lineup efficiency", f"{det[0]['eff']:.1f}%", det[0]["user_name"],
+         f"{det[0]['bench']:.0f} pts left on the bench")
+    tile("Worst lineup efficiency", f"{det[-1]['eff']:.1f}%", det[-1]["user_name"],
+         f"{det[-1]['bench']:.0f} pts left on the bench")
+    pf = max(det, key=lambda x: x["perfect"])
+    if pf["perfect"]:
+        tile("Most perfect lineups", str(pf["perfect"]), pf["user_name"],
+             "weeks with nothing left on the bench")
+    cl = max(det, key=lambda x: x["cost_losses"])
+    if cl["cost_losses"]:
+        tile("Losses the bench cost", str(cl["cost_losses"]), cl["user_name"],
+             "lost while the optimal lineup would have won")
+    worst = max((x for x in det if x["worst_week"]),
+                key=lambda x: x["worst_week"]["cost"], default=None)
+    if worst:
+        tile("Worst single week", f"{worst['worst_week']['cost']:.1f}",
+             worst["user_name"],
+             f"benched in wk {worst['worst_week']['week']}")
+    reg = bench_regrets(s, top_n=1)
+    if reg:
+        r = reg[0]
+        tile("Costliest bench call", f"{r['swing']:.1f}", r["user_name"],
+             f"{r['benched']} over {r['started']} · wk {r['week']}")
+    return out
+
+
+def transaction_standouts(s: Season) -> list[dict]:
+    """Roster-move superlatives as {label, value, holder, detail} tiles.
+
+    Built from the ledgers rather than the raw frame, so "best trade" means the
+    deal whose incoming players outscored the outgoing ones by the most -- not
+    simply the busiest manager.
+    """
+    out = []
+
+    def tile(label, value, holder, detail=""):
+        out.append({"label": label, "value": value, "holder": holder,
+                    "detail": detail})
+
+    deals = trade_deals(s)
+    wl = waiver_ledger(s, top_n=None)
+    tx = _live_tx(s, ["trade", "waiver", "free_agent"])
+
+    won = [d for d in deals if d["winner"]]
+    if won:
+        b = max(won, key=lambda d: d["margin"])
+        got = next(sd["received"] for sd in b["sides"]
+                   if sd["user_name"] == b["winner"])
+        # A four-player haul would wrap the tile into a paragraph.
+        names = [x.strip() for x in str(got).split(",") if x.strip()]
+        if len(names) > 2:
+            got = f"{names[0]}, {names[1]} +{len(names) - 2} more"
+        tile("Best trade", f"+{b['margin']:.0f}", b["winner"],
+             f"week {b['week']} · got {got}")
+    if deals:
+        from collections import Counter
+        cnt = Counter(sd["user_name"] for d in deals for sd in d["sides"])
+        nm, n = cnt.most_common(1)[0]
+        tile("Most trades", str(n), nm,
+             f"of {len(deals)} deal{'' if len(deals) == 1 else 's'} league-wide")
+    if len(wl):
+        r = wl.iloc[0]
+        tile("Best pickup", f"{r['points']:.0f}", r["user_name"],
+             f"{r['player_name']} · {r['via']} in wk {int(r['week'])}")
+        # A pickup that was actually used, not just stashed.
+        used = wl[wl["starts"] > 0]
+        if len(used):
+            tile("Waiver hits", str(int((wl["points"] >= 100).sum())), "league-wide",
+                 "pickups that returned 100+ points")
+    if not tx.empty:
+        adds = tx[tx["transaction"] == "add"]
+        if len(adds):
+            c = adds.groupby("user_name").size()
+            tile("Busiest manager", str(int(c.max())), c.idxmax(),
+                 "adds across the season")
+            tile("Quietest manager", str(int(c.min())), c.idxmin(),
+                 "adds across the season")
+    return out

@@ -1,0 +1,133 @@
+{# Coaching tab: the efficiency/consistency charts, then the decisions behind
+   them -- per manager week by week, and the individual calls that cost most. #}
+{% if standouts %}
+<h2>Coaching standouts</h2>
+<p class="hint">Lineup decisions only &mdash; how well each manager used the roster they
+   had, separate from how good that roster was.</p>
+<section class="stats">
+  {% for t in standouts %}
+  <div class="stat {% if loop.index0 == 0 %}gold{% endif %}">
+    <span class="k">{{ t.label }}</span>
+    <span class="v">{{ t.value }}</span>
+    <span class="sub">{{ t.holder }}{% if t.detail %} · {{ t.detail }}{% endif %}</span>
+  </div>
+  {% endfor %}
+</section>
+{% endif %}
+
+<section class="grid">
+  {% for c in charts %}
+  <figure class="card chart">
+    <img src="/chart/{{ c }}?league={{ league }}&season={{ season }}&theme={{ theme }}&_={{ bust }}"
+         alt="{{ c }}" loading="lazy">
+  </figure>
+  {% endfor %}
+</section>
+
+{% if coaching %}
+<h2>Lineup setting by manager</h2>
+<p class="hint">Expand a manager for their week-by-week lineups.
+   <strong>Cost</strong> is what their bench outscored their lineup by;
+   <strong>Lost to bench</strong> counts weeks they lost while their best legal
+   lineup would have won &mdash; the only benched points that changed anything.</p>
+<div class="tablewrap">
+<div class="drilltable"
+     style="--cols: minmax(140px,1.5fr) minmax(85px,1fr) minmax(95px,1fr) minmax(95px,1fr) minmax(95px,1fr) minmax(85px,1fr) minmax(105px,1fr)">
+  <div class="dt-head">
+    <span>Manager</span><span class="dt-num">Lineup %</span>
+    <span class="dt-num">Started</span><span class="dt-num">Optimal</span>
+    <span class="dt-num">Benched</span><span class="dt-num">Perfect</span>
+    <span class="dt-num">Lost to bench</span>
+  </div>
+  {% for c in coaching %}
+  <details class="dt-row">
+    <summary>
+      <span>{{ c.user_name }}</span>
+      <span class="dt-num">{{ "%.1f"|format(c.eff) }}%</span>
+      <span class="dt-num">{{ "%.0f"|format(c.actual) }}</span>
+      <span class="dt-num">{{ "%.0f"|format(c.optimal) }}</span>
+      <span class="dt-num">{{ "%.0f"|format(c.bench) }}</span>
+      <span class="dt-num">{{ c.perfect or "—" }}</span>
+      <span class="dt-num">{% if c.cost_losses %}<span class="res l">{{ c.cost_losses }}</span>{% else %}—{% endif %}</span>
+    </summary>
+    <div class="dt-detail">
+      <div class="dt-facts">
+        {% if c.worst_week %}
+        <div class="fact"><span class="fl">Worst week</span><span class="fv">
+          <span class="pts">{{ "%.1f"|format(c.worst_week.cost) }}</span>
+          <span class="q">left on the bench in wk {{ c.worst_week.week }}</span></span></div>
+        {% endif %}
+        <div class="fact"><span class="fl">Perfect lineups</span><span class="fv">
+          <span class="pts">{{ c.perfect }}</span>
+          <span class="q">of {{ c.weeks | length }} weeks</span></span></div>
+        <div class="fact"><span class="fl">Points benched</span><span class="fv">
+          <span class="pts">{{ "%.1f"|format(c.bench) }}</span>
+          <span class="q">{{ "%.1f"|format(c.optimal - c.actual) }} below optimal</span></span></div>
+      </div>
+      <table class="dt-games">
+        <thead><tr>
+          <th class="n">Wk</th><th class="n">Started</th><th class="n">Optimal</th>
+          <th class="n">Cost</th><th class="n">Lineup %</th><th>Result</th>
+        </tr></thead>
+        <tbody>
+        {% for w in c.weeks %}
+          <tr>
+            <td class="n">{{ w.week }}</td>
+            <td class="n">{{ "%.1f"|format(w.actual) }}</td>
+            <td class="n">{{ "%.1f"|format(w.optimal) }}</td>
+            <td class="n">{% if w.cost > 0.05 %}<span class="q">{{ "%.1f"|format(w.cost) }}</span>{% else %}—{% endif %}</td>
+            <td class="n">{{ "%.0f"|format(w.eff) }}%</td>
+            <td>
+              {%- if w.result is defined -%}
+                <span class="res {{ 'w' if w.result == 'W' else 'l' if w.result == 'L' else '' }}">{{ w.result }}</span>
+                {% if w.would_have_won %}<span class="q">— optimal wins it</span>{% endif %}
+              {%- else -%}—{%- endif -%}
+            </td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </details>
+  {% endfor %}
+</div>
+</div>
+{% endif %}
+
+{% if regrets %}
+<h2>Costliest bench calls</h2>
+<p class="hint">The single best swap available each week that wasn&rsquo;t made &mdash; a benched
+   player who outscored a starter at the same position, so it was legal at the time.
+   The ones that <strong>flipped a result</strong> are listed first; the rest just hurt.</p>
+<div class="card tablewrap">
+  <table>
+    <thead><tr>
+      <th class="n">Wk</th><th>Manager</th><th>Pos</th><th>Benched</th>
+      <th class="n">Pts</th><th>Started instead</th><th class="n">Pts</th>
+      <th class="n">Swing</th><th>Result</th>
+    </tr></thead>
+    <tbody>
+    {% for r in regrets %}
+      <tr>
+        <td class="n">{{ r.week }}</td>
+        <td>{{ r.user_name }}</td>
+        <td>{{ r.position }}</td>
+        <td><strong>{{ r.benched }}</strong></td>
+        <td class="n">{{ "%.1f"|format(r.benched_pts) }}</td>
+        <td>{{ r.started }}</td>
+        <td class="n"><span class="q">{{ "%.1f"|format(r.started_pts) }}</span></td>
+        <td class="n"><span class="res l">+{{ "%.1f"|format(r.swing) }}</span></td>
+        <td>
+          {%- if r.flipped -%}
+            <span class="res l">lost by {{ "%.1f"|format(r.margin | abs) }}</span>
+            <span class="q">— this swap wins it</span>
+          {%- elif r.margin is not none -%}
+            <span class="q">{{ "%+.1f"|format(r.margin) }}</span>
+          {%- else -%}—{%- endif -%}
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}

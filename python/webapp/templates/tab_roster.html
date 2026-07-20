@@ -1,0 +1,150 @@
+{# Roster tab: the position/usage charts, then the rosters themselves --
+   per manager and per week, each row expanding into its detail. The drill
+   markup (drilltable / dt-*) is global CSS, promoted out of .reportpanel. #}
+{% if standouts %}
+<h2>Roster standouts</h2>
+<p class="hint">The season&rsquo;s extremes in what teams rostered &mdash; separate from how
+   well they were <em>started</em>, which is the coaching tab.</p>
+<section class="stats">
+  {% for t in standouts %}
+  <div class="stat {% if loop.index0 == 0 %}gold{% endif %}">
+    <span class="k">{{ t.label }}</span>
+    <span class="v">{{ t.value }}</span>
+    <span class="sub">{{ t.holder }}{% if t.detail %} · {{ t.detail }}{% endif %}</span>
+  </div>
+  {% endfor %}
+</section>
+{% endif %}
+
+<section class="grid">
+  {% for c in charts %}
+  <figure class="card chart">
+    <img src="/chart/{{ c }}?league={{ league }}&season={{ season }}&theme={{ theme }}&_={{ bust }}"
+         alt="{{ c }}" loading="lazy">
+  </figure>
+  {% endfor %}
+</section>
+
+{% if rosters %}
+<h2>Rosters by manager</h2>
+<p class="hint">Expand a manager for every player they rostered this season.
+   <strong>Bench pts</strong> is what their bench scored &mdash; the cost of the roster
+   they carried, not of any one lineup call.</p>
+<div class="tablewrap">
+<div class="drilltable"
+     style="--cols: minmax(140px,1.6fr) repeat(2, minmax(90px,1fr)) repeat(2, minmax(105px,1fr)) minmax(90px,1fr)">
+  <div class="dt-head">
+    <span>Manager</span><span class="dt-num">Players</span>
+    <span class="dt-num">Starts</span><span class="dt-num">Started pts</span>
+    <span class="dt-num">Bench pts</span><span class="dt-num">Bench %</span>
+  </div>
+  {% for r in rosters %}
+  <details class="dt-row">
+    <summary>
+      <span>{{ r.user_name }}</span>
+      <span class="dt-num">{{ r.players_used }}</span>
+      <span class="dt-num">{{ r.starts }}</span>
+      <span class="dt-num">{{ "%.0f"|format(r.started_pts) }}</span>
+      <span class="dt-num">{{ "%.0f"|format(r.bench_pts) }}</span>
+      <span class="dt-num">{{ "%.0f"|format(r.bench_share) }}%</span>
+    </summary>
+    <div class="dt-detail">
+      <div class="dt-facts">
+        {% for pos, n in r.pos_counts.items() %}
+        <div class="fact"><span class="fl">{{ pos }} starts</span>
+          <span class="fv"><span class="pts">{{ n }}</span></span></div>
+        {% endfor %}
+      </div>
+      <table class="dt-games">
+        <thead><tr>
+          <th>Player</th><th>Pos</th><th class="n">Wks</th><th class="n">Starts</th>
+          <th class="n">Started pts</th><th class="n">Bench pts</th>
+        </tr></thead>
+        <tbody>
+        {% for p in r.players %}
+          <tr>
+            <td><strong>{{ p.player_name }}</strong></td>
+            <td>{{ p.position }}</td>
+            <td class="n">{{ p.weeks }}</td>
+            <td class="n">{{ p.starts }}</td>
+            <td class="n">{{ "%.1f"|format(p.started_pts) }}</td>
+            <td class="n">{% if p.bench_pts %}<span class="q">{{ "%.1f"|format(p.bench_pts) }}</span>{% else %}—{% endif %}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </details>
+  {% endfor %}
+</div>
+</div>
+{% endif %}
+
+{% if weeks %}
+<h2>Week by week</h2>
+<p class="hint">Expand a week for every roster in it &mdash; what each team started,
+   what sat on their bench, and how close they came to their best legal lineup.</p>
+<div class="tablewrap">
+<div class="drilltable"
+     style="--cols: minmax(60px,.5fr) minmax(105px,.8fr) minmax(150px,1.3fr) minmax(170px,1.6fr) minmax(170px,1.6fr)">
+  <div class="dt-head">
+    <span class="dt-num">Wk</span><span class="dt-num">League pts</span>
+    <span>Best lineup</span><span>Top starter</span><span>Best benched</span>
+  </div>
+  {% for w in weeks %}
+  <details class="dt-row">
+    <summary>
+      <span class="dt-num">{{ w.week }}</span>
+      <span class="dt-num">{{ "%.0f"|format(w.league_pts) }}</span>
+      <span>{% if w.best %}{{ w.best.user_name }}
+            <span class="q">{{ "%.0f"|format(w.best.started) }}</span>{% endif %}</span>
+      <span>{% if w.top_player %}{{ w.top_player.player_name }}
+            <span class="q">{{ "%.0f"|format(w.top_player.points) }}</span>{% endif %}</span>
+      <span>{% if w.best_benched %}{{ w.best_benched.player_name }}
+            <span class="q">{{ "%.0f"|format(w.best_benched.points) }}</span>{% endif %}</span>
+    </summary>
+    <div class="dt-detail">
+      <div class="dt-facts">
+        {% if w.top_player %}
+        <div class="fact"><span class="fl">Top starter</span><span class="fv">
+          <strong>{{ w.top_player.player_name }}</strong>
+          <span class="pos">{{ w.top_player.position }}</span>
+          <span class="pts">{{ "%.1f"|format(w.top_player.points) }}</span>
+          <span class="q">{{ w.top_player.user_name }}</span></span></div>
+        {% endif %}
+        {% if w.best_benched %}
+        <div class="fact"><span class="fl">Best left on a bench</span><span class="fv">
+          <strong>{{ w.best_benched.player_name }}</strong>
+          <span class="pos">{{ w.best_benched.position }}</span>
+          <span class="pts">{{ "%.1f"|format(w.best_benched.points) }}</span>
+          <span class="q">{{ w.best_benched.user_name }}</span></span></div>
+        {% endif %}
+        {% if w.worst %}
+        <div class="fact"><span class="fl">Lowest lineup</span><span class="fv">
+          <strong>{{ w.worst.user_name }}</strong>
+          <span class="pts">{{ "%.1f"|format(w.worst.started) }}</span></span></div>
+        {% endif %}
+      </div>
+      <table class="dt-games">
+        <thead><tr>
+          <th>Manager</th><th class="n">Started</th><th class="n">Bench</th>
+          <th class="n">Optimal</th><th class="n">Lineup %</th>
+        </tr></thead>
+        <tbody>
+        {% for t in w.teams %}
+          <tr>
+            <td><strong>{{ t.user_name }}</strong></td>
+            <td class="n">{{ "%.1f"|format(t.started) }}</td>
+            <td class="n"><span class="q">{{ "%.1f"|format(t.bench) }}</span></td>
+            <td class="n">{% if t.optimal is defined %}{{ "%.1f"|format(t.optimal) }}{% else %}—{% endif %}</td>
+            <td class="n">{% if t.eff is defined %}{{ "%.0f"|format(t.eff) }}%{% else %}—{% endif %}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </details>
+  {% endfor %}
+</div>
+</div>
+{% endif %}

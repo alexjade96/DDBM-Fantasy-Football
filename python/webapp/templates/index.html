@@ -96,6 +96,21 @@
     function prepTables() {
       document.querySelectorAll('#panel table').forEach(makeSortable);
     }
+    // Keep the stylesheet current without a reload. htmx only swaps #panel, so
+    // the <link> in <head> keeps whatever ?v= it had at page load -- a page left
+    // open across a CSS edit renders new markup unstyled (grid rows collapse to
+    // inline spans). Every response carries X-Asset-V; if it moved, re-point the
+    // link. Swapping href is enough, the browser refetches.
+    document.body.addEventListener('htmx:afterRequest', function (e) {
+      var xhr = e.detail && e.detail.xhr;
+      if (!xhr) return;
+      var v = xhr.getResponseHeader('X-Asset-V');
+      if (!v) return;
+      var link = document.querySelector('link[rel="stylesheet"]');
+      if (link && link.getAttribute('href').indexOf('v=' + v) === -1) {
+        link.setAttribute('href', '/static/style.css?v=' + v);
+      }
+    });
     document.body.addEventListener('htmx:afterSwap', prepCharts);
     document.body.addEventListener('htmx:afterSwap', prepTables);
 
