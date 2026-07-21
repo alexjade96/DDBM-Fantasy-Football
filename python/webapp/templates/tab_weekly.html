@@ -41,7 +41,10 @@
         <td>{{ r.user_name }}</td>
         <td class="n">{{ "%.1f"|format(r.points) }}</td>
         <td class="n">{{ "%.1f"|format(r.opp_points) if r.opp_points is not none else "—" }}</td>
-        <td>{% if r.result == 'W' %}<span class="chip">W</span>{% elif r.result == 'L' %}L{% else %}{{ r.result or "—" }}{% endif %}</td>
+        {# No opponent means no game was played -- a bye or an eliminated team in
+           a playoff week -- which is not the same as a result we failed to read. #}
+        <td>{% if r.result == 'W' %}<span class="chip">W</span>{% elif r.result == 'L' %}L
+            {%- elif r.result %}{{ r.result }}{% else %}<span class="q">no game</span>{% endif %}</td>
         <td class="n">{{ "%+.1f"|format(r.margin) if r.margin is not none else "—" }}</td>
         <td class="n">{{ "%.1f"|format(r.optimal) if r.optimal is not none else "—" }}</td>
         <td class="n">{{ "%.1f"|format(r.left_on_bench) if r.left_on_bench is not none else "—" }}</td>

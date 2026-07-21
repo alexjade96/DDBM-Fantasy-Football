@@ -3,8 +3,8 @@
 The Python instance's web app, mirroring the R Shiny dashboard tab for tab.
 
 ```bash
-python launch.py python dashboard              # -> http://127.0.0.1:8000
-python launch.py python dashboard --port 8080
+python launch.py dashboard                     # -> http://127.0.0.1:8000
+python launch.py dashboard --port 8080
 ```
 
 ## Why FastAPI + HTMX

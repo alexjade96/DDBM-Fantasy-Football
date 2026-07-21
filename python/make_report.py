@@ -1,10 +1,10 @@
 """Generate a standalone HTML season report (Python instance).
 
-    python launch.py python report                     # latest season, default league
-    python launch.py python report <league_id>
-    python launch.py python report <league_id> --season 2024
-    python launch.py python report <league_id> --out my_report.html
-    python launch.py python report <league_id> --all   # one file per season
+    python launch.py report                     # latest season, default league
+    python launch.py report <league_id>
+    python launch.py report <league_id> --season 2024
+    python launch.py report <league_id> --out my_report.html
+    python launch.py report <league_id> --all   # one file per season
 
 Run via launch.py (which sets the venv + playoffs dir), or directly from python/.
 """

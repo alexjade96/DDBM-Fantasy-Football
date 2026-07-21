@@ -748,19 +748,52 @@ sl_playoff_replay <- function(playoffs, seasons, scope = "title") {
 }
 
 #' Playoff standings (per-team run through the bracket)
+#'
+#' `outcome` narrates how each run ended and is never `NA`: the champion and the
+#' runner-up are named outright, and elimination is the last loss in the **title**
+#' bracket, not the last loss overall -- consolation games are played after a team
+#' is already out, so ranking by them overstates the run.
 #' @param playoff A `sleeper_playoff` object.
-#' @return Tibble: `team`, `games`, `wins`, `losses`, `points`, `eliminated_in`.
+#' @return Tibble: `team`, `games`, `wins`, `losses`, `points`, `outcome`.
 #' @export
 sl_playoff_summary <- function(playoff) {
+  champ <- playoff$champion
+  rounds <- playoff$config$rounds
+  final_id <- playoff$config$final
+  if (is.null(final_id) && length(rounds)) {
+    last <- rounds[[length(rounds)]]$matchups
+    if (length(last)) final_id <- last[[length(last)]]$id
+  }
   playoff$results %>%
     dplyr::group_by(team) %>%
     dplyr::summarise(
       games = sum(result %in% c("W", "L", "T")),
       wins = sum(result == "W"), losses = sum(result == "L"),
       points = round(sum(points, na.rm = TRUE), 2),
-      eliminated_in = {
-        l <- round[result == "L"]
-        if (length(l)) l[length(l)] else NA_character_
+      # Rate stats live here so one table can carry the whole run; a team with
+      # only byes has no played game, so guard the divide.
+      win_pct = if (sum(result %in% c("W", "L", "T"))) {
+        sum(result == "W") / sum(result %in% c("W", "L", "T")) * 100
+      } else 0,
+      ppg = if (sum(result %in% c("W", "L", "T"))) {
+        sum(points, na.rm = TRUE) / sum(result %in% c("W", "L", "T"))
+      } else 0,
+      outcome = {
+        lost <- result == "L"
+        is_title <- if (!is.null(playoff$results$bracket)) bracket == "title" else lost
+        out_in <- round[lost & is_title]
+        if (!length(out_in)) out_in <- round[lost]
+        if (!is.null(champ) && length(champ) && team[1] == champ) {
+          "Champion"
+        } else if (!is.null(final_id) && any(lost & matchup_id == final_id)) {
+          "Runner-up"
+        } else if (length(out_in)) {
+          paste("Lost in", out_in[length(out_in)])
+        } else if (is.null(champ) || !length(champ)) {
+          "Still alive"
+        } else {
+          "—"
+        }
       }, .groups = "drop") %>%
     dplyr::arrange(dplyr::desc(wins), dplyr::desc(points))
 }

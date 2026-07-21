@@ -12,18 +12,20 @@ Sleeper can't express.
 
 ## Quick start
 
-Everything runs through one entry point, `launch.py`.
+Everything runs through one entry point, `launch.py`. The instance defaults to
+Python; pass `--r` for the R instance (`--python` is the explicit default). The
+flag may sit before or after the mode.
 
 ### Web dashboards
 
 ```bash
-python launch.py python dashboard              # FastAPI + HTMX  -> http://127.0.0.1:8000
-python launch.py r dashboard                   # Shiny           -> http://127.0.0.1:8100
+python launch.py dashboard                     # FastAPI + HTMX  -> http://127.0.0.1:8000
+python launch.py --r dashboard                 # Shiny           -> http://127.0.0.1:8100
 
-python launch.py python dashboard --port 8080  # pick a port
-python launch.py r dashboard --port 8200
+python launch.py dashboard --port 8080         # pick a port
+python launch.py --r dashboard --port 8200
 
-python launch.py python dashboard --no-reload  # serving for real, not editing
+python launch.py dashboard --no-reload         # serving for real, not editing
 ```
 
 The Python dashboard hot-reloads on save (code *and* templates together — see
@@ -35,17 +37,17 @@ scoring, roster & positions, transactions, playoffs, career — and the same 22
 charts. Type any Sleeper league id to switch leagues; historical seasons are
 found automatically.
 
-> On Windows, R is often not on `PATH`. `launch.py r dashboard` locates
+> On Windows, R is often not on `PATH`. `launch.py --r dashboard` locates
 > `Rscript.exe` for you. There is also a direct launcher:
 > `.\tools\run_dashboard.ps1 [-Port 8100]`.
 
 ### Discord bot
 
 ```bash
-python launch.py python serve                  # slash-command bot (discord.py gateway)
-python launch.py python weekly --dry-run       # preview a weekly recap
-python launch.py r serve                       # R interactions endpoint (plumber)
-python launch.py r weekly --dry-run
+python launch.py serve                         # slash-command bot (discord.py gateway)
+python launch.py weekly --dry-run              # preview a weekly recap
+python launch.py --r serve                     # R interactions endpoint (plumber)
+python launch.py --r weekly --dry-run
 ```
 
 Config lives in each instance's `.env` (`python/.env`, `R/.env`) — copy the

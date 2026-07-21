@@ -2,16 +2,19 @@
 """Single access point to run the Sleeper analytics apps for either instance
 (R or Python).
 
-    python launch.py python dashboard            # Python web app (FastAPI + HTMX)
-    python launch.py r dashboard                 # R web app (Shiny)
+The instance defaults to Python; pass --r for the R instance (or --python to be
+explicit). The flag may sit before or after the mode.
 
-    python launch.py python report               # standalone HTML season report
-    python launch.py r report <league> --all     # one report per season
+    python launch.py dashboard                   # Python web app (FastAPI + HTMX)
+    python launch.py --r dashboard               # R web app (Shiny)
 
-    python launch.py python serve                # Python slash-command bot
-    python launch.py python weekly --dry-run     # Python weekly recap (preview)
-    python launch.py r serve                      # R interactions endpoint (plumber)
-    python launch.py r weekly --dry-run           # R weekly recap (preview)
+    python launch.py report                      # standalone HTML season report
+    python launch.py --r report <league> --all   # one report per season
+
+    python launch.py serve                       # Python slash-command bot
+    python launch.py weekly --dry-run            # Python weekly recap (preview)
+    python launch.py --r serve                    # R interactions endpoint (plumber)
+    python launch.py --r weekly --dry-run         # R weekly recap (preview)
 
 Instances live in separate subdirectories:
     python/   -> venv + Python package (sleepermetrics) + bot.py + webapp/
@@ -104,16 +107,28 @@ def _run_r(mode: str, extra: list[str]) -> int:
 
 def main(argv=None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
-    if len(argv) < 2 or argv[0] in ("-h", "--help"):
+    if argv[:1] in (["-h"], ["--help"]):
         print(__doc__)
-        return 0 if argv[:1] in (["-h"], ["--help"]) else 2
-    impl, mode, *extra = argv
-    impl = impl.lower()
-    if impl in ("py", "python"):
-        return _run_python(mode, extra)
-    if impl in ("r", "rlang"):
-        return _run_r(mode, extra)
-    sys.exit(f"Unknown instance '{impl}' (use 'r' or 'python').")
+        return 0
+
+    # Instance is a --python/--r flag (default Python), allowed anywhere in argv;
+    # pull it out so the remaining positionals are just `mode` + pass-through.
+    impl = "python"
+    rest = []
+    for arg in argv:
+        low = arg.lower()
+        if low in ("--python", "--py"):
+            impl = "python"
+        elif low in ("--r", "--rlang"):
+            impl = "r"
+        else:
+            rest.append(arg)
+
+    if not rest:
+        print(__doc__)
+        return 2
+    mode, *extra = rest
+    return _run_python(mode, extra) if impl == "python" else _run_r(mode, extra)
 
 
 if __name__ == "__main__":

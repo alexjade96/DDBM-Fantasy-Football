@@ -10,8 +10,12 @@ sl_playoff_summary(playoff)
 \item{playoff}{A \code{sleeper_playoff} object.}
 }
 \value{
-Tibble: \code{team}, \code{games}, \code{wins}, \code{losses}, \code{points}, \code{eliminated_in}.
+Tibble: \code{team}, \code{games}, \code{wins}, \code{losses}, \code{points},
+\code{win_pct}, \code{ppg}, \code{outcome}.
 }
 \description{
-Playoff standings (per-team run through the bracket)
+\code{outcome} narrates how each run ended and is never \code{NA}: the champion and the
+runner-up are named outright, and elimination is the last loss in the \strong{title}
+bracket, not the last loss overall -- consolation games are played after a team
+is already out, so ranking by them overstates the run.
 }

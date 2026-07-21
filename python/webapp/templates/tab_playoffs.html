@@ -26,19 +26,11 @@
   </div>
 </section>
 
+{# The scope selector deliberately does NOT live here. It never filtered the
+   bracket graphic (which always draws every game), so sitting above it read as
+   a broken control; it belongs beside the analytics it actually scopes. #}
 <div class="rowhead">
   <h2>Bracket</h2>
-  <form class="controls inline" hx-get="/tab/playoffs" hx-target="#panel"
-        hx-swap="innerHTML" hx-include="#league, #season, #theme" hx-trigger="change">
-    <label>
-      <span>Count which games?</span>
-      <select name="scope">
-        <option value="title" {% if scope == 'title' %}selected{% endif %}>Championship path only</option>
-        <option value="all" {% if scope == 'all' %}selected{% endif %}>Include consolation</option>
-        <option value="consolation" {% if scope == 'consolation' %}selected{% endif %}>Consolation only</option>
-      </select>
-    </label>
-  </form>
   <button class="ghost"
           hx-get="/tab/playoffs?refresh=1" hx-target="#panel" hx-swap="innerHTML"
           hx-include="#league, #season, #theme">
@@ -96,9 +88,27 @@
 <p class="empty">No games have been played in this bracket yet.</p>
 {% endif %}
 
-<h2>Playoff analytics</h2>
+<div class="rowhead">
+  <h2>Playoff analytics</h2>
+  {% if has_conso %}
+  <form class="controls inline" hx-get="/tab/playoffs" hx-target="#panel"
+        hx-swap="innerHTML" hx-include="#league, #season, #theme" hx-trigger="change">
+    <label>
+      <span>Count which games?</span>
+      <select name="scope">
+        <option value="title" {% if scope == 'title' %}selected{% endif %}>Championship path only</option>
+        <option value="all" {% if scope == 'all' %}selected{% endif %}>Include consolation</option>
+        <option value="consolation" {% if scope == 'consolation' %}selected{% endif %}>Consolation only</option>
+      </select>
+    </label>
+  </form>
+  {% endif %}
+</div>
 <p class="hint">Scoped to the {{ season }} postseason, like the rest of this tab —
-   switch season in the header to see another.</p>
+   switch season in the header to see another. These three charts are the only thing
+   <strong>Count which games?</strong> changes; the bracket above always shows every game.
+   {%- if not has_conso %} The {{ season }} bracket has no consolation games, so there is
+   nothing to include or exclude and the control is hidden.{% endif %}</p>
 <div class="grid two">
   <figure class="card chart">
     <img src="/chart/playoff_players?league={{ league }}&season={{ season }}&scope={{ scope }}&theme={{ theme }}&_={{ bust }}"
@@ -109,45 +119,23 @@
          alt="Clutch index" loading="lazy">
   </figure>
 </div>
-<div class="grid two">
-  <figure class="card chart">
-    <img src="/chart/playoff_stats?league={{ league }}&season={{ season }}&scope={{ scope }}&theme={{ theme }}&_={{ bust }}"
-         alt="{{ season }} playoff record" loading="lazy">
-  </figure>
-  <div class="card">
-    <h3>Postseason résumé</h3>
-    <p class="hint">Playoff-only metrics for the {{ season }} bracket
-       (<strong>{{ scope }}</strong> games). Every manager here made this
-       postseason, so there is no appearance count to compare.</p>
-    <div class="tablewrap">
-      <table>
-        <thead><tr>
-          <th>Manager</th><th class="n">W</th><th class="n">L</th>
-          <th class="n">Win%</th><th class="n">Titles</th><th class="n">PPG</th>
-        </tr></thead>
-        <tbody>
-        {% for r in stats %}
-          <tr>
-            <td>{{ r.user_name }}</td>
-            <td class="n">{{ r.wins }}</td>
-            <td class="n">{{ r.losses }}</td>
-            <td class="n">{{ r.win_pct | round(1) }}</td>
-            <td class="n">{% if r.titles %}<span class="chip">{{ r.titles }}</span>{% else %}—{% endif %}</td>
-            <td class="n">{{ r.ppg | round(1) }}</td>
-          </tr>
-        {% endfor %}
-        </tbody>
-      </table>
-    </div>
-  </div>
-</div>
+<figure class="card chart">
+  <img src="/chart/playoff_stats?league={{ league }}&season={{ season }}&scope={{ scope }}&theme={{ theme }}&_={{ bust }}"
+       alt="{{ season }} playoff record" loading="lazy">
+</figure>
 
+{# One table for the run. The old "Postseason résumé" card restated W/L beside
+   this same list of managers, differing only in carrying Win%/PPG -- those are
+   columns here now, so there is nothing left for a second table to say. #}
 <h2>This season&rsquo;s run</h2>
+<p class="hint">Every manager in the {{ season }} bracket, how far they went and what
+   they scored getting there. <strong>Outcome</strong> is the title path: a team knocked
+   out in an earlier round may still have played on in a placement game.</p>
 <div class="card tablewrap">
   <table>
     <thead><tr>
       <th>Team</th><th class="n">Games</th><th class="n">W</th><th class="n">L</th>
-      <th class="n">Points</th><th>Eliminated in</th>
+      <th class="n">Win%</th><th class="n">Points</th><th class="n">PPG</th><th>Outcome</th>
     </tr></thead>
     <tbody>
     {% for r in summary %}
@@ -156,13 +144,112 @@
         <td class="n">{{ r.games }}</td>
         <td class="n">{{ r.wins }}</td>
         <td class="n">{{ r.losses }}</td>
+        <td class="n">{{ r.win_pct | round(1) }}</td>
         <td class="n">{{ r.points | round(1) }}</td>
-        <td>{{ r.eliminated_in or "— champion" }}</td>
+        <td class="n">{{ r.ppg | round(1) }}</td>
+        <td>{% if r.outcome == 'Champion' %}<span class="chip">Champion</span>
+            {%- elif r.outcome == 'Runner-up' %}<strong>Runner-up</strong>
+            {%- else %}{{ r.outcome }}{% endif %}</td>
       </tr>
     {% endfor %}
     </tbody>
   </table>
 </div>
+
+<h2>Toilet bowl</h2>
+{% if toilet.games or toilet.teams %}
+<p class="hint">The other end of the season: the {{ toilet.teams | length }} team{{ "" if toilet.teams | length == 1 else "s" }}
+   who missed the bracket entirely, and what they played for once the postseason started.
+   Consolation games <em>inside</em> the bracket are placement games between playoff teams,
+   not this — they stay in the bracket walk above.</p>
+{% if toilet.last %}
+<section class="stats">
+  <div class="stat">
+    <span class="k">Last place</span>
+    <span class="v">{{ toilet.last }}</span>
+    <span class="sub">{% if toilet.basis == 'game' %}lost the toilet bowl{% else %}worst regular-season finish — no game decided it{% endif %}</span>
+  </div>
+</section>
+{% endif %}
+{% if toilet.games %}
+<div class="tablewrap">
+<div class="drilltable"
+     style="--cols: minmax(70px,.6fr) minmax(150px,1.8fr) minmax(150px,1.8fr) minmax(90px,.9fr) minmax(120px,1.2fr)">
+  <div class="dt-head">
+    <span class="dt-num">Week</span><span>Winner</span><span>Loser</span>
+    <span class="dt-num">Margin</span><span>Verdict</span>
+  </div>
+  {% for g in toilet.games %}
+  {% set win = g.sides | selectattr("result", "equalto", "W") | first %}
+  {% set lose = g.sides | selectattr("result", "equalto", "L") | first %}
+  <details class="dt-row" {% if loop.first %}open{% endif %}>
+    <summary>
+      <span class="dt-num">{{ g.week }}</span>
+      <span>{{ win.team if win else "—" }}{% if win %} <span class="q">{{ "%.1f"|format(win.points) }}</span>{% endif %}</span>
+      <span>{{ lose.team if lose else "—" }}{% if lose %} <span class="q">{{ "%.1f"|format(lose.points) }}</span>{% endif %}</span>
+      <span class="dt-num">{% if win and lose %}{{ "%.1f"|format(win.points - lose.points) }}{% else %}—{% endif %}</span>
+      <span>{% if g.loser %}<span class="tag">{{ g.loser }} last</span>{% else %}<span class="q">undecided</span>{% endif %}</span>
+    </summary>
+    <div class="dt-detail">
+      <div class="dt-facts">
+        {% for sd in g.sides %}
+        <div class="fact"><span class="fl">{{ sd.team }}</span>
+          <span class="fv"><span class="pts">{{ "%.2f"|format(sd.points) }}</span>
+            {% if sd.result == 'W' %}escaped the basement{% elif sd.result == 'L' %}finished last{% endif %}</span></div>
+        {% endfor %}
+      </div>
+      <div class="dt-tables">
+        {% for sd in g.sides %}
+        <table class="dt-games">
+          <thead><tr>
+            <th colspan="2">{{ sd.team }}{% if sd.result == 'W' %} — won{% elif sd.result == 'L' %} — lost{% endif %}</th>
+            <th class="n">{{ "%.2f"|format(sd.points) }}</th>
+          </tr></thead>
+          <tbody>
+          {% for pl in sd.lineup %}
+            <tr>
+              <td><span class="q">{{ pl.slot }}</span></td>
+              <td><strong>{{ pl.player_name }}</strong></td>
+              <td class="n">{{ "%.2f"|format(pl.points) }}</td>
+            </tr>
+          {% else %}
+            <tr><td colspan="3"><span class="q">No lineup recorded for this week.</span></td></tr>
+          {% endfor %}
+          </tbody>
+        </table>
+        {% endfor %}
+      </div>
+    </div>
+  </details>
+  {% endfor %}
+</div>
+</div>
+{% endif %}
+{% if toilet.teams %}
+<div class="card tablewrap">
+  <table>
+    <thead><tr>
+      <th>Team</th><th class="n">Finish</th><th class="n">W</th><th class="n">L</th>
+      <th class="n">Season pts</th>
+    </tr></thead>
+    <tbody>
+    {% for t in toilet.teams %}
+      <tr>
+        <td>{{ t.user_name }}{% if t.user_name == toilet.last %} <span class="tag">last</span>{% endif %}</td>
+        <td class="n">#{{ t.final_position }}</td>
+        <td class="n">{{ t.wins }}</td>
+        <td class="n">{{ t.losses }}</td>
+        <td class="n">{{ "%.1f"|format(t.points) }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+{% else %}
+<p class="empty">Every team made the {{ season }} bracket, so there was no toilet bowl.</p>
+{% endif %}
+
 
 <details class="card">
   <summary>League point-calculation chart ({{ n_rules }} rules, stored with the bracket)</summary>

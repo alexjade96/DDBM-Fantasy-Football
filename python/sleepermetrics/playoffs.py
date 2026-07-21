@@ -621,21 +621,198 @@ def playoff_stats(playoffs: dict, scope: str = "title") -> pd.DataFrame:
 
 
 def playoff_summary(p: Playoff) -> pd.DataFrame:
-    """Per-team run through the bracket."""
-    d = p.results
+    """Per-team run through the bracket.
 
-    def elim(g):
-        l_ = g.loc[g["result"] == "L", "round"]
-        return l_.iloc[-1] if len(l_) else None
+    `outcome` narrates how each team's run ended and is **never null**: a team
+    that never lost has no elimination round, and letting that fall through as a
+    missing value renders as the literal "nan" (pandas NaN is truthy, so a
+    template's `or` fallback never fires). The champion and the runner-up are
+    named outright rather than described by the round they went out in, which
+    for them is either nothing at all or the misleading "lost in Final".
+    """
+    d = p.results
+    cfg = p.config if isinstance(p.config, dict) else {}
+    rounds = cfg.get("rounds") or []
+    final_id = cfg.get("final") or (
+        rounds[-1]["matchups"][-1]["id"] if rounds and rounds[-1].get("matchups") else None)
+
+    def outcome(team, g):
+        if p.champion and team == p.champion:
+            return "Champion"
+        # Only the championship matchup makes a runner-up; a consolation final
+        # is a different bracket and its loser was eliminated earlier.
+        if final_id is not None and ((g["matchup_id"] == final_id)
+                                     & (g["result"] == "L")).any():
+            return "Runner-up"
+        # Elimination is the last loss in the TITLE bracket, not the last loss
+        # overall -- consolation games are played after a team is already out,
+        # so ranking by them overstates the run ("lost in Round 3" for a team
+        # knocked out of contention in Round 2). Fall back to any loss for a
+        # team that somehow never appears in the title bracket.
+        lost = g[g["result"] == "L"]
+        title = lost[lost["bracket"] == "title"] if "bracket" in lost else lost
+        out_in = (title if len(title) else lost)
+        if len(out_in):
+            return f"Lost in {out_in.iloc[-1]['round']}"
+        # Never lost and no title: the bracket has not finished resolving.
+        return "Still alive" if not p.champion else "—"
 
     rows = []
     for team, g in d.groupby("team"):
+        played = int(g["result"].isin(["W", "L", "T"]).sum())
+        wins = int((g["result"] == "W").sum())
+        pts = float(pd.to_numeric(g["points"], errors="coerce").sum())
         rows.append({
             "team": team,
-            "games": int(g["result"].isin(["W", "L", "T"]).sum()),
-            "wins": int((g["result"] == "W").sum()),
+            "games": played,
+            "wins": wins,
             "losses": int((g["result"] == "L").sum()),
-            "points": float(pd.to_numeric(g["points"], errors="coerce").sum()),
-            "eliminated_in": elim(g)})
+            "points": pts,
+            # Rate stats live here so one table can carry the whole run; a team
+            # with only byes has no played game, so guard the divide.
+            "win_pct": (wins / played * 100) if played else 0.0,
+            "ppg": (pts / played) if played else 0.0,
+            "outcome": outcome(team, g)})
     out = pd.DataFrame(rows)
     return out.sort_values(["wins", "points"], ascending=False).reset_index(drop=True)
+
+
+def _week_nums(v) -> list[int]:
+    """Week numbers out of a round's `weeks` field ("15", "15-16", "15,16")."""
+    out = []
+    for part in str(v).replace("+", ",").split(","):
+        part = part.strip()
+        if "-" in part:
+            a, _, b = part.partition("-")
+            if a.strip().isdigit() and b.strip().isdigit():
+                out += list(range(int(a), int(b) + 1))
+        elif part.isdigit():
+            out.append(int(part))
+    return out
+
+
+def _lineup_of(s, roster_id, week: int) -> list[dict]:
+    """The starters a roster fielded that week, in scoreboard slot order.
+
+    The toilet bowl is a plain Sleeper matchup, so its lineups live in `pl_wk`,
+    not in the bracket engine's `players`. Ordering goes through `assign_slots`
+    so the drill reads QB, RB1, RB2, WR1, WR2, TE, FLEX, K, DEF like every other
+    roster table, rather than in whatever order the frame happens to hold.
+    """
+    import pandas as pd
+
+    from .season import assign_slots
+    pw = getattr(s, "pl_wk", None)
+    if pw is None or not len(pw):
+        return []
+    d = pw[(pw["roster_id"] == roster_id) & (pw["week"] == week)
+           & pw["is_starter"].fillna(False)]
+    if not len(d):
+        return []
+    d = d.sort_values("points", ascending=False)
+    try:
+        d = assign_slots(d, getattr(s, "slots", {}) or {})
+    except Exception:
+        d = d.assign(slot=d["position"])
+    return [{"slot": r.slot, "player_name": r.player_name, "position": r.position,
+             "points": float(r.points) if pd.notna(r.points) else 0.0}
+            for r in d.itertuples(index=False)]
+
+
+def toilet_bowl(s, p=None) -> dict:
+    """The race at the bottom -- who finished last, and the game that decided it.
+
+    The toilet bowl is the teams that **missed the championship bracket** and the
+    games they played once the postseason started -- ordinary Sleeper matchups
+    that never appear in the bracket config, so reading the config alone reports
+    no toilet bowl at all (2025: sparky1335 beat rezzu in wk15).
+
+    The config's **consolation games are deliberately NOT counted here.** In this
+    league they are placement games between teams already in the bracket -- a
+    3rd-place game, not a race for the basement -- so the loser of the last one
+    is frequently a strong team: in 2022 it was diogenesthecat, who finished
+    *first* in the regular season. Reporting that as last place is simply wrong.
+    Those games remain visible, correctly labelled, in the bracket walk.
+
+    Last place goes to the **loser** of the final toilet-bowl game. With no game
+    to decide it, the worst regular-season finish stands in -- and that fallback
+    is labelled as such rather than presented as a result. A season where every
+    team reached the bracket has no toilet bowl, and says so.
+    """
+    import pandas as pd
+
+    st = getattr(s, "standings", None)
+    tw = getattr(s, "team_wk", None)
+    in_bracket, po_start, games = set(), None, []
+
+    if p is not None and len(getattr(p, "results", [])):
+        in_bracket = {t for t in p.results["team"].dropna()}
+        wks = [w for v in p.results.get("weeks", []) for w in _week_nums(v)]
+        po_start = min(wks) if wks else None
+
+    # Teams the bracket never included -- their postseason games are plain
+    # matchups in team_wk, which is the only place a 2025-shaped toilet bowl lives.
+    missed = []
+    if st is not None and len(st):
+        missed = [n for n in st["user_name"] if n not in in_bracket]
+    if missed and tw is not None and len(tw) and po_start:
+        d = tw[(tw["week"] >= po_start) & tw["user_name"].isin(missed)
+               & tw["matchup_id"].notna()]
+        for (wk, mid), g in d.groupby(["week", "matchup_id"], sort=True):
+            if len(g) < 2:
+                continue
+            sides = [{"team": r["user_name"], "points": float(r["points"]),
+                      "roster_id": r["roster_id"],
+                      "lineup": _lineup_of(s, r["roster_id"], int(wk)),
+                      "result": r["result"]} for _, r in g.iterrows()]
+            games.append({
+                "week": int(wk), "round": f"Week {int(wk)}", "source": "missed",
+                "sides": sides,
+                "winner": next((x["team"] for x in sides if x["result"] == "W"), None),
+                "loser": next((x["team"] for x in sides if x["result"] == "L"), None)})
+
+    def wk_of(g) -> int:
+        n = _week_nums(g["week"])
+        return max(n) if n else 0
+
+    games.sort(key=wk_of)
+    last, basis = None, None
+    decided = [g for g in games if g["loser"]]
+    if decided:
+        last, basis = max(decided, key=wk_of)["loser"], "game"
+    elif missed and st is not None and "final_position" in st:
+        pool = st[st["user_name"].isin(missed)]
+        if len(pool):
+            last, basis = pool.sort_values("final_position").iloc[-1]["user_name"], "standings"
+
+    # Season context for the teams involved. The per-game detail (both lineups)
+    # hangs off `games` instead -- the drill is a matchup drill, so a per-team
+    # week log would be answering a question nobody asked here.
+    teams = []
+    if st is not None and len(st):
+        pool = st[st["user_name"].isin(missed)] if missed else st.iloc[0:0]
+        for r in pool.itertuples(index=False):
+            teams.append({"user_name": r.user_name,
+                          "final_position": int(getattr(r, "final_position", 0) or 0),
+                          "wins": int(r.wins), "losses": int(r.losses),
+                          "points": float(r.points)})
+    teams.sort(key=lambda t: t["final_position"])
+    return {"games": games, "teams": teams, "last": last, "basis": basis,
+            "missed": missed}
+
+
+
+def reference_scores(s) -> dict:
+    """`{(manager, week): points}` for every scored week of the season.
+
+    The bracket chart uses it to show what a team **actually scored** in a week
+    it had no bracket game -- a bye, or a round it was waiting out. Those nodes
+    otherwise read as a dash, which looks like missing data when the score is
+    right there in the season. It is reference only and the chart marks it as
+    such: nothing here counts toward a bracket result.
+    """
+    tw = getattr(s, "team_wk", None)
+    if tw is None or not len(tw):
+        return {}
+    return {(r.user_name, int(r.week)): float(r.points)
+            for r in tw.itertuples(index=False)}

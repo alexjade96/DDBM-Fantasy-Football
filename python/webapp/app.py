@@ -5,7 +5,7 @@ same matplotlib figures the package already renders, streamed as PNG, so the
 R<->Python chart mirror and the parity harness keep protecting them -- the web
 layer adds no new plotting code.
 
-    python launch.py python dashboard [--port 8000]
+    python launch.py dashboard [--port 8000]
     uvicorn webapp.app:app --reload      # from python/
 """
 from __future__ import annotations
@@ -147,6 +147,31 @@ def pd_notna(v) -> bool:
     return bool(pd.notna(v))
 
 
+def records(df) -> list[dict]:
+    """`df.to_dict("records")` with every missing value as None, not NaN.
+
+    Templates guard missing values with `is not none` / `or`, and **pandas NaN
+    defeats both** -- it is neither None nor falsey, so the guard passes and the
+    cell renders the literal "nan" (or "+nan" once a format string has been
+    applied to it). Scrubbing at this boundary is what makes those guards mean
+    what they read as, so hand template rows through here rather than calling
+    `to_dict` directly.
+    """
+    import pandas as pd
+
+    def clean(v):
+        if v is None:
+            return None
+        try:
+            # Covers NaN, NaT and pd.NA alike; a list/array argument makes
+            # pd.isna return an array, whose truth value raises -- keep those.
+            return None if pd.isna(v) else v
+        except (TypeError, ValueError):
+            return v
+
+    return [{k: clean(v) for k, v in row.items()} for row in df.to_dict("records")]
+
+
 def _grouped_rules(settings: dict) -> list[tuple[str, list[dict]]]:
     """The point-calculation chart as [(group, [rule, ...])], in plain English.
 
@@ -155,7 +180,7 @@ def _grouped_rules(settings: dict) -> list[tuple[str, list[dict]]]:
     translating -- shared with the R dashboard and parity-checked against it.
     """
     d = sm.scoring_readable(settings)
-    return [(g, rows.to_dict("records")) for g, rows in d.groupby("group", sort=False)]
+    return [(g, records(rows)) for g, rows in d.groupby("group", sort=False)]
 
 TABS = [
     ("overview", "Season overview"), ("weekly", "Weekly trends"),
@@ -291,7 +316,9 @@ def chart(name: str, league: str = DEFAULT_LEAGUE, season: str | None = None,
             return png(plots.plot_clutch(d["seasons"], d["playoffs"], scope))
         if name == "bracket":
             p = d["playoffs"].get(key)
-            return png(plots.plot_playoff_bracket(p))
+            # Bye/idle nodes carry the team's real weekly score for reference,
+            # so they read as a number rather than a dash.
+            return png(plots.plot_playoff_bracket(p, sm.reference_scores(s)))
         if name == "playoff_matchup":
             p = d["playoffs"].get(key)
             mid = matchup or p.config.get("final")
@@ -378,7 +405,7 @@ def tab(name: str, request: Request, league: str = DEFAULT_LEAGUE,
         ctx.update({
             "charts": ["table_position", "team_points"],
             "week": wk, "weeks": list(range(1, last + 1)),
-            "wk_rows": ws.to_dict("records"),
+            "wk_rows": records(ws),
             "kpi_top": _one(top, f"{top['points']:.1f}") if top is not None else "—",
             "kpi_blow": (f"+{blow['margin']:.1f} · {blow['user_name']}"
                          if blow is not None else "—"),
@@ -416,7 +443,7 @@ def tab(name: str, request: Request, league: str = DEFAULT_LEAGUE,
         wl = metrics.waiver_ledger(s, top_n=None)   # full list; sliced below
         ctx["deals"] = deals
         ctx["n_deals"] = len(deals)
-        ctx["waivers"] = wl.head(30).to_dict("records")
+        ctx["waivers"] = records(wl.head(30))
         ctx["n_adds"] = len(wl)
         return tpl.TemplateResponse(request, "tab_transactions.html", ctx)
     elif name == "draft":
@@ -473,13 +500,10 @@ def tab(name: str, request: Request, league: str = DEFAULT_LEAGUE,
             ctx["po_charts"] = ["playoff_stats_all", "playoff_players_all",
                                 "clutch_all"]
             ctx["po_seasons"] = sorted(d["playoffs"])
-            ctx["po_stats"] = (sm.playoff_stats(d["playoffs"], "title")
-                               .to_dict("records"))
-        mg = sm.league_accounts(d["seasons"])
-        # NaN is TRUTHY in Jinja, so a missing avatar would sail through
-        # `{% if m.avatar_url %}` and render src="nan". Hand the template None.
-        mg = mg.astype(object).where(mg.notna(), None)
-        ctx["managers"] = mg.to_dict("records")
+            ctx["po_stats"] = records(sm.playoff_stats(d["playoffs"], "title"))
+        # records() is what keeps `{% if m.avatar_url %}` honest: NaN is TRUTHY
+        # in Jinja, so a missing avatar would otherwise render src="nan".
+        ctx["managers"] = records(sm.league_accounts(d["seasons"]))
     elif name == "playoffs":
         # No season rail here: the header's season picker is the one control that
         # chooses the season, and a second in-tab switcher let the postseason
@@ -514,9 +538,14 @@ def tab(name: str, request: Request, league: str = DEFAULT_LEAGUE,
             "next": ids[i + 1] if 0 <= i < len(ids) - 1 else None,
             "step": (i + 1) if i >= 0 else 0,
             "n_steps": len(ids),
-            "summary": sm.playoff_summary(p).to_dict("records"),
-            # Scoped to this season, matching the charts beside it.
-            "stats": sm.playoff_stats({key: p}, scope).to_dict("records"),
+            # One table for the whole run: playoff_summary now carries the rate
+            # stats the separate "résumé" table used to duplicate.
+            "summary": records(sm.playoff_summary(p)),
+            "toilet": sm.toilet_bowl(s, p),
+            # No consolation games means the scope selector has nothing to
+            # include or exclude -- offering it would be a dead control.
+            "has_conso": bool((r.get("bracket") == "consolation").any())
+            if "bracket" in r else False,
             "rules": _grouped_rules(p.config.get("scoring_settings", {})),
             "n_rules": len(p.config.get("scoring_settings", {})),
         })

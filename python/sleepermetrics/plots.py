@@ -677,8 +677,32 @@ def _plot_acq(d, s: Season, title, subtitle):
 
 # --- Playoff charts (mirror R plots.R) -------------------------------------
 
-def plot_playoff_bracket(p):
-    """Rounds left to right; winner filled, loser grey, bye amber, pending hollow."""
+def _ref_label(ref_scores: dict | None, team, weeks) -> str:
+    """"(148.6)" for a node with no bracket score, or a dash if none is known.
+
+    A multi-week round sums, matching how the engine scores one. Anything
+    missing (no season handed in, a team with no row that week) falls back to
+    the dash rather than inventing a zero.
+    """
+    from .playoffs import _week_nums
+    if not ref_scores or team is None:
+        return "–"
+    wks = _week_nums(weeks)
+    vals = [ref_scores.get((team, w)) for w in wks]
+    vals = [v for v in vals if v is not None]
+    return f"({sum(vals):.1f})" if vals else "–"
+
+
+def plot_playoff_bracket(p, ref_scores: dict | None = None):
+    """Rounds left to right; winner filled, loser grey, bye amber, pending hollow.
+
+    `ref_scores` is `{(manager, week): points}` (see `reference_scores`). A node
+    with no bracket score of its own -- a bye, or a team waiting out a round --
+    shows what it **actually scored** that week in parentheses instead of a bare
+    dash, which reads as missing data when the number is right there in the
+    season. Parenthesised because it decides nothing: the team advanced on the
+    bye, not on those points.
+    """
     import pandas as pd
     d = p.results.copy()
     rounds = list(dict.fromkeys(d["round_id"]))
@@ -709,7 +733,10 @@ def plot_playoff_bracket(p):
                                    facecolor=COL.get(r["result"], "#e6e8ea"),
                                    edgecolor=T["edge"], lw=1.2, zorder=2))
         sd = seed_of.get(r["team"], "")
-        pts = "–" if pd.isna(r["points"]) else f"{r['points']:.1f}"
+        if not pd.isna(r["points"]):
+            pts = f"{r['points']:.1f}"
+        else:
+            pts = _ref_label(ref_scores, r["team"], r["weeks"])
         # Node fills (COL) are always light, so their label stays dark on both
         # themes -- following T["ink"] here would vanish on a light node in dark.
         ax.text(r["rx"], r["y"], f"{sd}  {r['team']}   {pts}".strip(), ha="center",
@@ -724,12 +751,20 @@ def plot_playoff_bracket(p):
     for sp in ax.spines.values():
         sp.set_visible(False)
     ax.tick_params(length=0, colors=T["tick"])
-    ax.set_title(f"{p.name} · {p.season} Bracket", loc="left", fontsize=16,
+    # The round names are TOP-axis tick labels, so ANY text between the title and
+    # the axes runs straight through them -- there is no subtitle band here. The
+    # champion rides in the title and the explanation goes to the bottom of the
+    # figure (same rule as the matrix charts).
+    ax.set_title(f"{p.name} · {p.season} Bracket  —  Champion: "
+                 f"{p.champion or 'undecided'}", loc="left", fontsize=16,
                  fontweight="bold", color=T["ink"], pad=26)
-    ax.text(0, 1.02, f"Champion: {p.champion or 'undecided'}  ·  every score computed "
-            "from the submitted lineups under the league's own scoring chart",
-            transform=ax.transAxes, fontsize=9.5, color=T["muted"], va="bottom")
-    fig.tight_layout()
+    note = ("Every score is computed from the submitted lineups under the "
+            "league's own scoring chart.")
+    if ref_scores:
+        note += ("   (Bracketed) is what a bye/idle team happened to score that "
+                 "week — shown for reference; it decides nothing.")
+    fig.text(0.01, 0.015, note, fontsize=9, color=T["muted"], va="bottom")
+    fig.tight_layout(rect=(0, 0.055, 1, 1))
     return fig
 
 

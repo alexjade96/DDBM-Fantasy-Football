@@ -14,7 +14,8 @@ from .playoffs import (Playoff, apply_playoffs, clutch, load_playoffs, playoff,
                        playoff_finals, playoff_margins, playoff_path,
                        playoff_performances, playoff_players, playoff_replay,
                        playoff_seeding, playoff_stats, playoff_summary,
-                       scope_frame, seeds)
+                       reference_scores, scope_frame, seeds,
+                       toilet_bowl)
 from .report import season_report
 from .scoring import score_lineup, scoring_chart
 from .season import (Season, assemble_season, avatar_url, league_accounts,
@@ -34,7 +35,7 @@ __all__ = [
     "headshots", "season_report",
     "playoffs", "playoff", "playoff_config", "playoff_summary", "Playoff",
     "apply_playoffs", "load_playoffs", "playoff_stats",
-    "scope_frame", "seeds", "clutch",
+    "scope_frame", "seeds", "clutch", "toilet_bowl", "reference_scores",
     "playoff_performances", "playoff_players", "playoff_all_stars",
     "playoff_best_games", "playoff_busts", "playoff_finals", "playoff_carry",
     "playoff_margins", "playoff_path", "playoff_allplay", "playoff_seeding",
