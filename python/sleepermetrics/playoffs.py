@@ -560,8 +560,10 @@ def playoff_replay(playoffs: dict, seasons: dict, scope: str = "title") -> pd.Da
                 if not len(rid):
                     opt.append(None)
                     continue
-                d = se.pl_wk[(se.pl_wk["roster_id"] == rid.iloc[0])
-                             & (se.pl_wk["week"].isin(wks))]
+                # Playoff weeks -- must read the unscoped frame.
+                pw = getattr(se, "pl_wk_all", se.pl_wk)
+                d = pw[(pw["roster_id"] == rid.iloc[0])
+                       & (pw["week"].isin(wks))]
                 if not len(d) or not set(wks).issubset(set(d["week"])):
                     opt.append(None)
                     continue
@@ -657,21 +659,36 @@ def playoff_summary(p: Playoff) -> pd.DataFrame:
         # Never lost and no title: the bracket has not finished resolving.
         return "Still alive" if not p.champion else "—"
 
+    # Seed is the commissioner's own seeding from the config -- which is the
+    # REGULAR-season order (standings.reg_position), not the blended win/loss
+    # position that counts postseason weeks. Verified: for 2025 reg_position
+    # reproduces all eight stored seeds, final_position only four.
+    seed_of = {v: int(k) for k, v in (cfg.get("_seeds") or {}).items()}
+
     rows = []
     for team, g in d.groupby("team"):
-        played = int(g["result"].isin(["W", "L", "T"]).sum())
+        pl = g[g["result"].isin(["W", "L", "T"])]
+        played = int(len(pl))
         wins = int((g["result"] == "W").sum())
         pts = float(pd.to_numeric(g["points"], errors="coerce").sum())
+        gp = pd.to_numeric(pl["points"], errors="coerce")
+        gm = pd.to_numeric(pl["margin"], errors="coerce")
         rows.append({
             "team": team,
+            "seed": seed_of.get(team),
             "games": played,
             "wins": wins,
             "losses": int((g["result"] == "L").sum()),
             "points": pts,
             # Rate stats live here so one table can carry the whole run; a team
-            # with only byes has no played game, so guard the divide.
+            # with only byes has no played game, so guard the divide. These are
+            # the postseason counterparts of the regular-season table, so a
+            # two-game run can be read against a four-game one.
             "win_pct": (wins / played * 100) if played else 0.0,
             "ppg": (pts / played) if played else 0.0,
+            "high": float(gp.max()) if played and gp.notna().any() else 0.0,
+            "low": float(gp.min()) if played and gp.notna().any() else 0.0,
+            "avg_margin": float(gm.mean()) if played and gm.notna().any() else 0.0,
             "outcome": outcome(team, g)})
     out = pd.DataFrame(rows)
     return out.sort_values(["wins", "points"], ascending=False).reset_index(drop=True)
@@ -702,7 +719,7 @@ def _lineup_of(s, roster_id, week: int) -> list[dict]:
     import pandas as pd
 
     from .season import assign_slots
-    pw = getattr(s, "pl_wk", None)
+    pw = getattr(s, "pl_wk_all", None)
     if pw is None or not len(pw):
         return []
     d = pw[(pw["roster_id"] == roster_id) & (pw["week"] == week)
@@ -742,7 +759,8 @@ def toilet_bowl(s, p=None) -> dict:
     import pandas as pd
 
     st = getattr(s, "standings", None)
-    tw = getattr(s, "team_wk", None)
+    # Postseason weeks: the toilet bowl lives outside the regular season.
+    tw = getattr(s, "team_wk_all", None)
     in_bracket, po_start, games = set(), None, []
 
     if p is not None and len(getattr(p, "results", [])):
@@ -811,8 +829,70 @@ def reference_scores(s) -> dict:
     right there in the season. It is reference only and the chart marks it as
     such: nothing here counts toward a bracket result.
     """
-    tw = getattr(s, "team_wk", None)
+    tw = getattr(s, "team_wk_all", None)
     if tw is None or not len(tw):
         return {}
     return {(r.user_name, int(r.week)): float(r.points)
             for r in tw.itertuples(index=False)}
+
+
+def postseason_weeks(s, p=None) -> list[dict]:
+    """Week-by-week detail for the weeks the regular season no longer covers.
+
+    The Weekly tab is regular-season only, so weeks 15+ have to be readable
+    somewhere -- this is that view, and it belongs with the postseason. Each
+    team's score is shown with WHAT IT WAS FOR, which is the whole point: in a
+    league whose playoff runs outside Sleeper, a postseason week holds bracket
+    games, byes, toilet-bowl games and teams simply not playing, all at once,
+    and an unlabelled column of points cannot be told apart.
+
+    `bracket_points` come from the engine (the commissioner's submitted lineups,
+    priced under the league's scoring chart) while `points` is Sleeper's own
+    weekly total. They are computed from completely different inputs, so both
+    are carried -- and across every stored season all 48 bracket team-weeks
+    agree exactly, which is a standing corroboration that the engine and Sleeper
+    price the same rosters the same way. A future season where they diverge is
+    worth investigating, not papering over.
+
+    Note the view can only cover weeks Sleeper actually scored: 2025's final is
+    week 18, past `last_scored_leg`, so it appears in the bracket but not here.
+    """
+    tw = getattr(s, "team_wk_all", None)
+    pws = getattr(s, "playoff_week_start", None)
+    if tw is None or not len(tw) or not pws:
+        return []
+
+    playing, byes, po_pts = {}, {}, {}
+    if p is not None and len(getattr(p, "results", [])):
+        for _, r in p.results.iterrows():
+            for w in _week_nums(r["weeks"]):
+                if r["result"] in ("W", "L", "T"):
+                    playing.setdefault(w, set()).add(r["team"])
+                    if pd.notna(r["points"]):
+                        po_pts[(r["team"], w)] = float(r["points"])
+                elif r["result"] == "BYE":
+                    byes.setdefault(w, set()).add(r["team"])
+
+    out = []
+    for w in sorted(int(x) for x in tw.loc[tw["week"] >= int(pws), "week"].unique()):
+        rows = []
+        for r in tw[tw["week"] == w].itertuples(index=False):
+            nm = r.user_name
+            if nm in playing.get(w, set()):
+                role, note = "bracket", "bracket game"
+            elif nm in byes.get(w, set()):
+                role, note = "bye", "bye — advanced without playing"
+            elif pd.notna(getattr(r, "matchup_id", None)):
+                role, note = "outside", "played, but outside the bracket"
+            else:
+                role, note = "idle", "no game"
+            rows.append({
+                "user_name": nm,
+                "points": float(r.points),
+                # The bracket's own figure where there is one; it is the number
+                # that actually decided the game.
+                "bracket_points": po_pts.get((nm, w)),
+                "role": role, "note": note})
+        if rows:
+            out.append({"week": w, "rows": sorted(rows, key=lambda x: -x["points"])})
+    return out

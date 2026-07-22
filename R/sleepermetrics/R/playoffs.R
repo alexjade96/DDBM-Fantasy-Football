@@ -729,8 +729,11 @@ sl_playoff_replay <- function(playoffs, seasons, scope = "title") {
       wks <- as.integer(strsplit(g$weeks[1], "\\+")[[1]])
       opt <- vapply(g$team, function(tm) {
         rid <- se$user_map$roster_id[match(tm, se$user_map$user_name)]
-        # Rosters for these weeks may be past the season's last scored leg.
-        d <- se$pl_wk %>% dplyr::filter(roster_id == rid, week %in% wks)
+        # Playoff weeks sit OUTSIDE the regular season, so read the unscoped
+        # frame -- se$pl_wk stops at playoff_week_start - 1 and would find
+        # nothing here (mirrors pl_wk_all in python/sleepermetrics/playoffs.py).
+        pw <- se$pl_wk_all %||% se$pl_wk
+        d <- pw %>% dplyr::filter(roster_id == rid, week %in% wks)
         if (!nrow(d) || !all(wks %in% unique(d$week))) return(NA_real_)
         sum(vapply(wks, function(w) sl_optimal_points(
           d %>% dplyr::filter(week == w), se$slots), numeric(1)))

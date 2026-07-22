@@ -133,6 +133,42 @@ class Season:
     user_map: pd.DataFrame
     transactions: pd.DataFrame = field(default_factory=pd.DataFrame)
     accounts: pd.DataFrame = field(default_factory=pd.DataFrame)
+    # Sleeper's own phase signals. `status` is pre_draft/drafting/in_season/
+    # complete; `playoff_week_start` is the first postseason week, so the
+    # regular season is weeks 1..playoff_week_start-1. Nothing else in the
+    # codebase knew whether a season was finished -- every "finished Nth"
+    # reads the same in week 6 as in week 17 without these.
+    status: str | None = None
+    playoff_week_start: int | None = None
+    # Every scored week, postseason included. `team_wk`/`pl_wk` are the REGULAR
+    # season; these are for the postseason features only (toilet bowl, bracket
+    # reference scores, playoff-week lineups). Default to the scoped frames so a
+    # hand-built Season (tests, fixtures) still behaves.
+    team_wk_all: pd.DataFrame | None = None
+    pl_wk_all: pd.DataFrame | None = None
+    # Last scored week overall (postseason included); `last_week` is the last
+    # REGULAR-season week, so the two differ once a postseason has been played.
+    last_week_all: int | None = None
+
+    def __post_init__(self):
+        if self.team_wk_all is None:
+            self.team_wk_all = self.team_wk
+        if self.pl_wk_all is None:
+            self.pl_wk_all = self.pl_wk
+        if self.last_week_all is None:
+            self.last_week_all = self.last_week
+
+    @property
+    def in_progress(self) -> bool:
+        """True while the season is still being played."""
+        return self.status not in (None, "complete")
+
+    @property
+    def reg_weeks(self) -> int:
+        """Last regular-season week, capped at what has actually been scored."""
+        if not self.playoff_week_start:
+            return self.last_week
+        return min(self.last_week, int(self.playoff_week_start) - 1)
 
     def __repr__(self):
         return (f"<Season {self.name} {self.season} | teams: "
@@ -211,6 +247,7 @@ def _result(points, pa):
 def assemble_season(link: dict) -> Season:
     lid = link["league_id"]
     lw = max(int(link["last_scored_leg"]), 1)
+    pws = int(link.get("playoff_week_start") or 0)
     slots = starter_slots(link["roster_positions"])
     pinfo = players()
 
@@ -282,6 +319,27 @@ def assemble_season(link: dict) -> Season:
     # pl_wk stays user_name-free to mirror R's schema; the lineup build joins it.
     pl = (pd.DataFrame(pl_rows)
           .merge(pinfo[["player_id", "player_name", "position"]], on="player_id", how="left"))
+    # SPLIT THE SEASON HERE. Everything downstream -- standings, luck,
+    # efficiency, all-play, power rank, the weekly tab -- is a REGULAR-season
+    # metric, so it must not count postseason weeks. Where a league runs its
+    # playoff outside Sleeper those weeks are phantom matchups nobody played
+    # (2025: LuckyHarm read 16-1 against an actual 13-1); even where it doesn't,
+    # a playoff game is not a regular-season result. Filtering once here is what
+    # keeps R and Python in step -- the mirror does the same, so every derived
+    # metric stays identical without either side special-casing anything.
+    # The *_all frames keep every scored week for the postseason features
+    # (toilet bowl, bracket reference scores, playoff-week lineups).
+    tw_all, pl_all = tw.copy(), pl.copy()
+    lw_all = lw
+    if pws:
+        tw = tw[tw["week"] < pws].copy()
+        pl = pl[pl["week"] < pws].copy()
+        # last_week must name a week that EXISTS in the scoped frames -- it is
+        # the default for "the latest week" all over (summary_week, the weekly
+        # tab, "did they keep him?"), and leaving it at the last scored leg
+        # indexed an empty frame the moment the postseason was split off.
+        lw = min(lw, pws - 1)
+
     pl_named = pl.merge(user_map[["roster_id", "user_name"]], on="roster_id", how="left")
     lineup_rows = []
     for (un, wk), g in pl_named.groupby(["user_name", "week"]):
@@ -291,6 +349,11 @@ def assemble_season(link: dict) -> Season:
                             "optimal": opt, "left_on_bench": max(opt - actual, 0.0)})
     lineup = pd.DataFrame(lineup_rows)
 
+    # `tw` is already regular-season only, so these ARE the regular-season
+    # figures -- no separate reg_* columns, which would only invite two
+    # competing notions of "the record". Verified against ground truth: on 2025
+    # this final_position reproduces all eight of the bracket's stored seeds,
+    # where the old all-weeks version matched only four.
     st_rows = []
     for rid, g in tw.groupby("roster_id"):
         st_rows.append({
@@ -319,7 +382,8 @@ def assemble_season(link: dict) -> Season:
     standings["season"] = link["season"]
 
     return Season(link["season"], link.get("name"), lid, lw, slots,
-                  tw, pl, lineup, standings, user_map, transactions, accounts)
+                  tw, pl, lineup, standings, user_map, transactions, accounts,
+                  link.get("status"), pws or None, tw_all, pl_all, lw_all)
 
 
 def league_accounts(seasons: dict) -> pd.DataFrame:

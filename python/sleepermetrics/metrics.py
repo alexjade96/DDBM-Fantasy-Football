@@ -958,3 +958,111 @@ def transaction_standouts(s: Season) -> list[dict]:
             tile("Quietest manager", str(int(c.min())), c.idxmin(),
                  "adds across the season")
     return out
+
+
+def week_matchups(s: Season, week: int) -> list[dict]:
+    """The week's games as GAMES -- both lineups, and what decided each one.
+
+    The weekly scoreboard was a flat list of teams, which makes you pair the
+    rows up by eye to see who actually played whom. This groups by matchup so a
+    game is one row, and hangs the detail that explains it off each: both
+    lineups in scoreboard slot order, the standout and quietest starter, what
+    was left on the bench, and -- the sharp one -- whether a single legal
+    same-position swap would have flipped the result.
+
+    A team with no opponent (a bye, or an eliminated team in a postseason week)
+    is kept as a one-sided entry rather than dropped: "they scored 158 and had
+    nobody to play" is a real state, and silently omitting the row makes the
+    scoreboard disagree with the standings.
+    """
+    from .season import assign_slots
+
+    tw, pl = s.team_wk, s.pl_wk
+    if not len(tw) or "week" not in tw:
+        return []
+    d = tw[tw["week"] == int(week)]
+    if not len(d):
+        return []
+    lu = s.lineup if {"user_name", "week", "actual", "optimal",
+                      "left_on_bench"}.issubset(getattr(s.lineup, "columns", [])) else None
+    plw = (pl[pl["week"] == int(week)]
+           .merge(s.user_map[["roster_id", "user_name"]], on="roster_id", how="left")
+           if len(pl) else pl)
+
+    def side(r) -> dict:
+        nm = r["user_name"]
+        g = plw[plw["user_name"] == nm] if len(plw) else plw
+        st = g[g["is_starter"]] if len(g) else g
+        bn = g[~g["is_starter"]] if len(g) else g
+        # team_wk carries points and pa, NOT margin -- deriving it is the whole
+        # basis of the flip check below, and reading a "margin" column that does
+        # not exist silently made every game look undecided.
+        pa = r.get("pa")
+        row = {
+            "user_name": nm,
+            "points": float(r["points"]),
+            "pa": float(pa) if pd.notna(pa) else None,
+            "result": r["result"] if pd.notna(r["result"]) else None,
+            "margin": (float(r["points"]) - float(pa)) if pd.notna(pa) else None,
+            "lineup": [], "bench": [],
+            "optimal": None, "left_on_bench": None, "eff": None,
+        }
+        if len(st):
+            ls = assign_slots(st, getattr(s, "slots", {}) or {})
+            row["lineup"] = [{"slot": x.slot, "player_name": x.player_name,
+                              "position": x.position, "points": float(x.points)}
+                             for x in ls.itertuples(index=False)]
+        if len(bn):
+            b = bn.sort_values("points", ascending=False).head(6)
+            row["bench"] = [{"player_name": x.player_name, "position": x.position,
+                             "points": float(x.points)}
+                            for x in b.itertuples(index=False)]
+        if lu is not None:
+            m = lu[(lu["user_name"] == nm) & (lu["week"] == int(week))]
+            if len(m):
+                row["optimal"] = round(float(m["optimal"].iloc[0]), 2)
+                row["left_on_bench"] = round(float(m["left_on_bench"].iloc[0]), 2)
+                row["eff"] = round(row["points"] / max(row["optimal"], 1e-9) * 100, 1)
+        # The single legal same-position swap that cost the most -- and whether
+        # it alone would have changed the result (same rule as bench_regrets).
+        row["regret"] = None
+        if len(st) and len(bn):
+            best = None
+            for b in bn.itertuples(index=False):
+                pool = st[st["position"] == b.position]
+                if not len(pool):
+                    continue
+                w = pool.loc[pool["points"].idxmin()]
+                gain = float(b.points) - float(w["points"])
+                if gain > 0 and (best is None or gain > best["gain"]):
+                    best = {"gain": round(gain, 2), "In": b.player_name,
+                            "out": w["player_name"], "position": b.position}
+            if best:
+                mg = row["margin"]
+                best["flips"] = bool(mg is not None and mg < 0 and best["gain"] > -mg)
+                row["regret"] = best
+        return row
+
+    games, seen = [], set()
+    for _, r in d.iterrows():
+        mid = r.get("matchup_id")
+        key = ("m", mid) if pd.notna(mid) else ("solo", r["user_name"])
+        if key in seen:
+            continue
+        seen.add(key)
+        rows = (d[d["matchup_id"] == mid] if pd.notna(mid)
+                else d[d["user_name"] == r["user_name"]])
+        sides = [side(x) for _, x in rows.iterrows()]
+        sides.sort(key=lambda x: -x["points"])
+        played = len(sides) > 1
+        games.append({
+            "matchup_id": mid if pd.notna(mid) else None,
+            "sides": sides,
+            "played": played,
+            "winner": next((x["user_name"] for x in sides if x["result"] == "W"), None),
+            "margin": (round(abs(sides[0]["points"] - sides[1]["points"]), 2)
+                       if played else None),
+            "total": round(sum(x["points"] for x in sides), 2),
+        })
+    games.sort(key=lambda g: (-g["total"] if g["played"] else 1e9))
+    return games

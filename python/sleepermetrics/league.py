@@ -26,6 +26,12 @@ def league_chain(league_id) -> dict:
             "name": lg.get("name"),
             "last_scored_leg": (lg.get("settings") or {}).get("last_scored_leg") or 0,
             "roster_positions": lg.get("roster_positions") or [],
+            # Phase signals, straight from Sleeper: status tells you whether the
+            # season is still being played, playoff_week_start where the regular
+            # season ends. Both are needed to say "currently 3rd" instead of
+            # "finished 3rd" -- and to keep postseason weeks out of the record.
+            "status": lg.get("status"),
+            "playoff_week_start": (lg.get("settings") or {}).get("playoff_week_start") or 0,
         }
         lid = lg.get("previous_league_id")
     return dict(sorted(chain.items(), key=lambda kv: int(kv[0])))

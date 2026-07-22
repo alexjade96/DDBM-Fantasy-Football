@@ -179,6 +179,70 @@ def _finish(fig, ax, title, subtitle=None, xlabel=None, ylabel=None, caption=Non
     return fig
 
 
+
+# Candidate label placements, tried in order: above, below, either side, then
+# the diagonals, then further out. First one that hits nothing wins.
+_LABEL_SPOTS = [
+    (0, 16, "center", "bottom"), (0, -18, "center", "top"),
+    (42, 0, "left", "center"), (-42, 0, "right", "center"),
+    (34, 13, "left", "bottom"), (-34, 13, "right", "bottom"),
+    (34, -15, "left", "top"), (-34, -15, "right", "top"),
+    (0, 30, "center", "bottom"), (0, -32, "center", "top"),
+]
+
+
+def _place_labels(fig, ax, xs, ys, texts, fontsize=8.4, color=None, avoid=()):
+    """Annotate scattered points without letting the labels collide.
+
+    A fixed offset works until two teams land in the same corner, and then one
+    label prints straight through another. This tries each candidate offset and
+    keeps the first whose rendered box clears every label already placed AND
+    every marker -- measured from the real text extents, not guessed from string
+    length, because the two differ enough to matter at these sizes.
+
+    MUST be called after `_finish`, which runs tight_layout: that resizes the
+    axes, so any geometry solved before it is stale by the time it is drawn.
+    """
+    fig.canvas.draw()
+    rend = fig.canvas.get_renderer()
+    pix = ax.transData.transform(list(zip(xs, ys)))
+    # Seed with any fixed artists that must also be dodged (zone captions etc.),
+    # otherwise the solver treats their space as free.
+    boxes: list = [a.get_window_extent(rend) for a in avoid]
+
+    def clashes(bb):
+        if any(bb.overlaps(o) for o in boxes):
+            return True
+        return any(bb.x0 - 5 <= px <= bb.x1 + 5 and bb.y0 - 5 <= py <= bb.y1 + 5
+                   for px, py in pix)
+
+    # Densest area first: points with the most neighbours are hardest to place,
+    # so give them the pick of the spots before the isolated ones take them.
+    order = sorted(range(len(xs)), key=lambda i: -sum(
+        1 for j in range(len(xs))
+        if j != i and abs(pix[j][0] - pix[i][0]) < 90 and abs(pix[j][1] - pix[i][1]) < 55))
+    for i in order:
+        best = None
+        for dx, dy, ha, va in _LABEL_SPOTS:
+            ann = ax.annotate(texts[i], (xs[i], ys[i]), textcoords="offset points",
+                              xytext=(dx, dy), ha=ha, va=va, fontsize=fontsize,
+                              color=color or T["ink"], zorder=5,
+                              bbox=dict(facecolor=T["bg"], edgecolor="none",
+                                        alpha=.75, pad=1.4))
+            bb = ann.get_window_extent(rend)
+            if not clashes(bb):
+                best = (ann, bb)
+                break
+            ann.remove()
+        if best is None:      # every spot taken -- fall back to directly above
+            ann = ax.annotate(texts[i], (xs[i], ys[i]), textcoords="offset points",
+                              xytext=(0, 16), ha="center", va="bottom",
+                              fontsize=fontsize, color=color or T["ink"], zorder=5,
+                              bbox=dict(facecolor=T["bg"], edgecolor="none",
+                                        alpha=.75, pad=1.4))
+            best = (ann, ann.get_window_extent(rend))
+        boxes.append(best[1])
+
 def _cap(s: Season) -> str:
     return f"Data: Sleeper API  ·  {s.name} {s.season}"
 
@@ -1319,3 +1383,146 @@ def plot_mgr_margins(s: Season, manager: str):
                    f"Points scored minus points allowed  ·  {close} game(s) "
                    f"inside 10, {rout} decided by 40+",
                    "Week", "Margin", caption=_cap(s), grid_axis="y")
+
+
+def plot_week_matchups(s: Season, week: int):
+    """The week's games as dumbbells on one points axis.
+
+    A ranked bar chart of ten scores hides the only structure that matters in a
+    week: WHO PLAYED WHOM. Here each game is one line -- both teams as dots, the
+    line between them is the margin -- and every game shares the axis, so a
+    narrow loss in a shoot-out and a narrow loss in a slog are visibly different
+    things. The median marks whether the week was high or low scoring overall.
+    """
+    import pandas as pd          # plots.py imports pandas per-function
+
+    d = s.team_wk[s.team_wk["week"] == int(week)].copy()
+    if not len(d):
+        return _no_data(f"No games in week {week}.")
+    med = float(d["points"].median())
+    games, seen = [], set()
+    for r in d.itertuples(index=False):
+        mid = r.matchup_id
+        if pd.isna(mid):
+            games.append((r.user_name, float(r.points), None, None))
+            continue
+        if mid in seen:
+            continue
+        seen.add(mid)
+        pair = d[d["matchup_id"] == mid].sort_values("points", ascending=False)
+        if len(pair) < 2:
+            games.append((pair.iloc[0]["user_name"], float(pair.iloc[0]["points"]), None, None))
+        else:
+            w, l = pair.iloc[0], pair.iloc[1]
+            games.append((w["user_name"], float(w["points"]),
+                          l["user_name"], float(l["points"])))
+    games.sort(key=lambda g: (g[1] + (g[3] or g[1])))
+    fig, ax = plt.subplots(figsize=(11, max(4.2, len(games) * 0.72)))
+    lo0, hi0 = float(d["points"].min()), float(d["points"].max())
+    off = (hi0 - lo0) * 0.02 or 1
+    for i, (wn, wp, ln, lp) in enumerate(games):
+        if ln is not None:
+            ax.plot([lp, wp], [i, i], color=T["rule"], lw=3.5, zorder=1,
+                    solid_capstyle="round")
+            ax.scatter([lp], [i], s=150, color="#c0603a", zorder=3)
+            # Labels go OUTWARD from their own dot, never centred on it: a
+            # 1.8-point game puts the two dots almost on top of each other and
+            # centred labels overprint into "rezzvougz134.4".
+            ax.text(lp - off, i, f"{lp:.1f}  {ln}", ha="right", va="center",
+                    fontsize=8.6, color=T["muted"])
+            ax.text((lp + wp) / 2, i + 0.34, f"+{wp - lp:.1f}", ha="center",
+                    fontsize=8, fontweight="bold", color=T["muted"], zorder=4,
+                    # Masked in the surface colour: the median line runs behind
+                    # these and otherwise strikes through the digits.
+                    bbox=dict(facecolor=T["bg"], edgecolor="none", pad=1.2))
+        ax.scatter([wp], [i], s=170, color="#2ca02c", zorder=3)
+        ax.text(wp + off, i, f"{wn}  {wp:.1f}", ha="left", va="center",
+                fontsize=8.6, fontweight="bold", color=T["ink"])
+    ax.axvline(med, color=T["ink"], lw=1.2, ls="--", zorder=2)
+    ax.text(med, -0.66, f"  league median {med:.1f}", fontsize=8.5,
+            color=T["ink"], va="bottom")
+    ax.set_yticks([])
+    ax.set_ylim(-0.75, len(games) - 0.25)
+    # Wide margins so the outward labels have somewhere to go.
+    ax.set_xlim(lo0 - (hi0 - lo0) * 0.62, hi0 + (hi0 - lo0) * 0.42)
+    return _finish(fig, ax, f"Week {week}: The Games",
+                   "Each line is one matchup — green won, orange lost, the line "
+                   "between them is the margin", "Points", caption=_cap(s),
+                   grid_axis="x")
+
+
+def plot_week_luck(s: Season, week: int):
+    """Points for vs points against, split by the line where a game is a tie.
+
+    The luck question -- "was I beaten or did I just draw the wrong opponent?" --
+    is really about two numbers at once, which no single-value chart can show.
+    Every team is a point: **below** the diagonal it won, **above** it lost, and
+    distance from the line is the margin. Colour carries merit (teams outscored
+    that week), so an orange dot below the line is a team that got away with a
+    bad score, and a green dot above it is the week's genuinely unlucky team.
+    """
+    d = s.team_wk[s.team_wk["week"] == int(week)].copy()
+    d = d[d["pa"].notna()]
+    if not len(d):
+        return _no_data(f"No completed games in week {week}.")
+    fig, ax = plt.subplots(figsize=(8.6, 7))
+    lo = float(min(d["points"].min(), d["pa"].min()))
+    hi = float(max(d["points"].max(), d["pa"].max()))
+    pad = (hi - lo) * 0.14 or 5
+    lo, hi = lo - pad, hi + pad
+    ax.plot([lo, hi], [lo, hi], color=T["rule"], lw=1.4, ls="--", zorder=1)
+    ax.fill_between([lo, hi], [lo, hi], [hi, hi], color="#c0603a", alpha=0.055, zorder=0)
+    ax.fill_between([lo, hi], [lo, lo], [lo, hi], color="#2ca02c", alpha=0.055, zorder=0)
+    lost_lbl = ax.text(lo + (hi - lo) * 0.03, hi - (hi - lo) * 0.04, "lost",
+                       fontsize=10, color="#c0603a", fontweight="bold", va="top")
+    won_lbl = ax.text(hi - (hi - lo) * 0.03, lo + (hi - lo) * 0.04, "won",
+                      fontsize=10, color="#2ca02c", fontweight="bold", ha="right")
+    n = int((d["allplay_w"] + d["allplay_l"]).max()) or 1
+    cmap = matplotlib.colormaps["RdYlGn"]
+    ax.scatter(d["points"], d["pa"], s=210, zorder=3, edgecolor=T["edge"], lw=1,
+               c=[cmap(v / n) for v in d["allplay_w"]])
+    ax.set_xlim(lo, hi)
+    ax.set_ylim(lo, hi)
+    fig = _finish(fig, ax, f"Week {week}: Beaten, or Just Unlucky?",
+                  "Colour is how many teams you outscored — a green dot in the "
+                  "red zone is the week's unlucky team, orange in green got away with one",
+                  "Points scored", "Points against", caption=_cap(s), grid_axis="both")
+    # After _finish: tight_layout has settled the axes, so the collision solver
+    # is working with the geometry that will actually be drawn.
+    _place_labels(fig, ax, list(d["points"]), list(d["pa"]),
+                  [f"{r.user_name}  ({int(r.allplay_w)}-{int(r.allplay_l)})"
+                   for r in d.itertuples(index=False)],
+                  avoid=(lost_lbl, won_lbl))
+    return fig
+
+
+def plot_week_race(s: Season, week: int):
+    """The table position race, weeks 1 to `week`.
+
+    A snapshot of the standings says where everyone is; this says how they got
+    there. Reading week 5 against the race up to week 5 is the point of a weekly
+    tab -- the finished-season version of this chart lives on Overview.
+    """
+    d = metrics.table_position(s)
+    d = d[d["week"] <= int(week)]
+    if not len(d):
+        return _no_data(f"Nothing scored through week {week}.")
+    n = int(d["table_position"].max())
+    fig, ax = plt.subplots(figsize=(10.5, max(4.5, n * 0.5)))
+    last = d[d["week"] == d["week"].max()].sort_values("table_position")
+    palette = matplotlib.colormaps["tab10"]
+    for i, nm in enumerate(last["user_name"]):
+        g = d[d["user_name"] == nm].sort_values("week")
+        col = palette(i % 10)
+        ax.plot(g["week"], g["table_position"], color=col, lw=2.2, marker="o",
+                ms=5, zorder=3)
+        end = g.iloc[-1]
+        ax.annotate(f" {nm}", (end["week"], end["table_position"]),
+                    va="center", fontsize=9, color=col, fontweight="bold")
+    ax.set_ylim(n + 0.6, 0.4)
+    ax.set_yticks(range(1, n + 1))
+    ax.set_xticks(sorted(d["week"].unique()))
+    ax.set_xlim(0.6, int(week) + (int(week) * 0.30))
+    return _finish(fig, ax, f"The Race Through Week {week}",
+                   "Table position after each week — crossings are lead changes",
+                   "Week", "Table position", caption=_cap(s), grid_axis="both")

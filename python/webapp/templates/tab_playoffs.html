@@ -24,6 +24,15 @@
     <span class="k">Biggest blowout</span>
     <span class="v">{{ blow }}</span>
   </div>
+  <div class="stat">
+    <span class="k">Closest game</span>
+    <span class="v">{{ close }}</span>
+  </div>
+  <div class="stat">
+    <span class="k">Best postseason PPG</span>
+    <span class="v">{{ po_ppg }}</span>
+    {% if po_ppg_sub %}<span class="sub">{{ po_ppg_sub }}</span>{% endif %}
+  </div>
 </section>
 
 {# The scope selector deliberately does NOT live here. It never filtered the
@@ -128,25 +137,35 @@
    this same list of managers, differing only in carrying Win%/PPG -- those are
    columns here now, so there is nothing left for a second table to say. #}
 <h2>This season&rsquo;s run</h2>
-<p class="hint">Every manager in the {{ season }} bracket, how far they went and what
-   they scored getting there. <strong>Outcome</strong> is the title path: a team knocked
-   out in an earlier round may still have played on in a placement game.</p>
+<p class="hint">The postseason read as a standings table &mdash; the same rate stats the
+   regular season gets, so a two-game run compares against a four-game one.
+   <strong>Seed</strong> is the bracket&rsquo;s own seeding, which follows the
+   <em>regular-season</em> record{% if reg_weeks %} (weeks 1&ndash;{{ reg_weeks }}){% endif %},
+   not the W&ndash;L on the Overview tab &mdash; that one also counts the postseason weeks.
+   <strong>Margin</strong> is the average, so a negative figure means a team was generally
+   being outscored even if it won a game. <strong>Outcome</strong> is the title path: a team
+   knocked out earlier may still have played on in a placement game.</p>
 <div class="card tablewrap">
   <table>
     <thead><tr>
-      <th>Team</th><th class="n">Games</th><th class="n">W</th><th class="n">L</th>
-      <th class="n">Win%</th><th class="n">Points</th><th class="n">PPG</th><th>Outcome</th>
+      <th class="n">Seed</th><th>Team</th><th class="n">G</th><th class="n">W</th><th class="n">L</th>
+      <th class="n">Win%</th><th class="n">Points</th><th class="n">PPG</th>
+      <th class="n">High</th><th class="n">Low</th><th class="n">Margin</th><th>Outcome</th>
     </tr></thead>
     <tbody>
     {% for r in summary %}
       <tr>
+        <td class="n">{% if r.seed is not none %}{{ r.seed }}{% else %}&mdash;{% endif %}</td>
         <td>{{ r.team }}</td>
         <td class="n">{{ r.games }}</td>
         <td class="n">{{ r.wins }}</td>
         <td class="n">{{ r.losses }}</td>
-        <td class="n">{{ r.win_pct | round(1) }}</td>
+        <td class="n">{{ r.win_pct | round(0) | int }}</td>
         <td class="n">{{ r.points | round(1) }}</td>
         <td class="n">{{ r.ppg | round(1) }}</td>
+        <td class="n">{{ r.high | round(1) }}</td>
+        <td class="n">{{ r.low | round(1) }}</td>
+        <td class="n">{{ "%+.1f"|format(r.avg_margin) }}</td>
         <td>{% if r.outcome == 'Champion' %}<span class="chip">Champion</span>
             {%- elif r.outcome == 'Runner-up' %}<strong>Runner-up</strong>
             {%- else %}{{ r.outcome }}{% endif %}</td>
@@ -271,4 +290,51 @@
     {% endfor %}
   </div>
 </details>
+
+{% if po_weeks %}
+<h2>Postseason weeks</h2>
+<p class="hint">The Weekly tab covers the regular season (weeks 1&ndash;{{ reg_weeks }}); these are
+   the weeks after it. Every team scored something &mdash; what matters is what it was
+   <em>for</em>, so each row says whether it was a bracket game, a bye, a game outside the
+   bracket, or no game at all. <strong>Bracket</strong> is the engine&rsquo;s own figure from the
+   submitted lineups; it has matched Sleeper&rsquo;s weekly total in every stored season.</p>
+<div class="tablewrap">
+<div class="drilltable"
+     style="--cols: minmax(80px,.7fr) minmax(150px,1.6fr) minmax(100px,1fr) minmax(180px,1.9fr)">
+  <div class="dt-head">
+    <span class="dt-num">Week</span><span>Top scorer</span>
+    <span class="dt-num">Points</span><span>Teams playing</span>
+  </div>
+  {% for wk in po_weeks %}
+  <details class="dt-row">
+    <summary>
+      <span class="dt-num">{{ wk.week }}</span>
+      <span>{{ wk.rows[0].user_name }}</span>
+      <span class="dt-num">{{ "%.1f"|format(wk.rows[0].points) }}</span>
+      <span><span class="q">{{ wk.rows | selectattr("role", "equalto", "bracket") | list | length }}
+            in the bracket</span></span>
+    </summary>
+    <div class="dt-detail">
+      <table class="dt-games">
+        <thead><tr>
+          <th>Team</th><th class="n">Points</th><th class="n">Bracket</th><th>What it was for</th>
+        </tr></thead>
+        <tbody>
+        {% for r in wk.rows %}
+          <tr>
+            <td><strong>{{ r.user_name }}</strong></td>
+            <td class="n">{{ "%.2f"|format(r.points) }}</td>
+            <td class="n">{% if r.bracket_points is not none %}{{ "%.2f"|format(r.bracket_points) }}{% else %}&mdash;{% endif %}</td>
+            <td>{% if r.role == 'bracket' %}<span class="chip">bracket game</span>
+                {%- else %}<span class="q">{{ r.note }}</span>{% endif %}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </details>
+  {% endfor %}
+</div>
+</div>
+{% endif %}
 {% endif %}

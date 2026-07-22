@@ -1,4 +1,6 @@
-{# Weekly tab: season-long trend charts + a drill-down into one week. #}
+{# Weekly tab: one week, in full. The season-arc charts (table position,
+   team points) moved to Season overview -- they describe the season, not
+   the selected week, and sitting here made the tab answer two questions. #}
 <h2>Week detail</h2>
 <nav class="rail" hx-target="#panel" hx-swap="innerHTML" hx-include="#league, #season, #theme">
   <span class="k">Week</span>
@@ -27,39 +29,113 @@
   </div>
 </section>
 
+{# Order: tiles -> THE GAMES (the dumbbell and the scoreboard it depicts,
+   kept together — they are the same content at two resolutions) -> the
+   analysis charts that put the week in context. Splitting the chart from its
+   own table left the scoreboard stranded below three graphics. #}
 <h2>Week {{ week }} scoreboard</h2>
-<div class="card tablewrap">
-  <table>
-    <thead><tr>
-      <th>Team</th><th class="n">Points</th><th class="n">Opp</th>
-      <th>Result</th><th class="n">Margin</th>
-      <th class="n">Optimal</th><th class="n">Left on bench</th>
-    </tr></thead>
-    <tbody>
-    {% for r in wk_rows %}
-      <tr>
-        <td>{{ r.user_name }}</td>
-        <td class="n">{{ "%.1f"|format(r.points) }}</td>
-        <td class="n">{{ "%.1f"|format(r.opp_points) if r.opp_points is not none else "—" }}</td>
-        {# No opponent means no game was played -- a bye or an eliminated team in
-           a playoff week -- which is not the same as a result we failed to read. #}
-        <td>{% if r.result == 'W' %}<span class="chip">W</span>{% elif r.result == 'L' %}L
-            {%- elif r.result %}{{ r.result }}{% else %}<span class="q">no game</span>{% endif %}</td>
-        <td class="n">{{ "%+.1f"|format(r.margin) if r.margin is not none else "—" }}</td>
-        <td class="n">{{ "%.1f"|format(r.optimal) if r.optimal is not none else "—" }}</td>
-        <td class="n">{{ "%.1f"|format(r.left_on_bench) if r.left_on_bench is not none else "—" }}</td>
-      </tr>
-    {% endfor %}
-    </tbody>
-  </table>
+<p class="hint">The games, first as a picture and then in full. Each line below is one
+   matchup &mdash; green won, orange lost, and the line between them is the margin.</p>
+<figure class="card chart">
+  <img src="/chart/week_matchups?league={{ league }}&season={{ season }}&week={{ week }}&theme={{ theme }}&_={{ bust }}"
+       alt="Week {{ week }} matchups" loading="lazy">
+</figure>
+<p class="hint">One row per <strong>game</strong>, biggest shoot-out first. Expand a row for both
+   lineups in scoreboard order, what each manager left on their bench, and the single
+   legal same-position swap that cost them most. A <span class="tag">could have won</span>
+   tag means that one swap alone would have turned that manager&rsquo;s loss into a win.</p>
+<div class="tablewrap">
+<div class="drilltable"
+     style="--cols: minmax(150px,1.7fr) minmax(150px,1.7fr) minmax(85px,.9fr) minmax(90px,.9fr) minmax(120px,1.2fr)">
+  <div class="dt-head">
+    <span>Winner</span><span>Opponent</span><span class="dt-num">Margin</span>
+    <span class="dt-num">Combined</span><span>Note</span>
+  </div>
+  {% for g in wk_games %}
+  {% set a = g.sides[0] %}
+  {% set b = g.sides[1] if g.played else none %}
+  <details class="dt-row">
+    <summary>
+      <span>{{ a.user_name }} <span class="q">{{ "%.1f"|format(a.points) }}</span></span>
+      <span>{% if b %}{{ b.user_name }} <span class="q">{{ "%.1f"|format(b.points) }}</span>
+            {%- else %}<span class="q">no opponent</span>{% endif %}</span>
+      <span class="dt-num">{% if g.margin is not none %}{{ "%.1f"|format(g.margin) }}{% else %}&mdash;{% endif %}</span>
+      <span class="dt-num">{{ "%.1f"|format(g.total) }}</span>
+      <span>{% if not g.played %}<span class="q">no game &mdash; bye or eliminated</span>
+            {%- elif g.margin is not none and g.margin < 10 %}<span class="tag">nail-biter</span>
+            {%- elif g.margin is not none and g.margin > 60 %}<span class="tag">rout</span>
+            {%- else %}<span class="q">&nbsp;</span>{% endif %}
+            {#- Only a loser can flip, so name them: "would have flipped it" on
+                its own leaves the reader working out which side it refers to. #}
+            {%- for sd in g.sides %}{% if sd.regret and sd.regret.flips %}
+            <span class="tag">{{ sd.user_name }} could have won</span>{% endif %}{% endfor %}</span>
+    </summary>
+    <div class="dt-detail">
+      <div class="dt-facts">
+        {% for sd in g.sides %}
+        <div class="fact"><span class="fl">{{ sd.user_name }}</span>
+          <span class="fv"><span class="pts">{{ "%.2f"|format(sd.points) }}</span>
+            {%- if sd.optimal is not none %} of {{ "%.1f"|format(sd.optimal) }} possible
+            ({{ sd.eff }}% efficient){% endif %}</span></div>
+        {% endfor %}
+        {% for sd in g.sides %}{% if sd.regret %}
+        <div class="fact"><span class="fl">{{ sd.user_name }}&rsquo;s costliest call</span>
+          <span class="fv">started <strong>{{ sd.regret.out }}</strong> over
+            <strong>{{ sd.regret.In }}</strong> at {{ sd.regret.position }}
+            &mdash; <span class="pts">{{ "%.1f"|format(sd.regret.gain) }}</span> pts
+            {%- if sd.regret.flips %}, which would have flipped the result{% endif %}</span></div>
+        {% endif %}{% endfor %}
+      </div>
+      <div class="dt-tables">
+        {% for sd in g.sides %}
+        <table class="dt-games">
+          <thead><tr>
+            <th colspan="2">{{ sd.user_name }}{% if sd.result == 'W' %} &mdash; won{% elif sd.result == 'L' %} &mdash; lost{% endif %}</th>
+            <th class="n">{{ "%.2f"|format(sd.points) }}</th>
+          </tr></thead>
+          <tbody>
+          {% for pl in sd.lineup %}
+            <tr>
+              <td><span class="q">{{ pl.slot }}</span></td>
+              <td><strong>{{ pl.player_name }}</strong></td>
+              <td class="n">{{ "%.2f"|format(pl.points) }}</td>
+            </tr>
+          {% else %}
+            <tr><td colspan="3"><span class="q">No lineup recorded.</span></td></tr>
+          {% endfor %}
+          {% if sd.bench %}
+            <tr><td colspan="3"><span class="q">Bench &mdash; left
+                {{ "%.1f"|format(sd.left_on_bench) if sd.left_on_bench is not none else "?" }} pts</span></td></tr>
+            {% for pl in sd.bench %}
+            <tr>
+              <td><span class="q">{{ pl.position }}</span></td>
+              <td>{{ pl.player_name }}</td>
+              <td class="n"><span class="q">{{ "%.2f"|format(pl.points) }}</span></td>
+            </tr>
+            {% endfor %}
+          {% endif %}
+          </tbody>
+        </table>
+        {% endfor %}
+      </div>
+    </div>
+  </details>
+  {% endfor %}
+</div>
 </div>
 
-<h2>Season trends</h2>
-<section class="grid">
-  {% for c in charts %}
+<h2>Week {{ week }} in context</h2>
+<p class="hint">Was the result deserved? On the left a team <strong>below</strong> the diagonal
+   won and <strong>above</strong> it lost, with colour showing how many teams they outscored
+   &mdash; so a green dot in the red zone is the week&rsquo;s unlucky team and an orange one in
+   the green got away with it. On the right, the table as it stood after this week.</p>
+<div class="grid two">
   <figure class="card chart">
-    <img src="/chart/{{ c }}?league={{ league }}&season={{ season }}&theme={{ theme }}&_={{ bust }}"
-         alt="{{ c }}" loading="lazy">
+    <img src="/chart/week_luck?league={{ league }}&season={{ season }}&week={{ week }}&theme={{ theme }}&_={{ bust }}"
+         alt="Week {{ week }} luck" loading="lazy">
   </figure>
-  {% endfor %}
-</section>
+  <figure class="card chart">
+    <img src="/chart/week_race?league={{ league }}&season={{ season }}&week={{ week }}&theme={{ theme }}&_={{ bust }}"
+         alt="Race through week {{ week }}" loading="lazy">
+  </figure>
+</div>

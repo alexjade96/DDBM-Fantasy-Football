@@ -118,6 +118,27 @@ sl_assemble_season <- function(link) {
   })
   transactions <- sl_unnest_transactions(tx_raw, user_map, pinfo)
 
+  # SPLIT THE SEASON HERE -- mirrors python/sleepermetrics/season.py. Everything
+  # downstream (standings, luck, efficiency, all-play, power rank) is a
+  # REGULAR-season metric and must not count postseason weeks: where a league
+  # runs its playoff outside Sleeper those weeks are phantom matchups nobody
+  # played, and even where it doesn't, a playoff game is not a regular-season
+  # result. Filtering once, identically, in both languages is what keeps every
+  # derived metric in parity without either side special-casing anything.
+  # team_wk_all / pl_wk_all keep every scored week for postseason features.
+  pws <- as.integer(link$playoff_week_start %||% 0L)
+  team_wk_all <- team_wk
+  pl_wk_all <- pl_wk
+  lw_all <- lw
+  if (!is.na(pws) && pws > 0) {
+    team_wk <- team_wk[team_wk$week < pws, , drop = FALSE]
+    pl_wk <- pl_wk[pl_wk$week < pws, , drop = FALSE]
+    # last_week must name a week that EXISTS in the scoped frames -- it is the
+    # default for "the latest week" throughout, and leaving it at the last
+    # scored leg indexes an empty frame once the postseason is split off.
+    lw <- min(lw, pws - 1L)
+  }
+
   lineup <- pl_wk %>% dplyr::left_join(user_map, by = "roster_id") %>%
     dplyr::group_by(user_name, week) %>%
     dplyr::summarise(actual = sum(points[is_starter]),
@@ -150,7 +171,11 @@ sl_assemble_season <- function(link) {
     list(season = link$season, name = link$name, league_id = lid,
          last_week = lw, slots = slots, team_wk = team_wk, pl_wk = pl_wk,
          lineup = lineup, standings = standings, user_map = user_map,
-         transactions = transactions, accounts = accounts),
+         transactions = transactions, accounts = accounts,
+         status = link$status %||% NA_character_,
+         playoff_week_start = if (!is.na(pws) && pws > 0) pws else NA_integer_,
+         team_wk_all = team_wk_all, pl_wk_all = pl_wk_all,
+         last_week_all = lw_all),
     class = "sleeper_season")
 }
 

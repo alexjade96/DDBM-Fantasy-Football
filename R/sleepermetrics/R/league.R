@@ -33,6 +33,11 @@ sl_league_chain <- function(league_id) {
       season = lg$season,
       name = lg$name,
       last_scored_leg = lg$settings$last_scored_leg %||% 0L,
+      # Phase signals from Sleeper: `status` is pre_draft/drafting/in_season/
+      # complete, `playoff_week_start` the first postseason week. The latter
+      # splits the regular season off from the playoff weeks -- see sl_season().
+      status = lg$status %||% NA_character_,
+      playoff_week_start = lg$settings$playoff_week_start %||% 0L,
       roster_positions = unlist(lg$roster_positions))
     id <- lg$previous_league_id
   }

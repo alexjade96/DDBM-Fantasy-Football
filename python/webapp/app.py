@@ -182,10 +182,23 @@ def _grouped_rules(settings: dict) -> list[tuple[str, list[dict]]]:
     d = sm.scoring_readable(settings)
     return [(g, records(rows)) for g, rows in d.groupby("group", sort=False)]
 
+# Tab order follows how a season is actually built and played, so the middle of
+# the rail reads as a causal chain rather than an arbitrary list:
+#   overview/weekly  -- what happened (the landing view, then it week by week)
+#   draft            -- where every roster came from
+#   roster           -- what those rosters became
+#   transactions     -- how they were changed
+#   coaching         -- how they were deployed
+#   playoffs         -- how the season ended (after every regular-season tab,
+#                       which now matters: the two are scoped apart)
+#   career/report    -- beyond this season, then the thing you take away
+# Draft used to sit AFTER transactions, i.e. after the tab that modifies the
+# rosters the draft created, and coaching sat second, interrupting the summary
+# view with the most granular "why" tab in the app.
 TABS = [
     ("overview", "Season overview"), ("weekly", "Weekly trends"),
-    ("coaching", "Coaching & scoring"), ("roster", "Roster & positions"),
-    ("transactions", "Transactions"), ("draft", "Draft"),
+    ("draft", "Draft"), ("roster", "Roster & positions"),
+    ("transactions", "Transactions"), ("coaching", "Coaching & scoring"),
     ("playoffs", "Playoffs"), ("career", "Career"),
     ("report", "Season report"),
 ]
@@ -264,6 +277,14 @@ SEASON_CHARTS = {
 # Manager-scoped charts take (season, manager) instead of just a season. They
 # back the manager report's sections, so this registry must stay in step with
 # the "season+manager" entries in report._CHART_FNS.
+# Charts scoped to ONE week. They take (season, week), so they need the `week`
+# query param -- a bare /chart/<name> would silently draw the wrong week.
+WEEK_CHARTS = {
+    "week_matchups": plots.plot_week_matchups,   # dumbbell per game
+    "week_luck": plots.plot_week_luck,           # PF vs PA, split by the tie line
+    "week_race": plots.plot_week_race,           # table position, weeks 1..N
+}
+
 MANAGER_CHARTS = {
     "mgr_score_band": plots.plot_mgr_score_band,
     "mgr_optimal": plots.plot_mgr_optimal,
@@ -275,7 +296,7 @@ MANAGER_CHARTS = {
 def chart(name: str, league: str = DEFAULT_LEAGUE, season: str | None = None,
           matchup: str | None = None, scope: str = "title",
           theme: str = "light", manager: str | None = None,
-          _: str | None = None):
+          week: str | None = None, _: str | None = None):
     d, s, key = pick(league, season)
     # Build + save under the lock, with the requested theme active, so the
     # structural palette and the saved facecolor can't be crossed by a
@@ -284,6 +305,13 @@ def chart(name: str, league: str = DEFAULT_LEAGUE, season: str | None = None,
         plots.set_chart_theme(theme)
         if name in SEASON_CHARTS:
             return png(SEASON_CHARTS[name](s))
+        if name in WEEK_CHARTS:
+            # Default to the latest scored week, matching the tab's own default.
+            try:
+                wk = int(week) if week else s.last_week
+            except ValueError:
+                wk = s.last_week
+            return png(WEEK_CHARTS[name](s, wk))
         if name in MANAGER_CHARTS:
             # The chart draws its own "no data" panel for a manager this season
             # doesn't have, so an unknown scope degrades instead of 500ing.
@@ -378,11 +406,14 @@ def tab(name: str, request: Request, league: str = DEFAULT_LEAGUE,
 
     if name == "overview":
         ctx["summary"] = summaries.summary_season(s)
+        # table_position and team_points moved here from the Weekly tab: both
+        # describe the season's ARC, not any one week, so they belong with the
+        # season view. Weekly is now purely about the week you selected.
         ctx["charts"] = ["standings", "power_rank", "allplay", "luck",
-                         "sos", "schedule_swap"]
+                         "table_position", "team_points", "sos", "schedule_swap"]
     elif name == "weekly":
-        # Season-long trend charts, plus a drill-down into a single week: its
-        # scoreboard and the week's superlatives, from the week_stats metric.
+        # One week, in full: its superlatives, then the scoreboard as games
+        # that drill into both lineups. The season-arc charts live on Overview.
         last = s.last_week
         wk = last
         if week:
@@ -403,9 +434,9 @@ def tab(name: str, request: Request, league: str = DEFAULT_LEAGUE,
         bench = (ws.loc[ws["left_on_bench"].idxmax()]
                  if ws["left_on_bench"].notna().any() else None)
         ctx.update({
-            "charts": ["table_position", "team_points"],
             "week": wk, "weeks": list(range(1, last + 1)),
-            "wk_rows": records(ws),
+            # The scoreboard as GAMES, each drilling into both lineups.
+            "wk_games": metrics.week_matchups(s, wk),
             "kpi_top": _one(top, f"{top['points']:.1f}") if top is not None else "—",
             "kpi_blow": (f"+{blow['margin']:.1f} · {blow['user_name']}"
                          if blow is not None else "—"),
@@ -517,6 +548,18 @@ def tab(name: str, request: Request, league: str = DEFAULT_LEAGUE,
         played = r[r["result"].isin(["W", "L", "T"])]
         top = played.loc[played["points"].idxmax()] if len(played) else None
         blow = played.loc[played["margin"].idxmax()] if len(played) else None
+        # Closest game: smallest winning margin, so read it off the winners --
+        # every game appears twice, once with the margin negated.
+        _won = played[played["margin"] > 0]
+        close = _won.loc[_won["margin"].idxmin()] if len(_won) else None
+        # Best postseason PPG needs a sample: a team that played once and lost
+        # otherwise "leads" on a single number, ahead of teams who played three
+        # times. Prefer multi-game runs, fall back only if nobody has one.
+        _sm = sm.playoff_summary(p)
+        _sm = _sm[_sm["games"] > 0]
+        _multi = _sm[_sm["games"] > 1]
+        _pool = _multi if len(_multi) else _sm
+        ppg_hi = _pool.loc[_pool["ppg"].idxmax()] if len(_pool) else None
 
         # Walk the bracket game by game, in the order it was actually played.
         all_games = _playoff_games(p)
@@ -532,6 +575,15 @@ def tab(name: str, request: Request, league: str = DEFAULT_LEAGUE,
             "games": played["matchup_id"].nunique(),
             "top": (f"{top['points']:.1f} · {top['team']}" if top is not None else "—"),
             "blow": (f"+{blow['margin']:.1f} · {blow['team']}" if blow is not None else "—"),
+            "close": (f"{close['margin']:.1f} · {close['team']}"
+                      if close is not None else "—"),
+            "po_ppg": (f"{ppg_hi['ppg']:.1f} · {ppg_hi['team']}"
+                       if ppg_hi is not None else "—"),
+            "po_ppg_sub": (f"over {int(ppg_hi['games'])} games"
+                           if ppg_hi is not None else ""),
+            # Weeks 1..reg_weeks is the regular season; the run table cites it so
+            # the seeding column can be told apart from the Overview W-L.
+            "reg_weeks": s.reg_weeks,
             "walk": walk,
             "matchup": cur,
             "prev": ids[i - 1] if i > 0 else None,
@@ -542,6 +594,8 @@ def tab(name: str, request: Request, league: str = DEFAULT_LEAGUE,
             # stats the separate "résumé" table used to duplicate.
             "summary": records(sm.playoff_summary(p)),
             "toilet": sm.toilet_bowl(s, p),
+            # Weeks 15+ live here now: the Weekly tab is regular season only.
+            "po_weeks": sm.postseason_weeks(s, p),
             # No consolation games means the scope selector has nothing to
             # include or exclude -- offering it would be a dead control.
             "has_conso": bool((r.get("bracket") == "consolation").any())

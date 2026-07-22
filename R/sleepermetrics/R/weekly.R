@@ -33,23 +33,27 @@ sl_summary_week <- function(season, week = NULL) {
   d <- sl_week_stats(season, wk)
   top <- d %>% dplyr::slice_max(points, n = 1, with_ties = FALSE)
   low <- d %>% dplyr::slice_min(points, n = 1, with_ties = FALSE)
+  # Format to ONE decimal like Python's :.1f. round() drops a trailing
+  # zero, so a whole-numbered score renders "78" against Python's
+  # "78.0" -- verify.py compares the summary strings EXACTLY.
+  fmt1 <- function(x) sprintf("%.1f", round(as.numeric(x), 1))
   bust <- d %>% dplyr::slice_max(left_on_bench, n = 1, with_ties = FALSE)
   played <- d %>% dplyr::filter(!is.na(result), result != "T", margin > 0)
   lines <- c(
     paste0("### ", season$name, " - Week ", wk, " recap"), "",
-    paste0("- \U0001F525 **Top score:** ", top$user_name, " (", round(top$points, 1), ")"),
-    paste0("- \U0001F9CA **Low score:** ", low$user_name, " (", round(low$points, 1), ")"))
+    paste0("- \U0001F525 **Top score:** ", top$user_name, " (", fmt1(top$points), ")"),
+    paste0("- \U0001F9CA **Low score:** ", low$user_name, " (", fmt1(low$points), ")"))
   if (nrow(played)) {
     blow <- played %>% dplyr::slice_max(margin, n = 1, with_ties = FALSE)
     close <- played %>% dplyr::slice_min(margin, n = 1, with_ties = FALSE)
     lines <- c(lines,
       paste0("- \U0001F4A5 **Biggest blowout:** ", blow$user_name, " by ",
-             round(blow$margin, 1)),
+             fmt1(blow$margin)),
       paste0("- \U0001F630 **Closest game:** ", close$user_name, " won by ",
-             round(close$margin, 1)))
+             fmt1(close$margin)))
   }
   lines <- c(lines,
     paste0("- \U0001FA91 **Biggest bench blunder:** ", bust$user_name, " left ",
-           round(bust$left_on_bench, 1), " pts on the bench"))
+           fmt1(bust$left_on_bench), " pts on the bench"))
   paste(lines, collapse = "\n")
 }
