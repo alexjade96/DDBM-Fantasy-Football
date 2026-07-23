@@ -1,0 +1,21 @@
+{# Inline identity helpers, imported "with context" so they read the per-request
+   `avatars` map without threading it through every call:
+
+     import "_ident.html" as idm with context   (in {%% %%} tags)
+     idm.who(name)          -- manager team portrait + name
+     idm.headshot(pid)      -- a player's Sleeper headshot (bare img)
+
+   Both are best-effort and degrade cleanly: `who` shows the portrait only when a
+   manager avatar exists for that name (else just the name); a headshot that 404s
+   removes itself via onerror. No nested Jinja comments here -- they don't nest. #}
+{# `is string` guards are deliberate: pandas NaN is truthy in Jinja, so a raw
+   record (not run through records()) would otherwise render "nan" / a dead img. #}
+{% macro who(name) -%}
+{%- set nm = name if name is string else None -%}
+{%- set url = avatars.get(nm) if (nm and avatars) else None -%}
+<span class="ident">{% if url %}<img class="face" src="{{ url }}" alt="" loading="lazy" onerror="this.remove()">{% endif %}<span class="idn">{{ nm or "—" }}</span></span>
+{%- endmacro %}
+
+{% macro headshot(pid) -%}
+{%- if pid is string and pid %}<img class="pface" src="https://sleepercdn.com/content/nfl/players/{{ pid }}.jpg" alt="" loading="lazy" onerror="this.remove()">{% endif -%}
+{%- endmacro %}

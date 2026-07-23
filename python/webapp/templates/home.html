@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sleeper League Analytics</title>
+  {# ?v=<mtime> so a CSS edit is never served from a stale browser cache #}
+  <link rel="stylesheet" href="/static/style.css?v={{ asset_v }}">
+</head>
+<body>
+  <main class="landing">
+    <div class="landing-card">
+      <span class="mark"></span>
+      <h1>Sleeper League Analytics</h1>
+      <p class="landing-lede">
+        Live-computed standings, luck, coaching, draft grades, playoffs and a
+        full season report — for any Sleeper fantasy football league.
+      </p>
+
+      {# Submitting leads to the season analytics at `/league=<id>` -- a clean
+         path with no `/dashboard?` query string. JS builds that path; the plain
+         GET action="/dashboard" is the no-JS fallback (that route still works).
+         The id is temporarily pre-filled with the Dank Soupers league so the
+         default way in is one click. #}
+      <form class="landing-form" id="landing-form" action="/dashboard" method="get">
+        <label>
+          <span>League ID</span>
+          <input type="text" name="league" id="league-id" value="{{ league }}"
+                 inputmode="numeric" autocomplete="off" spellcheck="false" required>
+        </label>
+        <button type="submit">View analytics &rarr;</button>
+      </form>
+      <p class="landing-hint">Pre-filled with the Dank Soupers league.</p>
+    </div>
+  </main>
+
+  <script>
+    document.getElementById('landing-form').addEventListener('submit', function (e) {
+      var id = document.getElementById('league-id').value.trim();
+      if (!id) return;                        // let required-validation fire
+      e.preventDefault();
+      window.location.assign('/league=' + encodeURIComponent(id));
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,19 @@
+{# One chart figure with its insight caption interspersed. Import it "with
+   context" so it reads league/season/theme/bust and the CHART_META global
+   without every caller threading them through. Callers do:
+     import "_chartmacro.html" as ch with context   (in {%% %%} tags)
+     ch.chart("standings")           -- season-scoped
+     ch.chart("week_race", week=n)   -- week-scoped
+   NB: no nested Jinja comment markers here -- Jinja comments don't nest, so an
+   inner one would close this block early. The chart PNG already carries its own
+   title/subtitle, so the caption frames why the chart is here, not how to read
+   its axes. `wide` (from CHART_META) spans the full grid row for wide-aspect
+   charts. Unknown keys degrade to a plain, caption-less figure. #}
+{% macro chart(key, week=None) -%}
+{%- set m = CHART_META.get(key, {}) -%}
+<figure class="card chart{% if m.wide %} wide{% endif %}">
+  <img src="/chart/{{ key }}?league={{ league }}&season={{ season }}{% if week is not none %}&week={{ week }}{% endif %}&theme={{ theme }}&_={{ bust }}"
+       alt="{{ m.cap or key }}" loading="lazy">
+  {%- if m.cap %}<figcaption>{{ m.cap }}</figcaption>{%- endif %}
+</figure>
+{%- endmacro %}

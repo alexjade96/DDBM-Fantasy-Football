@@ -1,6 +1,9 @@
 {# Roster tab: the position/usage charts, then the rosters themselves --
    per manager and per week, each row expanding into its detail. The drill
    markup (drilltable / dt-*) is global CSS, promoted out of .reportpanel. #}
+{% import "_chartmacro.html" as ch with context %}
+{% import "_ident.html" as idm with context %}
+{% include "_liveband.html" %}
 {% if standouts %}
 <h2>Roster standouts</h2>
 <p class="hint">The season&rsquo;s extremes in what teams rostered &mdash; separate from how
@@ -10,19 +13,17 @@
   <div class="stat {% if loop.index0 == 0 %}gold{% endif %}">
     <span class="k">{{ t.label }}</span>
     <span class="v">{{ t.value }}</span>
-    <span class="sub">{{ t.holder }}{% if t.detail %} · {{ t.detail }}{% endif %}</span>
+    <span class="sub">{{ idm.who(t.holder) }}{% if t.detail %} · {{ t.detail }}{% endif %}</span>
   </div>
   {% endfor %}
 </section>
 {% endif %}
 
+<p class="hint">What teams <em>rostered</em> and where their points came from &mdash; separate
+   from how well those players were started (that&rsquo;s Coaching). Each chart&rsquo;s
+   takeaway is noted beneath it.</p>
 <section class="grid">
-  {% for c in charts %}
-  <figure class="card chart">
-    <img src="/chart/{{ c }}?league={{ league }}&season={{ season }}&theme={{ theme }}&_={{ bust }}"
-         alt="{{ c }}" loading="lazy">
-  </figure>
-  {% endfor %}
+  {% for c in charts %}{{ ch.chart(c) }}{% endfor %}
 </section>
 
 {% if rosters %}
@@ -41,7 +42,7 @@
   {% for r in rosters %}
   <details class="dt-row">
     <summary>
-      <span>{{ r.user_name }}</span>
+      <span>{{ idm.who(r.user_name) }}</span>
       <span class="dt-num">{{ r.players_used }}</span>
       <span class="dt-num">{{ r.starts }}</span>
       <span class="dt-num">{{ "%.0f"|format(r.started_pts) }}</span>

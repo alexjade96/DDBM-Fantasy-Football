@@ -170,6 +170,18 @@ class Season:
             return self.last_week
         return min(self.last_week, int(self.playoff_week_start) - 1)
 
+    @property
+    def current_week(self) -> int:
+        """The week to treat as 'now' -- the latest regular-season week with data.
+
+        During a live season `last_scored_leg` lags an in-progress week until it
+        finishes, so this is the most recently *scored* week, which is the one the
+        standings currently reflect and the sensible landing week for a weekly
+        view opened mid-season. On a finished season it is simply the final week.
+        A single home for the notion so a live view has one thing to open on.
+        """
+        return self.last_week
+
     def __repr__(self):
         return (f"<Season {self.name} {self.season} | teams: "
                 f"{len(self.standings)} | weeks 1:{self.last_week}>")

@@ -1,3 +1,4 @@
+{% import "_chartmacro.html" as ch with context %}
 {% if summary %}
 <section class="card prose">
   {{ summary | md }}
@@ -19,13 +20,11 @@
 </section>
 {% endif %}
 
+{# charts_intro is an author-written constant (see the career handler), never
+   user input, so rendering its markup is safe. #}
+{% if charts_intro %}<p class="hint">{{ charts_intro | safe }}</p>{% endif %}
 <section class="grid">
-  {% for c in charts %}
-  <figure class="card chart">
-    <img src="/chart/{{ c }}?league={{ league }}&season={{ season }}&theme={{ theme }}&_={{ bust }}"
-         alt="{{ c }}" loading="lazy">
-  </figure>
-  {% endfor %}
+  {% for c in charts %}{{ ch.chart(c) }}{% endfor %}
 </section>
 
 {% if po_charts %}

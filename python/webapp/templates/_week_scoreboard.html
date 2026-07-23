@@ -1,0 +1,85 @@
+{# The week's scoreboard as a per-game drilldown. Shared by the Weekly tab and
+   the Overview's current-week section so the two can't drift. Expects `wk_games`
+   (metrics.week_matchups) in context. Each row is one game; expand for both
+   lineups in slot order, benches, and the single legal same-position swap that
+   cost the most. #}
+{% import "_ident.html" as idm with context %}
+<div class="tablewrap">
+<div class="drilltable"
+     style="--cols: minmax(150px,1.7fr) minmax(150px,1.7fr) minmax(85px,.9fr) minmax(90px,.9fr) minmax(120px,1.2fr)">
+  <div class="dt-head">
+    <span>Winner</span><span>Opponent</span><span class="dt-num">Margin</span>
+    <span class="dt-num">Combined</span><span>Note</span>
+  </div>
+  {% for g in wk_games %}
+  {% set a = g.sides[0] %}
+  {% set b = g.sides[1] if g.played else none %}
+  <details class="dt-row">
+    <summary>
+      <span>{{ idm.who(a.user_name) }} <span class="q">{{ "%.1f"|format(a.points) }}</span></span>
+      <span>{% if b %}{{ idm.who(b.user_name) }} <span class="q">{{ "%.1f"|format(b.points) }}</span>
+            {%- else %}<span class="q">no opponent</span>{% endif %}</span>
+      <span class="dt-num">{% if g.margin is not none %}{{ "%.1f"|format(g.margin) }}{% else %}&mdash;{% endif %}</span>
+      <span class="dt-num">{{ "%.1f"|format(g.total) }}</span>
+      <span>{% if not g.played %}<span class="q">no game &mdash; bye or eliminated</span>
+            {%- elif g.margin is not none and g.margin < 10 %}<span class="tag">nail-biter</span>
+            {%- elif g.margin is not none and g.margin > 60 %}<span class="tag">rout</span>
+            {%- else %}<span class="q">&nbsp;</span>{% endif %}
+            {#- Only a loser can flip, so name them: "would have flipped it" on
+                its own leaves the reader working out which side it refers to. #}
+            {%- for sd in g.sides %}{% if sd.regret and sd.regret.flips %}
+            <span class="tag">{{ sd.user_name }} could have won</span>{% endif %}{% endfor %}</span>
+    </summary>
+    <div class="dt-detail">
+      <div class="dt-facts">
+        {% for sd in g.sides %}
+        <div class="fact"><span class="fl">{{ sd.user_name }}</span>
+          <span class="fv"><span class="pts">{{ "%.2f"|format(sd.points) }}</span>
+            {%- if sd.optimal is not none %} of {{ "%.1f"|format(sd.optimal) }} possible
+            ({{ sd.eff }}% efficient){% endif %}</span></div>
+        {% endfor %}
+        {% for sd in g.sides %}{% if sd.regret %}
+        <div class="fact"><span class="fl">{{ sd.user_name }}&rsquo;s costliest call</span>
+          <span class="fv">started <strong>{{ sd.regret.out }}</strong> over
+            <strong>{{ sd.regret.In }}</strong> at {{ sd.regret.position }}
+            &mdash; <span class="pts">{{ "%.1f"|format(sd.regret.gain) }}</span> pts
+            {%- if sd.regret.flips %}, which would have flipped the result{% endif %}</span></div>
+        {% endif %}{% endfor %}
+      </div>
+      <div class="dt-tables">
+        {% for sd in g.sides %}
+        <table class="dt-games">
+          <thead><tr>
+            <th colspan="2">{{ sd.user_name }}{% if sd.result == 'W' %} &mdash; won{% elif sd.result == 'L' %} &mdash; lost{% endif %}</th>
+            <th class="n">{{ "%.2f"|format(sd.points) }}</th>
+          </tr></thead>
+          <tbody>
+          {% for pl in sd.lineup %}
+            <tr>
+              <td><span class="q">{{ pl.slot }}</span></td>
+              <td><strong>{{ pl.player_name }}</strong></td>
+              <td class="n">{{ "%.2f"|format(pl.points) }}</td>
+            </tr>
+          {% else %}
+            <tr><td colspan="3"><span class="q">No lineup recorded.</span></td></tr>
+          {% endfor %}
+          {% if sd.bench %}
+            <tr><td colspan="3"><span class="q">Bench &mdash; left
+                {{ "%.1f"|format(sd.left_on_bench) if sd.left_on_bench is not none else "?" }} pts</span></td></tr>
+            {% for pl in sd.bench %}
+            <tr>
+              <td><span class="q">{{ pl.position }}</span></td>
+              <td>{{ pl.player_name }}</td>
+              <td class="n"><span class="q">{{ "%.2f"|format(pl.points) }}</span></td>
+            </tr>
+            {% endfor %}
+          {% endif %}
+          </tbody>
+        </table>
+        {% endfor %}
+      </div>
+    </div>
+  </details>
+  {% endfor %}
+</div>
+</div>

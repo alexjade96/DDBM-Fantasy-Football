@@ -52,6 +52,42 @@ def test_record_book_reports_superlatives():
     assert labels["Highest score"]["value"] == "130.0"
 
 
+def test_undrafted_standouts_excludes_drafted_and_ranks_by_started_points():
+    """The best players who went undrafted, ranked by started points -- drafted
+    players are excluded, and a churned pickup is attributed to whoever got the
+    most out of him. Seeds a fake draft board so 'undrafted' is well defined."""
+    import dataclasses
+
+    import pandas as pd
+    from sleepermetrics import draft
+    s = make_season()
+    # A populated pl_wk: pDraft was drafted; pFA and pStash were not.
+    pl = pd.DataFrame({
+        "week":       [1, 1, 2, 2, 1, 2],
+        "roster_id":  [1, 2, 1, 3, 2, 2],
+        "player_id":  ["pDraft", "pFA", "pDraft", "pFA", "pStash", "pStash"],
+        "points":     [30.0, 25.0, 20.0, 40.0, 5.0, 3.0],
+        "is_starter": [True, True, True, True, True, True],
+        "player_name": ["Drafted Guy", "Waiver Ace", "Drafted Guy",
+                        "Waiver Ace", "Deep Stash", "Deep Stash"],
+        "position":   ["RB", "WR", "RB", "WR", "TE", "TE"],
+    })
+    s = dataclasses.replace(s, pl_wk=pl)
+    # Seed the draft cache so pDraft is the only drafted player.
+    board = pd.DataFrame([{c: None for c in draft._COLS}])
+    board.loc[0, ["player_id", "pick_no", "round"]] = ["pDraft", 1, 1]
+    draft._cache[f"{s.league_id}:{s.season}"] = board
+
+    out = draft.undrafted_standouts(s)
+    names = list(out["player_name"])
+    assert "Drafted Guy" not in names            # drafted -> excluded
+    assert names[0] == "Waiver Ace"              # 25+40 = 65, ranks first
+    ace = out.iloc[0]
+    assert ace["points"] == 65.0 and ace["teams"] == 2   # started for rosters 2 and 3
+    assert ace["user_name"] == "Cy"              # roster 3 got 40 > roster 2's 25
+    draft._cache.clear()
+
+
 def test_starter_slots():
     rp = ["QB", "RB", "RB", "WR", "WR", "TE", "FLEX", "K", "DEF", "BN", "BN"]
     s = starter_slots(rp)
@@ -145,6 +181,29 @@ def test_table_position(season_obj):
     assert wk2.loc[wk2["table_position"] == 1, "user_name"].iloc[0] == "Al"  # 2-0
     assert wk2.loc[wk2["table_position"] == 3, "user_name"].iloc[0] == "Bo"  # 0-2
     assert list(wk2["table_position"]) == [1, 2, 3]
+
+
+def test_season_metrics_and_charts_adapt_to_a_mid_season_week_cap(season_obj):
+    """A mid-season run has its frames capped at the current week, so every
+    season-so-far metric/chart must reflect only the scored weeks -- nothing may
+    assume a full 14/17-week slate. Truncating the fixture to week 1 must leave
+    strictly week-1 data, and the frame-derived charts must still render."""
+    import dataclasses
+
+    import matplotlib.pyplot as plt
+    mid = dataclasses.replace(
+        season_obj, last_week=1,
+        team_wk=season_obj.team_wk[season_obj.team_wk["week"] == 1].copy(),
+        lineup=season_obj.lineup[season_obj.lineup["week"] == 1].copy(),
+    )
+    assert mid.current_week == 1
+    tp = metrics.table_position(mid)
+    assert (tp["week"] == 1).all() and len(tp) == 3   # 3 teams, week 1 only
+    # No minimum-week assumption: charts built from team_wk render on one week.
+    for fn in (plots.plot_table_position, plots.plot_team_points):
+        fig = fn(mid)
+        assert fig is not None
+        plt.close(fig)
 
 
 def test_summary_week(season_obj):

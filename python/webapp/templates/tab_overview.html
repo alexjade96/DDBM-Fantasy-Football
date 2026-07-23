@@ -1,0 +1,81 @@
+{# Season overview: leads with the latest / in-progress week (its metrics, its
+   scoreboard and the two week-analytics charts), then restates the season-to-date
+   metrics further down. Dedicated template -- Career still uses tab_charts.html,
+   so this current-week lead appears on Overview only. #}
+{% import "_chartmacro.html" as ch with context %}
+
+{# ---- Lead: the current / latest week -------------------------------------- #}
+<div class="rowhead">
+  <h2>
+    {% if live %}This week{% else %}Latest week{% endif %} &mdash; Week {{ week }}
+    {% if live %}<span class="live-badge">Live</span>{% endif %}
+  </h2>
+  <div class="rowhead-actions">
+    {% if live %}
+    {# refresh=1 re-assembles the league so live matchup points aren't served stale. #}
+    <button class="ghost"
+            hx-get="/tab/overview?refresh=1" hx-target="#panel" hx-swap="innerHTML"
+            hx-include="#league, #season, #theme">Refresh scores</button>
+    {% endif %}
+    {# Activate the Weekly nav button so the full drill-down opens and the tab
+       strip tracks it -- a bare panel swap would leave Overview highlighted. #}
+    <button type="button" class="ghost"
+            onclick="[...document.querySelectorAll('.tabs button')].find(b=>b.getAttribute('hx-get')==='/tab/weekly').click()">
+      Full week detail &rarr;</button>
+  </div>
+</div>
+<p class="hint">
+  {% if live %}The week in progress at a glance.{% else %}The most recent week played.{% endif %}
+  Headline numbers, the scoreboard, then how the week is shaping up &mdash; the full
+  lineup drill-downs live on the Weekly tab.</p>
+
+<section class="stats">
+  <div class="stat gold">
+    <span class="k">Highest score</span><span class="v">{{ kpi_top }}</span>
+  </div>
+  <div class="stat">
+    <span class="k">Biggest blowout</span><span class="v">{{ kpi_blow }}</span>
+  </div>
+  <div class="stat">
+    <span class="k">Closest game</span><span class="v">{{ kpi_close }}</span>
+  </div>
+  <div class="stat">
+    <span class="k">Most points benched</span><span class="v">{{ kpi_bench }}</span>
+  </div>
+</section>
+
+<figure class="card chart">
+  <img src="/chart/week_matchups?league={{ league }}&season={{ season }}&week={{ week }}&theme={{ theme }}&_={{ bust }}"
+       alt="Week {{ week }} matchups" loading="lazy">
+</figure>
+
+{# The scoreboard as a per-game drilldown (shared with the Weekly tab): expand a
+   row for both lineups in slot order, benches, and the costliest legal swap. #}
+<p class="hint">One row per <strong>game</strong>, biggest shoot-out first &mdash; expand for both
+   lineups in slot order, what sat on the bench, and the single legal same-position swap that
+   cost the most. Full week analysis is on the <em>Weekly</em> tab.</p>
+{% include "_week_scoreboard.html" %}
+
+{# The one week-context chart that stays in the lead: was the result deserved? #}
+<figure class="card chart">
+  <img src="/chart/week_luck?league={{ league }}&season={{ season }}&week={{ week }}&theme={{ theme }}&_={{ bust }}"
+       alt="Week {{ week }} luck" loading="lazy">
+</figure>
+
+{# ---- Season to date ------------------------------------------------------- #}
+<h2>Season so far{% if current_week %} &mdash; through week {{ current_week }}{% endif %}</h2>
+{% if summary %}
+<section class="card prose">
+  {{ summary | md }}
+</section>
+{% endif %}
+{# The table-position race through the current week -- the season-arc view of the
+   standings, so it belongs with the season metrics rather than the single-week
+   lead. This is the "race through week N" chart; table_position (its identical
+   full-span twin) is deliberately dropped from the grid below. #}
+{{ ch.chart("week_race", week=current_week) }}
+<p class="hint">The season beyond any one week &mdash; standing, merit and the schedule&rsquo;s
+   hand in it. Each chart below carries the takeaway underneath.</p>
+<section class="grid">
+  {% for c in charts %}{{ ch.chart(c) }}{% endfor %}
+</section>

@@ -46,6 +46,24 @@ button:hover { filter: brightness(1.06); }
 button.ghost { background: var(--surface); color: var(--ink); border-color: var(--line); font-weight: 500; }
 :focus-visible { outline: 2px solid var(--turf); outline-offset: 2px; }
 
+/* Landing / home page: a single centred card that leads into /dashboard. */
+.landing { display: grid; place-items: center; min-height: 100vh;
+  padding: 40px clamp(16px, 5vw, 40px); }
+.landing-card {
+  background: var(--surface); border: 1px solid var(--line); border-radius: 16px;
+  box-shadow: var(--shadow); padding: clamp(28px, 5vw, 48px);
+  max-width: 460px; width: 100%; text-align: left;
+}
+.landing-card .mark { height: 40px; margin-bottom: 18px; }
+.landing-card h1 { font-size: 26px; letter-spacing: -.02em; }
+.landing-lede { color: var(--muted); font-size: 15px; margin: 10px 0 26px; }
+.landing-form { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; }
+.landing-form label { display: flex; flex-direction: column; gap: 4px; flex: 1; min-width: 180px; }
+.landing-form span { font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: var(--faint); }
+.landing-form input { width: 100%; }
+.landing-form button { padding: 8px 16px; }
+.landing-hint { color: var(--faint); font-size: 12px; margin: 12px 0 0; }
+
 .tabs {
   display: flex; gap: 4px; overflow-x: auto; padding: 0 clamp(16px, 4vw, 40px);
   max-width: 1260px; margin: 0 auto; border-bottom: 1px solid var(--line);
@@ -65,6 +83,7 @@ h3 { font-size: 15px; margin: 0 0 2px; }
 .empty { color: var(--faint); padding: 40px 0; }
 .rowhead { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .rowhead h2 { margin-bottom: 12px; }
+.rowhead-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 
 .card {
   background: var(--surface); border: 1px solid var(--line); border-radius: 12px;
@@ -86,11 +105,17 @@ img { display: block; width: 100%; height: auto; border-radius: 7px; }
   background-size: 220% 100%; animation: shimmer 1.3s ease-in-out infinite; }
 .card.chart img { opacity: 0; transition: opacity .3s ease; }
 .card.chart img.loaded { opacity: 1; }
+/* Per-chart insight caption, interspersed with each graphic. */
+.card.chart figcaption { color: var(--muted); font-size: 12.5px; line-height: 1.45;
+  margin-top: 8px; padding: 0 4px 2px; }
 @keyframes shimmer { 0% { background-position: 220% 0; } 100% { background-position: -120% 0; } }
 @media (prefers-reduced-motion: reduce) { .card.chart.skeleton { animation: none; } }
 
 .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(460px, 1fr)); gap: 16px; }
 .grid.two { grid-template-columns: repeat(auto-fit, minmax(380px, 1fr)); }
+/* A wide-aspect chart (e.g. stacked weekly points, starter-vs-bench) spans the
+   whole grid row instead of being crushed into a half-width column. */
+.grid .card.chart.wide { grid-column: 1 / -1; }
 @media (max-width: 720px) { .grid, .grid.two { grid-template-columns: 1fr; } }
 
 .prose { margin-bottom: 16px; }
@@ -138,6 +163,31 @@ details summary { cursor: pointer; font-weight: 600; }
 .rail .year:hover { color: var(--ink); }
 .rail .year.on { background: var(--ink); color: var(--surface); border-color: var(--ink);
                  font-weight: 600; }
+/* The current (live) week: outlined in turf when not selected, filled when it is. */
+.rail .year.now { border-color: var(--turf); color: var(--turf); font-weight: 600; }
+.rail .year.now.on { background: var(--turf); border-color: var(--turf); color: #fff; }
+
+/* "Live" pill next to the Current week heading, with a softly pulsing dot. */
+.live-badge { display: inline-block; margin-left: 8px; vertical-align: middle;
+  font-size: 10px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase;
+  color: #fff; background: var(--turf); border-radius: 20px; padding: 2px 9px 2px 18px;
+  position: relative; }
+.live-badge::before { content: ""; position: absolute; left: 7px; top: 50%;
+  width: 6px; height: 6px; margin-top: -3px; border-radius: 50%; background: #fff;
+  animation: livepulse 1.4s ease-in-out infinite; }
+@keyframes livepulse { 0%, 100% { opacity: 1; } 50% { opacity: .25; } }
+@media (prefers-reduced-motion: reduce) {
+  .live-badge::before, .liveband .dot { animation: none; }
+}
+
+/* Mid-season honesty band on season-total tabs (see _liveband.html). */
+.liveband { display: flex; align-items: center; gap: 8px; margin: 0 0 16px;
+  font-size: 12.5px; color: var(--muted);
+  background: color-mix(in srgb, var(--turf) 9%, transparent);
+  border: 1px solid color-mix(in srgb, var(--turf) 30%, var(--line));
+  border-radius: 8px; padding: 7px 12px; }
+.liveband .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--turf);
+  flex: 0 0 auto; animation: livepulse 1.4s ease-in-out infinite; }
 
 .walk { margin-bottom: 12px; }
 .walkbar { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; }
@@ -184,6 +234,17 @@ details summary { cursor: pointer; font-weight: 600; }
 .mgr .sub { color: var(--faint); font-size: 12px; }
 .mgr .meta { display: flex; flex-direction: column; align-items: flex-end; gap: 2px;
              text-align: right; }
+
+/* Inline identity: a manager's team portrait beside their name, used in tiles,
+   drilldown rows and tables (see _ident.html). Small, round, degrades to text. */
+.ident { display: inline-flex; align-items: center; gap: 6px; min-width: 0; vertical-align: middle; }
+.ident .face { width: 20px; height: 20px; border-radius: 50%; flex: 0 0 20px;
+  object-fit: cover; background: var(--bg); border: 1px solid var(--line); }
+.ident .idn { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* A player's headshot, shown before their name in the standout-player tables. */
+.pface { width: 22px; height: 22px; border-radius: 50%; object-fit: cover;
+  background: var(--bg); border: 1px solid var(--line); vertical-align: middle;
+  margin-right: 7px; display: inline-block; }
 
 /* Point-calculation chart: grouped, in plain English, raw stat code alongside. */
 .rulegroups { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));

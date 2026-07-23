@@ -1,6 +1,7 @@
 {# No season rail: the header's season picker selects the season for every tab,
    and a second switcher in here meant the postseason could sit on a different
    season from the rest of the page. #}
+{% import "_ident.html" as idm with context %}
 {% if missing %}
 <p class="empty">No stored bracket for {{ missing }}. Add <code>playoffs/{{ missing }}.json</code>
    (see <code>playoffs/README.md</code>).</p>
@@ -156,7 +157,7 @@
     {% for r in summary %}
       <tr>
         <td class="n">{% if r.seed is not none %}{{ r.seed }}{% else %}&mdash;{% endif %}</td>
-        <td>{{ r.team }}</td>
+        <td>{{ idm.who(r.team) }}</td>
         <td class="n">{{ r.games }}</td>
         <td class="n">{{ r.wins }}</td>
         <td class="n">{{ r.losses }}</td>
@@ -254,7 +255,7 @@
     <tbody>
     {% for t in toilet.teams %}
       <tr>
-        <td>{{ t.user_name }}{% if t.user_name == toilet.last %} <span class="tag">last</span>{% endif %}</td>
+        <td>{{ idm.who(t.user_name) }}{% if t.user_name == toilet.last %} <span class="tag">last</span>{% endif %}</td>
         <td class="n">#{{ t.final_position }}</td>
         <td class="n">{{ t.wins }}</td>
         <td class="n">{{ t.losses }}</td>

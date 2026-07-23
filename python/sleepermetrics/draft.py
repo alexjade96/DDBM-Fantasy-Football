@@ -143,12 +143,57 @@ def draft_extremes(s: Season, n: int = 8) -> dict:
     # Carrying what he scored elsewhere keeps that visible: it distinguishes a
     # player who was simply bad from one the team gave up on.
     d["elsewhere"] = _points_elsewhere(s, d)
-    cols = ["pick", "pick_no", "player_name", "position", "user_name",
+    cols = ["pick", "pick_no", "player_id", "player_name", "position", "user_name",
             "points", "steal", "elsewhere"]
     gems = d.sort_values(["steal", "points"], ascending=[False, False]).head(n)
     busts = d.sort_values(["steal", "points"], ascending=[True, True]).head(n)
     return {"gems": gems[cols].to_dict("records"),
             "busts": busts[cols].to_dict("records")}
+
+
+def undrafted_standouts(s: Season, n: int = 10) -> pd.DataFrame:
+    """The best players who went UNDRAFTED -- the flip side of gems & busts.
+
+    Nobody spent a pick on them, yet they started and scored. `points` is a
+    player's total started points across the regular season; a churned pickup can
+    touch several rosters, so `teams` counts how many started him and `user_name`
+    is the manager who got the most out of him. Returns an empty frame when there
+    is no draft to define "undrafted" against, or no starter data.
+    """
+    cols = ["player_id", "player_name", "position", "user_name", "teams", "starts", "points"]
+    board = draft_board(s)
+    # Without a draft, every player looks "undrafted" -- which is meaningless, so
+    # only compute this against a real draft board.
+    if board.empty:
+        return pd.DataFrame(columns=cols)
+    drafted = set(board["player_id"].dropna().astype(str))
+    pl = s.pl_wk
+    if not {"player_id", "is_starter", "points", "roster_id",
+            "week"}.issubset(getattr(pl, "columns", [])):
+        return pd.DataFrame(columns=cols)
+    st = pl[pl["is_starter"]].copy()
+    if st.empty:
+        return pd.DataFrame(columns=cols)
+    st["pid"] = st["player_id"].astype(str)
+    st = st[~st["pid"].isin(drafted)]
+    if st.empty:
+        return pd.DataFrame(columns=cols)
+    per = st.groupby("pid").agg(
+        points=("points", "sum"), starts=("week", "nunique"),
+        player_name=("player_name", "first"), position=("position", "first"))
+    # Primary manager = whoever the player scored the most STARTED points for.
+    by_team = (st.groupby(["pid", "roster_id"], as_index=False)["points"].sum()
+               .merge(s.user_map[["roster_id", "user_name"]], on="roster_id", how="left"))
+    top = by_team.sort_values("points", ascending=False).drop_duplicates("pid").set_index("pid")
+    per["user_name"] = top["user_name"]
+    per["teams"] = by_team.groupby("pid")["roster_id"].nunique()
+    per = per[per["player_name"].notna()]
+    if per.empty:
+        return pd.DataFrame(columns=cols)
+    per["points"] = per["points"].round(1)
+    per = (per.sort_values("points", ascending=False).head(n)
+           .reset_index().rename(columns={"pid": "player_id"}))
+    return per[cols]
 
 
 def draft_grades(s: Season) -> pd.DataFrame:

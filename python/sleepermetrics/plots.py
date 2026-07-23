@@ -1483,10 +1483,13 @@ def plot_week_luck(s: Season, week: int):
                c=[cmap(v / n) for v in d["allplay_w"]])
     ax.set_xlim(lo, hi)
     ax.set_ylim(lo, hi)
+    # x is your own score -- your performance against the WHOLE field (what drives
+    # all-play), so it deliberately doesn't mirror the y-axis, which is just the
+    # single opponent you happened to draw.
     fig = _finish(fig, ax, f"Week {week}: Beaten, or Just Unlucky?",
                   "Colour is how many teams you outscored — a green dot in the "
                   "red zone is the week's unlucky team, orange in green got away with one",
-                  "Points scored", "Points against", caption=_cap(s), grid_axis="both")
+                  "Your score vs the field", "Points against", caption=_cap(s), grid_axis="both")
     # After _finish: tight_layout has settled the axes, so the collision solver
     # is working with the geometry that will actually be drawn.
     _place_labels(fig, ax, list(d["points"]), list(d["pa"]),

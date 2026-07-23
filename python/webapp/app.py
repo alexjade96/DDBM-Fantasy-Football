@@ -172,6 +172,30 @@ def records(df) -> list[dict]:
     return [{k: clean(v) for k, v in row.items()} for row in df.to_dict("records")]
 
 
+def _avatar_map(s) -> dict:
+    """`{user_name: avatar_url}` for a season, so tab tables/tiles can hang a
+    manager's team portrait beside their name (the same identity the Career
+    Managers panel shows). Reads the season's `accounts` frame -- the account
+    avatar, falling back to the custom team picture. Missing/empty avatars are
+    simply omitted, so a name with no portrait renders as plain text.
+    """
+    import pandas as pd
+    acc = getattr(s, "accounts", None)
+    if acc is None or getattr(acc, "empty", True) or "user_name" not in acc:
+        return {}
+    out: dict = {}
+    for r in acc.itertuples(index=False):
+        name = getattr(r, "user_name", None)
+        if not (name is not None and pd.notna(name)):
+            continue
+        for col in ("avatar_url", "team_avatar_url"):
+            v = getattr(r, col, None)
+            if v is not None and pd.notna(v) and str(v).strip():
+                out[str(name)] = str(v)
+                break
+    return out
+
+
 def _grouped_rules(settings: dict) -> list[tuple[str, list[dict]]]:
     """The point-calculation chart as [(group, [rule, ...])], in plain English.
 
@@ -292,6 +316,51 @@ MANAGER_CHARTS = {
 }
 
 
+# Per-chart insight + placement, so a grid of PNGs reads as a narrated set rather
+# than a wall of graphics. `cap` is the one-line insight rendered as the figure's
+# caption (the chart already carries its own baked-in title/subtitle, so this
+# frames *why it's here*, not how to read the axes). `wide` spans the full grid
+# row -- reserved for the genuinely wide-aspect charts (measured from their
+# figsize), so a 15x6 chart isn't crushed into a half-width column. Consumed by
+# the `_chartmacro.html` macro; unknown keys fall back to a plain figure.
+CHART_META = {
+    # Season / overview
+    "standings": {"cap": "Where each team stands — record first, total points breaking ties."},
+    "power_rank": {"cap": "Scoring, all-play, recent form and lineup efficiency blended into one number."},
+    "allplay": {"cap": "The record a team would carry if it played the whole league every week — schedule removed."},
+    "luck": {"cap": "Points scored set against the record they actually bought — a gap is the schedule helping or hurting."},
+    "team_points": {"cap": "Weekly points stacked — total output and how steady it was.", "wide": True},
+    "sos": {"cap": "How strong a schedule each team drew — their opponents' average points."},
+    "schedule_swap": {"cap": "Each team's record replayed under every rival's schedule."},
+    # Coaching
+    "efficiency": {"cap": "Points started as a share of the best legal lineup available — the cost of the decision."},
+    "consistency": {"cap": "Week-to-week spread — a short bar is dependable, a long one runs hot and cold."},
+    "pf_pa": {"cap": "What each team scored against what it faced."},
+    "boom_bust": {"cap": "Each manager's ceiling and floor around their average week."},
+    # Roster
+    "position_scoring": {"cap": "Started points by position and each slot's share of the total."},
+    "roster_counts": {"cap": "The average roster shape each manager carried."},
+    "roster_heatmap": {"cap": "Where each team's scoring lived — points by manager and position."},
+    "starter_bench": {"cap": "Started points against what sat on the bench, per manager.", "wide": True},
+    "position_box": {"cap": "The scoring spread at each position — good weeks against bad."},
+    # Transactions
+    "manager_profile": {"cap": "Moves, trades and drops per manager, with a lineup-IQ score."},
+    "trade_performance": {"cap": "Every traded player by the points he returned while rostered."},
+    "waiver_performance": {"cap": "Every waiver or free-agent pickup by points returned while rostered."},
+    # Draft
+    "draft_value": {"cap": "Started points each pick returned to the team that drafted him."},
+    "draft_grades": {"cap": "Value weighed against draft slot — a late steal grades above a costly early miss."},
+    # Career
+    "career": {"cap": "Cumulative record and points across every season on record."},
+    "trajectory": {"cap": "Where each manager finished, season by season."},
+    "head_to_head": {"cap": "All-time record of every manager against every other."},
+    "loyalty": {"cap": "The players a manager keeps re-rostering year after year."},
+    # Week (used where these render via the macro, e.g. the season-so-far race)
+    "week_race": {"cap": "Table position after each week — where lines cross, the lead changed."},
+}
+tpl.env.globals["CHART_META"] = CHART_META
+
+
 @app.get("/chart/{name}")
 def chart(name: str, league: str = DEFAULT_LEAGUE, season: str | None = None,
           matchup: str | None = None, scope: str = "title",
@@ -356,7 +425,25 @@ def chart(name: str, league: str = DEFAULT_LEAGUE, season: str | None = None,
 
 # --- pages ----------------------------------------------------------------
 @app.get("/", response_class=HTMLResponse)
-def index(request: Request, league: str = DEFAULT_LEAGUE):
+def home(request: Request, league: str = DEFAULT_LEAGUE):
+    """The landing / home page: a league-id field that leads into the analytics.
+
+    Deliberately does no league load -- it stays instant. The field is
+    temporarily pre-filled with the Dank Soupers (DDBM) league id so the default
+    path is one click; the form GET-submits to /dashboard, which is where the
+    season analytics actually live.
+    """
+    return tpl.TemplateResponse(request, "home.html", {
+        "league": league, "asset_v": asset_v(),
+    })
+
+
+# The analytics link reads `/league=<id>` (no `/dashboard?` query) -- a literal
+# `league=` prefix on the path segment, with the id captured after it. `/dashboard`
+# stays as a graceful fallback for the landing form when JS is unavailable.
+@app.get("/league={league}", response_class=HTMLResponse)
+@app.get("/dashboard", response_class=HTMLResponse)
+def dashboard(request: Request, league: str = DEFAULT_LEAGUE):
     d = league_data(league)
     return tpl.TemplateResponse(request, "index.html", {
         "tabs": TABS, "league": league, "asset_v": asset_v(),
@@ -389,6 +476,48 @@ def load(request: Request, league: str = DEFAULT_LEAGUE, season: str | None = No
     return tpl.TemplateResponse(request, "load.html", ctx)
 
 
+def _week_context(s, week: str | int | None = None) -> dict:
+    """Everything the current-week view needs: the selected week (defaulting to
+    the current one), its KPI tiles and its scoreboard as games.
+
+    Shared by the Weekly tab and the Season overview's lead section so the two
+    can't drift -- overview always leads with the current week (week=None), while
+    Weekly shows whatever week the rail selected.
+    """
+    last = s.last_week
+    wk = last
+    if week:
+        try:
+            wk = max(1, min(int(week), last))
+        except (TypeError, ValueError):
+            pass
+    ws = metrics.week_stats(s, wk)
+    decided = ws[ws["result"].isin(["W", "L", "T"])]
+    wins = decided[decided["margin"] > 0]
+    top = ws.iloc[0] if len(ws) else None
+    blow = wins.loc[wins["margin"].idxmax()] if len(wins) else None
+    close = wins.loc[wins["margin"].idxmin()] if len(wins) else None
+    bench = (ws.loc[ws["left_on_bench"].idxmax()]
+             if ws["left_on_bench"].notna().any() else None)
+    return {
+        "week": wk, "weeks": list(range(1, last + 1)),
+        # Current-week framing: during a live season the view opens on
+        # current_week and badges it live; on a finished season `live` is False.
+        "current_week": s.current_week, "live": s.in_progress,
+        "is_current": wk == s.current_week,
+        # The scoreboard as GAMES, each drilling into both lineups.
+        "wk_games": metrics.week_matchups(s, wk),
+        "kpi_top": (f"{top['points']:.1f} · {top['user_name']}"
+                    if top is not None else "—"),
+        "kpi_blow": (f"+{blow['margin']:.1f} · {blow['user_name']}"
+                     if blow is not None else "—"),
+        "kpi_close": (f"+{close['margin']:.1f} · {close['user_name']}"
+                      if close is not None else "—"),
+        "kpi_bench": (f"{bench['left_on_bench']:.1f} · {bench['user_name']}"
+                      if bench is not None else "—"),
+    }
+
+
 @app.get("/tab/{name}", response_class=HTMLResponse)
 def tab(name: str, request: Request, league: str = DEFAULT_LEAGUE,
         season: str | None = None, refresh: int = 0, scope: str = "title",
@@ -397,54 +526,38 @@ def tab(name: str, request: Request, league: str = DEFAULT_LEAGUE,
     if refresh:
         scoring.clear_stats_cache()      # a live week must not serve stale points
     try:
-        d, s, key = pick(league, season)
+        # A refresh re-assembles the league from the API (fresh=True), not just
+        # the scoring cache -- otherwise a live week's matchup points stay frozen
+        # at whatever the 15-min season cache last held.
+        d, s, key = pick(league, season, fresh=bool(refresh))
     except Exception:
         return HTMLResponse("<p class='empty'>Couldn&rsquo;t load league <code>"
                             f"{html_escape(league)}</code>.</p>")
     ctx = {"league": league, "season": key, "scope": scope, "theme": theme,
-           "bust": int(time.time()) if refresh else 0}
+           "bust": int(time.time()) if refresh else 0,
+           # Available to every tab so season-total views can flag, mid-season,
+           # that their figures are through the current week (see _liveband.html).
+           "live": s.in_progress, "current_week": s.current_week,
+           # Manager team portraits, keyed by user_name (see _ident.html).
+           "avatars": _avatar_map(s)}
 
     if name == "overview":
+        # Lead with the latest / in-progress week -- its metrics, scoreboard and
+        # the two week-analytics charts -- then restate the season-to-date metrics
+        # below. The week lead is the same computation the Weekly tab uses.
+        ctx.update(_week_context(s))
         ctx["summary"] = summaries.summary_season(s)
-        # table_position and team_points moved here from the Weekly tab: both
-        # describe the season's ARC, not any one week, so they belong with the
-        # season view. Weekly is now purely about the week you selected.
+        # The table-position race is rendered explicitly in Season-so-far (it
+        # needs the week param), so table_position is NOT in this list -- the two
+        # are the same bump chart and would duplicate. team_points stays: it
+        # describes the season's arc, not any one week.
         ctx["charts"] = ["standings", "power_rank", "allplay", "luck",
-                         "table_position", "team_points", "sos", "schedule_swap"]
+                         "team_points", "sos", "schedule_swap"]
+        return tpl.TemplateResponse(request, "tab_overview.html", ctx)
     elif name == "weekly":
         # One week, in full: its superlatives, then the scoreboard as games
         # that drill into both lineups. The season-arc charts live on Overview.
-        last = s.last_week
-        wk = last
-        if week:
-            try:
-                wk = max(1, min(int(week), last))
-            except ValueError:
-                pass
-        ws = sm.metrics.week_stats(s, wk)
-        decided = ws[ws["result"].isin(["W", "L", "T"])]
-        wins = decided[decided["margin"] > 0]
-
-        def _one(row, val):
-            return f"{val} · {row['user_name']}" if row is not None else "—"
-
-        top = ws.iloc[0] if len(ws) else None
-        blow = wins.loc[wins["margin"].idxmax()] if len(wins) else None
-        close = wins.loc[wins["margin"].idxmin()] if len(wins) else None
-        bench = (ws.loc[ws["left_on_bench"].idxmax()]
-                 if ws["left_on_bench"].notna().any() else None)
-        ctx.update({
-            "week": wk, "weeks": list(range(1, last + 1)),
-            # The scoreboard as GAMES, each drilling into both lineups.
-            "wk_games": metrics.week_matchups(s, wk),
-            "kpi_top": _one(top, f"{top['points']:.1f}") if top is not None else "—",
-            "kpi_blow": (f"+{blow['margin']:.1f} · {blow['user_name']}"
-                         if blow is not None else "—"),
-            "kpi_close": (f"+{close['margin']:.1f} · {close['user_name']}"
-                          if close is not None else "—"),
-            "kpi_bench": (f"{bench['left_on_bench']:.1f} · {bench['user_name']}"
-                          if bench is not None else "—"),
-        })
+        ctx.update(_week_context(s, week))
         return tpl.TemplateResponse(request, "tab_weekly.html", ctx)
     elif name == "coaching":
         # Charts, then the decisions behind them: per-manager lineup weeks and
@@ -507,6 +620,9 @@ def tab(name: str, request: Request, league: str = DEFAULT_LEAGUE,
                         "slot_user": [slot_user.get(sl) for sl in slots],
                         "rounds": rounds})
             ctx.update(draft.draft_extremes(s))
+            # records() scrubs NaN so `{{ r.user_name or "—" }}` fires (NaN is
+            # truthy in Jinja); a churned pickup can have a null primary manager.
+            ctx["undrafted"] = records(draft.undrafted_standouts(s))
         return tpl.TemplateResponse(request, "tab_draft.html", ctx)
     elif name == "report":
         # The report rendered natively into the tab: its tables come straight from
@@ -524,6 +640,10 @@ def tab(name: str, request: Request, league: str = DEFAULT_LEAGUE,
     elif name == "career":
         ctx["summary"] = summaries.summary_career(d["seasons"])
         ctx["charts"] = ["career", "trajectory", "head_to_head", "loyalty"]
+        ctx["charts_intro"] = (
+            "The league across every season on record &mdash; each chart&rsquo;s takeaway is "
+            "noted beneath it. Identity follows the persistent account, so a manager who renamed "
+            "themselves is still one person.")
         ctx["records"] = metrics.record_book(d["seasons"])
         # The all-time postseason lives here, on the league's cross-season tab;
         # the Playoffs tab shows only the season selected in the header.

@@ -1,5 +1,8 @@
 {# Coaching tab: the efficiency/consistency charts, then the decisions behind
    them -- per manager week by week, and the individual calls that cost most. #}
+{% import "_chartmacro.html" as ch with context %}
+{% import "_ident.html" as idm with context %}
+{% include "_liveband.html" %}
 {% if standouts %}
 <h2>Coaching standouts</h2>
 <p class="hint">Lineup decisions only &mdash; how well each manager used the roster they
@@ -9,19 +12,16 @@
   <div class="stat {% if loop.index0 == 0 %}gold{% endif %}">
     <span class="k">{{ t.label }}</span>
     <span class="v">{{ t.value }}</span>
-    <span class="sub">{{ t.holder }}{% if t.detail %} · {{ t.detail }}{% endif %}</span>
+    <span class="sub">{{ idm.who(t.holder) }}{% if t.detail %} · {{ t.detail }}{% endif %}</span>
   </div>
   {% endfor %}
 </section>
 {% endif %}
 
+<p class="hint">How the roster was <em>used</em>, not how good it was &mdash; each chart&rsquo;s
+   takeaway is noted beneath it.</p>
 <section class="grid">
-  {% for c in charts %}
-  <figure class="card chart">
-    <img src="/chart/{{ c }}?league={{ league }}&season={{ season }}&theme={{ theme }}&_={{ bust }}"
-         alt="{{ c }}" loading="lazy">
-  </figure>
-  {% endfor %}
+  {% for c in charts %}{{ ch.chart(c) }}{% endfor %}
 </section>
 
 {% if coaching %}
@@ -42,7 +42,7 @@
   {% for c in coaching %}
   <details class="dt-row">
     <summary>
-      <span>{{ c.user_name }}</span>
+      <span>{{ idm.who(c.user_name) }}</span>
       <span class="dt-num">{{ "%.1f"|format(c.eff) }}%</span>
       <span class="dt-num">{{ "%.0f"|format(c.actual) }}</span>
       <span class="dt-num">{{ "%.0f"|format(c.optimal) }}</span>
