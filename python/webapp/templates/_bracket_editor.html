@@ -1,0 +1,49 @@
+{# Visual custom-bracket builder for the Playoffs tab. Hidden until "Insert
+   custom bracket" is clicked (which also calls SMBuilder.init()). All logic is in
+   static/builder.js (SMBuilder) on top of window.SMBracket. The bracket lives in
+   THIS browser (localStorage + download) -- the server only validates/scores it,
+   so nothing here changes what another visitor sees. #}
+<div id="bkr-editor" class="card bkr" hidden>
+  <p class="hint">Build your playoff bracket: pick each matchup&rsquo;s teams, then set the lineups
+     from real players. The preview updates as you go. It&rsquo;s kept in this browser and
+     downloadable &mdash; it never changes what anyone else sees. Undecided games show as
+     pending, so a partial bracket is fine.</p>
+
+  <div class="controls inline bkr-tools">
+    <label><span>Weeks</span><input id="bkr-weeks" value="15,16,17,18" spellcheck="false"></label>
+    <label><span>Teams</span><input id="bkr-teams" type="number" min="2" value="8" style="width:70px"></label>
+    <button type="button" class="ghost" onclick="SMBuilder.scaffold()">New scaffold</button>
+    <button type="button" class="ghost" onclick="SMBuilder.loadInto('committed')">Load committed</button>
+    <button type="button" class="ghost" onclick="SMBuilder.loadInto('sleeper')">Load Sleeper</button>
+    <button type="button" class="ghost" onclick="SMBuilder.download()">Download</button>
+    <label class="ghost bkr-upload">Upload
+      <input type="file" accept="application/json,.json" onchange="SMBuilder.upload(this)">
+    </label>
+  </div>
+
+  {# The bracket AS a form: rounds -> matchup cards with team dropdowns + lineup pickers. #}
+  <div id="bkr-visual" class="bkr-grid"></div>
+
+  <figure class="card chart bkr-preview">
+    <img id="bkr-preview" alt="Bracket preview" loading="lazy">
+  </figure>
+
+  <div class="rowhead-actions">
+    <button type="button" onclick="SMBuilder.apply()">Apply to tab</button>
+    <button type="button" class="ghost" onclick="SMBuilder.validate()">Validate</button>
+  </div>
+  <div id="bkr-msg" class="bkr-msg" role="status" aria-live="polite"></div>
+
+  {# Escape hatch: the same bracket as raw config, for pasting/advanced edits. #}
+  <details class="bkr-adv">
+    <summary>Advanced &mdash; edit as JSON</summary>
+    <p class="hint">The same bracket as its underlying config. Edit here and load it back into the
+       builder, or paste one you saved earlier.</p>
+    <textarea id="bkr-json" class="bkr-json" spellcheck="false"></textarea>
+    <div class="rowhead-actions">
+      <button type="button" class="ghost" onclick="SMBuilder.fromJson()">Load JSON into builder</button>
+    </div>
+  </details>
+</div>
+{# Restoring this browser's saved bracket after render is handled by an
+   htmx:afterSwap hook in index.html (keyed off #bkr-editor being present). #}

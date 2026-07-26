@@ -88,6 +88,50 @@ def test_undrafted_standouts_excludes_drafted_and_ranks_by_started_points():
     draft._cache.clear()
 
 
+def test_validate_config_catches_structural_errors():
+    """A custom bracket must be checked before it's scored: missing rounds,
+    duplicate ids, and unresolved W:/final references are hard errors; a
+    league-id mismatch is a soft warning. Kept roster_positions out so the
+    lineup slot-check (which needs the player DB) doesn't run offline."""
+    from sleepermetrics import validate_config
+
+    good = {"season": "2026", "league_id": "0", "rounds": [
+        {"id": "R1", "weeks": [15], "matchups": [
+            {"id": "R1M1", "home": {"team": "A", "starters": []},
+             "away": {"team": "B", "starters": []}},
+            {"id": "R1B1", "bye": "C"}]},
+        {"id": "R2", "weeks": [16], "matchups": [
+            {"id": "R2M1", "home": {"team": "W:R1M1", "starters": []},
+             "away": {"team": "W:R1B1", "starters": []}}]}],
+        "final": "R2M1"}
+    assert validate_config(good, league_id="0")["errors"] == []
+
+    assert "missing or empty 'rounds'" in validate_config({"season": "2026"})["errors"]
+
+    bad = {"season": "2026", "final": "NOPE", "rounds": [
+        {"id": "R1", "weeks": [15], "matchups": [
+            {"id": "M1", "home": {"team": "A", "starters": []},
+             "away": {"team": "W:GHOST", "starters": []}},
+            {"id": "M1", "bye": "B"}]}]}   # duplicate id
+    errs = validate_config(bad)["errors"]
+    assert any("duplicate matchup id 'M1'" in e for e in errs)
+    assert any("unknown matchup 'GHOST'" in e for e in errs)
+    assert any("unknown matchup 'NOPE'" in e for e in errs)
+
+    warns = validate_config(good, league_id="999")["warnings"]
+    assert any("!= current league 999" in w for w in warns)
+
+
+def test_bracket_token_is_stable_and_content_addressed():
+    """The webapp keys an ad-hoc bracket by a hash of its config, so identical
+    brackets share a token and an unknown token resolves to nothing."""
+    from webapp.app import _bracket_from_token, _bracket_token
+    cfg = {"season": "2026", "rounds": [{"id": "R1", "weeks": [15], "matchups": []}]}
+    assert _bracket_token(cfg) == _bracket_token(dict(cfg))          # order-independent
+    assert _bracket_token(cfg) != _bracket_token({**cfg, "season": "2025"})
+    assert _bracket_from_token("deadbeef") is None                  # unknown token
+
+
 def test_starter_slots():
     rp = ["QB", "RB", "RB", "WR", "WR", "TE", "FLEX", "K", "DEF", "BN", "BN"]
     s = starter_slots(rp)

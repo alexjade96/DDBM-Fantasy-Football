@@ -2,11 +2,28 @@
    and a second switcher in here meant the postseason could sit on a different
    season from the rest of the page. #}
 {% import "_ident.html" as idm with context %}
-{% if missing %}
-<p class="empty">No stored bracket for {{ missing }}. Add <code>playoffs/{{ missing }}.json</code>
-   (see <code>playoffs/README.md</code>).</p>
-{% else %}
 {% with oob = true %}{% include "_seasons.html" %}{% endwith %}
+
+{# Bracket source: always available, even with no committed bracket, so a season
+   Sleeper never scored can still get a custom one. #}
+<div class="rowhead">
+  <h2>Playoffs{% if custom_bracket %} <span class="tag">custom bracket</span>{% endif %}</h2>
+  <div class="rowhead-actions">
+    <button type="button" class="ghost" onclick="SMBracket.rollbackSleeper()">Roll back to Sleeper default</button>
+    {% if custom_bracket %}
+    <button type="button" class="ghost" onclick="SMBracket.reset()">Reset to committed</button>
+    {% endif %}
+    <button type="button" class="ghost"
+            onclick="var e=document.getElementById('bkr-editor');e.hidden=!e.hidden;if(!e.hidden)SMBuilder.init()">Insert custom bracket</button>
+  </div>
+</div>
+{% include "_bracket_editor.html" %}
+
+{% if missing %}
+<p class="empty">No bracket for {{ missing }} yet. Insert a custom one above, roll back to
+   the Sleeper bracket, or add <code>playoffs/{{ missing }}.json</code> (see
+   <code>playoffs/README.md</code>).</p>
+{% else %}
 
 <section class="stats">
   <div class="stat gold">
@@ -43,18 +60,18 @@
   <h2>Bracket</h2>
   <button class="ghost"
           hx-get="/tab/playoffs?refresh=1" hx-target="#panel" hx-swap="innerHTML"
-          hx-include="#league, #season, #theme">
+          hx-include="#league, #season, #theme, #bracket">
     Re-score from live stats
   </button>
 </div>
 <figure class="card chart">
-  <img src="/chart/bracket?league={{ league }}&season={{ season }}&theme={{ theme }}&_={{ bust }}"
+  <img src="/chart/bracket?league={{ league }}&season={{ season }}&theme={{ theme }}&bracket={{ bracket }}&_={{ bust }}"
        alt="Playoff bracket">
 </figure>
 
 <h2>Walk the bracket</h2>
 {% if walk %}
-<div class="walk" hx-target="#panel" hx-swap="innerHTML" hx-include="#league, #season, #theme">
+<div class="walk" hx-target="#panel" hx-swap="innerHTML" hx-include="#league, #season, #theme, #bracket">
   <div class="walkbar">
     {# No hx-get at all at the ends -- a disabled button must not carry a live
        url with matchup=None in it. #}
@@ -91,7 +108,7 @@
 </div>
 
 <figure class="card chart">
-  <img src="/chart/playoff_matchup?league={{ league }}&season={{ season }}&matchup={{ matchup }}&theme={{ theme }}&_={{ bust }}"
+  <img src="/chart/playoff_matchup?league={{ league }}&season={{ season }}&matchup={{ matchup }}&theme={{ theme }}&bracket={{ bracket }}&_={{ bust }}"
        alt="Matchup breakdown">
 </figure>
 {% else %}
@@ -102,7 +119,7 @@
   <h2>Playoff analytics</h2>
   {% if has_conso %}
   <form class="controls inline" hx-get="/tab/playoffs" hx-target="#panel"
-        hx-swap="innerHTML" hx-include="#league, #season, #theme" hx-trigger="change">
+        hx-swap="innerHTML" hx-include="#league, #season, #theme, #bracket" hx-trigger="change">
     <label>
       <span>Count which games?</span>
       <select name="scope">
@@ -121,16 +138,16 @@
    nothing to include or exclude and the control is hidden.{% endif %}</p>
 <div class="grid two">
   <figure class="card chart">
-    <img src="/chart/playoff_players?league={{ league }}&season={{ season }}&scope={{ scope }}&theme={{ theme }}&_={{ bust }}"
+    <img src="/chart/playoff_players?league={{ league }}&season={{ season }}&scope={{ scope }}&theme={{ theme }}&bracket={{ bracket }}&_={{ bust }}"
          alt="Best playoff players" loading="lazy">
   </figure>
   <figure class="card chart">
-    <img src="/chart/clutch?league={{ league }}&season={{ season }}&scope={{ scope }}&theme={{ theme }}&_={{ bust }}"
+    <img src="/chart/clutch?league={{ league }}&season={{ season }}&scope={{ scope }}&theme={{ theme }}&bracket={{ bracket }}&_={{ bust }}"
          alt="Clutch index" loading="lazy">
   </figure>
 </div>
 <figure class="card chart">
-  <img src="/chart/playoff_stats?league={{ league }}&season={{ season }}&scope={{ scope }}&theme={{ theme }}&_={{ bust }}"
+  <img src="/chart/playoff_stats?league={{ league }}&season={{ season }}&scope={{ scope }}&theme={{ theme }}&bracket={{ bracket }}&_={{ bust }}"
        alt="{{ season }} playoff record" loading="lazy">
 </figure>
 
@@ -295,41 +312,49 @@
 {% if po_weeks %}
 <h2>Postseason weeks</h2>
 <p class="hint">The Weekly tab covers the regular season (weeks 1&ndash;{{ reg_weeks }}); these are
-   the weeks after it. Every team scored something &mdash; what matters is what it was
-   <em>for</em>, so each row says whether it was a bracket game, a bye, a game outside the
-   bracket, or no game at all. <strong>Bracket</strong> is the engine&rsquo;s own figure from the
+   the weeks after it. Each week expands into the <strong>games actually played</strong> &mdash;
+   the bracket matchups for that round, any games played <em>outside</em> the bracket, and who
+   sat on a bye or didn&rsquo;t play. A bracket score is the engine&rsquo;s own figure from the
    submitted lineups; it has matched Sleeper&rsquo;s weekly total in every stored season.</p>
 <div class="tablewrap">
 <div class="drilltable"
-     style="--cols: minmax(80px,.7fr) minmax(150px,1.6fr) minmax(100px,1fr) minmax(180px,1.9fr)">
+     style="--cols: minmax(64px,.5fr) minmax(150px,1.5fr) minmax(120px,1.1fr) minmax(160px,1.6fr)">
   <div class="dt-head">
-    <span class="dt-num">Week</span><span>Top scorer</span>
-    <span class="dt-num">Points</span><span>Teams playing</span>
+    <span class="dt-num">Week</span><span>Round</span><span>In play</span><span>Top score</span>
   </div>
   {% for wk in po_weeks %}
   <details class="dt-row">
     <summary>
       <span class="dt-num">{{ wk.week }}</span>
-      <span>{{ wk.rows[0].user_name }}</span>
-      <span class="dt-num">{{ "%.1f"|format(wk.rows[0].points) }}</span>
-      <span><span class="q">{{ wk.rows | selectattr("role", "equalto", "bracket") | list | length }}
-            in the bracket</span></span>
+      <span>{{ wk.round or '—' }}</span>
+      <span><span class="q">{{ wk.games | length }} game{{ '' if wk.games | length == 1 else 's' }}
+            {%- if wk.byes %} · {{ wk.byes | length }} bye{{ '' if wk.byes | length == 1 else 's' }}{% endif %}</span></span>
+      <span>{{ wk.rows[0].user_name }} <span class="q">{{ "%.1f"|format(wk.rows[0].points) }}</span></span>
     </summary>
     <div class="dt-detail">
       <table class="dt-games">
         <thead><tr>
-          <th>Team</th><th class="n">Points</th><th class="n">Bracket</th><th>What it was for</th>
+          <th>Matchup</th><th class="n">Score</th><th>What it was</th>
         </tr></thead>
         <tbody>
-        {% for r in wk.rows %}
+        {% for g in wk.games %}
           <tr>
-            <td><strong>{{ r.user_name }}</strong></td>
-            <td class="n">{{ "%.2f"|format(r.points) }}</td>
-            <td class="n">{% if r.bracket_points is not none %}{{ "%.2f"|format(r.bracket_points) }}{% else %}&mdash;{% endif %}</td>
-            <td>{% if r.role == 'bracket' %}<span class="chip">bracket game</span>
-                {%- else %}<span class="q">{{ r.note }}</span>{% endif %}</td>
+            <td>{% for sd in g.sides %}{% if not loop.first %} <span class="q">vs</span> {% endif %}{{ idm.who(sd.user_name) }}{% endfor %}</td>
+            <td class="n">{% for sd in g.sides %}{% if not loop.first %} &ndash; {% endif %}
+                {%- set pt = sd.bracket_points if sd.bracket_points is not none else sd.points -%}
+                {{ "%.1f"|format(pt) if pt is not none else "—" }}{% endfor %}</td>
+            <td>{% if g.kind == 'bracket' %}<span class="chip">{{ g.round or 'bracket' }}</span>
+                {%- else %}<span class="q">outside the bracket</span>{% endif %}</td>
           </tr>
         {% endfor %}
+        {% if wk.byes %}
+          <tr><td colspan="3"><span class="q">Bye &mdash; advanced without playing:</span>
+            {% for b in wk.byes %}{{ idm.who(b.user_name) }}{% if not loop.last %}, {% endif %}{% endfor %}</td></tr>
+        {% endif %}
+        {% if wk.idle %}
+          <tr><td colspan="3"><span class="q">No game:</span>
+            {% for b in wk.idle %}{{ b.user_name }}{% if not loop.last %}, {% endif %}{% endfor %}</td></tr>
+        {% endif %}
         </tbody>
       </table>
     </div>

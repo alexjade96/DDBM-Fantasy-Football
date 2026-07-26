@@ -19,7 +19,7 @@ from pathlib import Path
 
 import matplotlib
 from fastapi import FastAPI, Query, Request
-from fastapi.responses import HTMLResponse, Response
+from fastapi.responses import HTMLResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
@@ -42,16 +42,21 @@ tpl = Jinja2Templates(directory=str(BASE / "templates"))
 
 
 def asset_v() -> str:
-    """Cache-busting stamp for style.css.
+    """Cache-busting stamp for the static assets (style.css + builder.js).
 
-    Browsers hold onto the stylesheet hard, and a stale one silently strips the
-    report's layout (a grid degrades to run-together text). Stamping the mtime
-    onto the URL means a CSS edit is always picked up.
+    Browsers hold onto these hard: a stale stylesheet silently strips the
+    report's layout (a grid degrades to run-together text), and a stale
+    builder.js silently runs an old bracket editor (its team dropdowns stop
+    populating). One `?v=` on both URLs is the newest mtime across both files,
+    so editing EITHER is always picked up -- don't narrow this back to one file.
     """
-    try:
-        return str(int((BASE / "static" / "style.css").stat().st_mtime))
-    except OSError:
-        return "0"
+    newest = 0
+    for name in ("style.css", "builder.js"):
+        try:
+            newest = max(newest, int((BASE / "static" / name).stat().st_mtime))
+        except OSError:
+            pass
+    return str(newest)
 
 
 @app.middleware("http")
@@ -232,6 +237,42 @@ TABS = [
 # it on every tab switch. Charts are cheap to redraw from the cached frames.
 _cache: dict = {}
 
+# Ad-hoc bracket cache: a user-supplied / rolled-back bracket, scored once and
+# held under a content-addressed token so the tab and its PNG charts (which are
+# separate <img> requests that can't carry a POST body) can all reference the
+# same Playoff via ?bracket=<token>. Keyed by a hash of the config, so identical
+# brackets share a token and it is idempotent; ephemeral (TTL) and per-content,
+# so different visitors never clobber each other -- persistence is client-side
+# (localStorage + download), the server stays read-only.
+_bracket_cache: dict = {}
+_BRACKET_TTL = 3600
+
+
+def _bracket_token(config: dict) -> str:
+    import hashlib
+    import json as _json
+    raw = _json.dumps(config, sort_keys=True, ensure_ascii=False).encode("utf-8")
+    return hashlib.sha1(raw).hexdigest()[:16]
+
+
+def _cache_bracket(config: dict):
+    """Score a config into a Playoff and cache it; returns (token, Playoff)."""
+    tok = _bracket_token(config)
+    hit = _bracket_cache.get(tok)
+    if hit and time.time() - hit["at"] < _BRACKET_TTL:
+        return tok, hit["playoff"]
+    p = sm.playoff(config, validate=False)
+    _bracket_cache[tok] = {"config": config, "playoff": p, "at": time.time()}
+    return tok, p
+
+
+def _bracket_from_token(token: str | None):
+    """The cached Playoff for a token, or None if absent/expired."""
+    hit = _bracket_cache.get(token) if token else None
+    if hit and time.time() - hit["at"] < _BRACKET_TTL:
+        return hit["playoff"]
+    return None
+
 
 def league_data(league_id: str, fresh: bool = False) -> dict:
     hit = _cache.get(league_id)
@@ -365,8 +406,12 @@ tpl.env.globals["CHART_META"] = CHART_META
 def chart(name: str, league: str = DEFAULT_LEAGUE, season: str | None = None,
           matchup: str | None = None, scope: str = "title",
           theme: str = "light", manager: str | None = None,
-          week: str | None = None, _: str | None = None):
+          week: str | None = None, bracket: str | None = None,
+          _: str | None = None):
     d, s, key = pick(league, season)
+    # A custom / rolled-back bracket (token) overrides this season's committed
+    # one for every playoff chart, so the whole tab reflects it consistently.
+    pov = _bracket_from_token(bracket)
     # Build + save under the lock, with the requested theme active, so the
     # structural palette and the saved facecolor can't be crossed by a
     # concurrent request drawing in the other theme.
@@ -398,7 +443,11 @@ def chart(name: str, league: str = DEFAULT_LEAGUE, season: str | None = None,
         # bracket (the Career tab). Same functions either way -- they aggregate
         # whatever brackets they are given, and _po_span labels the result -- so
         # the span is chosen here, by which dict gets passed.
-        po = {key: d["playoffs"][key]} if key in d["playoffs"] else {}
+        # The token bracket (if any) is this season's active playoff for the
+        # season-scoped charts; the `_all` career charts always use every stored
+        # bracket and ignore it.
+        p_season = pov or d["playoffs"].get(key)
+        po = {key: p_season} if p_season is not None else {}
         if name == "playoff_stats":
             return png(plots.plot_playoff_stats(po, scope))
         if name == "playoff_players":
@@ -412,14 +461,16 @@ def chart(name: str, league: str = DEFAULT_LEAGUE, season: str | None = None,
         if name == "clutch_all":
             return png(plots.plot_clutch(d["seasons"], d["playoffs"], scope))
         if name == "bracket":
-            p = d["playoffs"].get(key)
+            if p_season is None:
+                return Response(status_code=404)
             # Bye/idle nodes carry the team's real weekly score for reference,
             # so they read as a number rather than a dash.
-            return png(plots.plot_playoff_bracket(p, sm.reference_scores(s)))
+            return png(plots.plot_playoff_bracket(p_season, sm.reference_scores(s)))
         if name == "playoff_matchup":
-            p = d["playoffs"].get(key)
-            mid = matchup or p.config.get("final")
-            return png(plots.plot_playoff_matchup(p, mid))
+            if p_season is None:
+                return Response(status_code=404)
+            mid = matchup or p_season.config.get("final")
+            return png(plots.plot_playoff_matchup(p_season, mid))
     return Response(status_code=404)
 
 
@@ -522,7 +573,8 @@ def _week_context(s, week: str | int | None = None) -> dict:
 def tab(name: str, request: Request, league: str = DEFAULT_LEAGUE,
         season: str | None = None, refresh: int = 0, scope: str = "title",
         matchup: str | None = None, theme: str = "light",
-        week: str | None = None, manager: str | None = None):
+        week: str | None = None, manager: str | None = None,
+        bracket: str | None = None):
     if refresh:
         scoring.clear_stats_cache()      # a live week must not serve stale points
     try:
@@ -539,7 +591,10 @@ def tab(name: str, request: Request, league: str = DEFAULT_LEAGUE,
            # that their figures are through the current week (see _liveband.html).
            "live": s.in_progress, "current_week": s.current_week,
            # Manager team portraits, keyed by user_name (see _ident.html).
-           "avatars": _avatar_map(s)}
+           "avatars": _avatar_map(s),
+           # A custom / rolled-back bracket token rides on every playoff chart
+           # + walk link so the whole tab reflects it (empty = committed bracket).
+           "bracket": bracket or ""}
 
     if name == "overview":
         # Lead with the latest / in-progress week -- its metrics, scoreboard and
@@ -660,7 +715,12 @@ def tab(name: str, request: Request, league: str = DEFAULT_LEAGUE,
         # chooses the season, and a second in-tab switcher let the postseason
         # show 2022-2024 data while the rest of the page was on 2025.
         ctx["seasons"] = list(reversed(d["names"]))
-        p = d["playoffs"].get(key)
+        # A custom / rolled-back bracket (token) takes precedence over the
+        # committed one; `custom` tells the template which source is live.
+        pov = _bracket_from_token(bracket)
+        p = pov or d["playoffs"].get(key)
+        ctx["custom_bracket"] = pov is not None
+        ctx["has_committed"] = d["playoffs"].get(key) is not None
         if p is None:
             ctx["missing"] = key
             return tpl.TemplateResponse(request, "tab_playoffs.html", ctx)
@@ -860,6 +920,120 @@ def report(league: str = DEFAULT_LEAGUE, season: str | None = None,
         f'<a class="mdl" href="{dl}">&#8595; Download</a></nav>')
     # Inject at the top of the flow so `position:sticky` anchors to the viewport.
     return HTMLResponse(doc.replace('<div class="wrap">', bar + '<div class="wrap">', 1))
+
+
+# --- custom playoff brackets ----------------------------------------------
+# Stateless: the server generates/validates/scores brackets on demand and the
+# client keeps the config (localStorage + download). "Roll back to Sleeper
+# default" = fetch source=sleeper here and apply it; "reset to committed" = the
+# client drops its token and the tab falls back to the committed config.
+@app.get("/playoffs/default")
+def playoffs_default(league: str = DEFAULT_LEAGUE, season: str | None = None,
+                     source: str = "sleeper"):
+    """A bracket config as JSON: the Sleeper-native bracket (the default a user
+    rolls back to) or the committed config for this season -- used to seed the
+    editor, to roll back, and as the download payload."""
+    d, s, key = pick(league, season)
+    if source == "committed":
+        p = d["playoffs"].get(key)
+        if p is None:
+            return JSONResponse({"error": f"no committed bracket for {key}"}, status_code=404)
+        return p.config
+    try:
+        return sm.sleeper_bracket(league, key)
+    except Exception as e:
+        return JSONResponse({"error": f"could not build the Sleeper bracket: {e}"},
+                            status_code=502)
+
+
+@app.get("/playoffs/scaffold")
+def playoffs_scaffold(league: str = DEFAULT_LEAGUE, season: str | None = None,
+                      weeks: str = "", teams: int = 8):
+    """A seeded single-elim skeleton over a week range, starters pre-filled from
+    Sleeper -- an editable baseline, not applied until the user inserts it."""
+    d, s, key = pick(league, season)
+    wk = [int(w) for w in weeks.replace(" ", "").split(",") if w] or None
+    try:
+        return sm.scaffold_bracket(league, key, wk, teams)
+    except Exception as e:
+        return JSONResponse({"error": f"could not scaffold: {e}"}, status_code=502)
+
+
+@app.post("/playoffs/validate")
+async def playoffs_validate(request: Request, league: str = DEFAULT_LEAGUE):
+    try:
+        cfg = await request.json()
+    except Exception:
+        return JSONResponse({"errors": ["body is not valid JSON"], "warnings": []},
+                            status_code=400)
+    return sm.validate_config(cfg, league_id=league)
+
+
+# --- data for the visual bracket builder ----------------------------------
+@app.get("/playoffs/seeds")
+def playoffs_seeds(league: str = DEFAULT_LEAGUE, season: str | None = None):
+    """Managers in regular-season standings order (name + avatar) -- the seed
+    pool the builder's team dropdowns are populated from."""
+    d, s, key = pick(league, season)
+    order = list(s.standings.sort_values("final_position")["user_name"])
+    av = _avatar_map(s)
+    return [{"seed": i + 1, "name": n, "avatar": av.get(n)}
+            for i, n in enumerate(order)]
+
+
+@app.get("/playoffs/roster")
+def playoffs_roster(league: str = DEFAULT_LEAGUE, season: str | None = None,
+                    team: str = "", week: int = 0):
+    """A manager's rostered players for a week + the league's empty starting
+    slots, so lineups are picked from real players (never typed ids). Reads the
+    Sleeper matchup directly, so it works for custom playoff weeks beyond the
+    season object's regular-season cap."""
+    from sleepermetrics.season import slot_template
+    d, s, key = pick(league, season)
+    row = s.user_map[s.user_map["user_name"] == team]
+    slots = slot_template(getattr(s, "slots", {}) or {})
+    if not len(row) or not week:
+        return {"team": team, "week": week, "slots": slots, "players": [], "prefill": []}
+    rid = int(row["roster_id"].iloc[0])
+    pinfo = sm.players()
+    pos = pinfo.set_index("player_id")["position"]
+    name = pinfo.set_index("player_id")["player_name"]
+    ids, prefill = [], []
+    try:
+        for m in sm.sleeper_api(f"/league/{s.league_id}/matchups/{int(week)}"):
+            if m.get("roster_id") == rid:
+                ids = [str(p) for p in (m.get("players") or [])]
+                prefill = [str(p) for p in (m.get("starters") or []) if p and p != "0"]
+                break
+    except Exception:
+        pass
+
+    def _p(pid):
+        return {"id": pid, "name": name.get(pid, pid), "position": pos.get(pid, "")}
+    return {"team": team, "week": week, "slots": slots,
+            "players": [_p(p) for p in ids], "prefill": prefill}
+
+
+@app.post("/playoffs/custom")
+async def playoffs_custom(request: Request, league: str = DEFAULT_LEAGUE):
+    """Validate + score a user bracket and return a token the tab/charts
+    reference via ?bracket=<token>. Nothing is persisted server-side."""
+    try:
+        cfg = await request.json()
+    except Exception:
+        return JSONResponse({"ok": False, "errors": ["body is not valid JSON"],
+                             "warnings": []}, status_code=400)
+    res = sm.validate_config(cfg, league_id=league)
+    if res["errors"]:
+        return {"ok": False, "errors": res["errors"], "warnings": res["warnings"]}
+    try:
+        tok, p = _cache_bracket(cfg)
+    except Exception as e:
+        return {"ok": False, "errors": [f"could not score bracket: {e}"],
+                "warnings": res["warnings"]}
+    games = int(p.results["matchup_id"].nunique()) if len(p.results) else 0
+    return {"ok": True, "token": tok, "errors": [], "warnings": res["warnings"],
+            "champion": p.champion, "name": p.name, "games": games}
 
 
 @app.get("/health")

@@ -7,6 +7,9 @@
   {# ?v=<mtime> so a CSS edit is never served from a stale browser cache #}
   <link rel="stylesheet" href="/static/style.css?v={{ asset_v }}">
   <script src="https://unpkg.com/htmx.org@1.9.12" defer></script>
+  {# The visual playoff-bracket builder (SMBuilder). Sits on window.SMBracket
+     (defined inline below) and the /playoffs data endpoints. #}
+  <script src="/static/builder.js?v={{ asset_v }}" defer></script>
 </head>
 <body hx-indicator="#bar">
   <div id="bar"></div>
@@ -16,6 +19,10 @@
        into every panel/chart fetch. Set synchronously at parse time so it is
        already correct before htmx fires the initial `load` trigger below. -->
   <input type="hidden" id="theme" name="theme" value="light">
+  <!-- Active custom/rolled-back playoff bracket token. Empty = committed bracket.
+       Persists across tab switches (outside #panel); the config behind it lives in
+       localStorage (see window.SMBracket). hx-include rides it on every request. -->
+  <input type="hidden" id="bracket" name="bracket" value="">
   <script>
     (function () {
       var mq = matchMedia('(prefers-color-scheme: dark)');
@@ -29,6 +36,72 @@
         if (b) b.click();
       });
     })();
+
+    // --- Custom playoff brackets (client-side) ---------------------------
+    // The bracket is the visitor's own: kept in localStorage + downloadable, and
+    // POSTed to the server only to be validated/scored into an ephemeral token.
+    // So one visitor's bracket never changes what another sees, and there is no
+    // server write path. "Roll back to Sleeper default" fetches Sleeper's bracket
+    // and applies it; "reset" drops the token so the committed bracket returns.
+    // Low-level bracket persistence + scoring. The visual builder (SMBuilder in
+    // builder.js) sits on top of this; these are the primitives it and the tab
+    // header buttons share.
+    window.SMBracket = {
+      _restoreTried: {},
+      _el: function (id) { return document.getElementById(id); },
+      _league: function () { return this._el('league').value; },
+      _season: function () { return this._el('season').value; },
+      key: function () { return 'smbr:' + this._league() + ':' + this._season(); },
+      saved: function () {
+        try { return JSON.parse(localStorage.getItem(this.key()) || 'null'); }
+        catch (e) { return null; }
+      },
+      _reloadPlayoffs: function () {
+        var b = [].slice.call(document.querySelectorAll('.tabs button'))
+          .find(function (x) { return x.getAttribute('hx-get') === '/tab/playoffs'; });
+        if (b) b.click();
+      },
+      msg: function (html, cls) {
+        var m = this._el('bkr-msg'); if (m) { m.className = 'bkr-msg ' + (cls || ''); m.innerHTML = html; }
+      },
+      // Validate + score a config into a token; store it + set #bracket. No
+      // reload -- used for the builder's live preview. Returns the server json.
+      score: async function (cfg) {
+        try {
+          var r = await fetch('/playoffs/custom?league=' + encodeURIComponent(this._league()),
+            { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(cfg) });
+          var j = await r.json();
+          if (j.ok) { localStorage.setItem(this.key(), JSON.stringify(cfg)); this._el('bracket').value = j.token; }
+          return j;
+        } catch (e) { return { ok: false, errors: [String(e)] }; }
+      },
+      // Score, then reload the whole Playoffs tab so it reflects the bracket.
+      apply: async function (cfg) {
+        var j = await this.score(cfg);
+        if (!j.ok) { this.msg('Not applied — ' + (j.errors || []).join('; '), 'err'); return j; }
+        this._reloadPlayoffs();
+        return j;
+      },
+      reset: function () { localStorage.removeItem(this.key()); this._el('bracket').value = ''; this._reloadPlayoffs(); },
+      rollbackSleeper: async function () {
+        try {
+          var r = await fetch('/playoffs/default?league=' + encodeURIComponent(this._league())
+            + '&season=' + encodeURIComponent(this._season()) + '&source=sleeper');
+          if (!r.ok) { alert('Could not load the Sleeper bracket for this season.'); return; }
+          await this.apply(await r.json());
+        } catch (e) { alert('Roll back failed: ' + e); }
+      }
+    };
+    // A stale token belongs to the old league/season -- clear it on any switch so
+    // the new season loads its own bracket (the restore script re-applies from
+    // localStorage if this browser saved one for it).
+    ['change', 'submit'].forEach(function (ev) {
+      document.addEventListener(ev, function (e) {
+        if (e.target && (e.target.id === 'season' || (e.target.classList && e.target.classList.contains('controls')))) {
+          var bf = document.getElementById('bracket'); if (bf) bf.value = '';
+        }
+      }, true);
+    });
 
     // Per-chart loading skeleton: after each panel swap, give every chart figure
     // a shimmer placeholder until its PNG loads (or errors), then fade the image
@@ -114,6 +187,22 @@
     document.body.addEventListener('htmx:afterSwap', prepCharts);
     document.body.addEventListener('htmx:afterSwap', prepTables);
 
+    // When the Playoffs tab loads (its editor is present) and no bracket token is
+    // active, restore this browser's saved custom bracket by re-POSTing it for a
+    // fresh token, then reloading. Guarded per league:season so a failed restore
+    // can't loop. Handled here (not inline in the swapped panel) so it doesn't
+    // depend on <script> executing inside injected content.
+    document.body.addEventListener('htmx:afterSwap', function (e) {
+      var B = window.SMBracket;
+      if (!B || !e.target || e.target.id !== 'panel') return;
+      if (!document.getElementById('bkr-editor')) return;      // not the Playoffs tab
+      var bf = document.getElementById('bracket'), cfg = B.saved(), k = B.key();
+      if (cfg && bf && !bf.value && !B._restoreTried[k]) {
+        B._restoreTried[k] = true;
+        B.apply(cfg);
+      }
+    });
+
     // The Season-report tab hosts the report in a same-origin iframe. Size it to
     // its content (no inner scrollbar) and keep it sized as the report's own
     // drill-downs expand/collapse, via a ResizeObserver on the framed document.
@@ -158,7 +247,7 @@
   </header>
 
   <nav class="tabs" role="tablist"
-       hx-target="#panel" hx-swap="innerHTML" hx-include="#league, #season, #theme">
+       hx-target="#panel" hx-swap="innerHTML" hx-include="#league, #season, #theme, #bracket">
     {% for id, label in tabs %}
     <button role="tab" hx-get="/tab/{{ id }}"
             class="{% if loop.first %}active{% endif %}"
@@ -169,7 +258,7 @@
   </nav>
 
   <main id="panel"
-        hx-get="/tab/overview" hx-trigger="load" hx-include="#league, #season, #theme">
+        hx-get="/tab/overview" hx-trigger="load" hx-include="#league, #season, #theme, #bracket">
     <p class="empty">Loading…</p>
   </main>
 

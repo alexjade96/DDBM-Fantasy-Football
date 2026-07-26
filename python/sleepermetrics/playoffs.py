@@ -12,6 +12,7 @@ Winners advance automatically via "W:<matchup_id>" references.
 """
 from __future__ import annotations
 
+import copy
 import json
 import re
 import warnings
@@ -70,6 +71,228 @@ def check_lineup(player_ids, roster_positions, pinfo: pd.DataFrame) -> list:
     if spare != flex:
         probs.append(f"{spare} players for {flex} flex slot(s)")
     return probs
+
+
+# --- Bracket generators + validation -------------------------------------
+# The webapp lets a user roll back to Sleeper's own bracket or scaffold a custom
+# one; both produce a config the engine runs unchanged. These were previously in
+# playoffs/scaffold.py (a CLI); promoted here so the webapp can call them without
+# shelling out. scaffold.py now imports these.
+_gen_cache: dict = {}
+
+
+def _bracket_context(league_id, season=None):
+    from .league import league_chain
+    chain = league_chain(league_id)
+    key = str(season) if season else list(chain)[-1]
+    link = chain[key]
+    lid = link["league_id"]
+    lg = sleeper_api(f"/league/{lid}")
+    rosters = sleeper_api(f"/league/{lid}/rosters")
+    users = {u["user_id"]: u.get("display_name")
+             for u in sleeper_api(f"/league/{lid}/users")}
+    name_of = {r["roster_id"]: users.get(r.get("owner_id")) for r in rosters}
+    return link, lid, lg, name_of
+
+
+def _week_starters(lid, week) -> dict:
+    """roster_id -> starters Sleeper recorded that week (a lineup baseline)."""
+    return {m["roster_id"]: [p for p in (m.get("starters") or []) if p and p != "0"]
+            for m in sleeper_api(f"/league/{lid}/matchups/{week}")}
+
+
+def _bracket_base(link, lid, lg, name) -> dict:
+    return {"name": name, "season": link["season"], "league_id": lid,
+            "roster_positions": lg["roster_positions"],
+            "scoring_settings": lg["scoring_settings"], "rounds": []}
+
+
+def _sleeper_side(t, name_of):
+    """Resolve a winners_bracket slot to a team name or a W:/L: reference.
+
+    A live bracket stores unresolved slots as {"w": m} / {"l": m} rather than a
+    roster id; translating those to the engine's own refs lets an in-progress
+    Sleeper bracket rebuild too, not only a finished one.
+    """
+    if isinstance(t, dict):
+        if "w" in t:
+            return f"W:M{t['w']}"
+        if "l" in t:
+            return f"L:M{t['l']}"
+        return None
+    return name_of.get(t)
+
+
+def sleeper_bracket(league_id, season=None) -> dict:
+    """Rebuild Sleeper's own winners_bracket as an engine config.
+
+    This is the "default Sleeper bracket" a user rolls back to. Note Sleeper's
+    stored bracket can be incoherent (DDBM 2025) or, mid-season, incomplete --
+    the config is faithful to whatever Sleeper holds, warts and all.
+    """
+    key = f"sleeper:{league_id}:{season}"
+    if key in _gen_cache:
+        return copy.deepcopy(_gen_cache[key])
+    link, lid, lg, name_of = _bracket_context(league_id, season)
+    wb = sleeper_api(f"/league/{lid}/winners_bracket") or []
+    start = int((lg.get("settings") or {}).get("playoff_week_start") or 0)
+    cfg = _bracket_base(link, lid, lg, f"{lg['name']} {link['season']} (Sleeper bracket)")
+    for r in sorted({m["r"] for m in wb}):
+        wk = start + r - 1
+        starters = _week_starters(lid, wk) if start else {}
+        mus = []
+        for m in sorted((x for x in wb if x["r"] == r), key=lambda x: x["m"]):
+            home, away = _sleeper_side(m.get("t1"), name_of), _sleeper_side(m.get("t2"), name_of)
+            if home is None or away is None:
+                continue
+            mus.append({
+                "id": f"M{m['m']}",
+                "home": {"team": home,
+                         "starters": starters.get(m.get("t1"), []) if isinstance(m.get("t1"), int) else []},
+                "away": {"team": away,
+                         "starters": starters.get(m.get("t2"), []) if isinstance(m.get("t2"), int) else []},
+                "_sleeper_winner": name_of.get(m["w"]) if m.get("w") else None})
+        cfg["rounds"].append({"id": f"R{r}", "name": f"Round {r}",
+                              "weeks": [wk], "matchups": mus})
+    title = next((m for m in wb if m.get("p") == 1), None)
+    if title:
+        cfg["final"] = f"M{title['m']}"
+    _gen_cache[key] = copy.deepcopy(cfg)
+    return cfg
+
+
+def scaffold_bracket(league_id, season=None, weeks=None, teams: int = 8) -> dict:
+    """A seeded single-elim skeleton over a custom week range.
+
+    Seeds come from the regular-season standings; each round pairs highest vs
+    lowest with the odd team out getting a bye, winners advancing via W:refs, and
+    every side's starters pre-filled from Sleeper -- a runnable baseline the user
+    then edits (opponents, submitted lineups) rather than authoring from blank.
+    """
+    from .season import season as _season
+    link, lid, lg, name_of = _bracket_context(league_id, season)
+    weeks = [int(w) for w in (weeks or [15, 16, 17, 18])]
+    s = _season(league_id, season)
+    seeds = s.standings.sort_values("final_position")["user_name"].tolist()[:int(teams)]
+    cfg = _bracket_base(link, lid, lg, f"{lg['name']} {link['season']} Playoffs (custom)")
+    rid_of = {n: r for r, n in name_of.items()}
+    alive = [f"{i + 1}:{n}" for i, n in enumerate(seeds)]   # keep seed order
+    rnum = 0
+    for wk in weeks:
+        if len(alive) < 2:
+            break
+        rnum += 1
+        starters = _week_starters(lid, wk)
+
+        def side(tag):
+            nm = tag.split(":", 1)[1] if ":" in tag and not tag.startswith("W:") else tag
+            return {"team": nm,
+                    "starters": starters.get(rid_of.get(nm), []) if not nm.startswith("W:") else []}
+        mus, nxt = [], []
+        while len(alive) > 1:
+            hi, lo = alive.pop(0), alive.pop(-1)
+            mid = f"R{rnum}M{len(mus) + 1}"
+            mus.append({"id": mid, "home": side(hi), "away": side(lo)})
+            nxt.append(f"W:{mid}")
+        if alive:
+            # Bye ids are B-numbered (R2B1), distinct from games (R2M1), so a
+            # reference to one reads as "Round 2 Bye 1" rather than a game.
+            mid = f"R{rnum}B1"
+            nm = alive[0].split(":", 1)[1] if ":" in alive[0] else alive[0]
+            mus.append({"id": mid, "bye": nm})
+            nxt.append(f"W:{mid}")
+        cfg["rounds"].append({"id": f"R{rnum}", "name": f"Round {rnum}",
+                              "weeks": [int(wk)], "matchups": mus})
+        alive = nxt
+    if cfg["rounds"]:
+        cfg["final"] = cfg["rounds"][-1]["matchups"][-1]["id"]
+    return cfg
+
+
+def validate_config(cfg, league_id=None) -> dict:
+    """Check a bracket config: {"errors": [...], "warnings": [...]}.
+
+    Errors are structural (unrunnable); warnings are soft (e.g. a lineup that
+    doesn't fill the league's slots -- allowed, since the engine scores it
+    anyway and reports PENDING/partial). Empty errors == safe to run.
+    """
+    errors: list[str] = []
+    warnings_: list[str] = []
+    if not isinstance(cfg, dict):
+        return {"errors": ["config must be a JSON object"], "warnings": []}
+    if not cfg.get("season"):
+        errors.append("missing 'season'")
+    rounds = cfg.get("rounds")
+    if not isinstance(rounds, list) or not rounds:
+        errors.append("missing or empty 'rounds'")
+        return {"errors": errors, "warnings": warnings_}
+    if league_id and str(cfg.get("league_id", "")) not in ("", str(league_id)):
+        warnings_.append(
+            f"config league_id {cfg.get('league_id')} != current league {league_id}")
+
+    ids: set = set()
+    for rd in rounds:
+        if not rd.get("id"):
+            errors.append("a round is missing 'id'")
+        if not rd.get("weeks"):
+            errors.append(f"round {rd.get('id')} missing 'weeks'")
+        for mu in rd.get("matchups", []):
+            mid = mu.get("id")
+            if not mid:
+                errors.append(f"a matchup in round {rd.get('id')} is missing 'id'")
+                continue
+            if mid in ids:
+                errors.append(f"duplicate matchup id '{mid}'")
+            ids.add(mid)
+            if mu.get("bye"):
+                continue
+            for k in ("home", "away"):
+                side = mu.get(k)
+                if not isinstance(side, dict):
+                    errors.append(f"{mid}.{k} is malformed")
+                elif not side.get("team"):
+                    # Incomplete, not invalid: the engine scores it as PENDING, so
+                    # a half-built bracket previews rather than erroring out.
+                    warnings_.append(f"{mid}.{k} has no team yet")
+
+    def ref(v):
+        v = str(v)
+        return v[2:] if v.startswith(("W:", "L:")) else None
+
+    for rd in rounds:
+        for mu in rd.get("matchups", []):
+            for k in ("home", "away", "bye"):
+                side = mu.get(k)
+                team = side.get("team") if isinstance(side, dict) else side
+                r = ref(team) if team is not None else None
+                if r and r not in ids:
+                    errors.append(f"{mu.get('id')} references unknown matchup '{r}'")
+    fin = cfg.get("final")
+    if fin and fin not in ids:
+        errors.append(f"'final' references unknown matchup '{fin}'")
+
+    # Soft lineup slot-check -- best-effort, skipped offline (no player DB).
+    rposi = cfg.get("roster_positions")
+    if rposi:
+        try:
+            pinfo = _players()
+        except Exception:
+            pinfo = None
+        if pinfo is not None:
+            for rd in rounds:
+                for mu in rd.get("matchups", []):
+                    for k in ("home", "away"):
+                        side = mu.get(k)
+                        st = side.get("starters") if isinstance(side, dict) else None
+                        if not st:
+                            continue
+                        try:
+                            probs = check_lineup(_resolve_players(st, pinfo), rposi, pinfo)
+                            warnings_ += [f"{mu.get('id')} {side.get('team')}: {p}"
+                                          for p in probs]
+                        except ValueError as e:
+                            errors.append(f"{mu.get('id')} {side.get('team')}: {e}")
+    return {"errors": errors, "warnings": warnings_}
 
 
 class Playoff:
@@ -862,21 +1085,37 @@ def postseason_weeks(s, p=None) -> list[dict]:
     if tw is None or not len(tw) or not pws:
         return []
 
+    # Bracket sides grouped by matchup (so pairings are visible, not just a flat
+    # column of scores), plus byes and each matchup's round.
     playing, byes, po_pts = {}, {}, {}
+    br_sides, br_round = {}, {}   # week -> {matchup_id: [team, ...]}, {matchup_id: round}
     if p is not None and len(getattr(p, "results", [])):
-        for _, r in p.results.iterrows():
-            for w in _week_nums(r["weeks"]):
-                if r["result"] in ("W", "L", "T"):
-                    playing.setdefault(w, set()).add(r["team"])
-                    if pd.notna(r["points"]):
-                        po_pts[(r["team"], w)] = float(r["points"])
-                elif r["result"] == "BYE":
-                    byes.setdefault(w, set()).add(r["team"])
+        for mid, g in p.results.groupby("matchup_id"):
+            first = g.iloc[0]
+            rnd = first.get("round") or first.get("round_id")
+            for w in _week_nums(first["weeks"]):
+                for _, r in g.iterrows():
+                    if not pd.notna(r["team"]):
+                        continue
+                    if r["result"] in ("W", "L", "T"):
+                        playing.setdefault(w, set()).add(r["team"])
+                        br_sides.setdefault(w, {}).setdefault(mid, []).append(r["team"])
+                        br_round.setdefault(w, {})[mid] = rnd
+                        if pd.notna(r["points"]):
+                            po_pts[(r["team"], w)] = float(r["points"])
+                    elif r["result"] == "BYE":
+                        byes.setdefault(w, set()).add(r["team"])
+
+    def _side(nm, w):
+        return {"user_name": nm, "points": pts.get(nm),
+                "bracket_points": po_pts.get((nm, w))}
 
     out = []
     for w in sorted(int(x) for x in tw.loc[tw["week"] >= int(pws), "week"].unique()):
+        wk = tw[tw["week"] == w]
+        pts = {r.user_name: float(r.points) for r in wk.itertuples(index=False)}
         rows = []
-        for r in tw[tw["week"] == w].itertuples(index=False):
+        for r in wk.itertuples(index=False):
             nm = r.user_name
             if nm in playing.get(w, set()):
                 role, note = "bracket", "bracket game"
@@ -886,13 +1125,31 @@ def postseason_weeks(s, p=None) -> list[dict]:
                 role, note = "outside", "played, but outside the bracket"
             else:
                 role, note = "idle", "no game"
-            rows.append({
-                "user_name": nm,
-                "points": float(r.points),
-                # The bracket's own figure where there is one; it is the number
-                # that actually decided the game.
-                "bracket_points": po_pts.get((nm, w)),
-                "role": role, "note": note})
-        if rows:
-            out.append({"week": w, "rows": sorted(rows, key=lambda x: -x["points"])})
+            rows.append({"user_name": nm, "points": float(r.points),
+                         "bracket_points": po_pts.get((nm, w)), "role": role, "note": note})
+        if not rows:
+            continue
+
+        # The week's games as pairings: bracket matchups, then games played
+        # outside the bracket, then byes and idle teams.
+        games, seen = [], set(byes.get(w, set()))
+        for mid, teams in br_sides.get(w, {}).items():
+            seen.update(teams)
+            sides = sorted((_side(t, w) for t in teams),
+                           key=lambda x: -(x["bracket_points"] if x["bracket_points"] is not None
+                                           else (x["points"] or 0)))
+            games.append({"kind": "bracket", "round": br_round[w].get(mid), "sides": sides})
+        outside = wk[(~wk["user_name"].isin(seen)) & (wk["matchup_id"].notna())]
+        for _mm, gg in outside.groupby("matchup_id"):
+            sides = sorted(({"user_name": rr.user_name, "points": float(rr.points),
+                             "bracket_points": None} for rr in gg.itertuples(index=False)),
+                           key=lambda x: -(x["points"] or 0))
+            games.append({"kind": "outside", "round": None, "sides": sides})
+        byelist = [_side(t, w) for t in sorted(byes.get(w, set()))]
+        idle = [{"user_name": r.user_name, "points": float(r.points)}
+                for r in wk[(~wk["user_name"].isin(seen)) & (wk["matchup_id"].isna())].itertuples(index=False)]
+        rvals = list({str(v) for v in br_round.get(w, {}).values()})
+        out.append({"week": w, "round": rvals[0] if len(rvals) == 1 else None,
+                    "rows": sorted(rows, key=lambda x: -x["points"]),
+                    "games": games, "byes": byelist, "idle": idle})
     return out

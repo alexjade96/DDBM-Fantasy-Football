@@ -15,8 +15,8 @@ from .playoffs import (Playoff, apply_playoffs, clutch, load_playoffs, playoff,
                        playoff_performances, playoff_players, playoff_replay,
                        playoff_seeding, playoff_stats, playoff_summary,
                        postseason_weeks, reference_scores,
-                       scope_frame, seeds,
-                       toilet_bowl)
+                       scaffold_bracket, scope_frame, seeds,
+                       sleeper_bracket, toilet_bowl, validate_config)
 from .report import season_report
 from .scoring import score_lineup, scoring_chart
 from .season import (Season, assemble_season, avatar_url, league_accounts,
@@ -40,7 +40,7 @@ __all__ = [
     "playoff_performances", "playoff_players", "playoff_all_stars",
     "playoff_best_games", "playoff_busts", "playoff_finals", "playoff_carry",
     "playoff_margins", "playoff_path", "playoff_allplay", "playoff_seeding",
-    "playoff_replay",
+    "playoff_replay", "sleeper_bracket", "scaffold_bracket", "validate_config",
 ]
 
 __version__ = "0.1.0"

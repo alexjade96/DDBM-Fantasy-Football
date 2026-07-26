@@ -76,6 +76,27 @@ def assign_slots(df: pd.DataFrame, slots: dict) -> pd.DataFrame:
             .sort_values("_k").drop(columns="_k").reset_index(drop=True))
 
 
+def slot_template(slots: dict) -> list:
+    """The league's empty starting slots in scoreboard order, for a lineup picker.
+
+    [{"slot": "RB1", "eligible": ["RB"]}, ..., {"slot": "FLEX", "eligible":
+    [...]}, ...] -- numbered repeats (RB1, RB2) and flex slots carrying which
+    positions can fill them, ordered like a scoreboard (QB, RB, WR, TE, FLEX, K,
+    DEF) via slot_sort_key. Derived from starter_slots so it adapts per league.
+    """
+    out = []
+    for p in POSITIONS:
+        n = int(slots.get(p, 0))
+        for i in range(1, n + 1):
+            out.append({"slot": f"{p}{i}" if n > 1 else p, "eligible": [p]})
+    for lab, elig in _FLEX_ELIG.items():
+        n = int(slots.get(lab, 0))
+        for i in range(1, n + 1):
+            out.append({"slot": f"{lab}{i}" if n > 1 else lab, "eligible": list(elig)})
+    out.sort(key=lambda x: slot_sort_key(x["slot"]))
+    return out
+
+
 def order_by_slot(df: pd.DataFrame) -> pd.DataFrame:
     """Sort a frame that already carries `slot` into lineup order."""
     if df.empty or "slot" not in df.columns:
