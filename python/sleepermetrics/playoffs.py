@@ -1153,3 +1153,144 @@ def postseason_weeks(s, p=None) -> list[dict]:
                     "rows": sorted(rows, key=lambda x: -x["points"]),
                     "games": games, "byes": byelist, "idle": idle})
     return out
+
+
+def _lineup_from_players(players, s, mid, team) -> list[dict]:
+    """One side of a bracket matchup as a scoreboard-ordered lineup.
+
+    The engine's per-player frame (`Playoff.players`) already holds each submitted
+    starter's points for a matchup; order it through `assign_slots` so the drill
+    reads QB, RB1, RB2, ... like every other roster table in the app.
+    """
+    import pandas as pd
+
+    from .season import assign_slots
+    if players is None or not len(players):
+        return []
+    d = players[(players["matchup_id"] == mid) & (players["team"] == team)]
+    if not len(d):
+        return []
+    d = d.sort_values("points", ascending=False)
+    try:
+        d = assign_slots(d, getattr(s, "slots", {}) or {})
+    except Exception:
+        d = d.assign(slot=d["position"])
+    return [{"slot": r.slot, "player_name": r.player_name, "position": r.position,
+             "points": float(r.points) if pd.notna(r.points) else 0.0}
+            for r in d.itertuples(index=False)]
+
+
+def game_log(s, p, toilet=None) -> list[dict]:
+    """The whole postseason as ONE game log: bracket games grouped by round, each
+    expandable to both submitted lineups, with byes and the toilet bowl folded in.
+
+    This is the single scoreboard->lineups drilldown the Playoffs tab reads from --
+    the same idiom the Weekly tab and toilet bowl already use -- replacing the old
+    trio (the bracket walk, the per-matchup chart, and a separate week table) that
+    each re-drew the same games. The bracket graphic stays as the visual map; this
+    is the readable log beneath it.
+
+    Returns a list of round groups in bracket order:
+      {key, label, weeks, kind, games:[{id, bracket, weeks, sides, winner, margin,
+       pending}], byes:[{team, points, pending}]}
+    where each side is {team, points, result, lineup:[{slot, player_name,
+    position, points}]}. The toilet-bowl / outside-bracket games are appended as a
+    final `kind == "toilet"` group so a league whose playoff runs outside Sleeper
+    is bracketed here too, not stranded in a separate section.
+    """
+    import pandas as pd
+
+    groups: list[dict] = []
+    cfg = p.config if isinstance(getattr(p, "config", None), dict) else {}
+    results = getattr(p, "results", None)
+    players = getattr(p, "players", None)
+    ref = reference_scores(s)
+
+    def _sort_sides(sides):
+        # Winner first, then by points -- so a decided game reads "winner def. loser".
+        sides.sort(key=lambda x: (x["result"] != "W",
+                                  -(x["points"] if x["points"] is not None else -1)))
+
+    def _margin(sides):
+        if len(sides) == 2 and all(x["points"] is not None for x in sides):
+            return round(abs(sides[0]["points"] - sides[1]["points"]), 2)
+        return None
+
+    if results is not None and len(results):
+        by_mid = {mid: g for mid, g in results.groupby("matchup_id")}
+        for rd in cfg.get("rounds", []):
+            try:
+                weeks = [int(w) for w in rd.get("weeks", [])]
+            except (TypeError, ValueError):
+                weeks = _week_nums(",".join(str(w) for w in rd.get("weeks", [])))
+            wk_lbl = ", ".join(str(w) for w in weeks) if weeks else ""
+            games, byes = [], []
+            for mu in rd.get("matchups", []):
+                mid = mu.get("id")
+                g = by_mid.get(mid)
+                if mu.get("bye"):
+                    team = None
+                    if g is not None and len(g):
+                        team = next((r["team"] for _, r in g.iterrows()
+                                     if pd.notna(r["team"])), None)
+                    pts = None
+                    if team is not None and weeks:
+                        vals = [ref.get((team, w)) for w in weeks]
+                        vals = [v for v in vals if v is not None]
+                        pts = round(sum(vals), 2) if vals else None
+                    byes.append({"team": team, "points": pts, "pending": team is None})
+                    continue
+                if g is None or not len(g):
+                    continue
+                sides, pending = [], False
+                for _, r in g.iterrows():
+                    if not pd.notna(r["team"]):
+                        continue
+                    res = r["result"]
+                    if res == "PENDING":
+                        pending = True
+                    sides.append({
+                        "team": r["team"],
+                        "points": float(r["points"]) if pd.notna(r["points"]) else None,
+                        "result": res if res in ("W", "L", "T") else None,
+                        "lineup": _lineup_from_players(players, s, mid, r["team"])})
+                if not sides:
+                    continue
+                winner = next((x["team"] for x in sides if x["result"] == "W"), None)
+                margin = _margin(sides)
+                _sort_sides(sides)
+                games.append({
+                    "id": mid,
+                    "bracket": (g.iloc[0].get("bracket") if "bracket" in g else None),
+                    "weeks": wk_lbl, "sides": sides, "winner": winner,
+                    "margin": margin, "pending": pending})
+            if games or byes:
+                brs = {gm["bracket"] for gm in games if gm.get("bracket")}
+                kind = brs.pop() if len(brs) == 1 else ("mixed" if brs else "title")
+                groups.append({
+                    "key": rd.get("id"), "label": rd.get("name") or rd.get("id"),
+                    "weeks": wk_lbl, "kind": kind, "games": games, "byes": byes})
+
+    # Toilet bowl / outside-bracket games as their own trailing group.
+    tb = toilet if toilet is not None else toilet_bowl(s, p)
+    tgames = (tb or {}).get("games") or []
+    if tgames:
+        out_games, wks = [], set()
+        for gm in tgames:
+            wks.add(gm.get("week"))
+            sides = [{
+                "team": sd.get("team"),
+                "points": float(sd["points"]) if sd.get("points") is not None else None,
+                "result": sd.get("result") if sd.get("result") in ("W", "L", "T") else None,
+                "lineup": sd.get("lineup") or []} for sd in gm.get("sides", [])]
+            winner = next((x["team"] for x in sides if x["result"] == "W"), None)
+            margin = _margin(sides)
+            _sort_sides(sides)
+            out_games.append({"id": None, "bracket": "toilet",
+                              "weeks": str(gm.get("week")), "sides": sides,
+                              "winner": winner, "margin": margin, "pending": False})
+        wlbl = ", ".join(str(w) for w in sorted(x for x in wks if x is not None))
+        groups.append({"key": "toilet", "label": "Toilet bowl", "weeks": wlbl,
+                       "kind": "toilet", "games": out_games, "byes": []})
+
+    return groups

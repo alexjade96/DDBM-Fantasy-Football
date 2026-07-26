@@ -111,6 +111,44 @@ def test_check_lineup_flags_illegal_submissions():
     assert any("RB" in p for p in probs)
 
 
+# --- the unified game log (round groups -> lineups + byes + toilet) ---------
+class _S:
+    """Minimal Season stand-in for game_log: no frames/network needed. `slots`
+    empty means assign_slots degrades to plain position labels; team_wk_all None
+    means reference_scores (bye points) is empty."""
+    slots: dict = {}
+    team_wk_all = None
+
+
+def test_game_log_groups_by_round_winner_first_with_lineups():
+    p = playoffs.playoff(_cfg(), validate=False)
+    log = playoffs.game_log(_S(), p, toilet={"games": []})
+    assert [g["label"] for g in log] == ["Semi", "Final"]     # bracket order
+    semi = log[0]
+    assert semi["weeks"] == "14" and len(semi["games"]) == 2
+    g = semi["games"][0]
+    assert g["sides"][0]["result"] == "W"                     # winner reads first
+    assert g["winner"] == g["sides"][0]["team"]
+    assert all(sd["lineup"] for sd in g["sides"])             # both lineups carried
+    assert g["margin"] == round(abs(g["sides"][0]["points"]
+                                    - g["sides"][1]["points"]), 2)
+
+
+def test_game_log_folds_in_byes_and_the_toilet_bowl():
+    cfg = _cfg()
+    cfg["rounds"][0]["matchups"][1] = {"id": "R1M2", "bye": "Dee"}
+    p = playoffs.playoff(cfg, validate=False)
+    toilet = {"games": [{"week": 15, "sides": [
+        {"team": "X", "points": 100.0, "result": "W", "lineup": []},
+        {"team": "Y", "points": 90.0, "result": "L", "lineup": []}]}]}
+    log = playoffs.game_log(_S(), p, toilet=toilet)
+    semi = next(g for g in log if g["label"] == "Semi")
+    assert [b["team"] for b in semi["byes"]] == ["Dee"]       # bye rides its round
+    tb = log[-1]                                              # toilet is its own group
+    assert tb["kind"] == "toilet" and tb["label"] == "Toilet bowl"
+    assert tb["games"][0]["winner"] == "X" and tb["games"][0]["margin"] == 10.0
+
+
 # --- brackets belong to a league, not to a season number --------------------
 def _write_cfg(tmp, league_id):
     """The standard test bracket (Dee wins), stored as league `league_id`'s 2025."""

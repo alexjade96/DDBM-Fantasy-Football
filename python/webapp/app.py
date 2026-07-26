@@ -114,39 +114,6 @@ def _md(text: str):
 tpl.env.filters["md"] = _md
 
 
-def _playoff_games(p) -> list[dict]:
-    """Every game in the bracket, in the order it was played.
-
-    The raw matchup ids sort alphabetically, which is not bracket order once a
-    bracket has more than 9 games (R1M10 lands before R1M2) and says nothing
-    about rounds. Walk the results frame instead -- the engine emits it round by
-    round -- and describe each game well enough to navigate by.
-    """
-    games, seen = [], set()
-    for mid in p.results["matchup_id"]:
-        if mid in seen:
-            continue
-        seen.add(mid)
-        rows = p.results[p.results["matchup_id"] == mid]
-        sides = [{"team": r["team"], "points": r["points"], "result": r["result"]}
-                 for _, r in rows.iterrows() if pd_notna(r["team"])]
-        played = [x for x in sides if x["result"] in ("W", "L", "T")]
-        winner = next((x["team"] for x in sides if x["result"] == "W"), None)
-        first = rows.iloc[0]
-        games.append({
-            "id": mid,
-            "round": first.get("round") or first.get("round_id"),
-            "weeks": first.get("weeks"),
-            "bracket": first.get("bracket"),
-            "sides": sides,
-            "winner": winner,
-            "played": bool(played),
-            # A bye has one side; an undecided game has teams but no result yet.
-            "label": " vs ".join(x["team"] for x in sides) if sides else "TBD",
-        })
-    return games
-
-
 def pd_notna(v) -> bool:
     import pandas as pd
     return bool(pd.notna(v))
@@ -741,14 +708,33 @@ def tab(name: str, request: Request, league: str = DEFAULT_LEAGUE,
         _pool = _multi if len(_multi) else _sm
         ppg_hi = _pool.loc[_pool["ppg"].idxmax()] if len(_pool) else None
 
-        # Walk the bracket game by game, in the order it was actually played.
-        all_games = _playoff_games(p)
-        walk = [g for g in all_games if g["played"]]
-        ids = [g["id"] for g in walk]
-        cur = matchup if matchup in ids else (p.config.get("final")
-                                              if p.config.get("final") in ids
-                                              else (ids[-1] if ids else None))
-        i = ids.index(cur) if cur in ids else -1
+        # The whole postseason as one round-grouped game log (each game expands to
+        # both submitted lineups) -- this single drilldown replaces the old bracket
+        # walk, the per-matchup chart and the separate week table. Toilet bowl is
+        # computed once and folded into the log as its own group.
+        _toilet = sm.toilet_bowl(s, p)
+        # The run table reads as a finish order: Champion, then Runner-up, then
+        # eliminations from the DEEPEST round outward (lost in the Final before
+        # lost in Round 1), points breaking ties. playoff_summary sorts by
+        # wins/points; re-key it here by outcome using the config's own round
+        # order so "how far did they get" drives the order, not raw win count.
+        _round_ix = {rd.get("name"): i
+                     for i, rd in enumerate(p.config.get("rounds", []))}
+
+        def _outcome_key(row):
+            o = row.get("outcome") or ""
+            pts = row.get("points") or 0
+            if o == "Champion":
+                return (0, 0, -pts)
+            if o == "Runner-up":
+                return (1, 0, -pts)
+            if o.startswith("Lost in "):
+                # Deeper round (higher index) ranks earlier -> negate the index.
+                return (2, -_round_ix.get(o[len("Lost in "):], -1), -pts)
+            return (3, 0, -pts)   # "Still alive" / "—" trail the decided runs
+
+        _summary = records(sm.playoff_summary(p))
+        _summary.sort(key=_outcome_key)
         ctx.update({
             "playoff": p,
             "champion": p.champion or "undecided",
@@ -764,18 +750,12 @@ def tab(name: str, request: Request, league: str = DEFAULT_LEAGUE,
             # Weeks 1..reg_weeks is the regular season; the run table cites it so
             # the seeding column can be told apart from the Overview W-L.
             "reg_weeks": s.reg_weeks,
-            "walk": walk,
-            "matchup": cur,
-            "prev": ids[i - 1] if i > 0 else None,
-            "next": ids[i + 1] if 0 <= i < len(ids) - 1 else None,
-            "step": (i + 1) if i >= 0 else 0,
-            "n_steps": len(ids),
+            "log": sm.game_log(s, p, toilet=_toilet),
             # One table for the whole run: playoff_summary now carries the rate
-            # stats the separate "résumé" table used to duplicate.
-            "summary": records(sm.playoff_summary(p)),
-            "toilet": sm.toilet_bowl(s, p),
-            # Weeks 15+ live here now: the Weekly tab is regular season only.
-            "po_weeks": sm.postseason_weeks(s, p),
+            # stats the separate "résumé" table used to duplicate. Ordered by
+            # outcome (champion -> runner-up -> deepest exit) via _outcome_key.
+            "summary": _summary,
+            "toilet": _toilet,
             # No consolation games means the scope selector has nothing to
             # include or exclude -- offering it would be a dead control.
             "has_conso": bool((r.get("bracket") == "consolation").any())

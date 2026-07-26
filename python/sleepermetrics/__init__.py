@@ -14,7 +14,7 @@ from .playoffs import (Playoff, apply_playoffs, clutch, load_playoffs, playoff,
                        playoff_finals, playoff_margins, playoff_path,
                        playoff_performances, playoff_players, playoff_replay,
                        playoff_seeding, playoff_stats, playoff_summary,
-                       postseason_weeks, reference_scores,
+                       game_log, postseason_weeks, reference_scores,
                        scaffold_bracket, scope_frame, seeds,
                        sleeper_bracket, toilet_bowl, validate_config)
 from .report import season_report
@@ -37,6 +37,7 @@ __all__ = [
     "playoffs", "playoff", "playoff_config", "playoff_summary", "Playoff",
     "apply_playoffs", "load_playoffs", "playoff_stats",
     "scope_frame", "seeds", "clutch", "toilet_bowl", "reference_scores", "postseason_weeks",
+    "game_log",
     "playoff_performances", "playoff_players", "playoff_all_stars",
     "playoff_best_games", "playoff_busts", "playoff_finals", "playoff_carry",
     "playoff_margins", "playoff_path", "playoff_allplay", "playoff_seeding",
