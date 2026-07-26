@@ -41,9 +41,13 @@
   {% for sec in sections %}
   <h2>{{ sec.title }}</h2>
   {% if sec.blurb %}<p class="hint">{{ sec.blurb }}</p>{% endif %}
-  {# A section can carry a table, charts, or both -- render whatever it has. #}
+  {# A section can carry a table, charts, or both -- render whatever it has.
+     A section whose content already draws its own frame (.drilltable /
+     .draftboard) must NOT also sit inside .card -- that doubled the box (see
+     .tablewrap:not(.card) in style.css, which supplies the surface instead).
+     table.teams / .dt-facts draw no frame of their own and still want .card. #}
   {% if sec.html %}
-  <div class="card tablewrap">{{ sec.html|safe }}</div>
+  <div class="{{ 'tablewrap' if sec.self_boxed else 'card tablewrap' }}">{{ sec.html|safe }}</div>
   {% endif %}
   {% if sec.charts %}
   <section class="grid">

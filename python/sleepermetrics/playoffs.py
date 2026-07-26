@@ -1026,6 +1026,28 @@ def toilet_bowl(s, p=None) -> dict:
         if len(pool):
             last, basis = pool.sort_values("final_position").iloc[-1]["user_name"], "standings"
 
+    # Each missed team's OWN postseason record -- rate stats from the toilet-bowl
+    # games they actually played (`games` above), the same shape playoff_summary
+    # gives a bracket team, so the two can share one combined board rather than
+    # one side going blank. `wins`/`losses`/`points` alongside them stay the
+    # season-long standings figures (context for who they were before missing
+    # the cut), kept separate from the postseason-only `po_*` fields.
+    po: dict = {}
+    for g in games:
+        for sd in g["sides"]:
+            nm = sd["team"]
+            other = next((x["points"] for x in g["sides"] if x["team"] != nm), None)
+            rec = po.setdefault(nm, {"games": 0, "wins": 0, "losses": 0,
+                                     "points": [], "margins": []})
+            rec["games"] += 1
+            if sd.get("result") == "W":
+                rec["wins"] += 1
+            elif sd.get("result") == "L":
+                rec["losses"] += 1
+            rec["points"].append(sd["points"])
+            if other is not None:
+                rec["margins"].append(sd["points"] - other)
+
     # Season context for the teams involved. The per-game detail (both lineups)
     # hangs off `games` instead -- the drill is a matchup drill, so a per-team
     # week log would be answering a question nobody asked here.
@@ -1033,10 +1055,23 @@ def toilet_bowl(s, p=None) -> dict:
     if st is not None and len(st):
         pool = st[st["user_name"].isin(missed)] if missed else st.iloc[0:0]
         for r in pool.itertuples(index=False):
+            rec = po.get(r.user_name)
             teams.append({"user_name": r.user_name,
                           "final_position": int(getattr(r, "final_position", 0) or 0),
                           "wins": int(r.wins), "losses": int(r.losses),
-                          "points": float(r.points)})
+                          "points": float(r.points),
+                          # None (not 0) when the team never had a toilet game --
+                          # keeps every po_* field blank together in the combined
+                          # board rather than a stray "0" beside a "—".
+                          "po_games": rec["games"] if rec else None,
+                          "po_wins": rec["wins"] if rec else None,
+                          "po_losses": rec["losses"] if rec else None,
+                          "po_ppg": (sum(rec["points"]) / rec["games"])
+                                    if rec and rec["games"] else None,
+                          "po_high": max(rec["points"]) if rec and rec["points"] else None,
+                          "po_low": min(rec["points"]) if rec and rec["points"] else None,
+                          "po_avg_margin": (sum(rec["margins"]) / len(rec["margins"]))
+                                           if rec and rec["margins"] else None})
     teams.sort(key=lambda t: t["final_position"])
     return {"games": games, "teams": teams, "last": last, "basis": basis,
             "missed": missed}

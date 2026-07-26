@@ -89,12 +89,20 @@ h3 { font-size: 15px; margin: 0 0 2px; }
    board (champion at top, basement at bottom), not two gapped sections. The h3
    sub-heads sit close under the shared h2 so it's one block, not a page split. */
 .finalplace > h2 { margin-bottom: 2px; }
-.finalplace h3 { margin: 18px 0 6px; font-size: 15px; }
-.finalplace h3 + .hint { margin-top: 0; }
-/* The section's block children (stat cards, the games drilldown, the standings
-   tables) are NOT direct #panel children, so `#panel > * + *` never reaches them
-   and they sit flush -- restore the same 22px rhythm inside the section. */
+/* The section's block children (hint + the results table) are NOT direct #panel
+   children, so `#panel > * + *` never reaches them -- restore the 22px rhythm. */
 .finalplace > * + * { margin-top: 22px; }
+/* Last place: the wooden-spoon row of the combined results board. */
+.finalplace tr.lastrow td { background: color-mix(in srgb, #a8743a 8%, transparent); }
+/* The divider between bracket teams and missed-bracket teams in that same
+   table -- a labelled rule, not just another row, so the boundary reads at a
+   glance instead of blending into the rest of the standings. */
+.finalplace tr.dt-sep td {
+  padding: 6px 10px; border-bottom: 1px solid var(--line);
+  border-top: 2px solid var(--line);
+  font-size: 10px; letter-spacing: .06em; text-transform: uppercase;
+  color: var(--faint); background: color-mix(in srgb, var(--ink) 4%, transparent);
+}
 
 /* Collapsed "Edit bracket" disclosure: its summary is styled as a ghost button
    so the correction tools read as one unobtrusive control, minimised by default. */
@@ -210,8 +218,10 @@ img { display: block; width: 100%; height: auto; border-radius: 7px; }
   display: flex; flex-direction: column; gap: 2px;
 }
 .stat.gold { border-left-color: var(--gold); }
+.stat.basement { border-left-color: #a8743a; }   /* the wooden-spoon counterpart to gold */
 .stat .k { font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: var(--faint); }
 .stat .v { font-size: 19px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.stat .sub { font-size: 12px; color: var(--muted); }
 
 .tablewrap { overflow-x: auto; }
 table { width: 100%; border-collapse: collapse; font-size: 14px; }
@@ -229,6 +239,7 @@ th { font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: v
 tbody tr:last-child td { border-bottom: 0; }
 .chip { background: color-mix(in srgb, var(--gold) 22%, transparent); border-radius: 20px;
         padding: 1px 8px; font-weight: 600; }
+.chip.toilet { background: color-mix(in srgb, #a8743a 22%, transparent); }   /* basement's answer to gold */
 
 details.card { margin-top: 18px; }
 details summary { cursor: pointer; font-weight: 600; }
@@ -334,6 +345,15 @@ details summary { cursor: pointer; font-weight: 600; }
 .rail .dl { margin-left: auto; text-decoration: none; font-size: 12px; font-weight: 600;
   padding: 4px 12px; border-radius: 20px; border: 1px solid var(--line); color: var(--muted); }
 .rail .dl:hover { border-color: var(--turf); color: var(--turf); }
+/* Vertical rhythm inside the report tab -- same convention as `#panel > * + *`
+   (see below), but scoped one level deeper: every block in tab_report.html
+   (eyebrow, narrative card, each section's heading/hint/table/chart-grid) is a
+   DIRECT child of .reportpanel, not of #panel, so the site-wide rule never
+   reached them. Without this, a section carrying BOTH a table and charts (e.g.
+   "Week by week") had its chart grid sit flush against the table above it --
+   there's no heading between them to carry a gap. */
+.reportpanel > * + * { margin-top: 22px; }
+.reportpanel > h2 + * { margin-top: 10px; }
 .reportpanel .eyebrow { text-transform: uppercase; letter-spacing: .12em; font-size: 11px;
   font-weight: 700; color: var(--turf); margin: 0; }
 /* The report's own title keeps natural case (the site's h2 is an uppercase

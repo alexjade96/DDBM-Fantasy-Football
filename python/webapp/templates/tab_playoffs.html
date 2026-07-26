@@ -43,6 +43,13 @@
     <span class="k">Champion</span>
     <span class="v">{{ champion }}</span>
   </div>
+  {% if toilet.last %}
+  <div class="stat basement">
+    <span class="k">Toilet bowl</span>
+    <span class="v">{{ toilet.last }}</span>
+    <span class="sub">{% if toilet.basis == 'game' %}won the wooden spoon{% else %}finished last{% endif %}</span>
+  </div>
+  {% endif %}
   <div class="stat">
     <span class="k">Playoff games</span>
     <span class="v">{{ games }}</span>
@@ -193,94 +200,45 @@
 </figure>
 
 <section class="finalplace">
-  <h2>Final placements</h2>
-  <p class="hint">How {{ season }} finished, top to bottom &mdash; the championship run first,
-     then the toilet bowl at the bottom: the teams that missed the bracket, down to whoever
-     ended up last. One order, not two separate boards &mdash; seeds and title outcomes up top,
-     the basement race below.</p>
-
-{# One table for the run. The old "Postseason résumé" card restated W/L beside
-   this same list of managers, differing only in carrying Win%/PPG -- those are
-   columns here now, so there is nothing left for a second table to say. #}
-<h3>The championship run</h3>
-<p class="hint">The postseason read as a standings table &mdash; the same rate stats the
-   regular season gets, so a two-game run compares against a four-game one.
-   <strong>Seed</strong> is the bracket&rsquo;s own seeding, which follows the
-   <em>regular-season</em> record{% if reg_weeks %} (weeks 1&ndash;{{ reg_weeks }}){% endif %},
-   not the W&ndash;L on the Overview tab &mdash; that one also counts the postseason weeks.
-   <strong>Margin</strong> is the average, so a negative figure means a team was generally
-   being outscored even if it won a game. <strong>Outcome</strong> is the title path: a team
-   knocked out earlier may still have played on in a placement game.</p>
-<div class="card tablewrap">
-  <table>
-    <thead><tr>
-      <th class="n">Seed</th><th>Team</th><th class="n">G</th><th class="n">W</th><th class="n">L</th>
-      <th class="n">Win%</th><th class="n">Points</th><th class="n">PPG</th>
-      <th class="n">High</th><th class="n">Low</th><th class="n">Margin</th><th>Outcome</th>
-    </tr></thead>
-    <tbody>
-    {% for r in summary %}
-      <tr>
-        <td class="n">{% if r.seed is not none %}{{ r.seed }}{% else %}&mdash;{% endif %}</td>
-        <td>{{ idm.who(r.team) }}</td>
-        <td class="n">{{ r.games }}</td>
-        <td class="n">{{ r.wins }}</td>
-        <td class="n">{{ r.losses }}</td>
-        <td class="n">{{ r.win_pct | round(0) | int }}</td>
-        <td class="n">{{ r.points | round(1) }}</td>
-        <td class="n">{{ r.ppg | round(1) }}</td>
-        <td class="n">{{ r.high | round(1) }}</td>
-        <td class="n">{{ r.low | round(1) }}</td>
-        <td class="n">{{ "%+.1f"|format(r.avg_margin) }}</td>
-        <td>{% if r.outcome == 'Champion' %}<span class="chip">Champion</span>
-            {%- elif r.outcome == 'Runner-up' %}<strong>Runner-up</strong>
-            {%- else %}{{ r.outcome }}{% endif %}</td>
-      </tr>
-    {% endfor %}
-    </tbody>
-  </table>
-</div>
-
-<h3>Toilet bowl</h3>
-{% if toilet.games or toilet.teams %}
-<p class="hint">The other end of the season: the {{ toilet.teams | length }} team{{ "" if toilet.teams | length == 1 else "s" }}
-   who missed the bracket entirely. Who finished where is below; the games that decided it
-   &mdash; with both lineups &mdash; sit in the <strong>Games</strong> log above, in their own
-   toilet-bowl group. Consolation games <em>inside</em> the bracket are placement games between
-   playoff teams, not this.</p>
-{% if toilet.last %}
-<section class="stats">
-  <div class="stat">
-    <span class="k">Last place</span>
-    <span class="v">{{ toilet.last }}</span>
-    <span class="sub">{% if toilet.basis == 'game' %}lost the toilet bowl{% else %}worst regular-season finish — no game decided it{% endif %}</span>
+  <h2>Postseason results</h2>
+  <p class="hint">Every team, champion to last place &mdash; the bracket run and the teams that
+     missed it, in one board. <strong>Seed</strong> is the bracket&rsquo;s own seeding (the
+     regular-season order{% if reg_weeks %}, weeks 1&ndash;{{ reg_weeks }}{% endif %}).
+     The rate stats are <em>postseason only</em> &mdash; bracket games &mdash; so a team that
+     missed the bracket shows &ldquo;&mdash;&rdquo; here, with its games in the <strong>Games</strong>
+     log above. <strong>Margin</strong> is the average; <strong>Outcome</strong> is the title path.</p>
+  <div class="card tablewrap">
+    <table>
+      <thead><tr>
+        <th class="n">Finish</th><th class="n">Seed</th><th>Team</th>
+        <th class="n">G</th><th class="n">W</th><th class="n">L</th><th class="n">PPG</th>
+        <th class="n">High</th><th class="n">Low</th><th class="n">Margin</th><th>Outcome</th>
+      </tr></thead>
+      <tbody>
+      {% for r in results %}
+        {% if r.sep_before %}
+        <tr class="dt-sep"><td colspan="11"><span>Missed the bracket &mdash; toilet bowl</span></td></tr>
+        {% endif %}
+        <tr{% if r.is_last %} class="lastrow"{% endif %}>
+          <td class="n">{{ r.finish }}</td>
+          <td class="n">{% if r.seed is not none %}{{ r.seed }}{% else %}&mdash;{% endif %}</td>
+          <td>{{ idm.who(r.team) }}</td>
+          <td class="n">{% if r.games is not none %}{{ r.games }}{% else %}&mdash;{% endif %}</td>
+          <td class="n">{% if r.wins is not none %}{{ r.wins }}{% else %}&mdash;{% endif %}</td>
+          <td class="n">{% if r.losses is not none %}{{ r.losses }}{% else %}&mdash;{% endif %}</td>
+          <td class="n">{% if r.ppg is not none %}{{ r.ppg | round(1) }}{% else %}&mdash;{% endif %}</td>
+          <td class="n">{% if r.high is not none %}{{ r.high | round(1) }}{% else %}&mdash;{% endif %}</td>
+          <td class="n">{% if r.low is not none %}{{ r.low | round(1) }}{% else %}&mdash;{% endif %}</td>
+          <td class="n">{% if r.avg_margin is not none %}{{ "%+.1f"|format(r.avg_margin) }}{% else %}&mdash;{% endif %}</td>
+          <td>{% if r.outcome == 'Champion' %}<span class="chip">Champion</span>
+              {%- elif r.outcome == 'Runner-up' %}<strong>Runner-up</strong>
+              {%- elif r.outcome == 'Toilet bowl champion' %}<span class="chip toilet">Toilet bowl champion</span>
+              {%- else %}{{ r.outcome }}{% endif %}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
   </div>
-</section>
-{% endif %}
-{% if toilet.teams %}
-<div class="card tablewrap">
-  <table>
-    <thead><tr>
-      <th>Team</th><th class="n">Finish</th><th class="n">W</th><th class="n">L</th>
-      <th class="n">Season pts</th>
-    </tr></thead>
-    <tbody>
-    {% for t in toilet.teams %}
-      <tr>
-        <td>{{ idm.who(t.user_name) }}{% if t.user_name == toilet.last %} <span class="tag">last</span>{% endif %}</td>
-        <td class="n">#{{ t.final_position }}</td>
-        <td class="n">{{ t.wins }}</td>
-        <td class="n">{{ t.losses }}</td>
-        <td class="n">{{ "%.1f"|format(t.points) }}</td>
-      </tr>
-    {% endfor %}
-    </tbody>
-  </table>
-</div>
-{% endif %}
-{% else %}
-<p class="empty">Every team made the {{ season }} bracket, so there was no toilet bowl.</p>
-{% endif %}
 </section>
 
 <details class="card">

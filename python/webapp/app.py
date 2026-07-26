@@ -735,6 +735,44 @@ def tab(name: str, request: Request, league: str = DEFAULT_LEAGUE,
 
         _summary = records(sm.playoff_summary(p))
         _summary.sort(key=_outcome_key)
+        # One "Postseason results" board, champion -> last place: the outcome-
+        # ordered bracket teams, then the teams that missed the bracket beneath
+        # them (worst regular-season finish, but the wooden-spoon holder forced to
+        # the very bottom). A missed team's G/W/L/PPG/High/Low/Margin come from
+        # its OWN toilet-bowl games (toilet_bowl's po_* fields) -- its real
+        # postseason record -- rather than being discarded as "—"; "Seed" stays
+        # blank since bracket seeding never applied to it.
+        _last_nm = _toilet.get("last")
+        _missed = sorted(_toilet.get("teams", []),
+                         key=lambda t: (t["user_name"] == _last_nm,
+                                        t.get("final_position", 0)))
+        _results = [{**r, "in_bracket": True, "is_last": False, "sep_before": False}
+                    for r in _summary]
+        for i, t in enumerate(_missed):
+            is_last = t["user_name"] == _last_nm
+            if is_last and _toilet.get("basis") == "game":
+                # An actual toilet-bowl game decided it -- crown it (ironically)
+                # rather than just labelling the team "missed the bracket".
+                outcome = "Toilet bowl champion"
+            elif is_last:
+                # No decisive game (nobody missed the bracket, or too few did
+                # to play one) -- the worst regular-season finish stands in, so
+                # say so rather than implying a game that never happened.
+                outcome = "Missed the bracket (worst finish)"
+            else:
+                outcome = "Missed the bracket"
+            _results.append({
+                "team": t["user_name"], "seed": None,
+                "games": t.get("po_games"),
+                "wins": t.get("po_wins"), "losses": t.get("po_losses"),
+                "ppg": t.get("po_ppg"), "high": t.get("po_high"),
+                "low": t.get("po_low"), "avg_margin": t.get("po_avg_margin"),
+                "outcome": outcome, "in_bracket": False, "is_last": is_last,
+                # Marks the boundary so the template can draw one divider row
+                # between the bracket teams and the missed-bracket teams.
+                "sep_before": i == 0})
+        for i, row in enumerate(_results):
+            row["finish"] = i + 1
         ctx.update({
             "playoff": p,
             "champion": p.champion or "undecided",
@@ -751,10 +789,9 @@ def tab(name: str, request: Request, league: str = DEFAULT_LEAGUE,
             # the seeding column can be told apart from the Overview W-L.
             "reg_weeks": s.reg_weeks,
             "log": sm.game_log(s, p, toilet=_toilet),
-            # One table for the whole run: playoff_summary now carries the rate
-            # stats the separate "résumé" table used to duplicate. Ordered by
-            # outcome (champion -> runner-up -> deepest exit) via _outcome_key.
-            "summary": _summary,
+            # One combined finish board (bracket teams + missed teams), champion
+            # to last place; see _results above.
+            "results": _results,
             "toilet": _toilet,
             # No consolation games means the scope selector has nothing to
             # include or exclude -- offering it would be a dead control.

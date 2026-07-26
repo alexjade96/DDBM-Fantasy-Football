@@ -149,6 +149,51 @@ def test_game_log_folds_in_byes_and_the_toilet_bowl():
     assert tb["games"][0]["winner"] == "X" and tb["games"][0]["margin"] == 10.0
 
 
+def test_toilet_bowl_carries_each_missed_teams_own_postseason_record():
+    """The combined Postseason-results board fills a missed team's G/W/L/PPG/
+    High/Low/Margin from the toilet-bowl games it actually played, not blanks --
+    the po_* fields are what let that team sit in the same table as a bracket
+    team instead of reading as pure dashes."""
+    class S:
+        standings = pd.DataFrame({
+            "user_name": ["Al", "Bo"], "final_position": [3, 4],
+            "wins": [5, 4], "losses": [7, 8], "points": [1400.0, 1300.0]})
+        team_wk_all = pd.DataFrame({
+            "week": [15, 15], "roster_id": [1, 2], "matchup_id": [9, 9],
+            "points": [100.0, 90.0], "result": ["W", "L"],
+            "user_name": ["Al", "Bo"]})
+
+    class P:
+        # Only the bracket's own team ("Cy") and its round week -- po_start
+        # comes from here, so Al/Bo (absent) are read as having missed it.
+        results = pd.DataFrame({"team": ["Cy"], "weeks": ["15"]})
+
+    t = playoffs.toilet_bowl(S(), p=P())
+    al = next(x for x in t["teams"] if x["user_name"] == "Al")
+    bo = next(x for x in t["teams"] if x["user_name"] == "Bo")
+    assert (al["po_games"], al["po_wins"], al["po_losses"]) == (1, 1, 0)
+    assert al["po_ppg"] == al["po_high"] == al["po_low"] == 100.0
+    assert al["po_avg_margin"] == 10.0
+    assert (bo["po_games"], bo["po_wins"], bo["po_losses"]) == (1, 0, 1)
+    assert bo["po_avg_margin"] == -10.0
+    assert t["last"] == "Bo" and t["basis"] == "game"
+
+
+def test_toilet_bowl_po_fields_are_none_without_a_toilet_game():
+    """A team that missed the bracket but never got a toilet-bowl game (no
+    opponent pool) must show blank po_* fields, not a stray 0 beside a dash."""
+    class S:
+        standings = pd.DataFrame({
+            "user_name": ["Al"], "final_position": [4],
+            "wins": [3], "losses": [9], "points": [1200.0]})
+        team_wk_all = None
+
+    t = playoffs.toilet_bowl(S(), p=None)
+    al = t["teams"][0]
+    assert al["po_games"] is None and al["po_wins"] is None
+    assert al["po_ppg"] is None and al["po_avg_margin"] is None
+
+
 # --- brackets belong to a league, not to a season number --------------------
 def _write_cfg(tmp, league_id):
     """The standard test bracket (Dee wins), stored as league `league_id`'s 2025."""

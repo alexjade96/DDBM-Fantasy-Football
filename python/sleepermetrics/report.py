@@ -14,6 +14,7 @@ from __future__ import annotations
 import base64
 import html
 import io
+import re
 from datetime import date
 
 import matplotlib
@@ -1322,7 +1323,13 @@ def report_parts(s: Season, seasons: dict | None = None,
             "table_html": _team_table(s),
         }
     out["sections"] = [
-        {"title": t, "blurb": b, "html": h, "charts": c}
+        {"title": t, "blurb": b, "html": h, "charts": c,
+         # Whether `html`'s own top-level element already draws a frame
+         # (.drilltable / .draftboard, possibly after a leading <p> blurb) --
+         # the dashboard tab needs this to pick a wrapper that doesn't double
+         # box it. table.teams / .dt-facts draw no frame of their own and want
+         # the wrapper's box, so this is False for those.
+         "self_boxed": bool(re.search(r"(?:^|</p>)\s*<div class='(?:drilltable|draftboard)'", h))}
         for t, b, h, c in sections if h or c]
     return out
 
