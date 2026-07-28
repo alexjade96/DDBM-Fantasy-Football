@@ -4,6 +4,7 @@
    During a LIVE season this is the "current week" view: it opens on the latest
    scored week (current_week) and badges it live, with a refresh that re-pulls
    scores; on a finished season `live` is False and it is a plain week browser. #}
+{% import "_chartmacro.html" as ch with context %}
 <div class="rowhead">
   <h2>
     {% if live and is_current %}Current week{% else %}Week detail{% endif %}
@@ -56,30 +57,26 @@
    analysis charts that put the week in context. Splitting the chart from its
    own table left the scoreboard stranded below three graphics. #}
 <h2>Week {{ week }} scoreboard</h2>
-<p class="hint">The games, first as a picture and then in full. Each line below is one
-   matchup &mdash; green won, orange lost, and the line between them is the margin.</p>
+<p class="hint">The games, first as a picture and then in full &mdash; green won, orange lost,
+   and the line between them is the margin. Rows below run biggest shoot-out first; expand
+   one for both lineups in scoreboard order, what each manager left on their bench, and the
+   single legal same-position swap that cost them most. A <span class="tag">could have won</span>
+   tag means that one swap alone would have turned that manager&rsquo;s loss into a win.</p>
 <figure class="card chart">
   <img src="/chart/week_matchups?league={{ league }}&season={{ season }}&week={{ week }}&theme={{ theme }}&_={{ bust }}"
        alt="Week {{ week }} matchups" loading="lazy">
 </figure>
-<p class="hint">One row per <strong>game</strong>, biggest shoot-out first. Expand a row for both
-   lineups in scoreboard order, what each manager left on their bench, and the single
-   legal same-position swap that cost them most. A <span class="tag">could have won</span>
-   tag means that one swap alone would have turned that manager&rsquo;s loss into a win.</p>
 {% include "_week_scoreboard.html" %}
 
 <h2>Week {{ week }} in context</h2>
 <p class="hint">Was the result deserved? On the left a team <strong>below</strong> the diagonal
    won and <strong>above</strong> it lost, with colour showing how many teams they outscored
    &mdash; so a green dot in the red zone is the week&rsquo;s unlucky team and an orange one in
-   the green got away with it. On the right, the table as it stood after this week.</p>
+   the green got away with it. The chart on the right carries its own caption below it.</p>
 <div class="grid two">
   <figure class="card chart">
     <img src="/chart/week_luck?league={{ league }}&season={{ season }}&week={{ week }}&theme={{ theme }}&_={{ bust }}"
          alt="Week {{ week }} luck" loading="lazy">
   </figure>
-  <figure class="card chart">
-    <img src="/chart/week_race?league={{ league }}&season={{ season }}&week={{ week }}&theme={{ theme }}&_={{ bust }}"
-         alt="Race through week {{ week }}" loading="lazy">
-  </figure>
+  {{ ch.chart("week_race", week=week) }}
 </div>

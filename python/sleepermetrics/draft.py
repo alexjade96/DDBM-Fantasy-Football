@@ -209,5 +209,47 @@ def draft_grades(s: Season) -> pd.DataFrame:
     return g.sort_values("points", ascending=False).reset_index(drop=True)
 
 
+def draft_standouts(s: Season) -> list[dict]:
+    """Draft superlatives as {label, value, holder, detail} tiles.
+
+    Every other tab (Coaching, Roster, Transactions, ...) leads with a row of
+    headline tiles before its charts; Draft was the one exception. This reuses
+    data draft_extremes()/draft_grades()/undrafted_standouts() already compute
+    for the rest of the tab -- no new aggregation, just reshaped into tiles.
+    """
+    ex = draft_extremes(s, n=1)
+    gems, busts = ex["gems"], ex["busts"]
+    if not gems and not busts:
+        return []
+    out: list[dict] = []
+
+    def tile(label, value, holder, detail=""):
+        out.append({"label": label, "value": value, "holder": holder, "detail": detail})
+
+    if gems:
+        g = gems[0]
+        tile("Best steal", f"{g['points']:.0f} pts", g["user_name"],
+             f"{g['player_name']} · pick {g['pick']}")
+    if busts:
+        b = busts[0]
+        tile("Worst bust", f"{b['points']:.0f} pts", b["user_name"],
+             f"{b['player_name']} · pick {b['pick']}")
+    grades = draft_grades(s)
+    if len(grades):
+        top = grades.iloc[0]
+        tile("Top-grading manager", f"{top['points']:.0f} pts", top["user_name"],
+             f"{int(top['hits'])} hits · {top['ppp']:.1f} pts/pick")
+        worst = grades.iloc[-1]
+        if worst["user_name"] != top["user_name"]:
+            tile("Lowest-grading manager", f"{worst['points']:.0f} pts", worst["user_name"],
+                 f"{int(worst['hits'])} hits · {worst['ppp']:.1f} pts/pick")
+    und = undrafted_standouts(s, n=1)
+    if len(und):
+        u = und.iloc[0]
+        tile("Best undrafted find", f"{u['points']:.0f} pts", u["user_name"],
+             f"{u['player_name']} · went undrafted")
+    return out
+
+
 def clear_draft_cache() -> None:
     _cache.clear()

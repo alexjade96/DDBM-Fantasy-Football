@@ -1,0 +1,28 @@
+{# The bracket-correction tools (roll back / reset / insert custom), collapsed by
+   default: they exist to fix the default Sleeper bracket (or a prior custom
+   one) when it's wrong, not as a primary control. Included beside the actual
+   bracket -- or, when there is none yet, beside the message explaining that --
+   so it lives next to what it edits rather than up at the top of the tab.
+
+   Closing this disclosure also closes the insert-custom-bracket editor if it
+   was left open: without the ontoggle handler, collapsing "Edit bracket" hid
+   only these three buttons while #bkr-editor (a sibling, not a child of this
+   <details>) stayed on screen -- visually orphaned from the control that
+   opened it. #}
+<details class="bkr-menu"
+          ontoggle="if(!this.open){var e=document.getElementById('bkr-editor'); if(e) e.hidden=true;}">
+  <summary>Edit bracket</summary>
+  <div class="bkr-menu-body">
+    <p class="hint">Correct the default Sleeper bracket or a prior setup &mdash; roll back to
+       what Sleeper scored, reset to the committed bracket, or build a custom one. Any change
+       lives only in your browser and never affects what anyone else sees.</p>
+    <div class="rowhead-actions">
+      <button type="button" class="ghost" onclick="SMBracket.rollbackSleeper()">Roll back to Sleeper default</button>
+      {% if custom_bracket %}
+      <button type="button" class="ghost" onclick="SMBracket.reset()">Reset to committed</button>
+      {% endif %}
+      <button type="button" class="ghost"
+              onclick="var e=document.getElementById('bkr-editor');e.hidden=!e.hidden;if(!e.hidden)SMBuilder.init()">Insert custom bracket</button>
+    </div>
+  </div>
+</details>

@@ -6,8 +6,7 @@
 {% include "_liveband.html" %}
 {% if standouts %}
 <h2>Roster standouts</h2>
-<p class="hint">The season&rsquo;s extremes in what teams rostered &mdash; separate from how
-   well they were <em>started</em>, which is the coaching tab.</p>
+<p class="hint">The season&rsquo;s extremes in what teams rostered.</p>
 <section class="stats">
   {% for t in standouts %}
   <div class="stat {% if loop.index0 == 0 %}gold{% endif %}">
@@ -19,6 +18,10 @@
 </section>
 {% endif %}
 
+{# This framing statement is intentionally the ONLY place it appears, and
+   deliberately unconditional (unlike the standouts tiles above): it's the
+   whole tab's reason for being separate from Coaching, so it must render even
+   on a season where roster_standouts() happens to return nothing. #}
 <p class="hint">What teams <em>rostered</em> and where their points came from &mdash; separate
    from how well those players were started (that&rsquo;s Coaching). Each chart&rsquo;s
    takeaway is noted beneath it.</p>

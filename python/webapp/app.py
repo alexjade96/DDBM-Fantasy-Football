@@ -573,7 +573,10 @@ def tab(name: str, request: Request, league: str = DEFAULT_LEAGUE,
         # needs the week param), so table_position is NOT in this list -- the two
         # are the same bump chart and would duplicate. team_points stays: it
         # describes the season's arc, not any one week.
-        ctx["charts"] = ["standings", "power_rank", "allplay", "luck",
+        # pf_pa (points for vs against) moved here from Coaching -- it measures
+        # roster/scoring quality, not lineup decisions, so it fits beside the
+        # other team-quality charts rather than the decision-focused Coaching tab.
+        ctx["charts"] = ["standings", "power_rank", "allplay", "pf_pa", "luck",
                          "team_points", "sos", "schedule_swap"]
         return tpl.TemplateResponse(request, "tab_overview.html", ctx)
     elif name == "weekly":
@@ -583,8 +586,11 @@ def tab(name: str, request: Request, league: str = DEFAULT_LEAGUE,
         return tpl.TemplateResponse(request, "tab_weekly.html", ctx)
     elif name == "coaching":
         # Charts, then the decisions behind them: per-manager lineup weeks and
-        # the individual bench calls that cost the most.
-        ctx["charts"] = ["efficiency", "consistency", "pf_pa", "boom_bust"]
+        # the individual bench calls that cost the most. pf_pa (points for vs
+        # against) and boom_bust (scoring average vs volatility) measure roster
+        # QUALITY, not lineup DECISIONS -- this tab's own hint says twice that
+        # it's the latter, so those two moved to Overview and Roster respectively.
+        ctx["charts"] = ["efficiency", "consistency"]
         ctx["standouts"] = metrics.coaching_standouts(s)
         ctx["coaching"] = metrics.coaching_detail(s)
         ctx["regrets"] = metrics.bench_regrets(s)
@@ -592,8 +598,11 @@ def tab(name: str, request: Request, league: str = DEFAULT_LEAGUE,
     elif name == "roster":
         # Charts, then the rosters themselves: per manager and per week, each
         # row expanding into its detail.
+        # boom_bust (scoring average vs volatility) moved here from Coaching --
+        # it measures roster/scoring quality, not lineup decisions; it sits
+        # beside position_box, which already covers positional scoring spread.
         ctx["charts"] = ["position_scoring", "roster_counts", "roster_heatmap",
-                         "starter_bench", "position_box"]
+                         "starter_bench", "position_box", "boom_bust"]
         ctx["standouts"] = metrics.roster_standouts(s)
         ctx["rosters"] = metrics.roster_detail(s)
         ctx["weeks"] = metrics.roster_weeks(s)
@@ -601,7 +610,11 @@ def tab(name: str, request: Request, league: str = DEFAULT_LEAGUE,
     elif name == "transactions":
         # Charts, then the deals themselves: trades kept whole (one row per team
         # in each) and the waiver wire ranked by what it actually returned.
-        ctx["charts"] = ["manager_profile", "trade_performance", "waiver_performance"]
+        # waiver_performance is NOT in this grid -- it's a near-total subset of
+        # the Waiver wire table below (same metric/sort/source, top 15 vs top
+        # 30), so it renders directly above that table instead, where the
+        # relationship is explicit rather than coincidental.
+        ctx["charts"] = ["manager_profile", "trade_performance"]
         # One card per deal, not one row per team: the ledger's mirror-image
         # rows read as duplicates and print every player's name twice.
         ctx["standouts"] = metrics.transaction_standouts(s)
@@ -616,7 +629,10 @@ def tab(name: str, request: Request, league: str = DEFAULT_LEAGUE,
         # Draft board (round x slot) + value/grade charts for the selected
         # season; the header's picker is the only season control.
         ctx["seasons"] = list(reversed(d["names"]))
-        ctx["charts"] = ["draft_value", "draft_grades"]
+        # Grades (per-manager summary, general) before value (per-pick detail,
+        # specific) -- matches the page's own "general -> specific" ordering,
+        # which this pair previously ran backwards.
+        ctx["charts"] = ["draft_grades", "draft_value"]
         db = draft.draft_board(s)
         if db.empty:
             ctx["no_draft"] = True
@@ -645,6 +661,9 @@ def tab(name: str, request: Request, league: str = DEFAULT_LEAGUE,
             # records() scrubs NaN so `{{ r.user_name or "—" }}` fires (NaN is
             # truthy in Jinja); a churned pickup can have a null primary manager.
             ctx["undrafted"] = records(draft.undrafted_standouts(s))
+            # Headline tiles, matching every other tab's own stats-row-before-
+            # charts convention -- reshapes data already computed above.
+            ctx["standouts"] = draft.draft_standouts(s)
         return tpl.TemplateResponse(request, "tab_draft.html", ctx)
     elif name == "report":
         # The report rendered natively into the tab: its tables come straight from

@@ -11,7 +11,21 @@
 <p class="empty">No draft data for {{ season }}. Sleeper only serves a draft board for
    seasons whose draft ran on its platform.</p>
 {% else %}
-{# Charts first: the whole draft graded (generic), then the standout gems and
+{% if standouts %}
+<h2>Draft standouts</h2>
+<p class="hint">The season&rsquo;s draft extremes at a glance &mdash; the best steal, the
+   worst bust, and how each manager&rsquo;s board graded out. Full detail follows below.</p>
+<section class="stats">
+  {% for t in standouts %}
+  <div class="stat {% if loop.index0 == 0 %}gold{% endif %}">
+    <span class="k">{{ t.label }}</span>
+    <span class="v">{{ t.value }}</span>
+    <span class="sub">{{ idm.who(t.holder) }}{% if t.detail %} · {{ t.detail }}{% endif %}</span>
+  </div>
+  {% endfor %}
+</section>
+{% endif %}
+{# Charts next: the whole draft graded (generic), then the standout gems and
    busts (specific), then the full board (complete). General -> specific. #}
 <h2>Draft value &amp; grades</h2>
 <p class="hint">The draft read as decisions, not just totals &mdash; each chart&rsquo;s

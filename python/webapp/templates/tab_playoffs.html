@@ -8,34 +8,16 @@
    Sleeper never scored can still get a custom one. #}
 <div class="rowhead">
   <h2>Playoffs{% if custom_bracket %} <span class="tag">custom bracket</span>{% endif %}</h2>
-  {# The bracket-correction tools are tucked behind a collapsed disclosure: they
-     exist to fix the default Sleeper bracket (or a prior custom one) when it's
-     wrong, not as a primary control, so nothing bracket-editing shows until the
-     user opens this. The editor panel below stays hidden until "Insert custom
-     bracket" too, so this is minimised-by-default at both levels. #}
-  <details class="bkr-menu">
-    <summary>Edit bracket</summary>
-    <div class="bkr-menu-body">
-      <p class="hint">Correct the default Sleeper bracket or a prior setup &mdash; roll back to
-         what Sleeper scored, reset to the committed bracket, or build a custom one. Any change
-         lives only in your browser and never affects what anyone else sees.</p>
-      <div class="rowhead-actions">
-        <button type="button" class="ghost" onclick="SMBracket.rollbackSleeper()">Roll back to Sleeper default</button>
-        {% if custom_bracket %}
-        <button type="button" class="ghost" onclick="SMBracket.reset()">Reset to committed</button>
-        {% endif %}
-        <button type="button" class="ghost"
-                onclick="var e=document.getElementById('bkr-editor');e.hidden=!e.hidden;if(!e.hidden)SMBuilder.init()">Insert custom bracket</button>
-      </div>
-    </div>
-  </details>
 </div>
-{% include "_bracket_editor.html" %}
 
 {% if missing %}
-<p class="empty">No bracket for {{ missing }} yet. Insert a custom one above, roll back to
-   the Sleeper bracket, or add <code>playoffs/{{ missing }}.json</code> (see
-   <code>playoffs/README.md</code>).</p>
+<div class="rowhead">
+  <p class="empty">No bracket for {{ missing }} yet. Insert a custom one below, roll back to
+     the Sleeper bracket, or add <code>playoffs/{{ missing }}.json</code> (see
+     <code>playoffs/README.md</code>).</p>
+</div>
+{% include "_bracket_menu.html" %}
+{% include "_bracket_editor.html" %}
 {% else %}
 
 <section class="stats">
@@ -78,12 +60,16 @@
    a broken control; it belongs beside the analytics it actually scopes. #}
 <div class="rowhead">
   <h2>Bracket</h2>
-  <button class="ghost"
-          hx-get="/tab/playoffs?refresh=1" hx-target="#panel" hx-swap="innerHTML"
-          hx-include="#league, #season, #theme, #bracket">
-    Re-score from live stats
-  </button>
+  <div class="rowhead-actions">
+    {% include "_bracket_menu.html" %}
+    <button class="ghost"
+            hx-get="/tab/playoffs?refresh=1" hx-target="#panel" hx-swap="innerHTML"
+            hx-include="#league, #season, #theme, #bracket">
+      Re-score from live stats
+    </button>
+  </div>
 </div>
+{% include "_bracket_editor.html" %}
 <figure class="card chart">
   <img src="/chart/bracket?league={{ league }}&season={{ season }}&theme={{ theme }}&bracket={{ bracket }}&_={{ bust }}"
        alt="Playoff bracket">

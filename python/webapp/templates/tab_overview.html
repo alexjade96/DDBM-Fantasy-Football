@@ -26,8 +26,9 @@
 </div>
 <p class="hint">
   {% if live %}The week in progress at a glance.{% else %}The most recent week played.{% endif %}
-  Headline numbers, the scoreboard, then how the week is shaping up &mdash; the full
-  lineup drill-downs live on the Weekly tab.</p>
+  Headline numbers, then the games as a picture and in full &mdash; expand a row for both
+  lineups in slot order, what sat on the bench, and the single legal same-position swap that
+  cost the most. Full week analysis is on the <em>Weekly</em> tab.</p>
 
 <section class="stats">
   <div class="stat gold">
@@ -51,9 +52,6 @@
 
 {# The scoreboard as a per-game drilldown (shared with the Weekly tab): expand a
    row for both lineups in slot order, benches, and the costliest legal swap. #}
-<p class="hint">One row per <strong>game</strong>, biggest shoot-out first &mdash; expand for both
-   lineups in slot order, what sat on the bench, and the single legal same-position swap that
-   cost the most. Full week analysis is on the <em>Weekly</em> tab.</p>
 {% include "_week_scoreboard.html" %}
 
 {# The one week-context chart that stays in the lead: was the result deserved? #}
@@ -69,13 +67,16 @@
   {{ summary | md }}
 </section>
 {% endif %}
-{# The table-position race through the current week -- the season-arc view of the
-   standings, so it belongs with the season metrics rather than the single-week
-   lead. This is the "race through week N" chart; table_position (its identical
-   full-span twin) is deliberately dropped from the grid below. #}
-{{ ch.chart("week_race", week=current_week) }}
 <p class="hint">The season beyond any one week &mdash; standing, merit and the schedule&rsquo;s
    hand in it. Each chart below carries the takeaway underneath.</p>
 <section class="grid">
+  {# The table-position race through the current week leads the grid -- the
+     season-arc view of the standings, so it belongs with the season metrics
+     rather than the single-week lead above. This is the "race through week N"
+     chart; table_position (its identical full-span twin) is deliberately
+     dropped from this grid. Rendered via the same macro as its siblings
+     (previously a standalone call outside the grid) so it gets the same
+     classing/sizing as every other chart here. #}
+  {{ ch.chart("week_race", week=current_week) }}
   {% for c in charts %}{{ ch.chart(c) }}{% endfor %}
 </section>

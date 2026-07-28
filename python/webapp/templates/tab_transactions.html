@@ -19,9 +19,10 @@
 {% endif %}
 
 <p class="hint">Who shaped their roster, and whether it paid off &mdash; each chart&rsquo;s
-   takeaway is noted beneath it. Value counts points a player returned <em>while on that
-   roster</em>, so a star flipped early scores low and a waiver pickup who started all year
-   scores high.</p>
+   takeaway is noted beneath it. For <strong>Traded Players</strong>, value counts points a
+   player returned <em>while on that roster</em>, so a star flipped early scores low and a
+   long-held pickup who started all year scores high &mdash; the same measure the waiver chart
+   below uses.</p>
 <section class="grid">
   {% for c in charts %}{{ ch.chart(c) }}{% endfor %}
 </section>
@@ -71,6 +72,10 @@
 
 <h2>Waiver wire</h2>
 {% if waivers %}
+{# The chart is the top 15 of the same ranked list the table below shows in
+   full (top 30) -- kept here, directly above its own table, instead of up in
+   the general chart grid where the relationship read as coincidental. #}
+{{ ch.chart("waiver_performance") }}
 <p class="hint">The {{ waivers | length }} best pickups of {{ season }} by what they
    returned while rostered, out of {{ n_adds }} total. One row per manager per player &mdash;
    <strong>&times;n</strong> marks someone picked up more than once. <strong>Starts</strong>

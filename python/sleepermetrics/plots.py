@@ -159,9 +159,19 @@ def palette(names) -> dict:
 def _finish(fig, ax, title, subtitle=None, xlabel=None, ylabel=None, caption=None,
             grid_axis="x"):
     ax.set_title(title, loc="left", fontsize=16, fontweight="bold",
-                 color=T["ink"], pad=20)
+                 color=T["ink"], pad=24)
     if subtitle:
-        ax.text(0, 1.015, subtitle, transform=ax.transAxes, fontsize=9.5,
+        # A subtitle positioned as an AXES-FRACTION y (e.g. 1.015) scales with the
+        # axes' own height in points, while the title's `pad` is a fixed point
+        # value -- so the two drift relative to each other per chart, and for a
+        # tall axes the subtitle can climb high enough to run into the title
+        # (measured: as little as ~0.5px of clearance, sometimes negative).
+        # offset_copy anchors it at the axes top and nudges it up by a FIXED
+        # point amount instead, so the gap to the title is the same on every
+        # chart regardless of axes height.
+        from matplotlib.transforms import offset_copy
+        trans = offset_copy(ax.transAxes, fig=fig, x=0, y=5, units="points")
+        ax.text(0, 1.0, subtitle, transform=trans, fontsize=9.5,
                 color=T["muted"], va="bottom")
     if xlabel:
         ax.set_xlabel(xlabel, fontsize=10, color=T["muted"])
@@ -556,10 +566,15 @@ def plot_roster_heatmap(s: Season):
     fig.colorbar(im, ax=ax, fraction=0.035, pad=0.02, label="Avg pts")
     ax.set_title("Roster Construction", loc="left", fontsize=16, fontweight="bold",
                  color=T["ink"], pad=24)
-    ax.text(0, 1.06, "Player-weeks rostered and average points, by team and position",
-            transform=ax.transAxes, fontsize=9.5, color=T["muted"])
+    # This is a matrix chart with its column labels (positions) on the TOP axis,
+    # same as plot_schedule_swap/plot_head_to_head -- an explanatory subtitle up
+    # there collides with either the tick labels or the title (measured: it sat
+    # inside the title's own bounding box). Put it at the bottom instead, like
+    # those two charts already do.
+    fig.text(0.01, 0.01, "Player-weeks rostered and average points, by team and position",
+             ha="left", fontsize=8.5, color=T["muted"])
     fig.text(0.99, 0.01, _cap(s), ha="right", fontsize=7, color=T["faint"])
-    fig.tight_layout()
+    fig.tight_layout(rect=(0, 0.03, 1, 1))
     return fig
 
 
@@ -586,12 +601,17 @@ def plot_starter_bench(s: Season):
     h, l = axes[0].get_legend_handles_labels()
     fig.legend(h, l, loc="upper right", frameon=False, fontsize=9,
                bbox_to_anchor=(0.99, 1.0))
-    fig.suptitle("Starters vs Bench   ", x=0.01, ha="left", fontsize=16,
-                 fontweight="bold", color=T["ink"])
-    fig.text(0.01, 0.945, "Average points by position  ·  are the right players in the lineup?",
-             fontsize=9.5, color=T["muted"])
+    # Explicit y for both: the default suptitle y and a fixed subtitle y were
+    # only ~3.5% of figure height apart (measured: they overlapped outright),
+    # since neither accounts for the other's actual rendered height. Pin them
+    # far enough apart here, and pull the subplot area's top boundary (in
+    # tight_layout's rect) down to clear both.
+    fig.suptitle("Starters vs Bench   ", x=0.01, y=0.99, ha="left", va="top",
+                 fontsize=16, fontweight="bold", color=T["ink"])
+    fig.text(0.01, 0.895, "Average points by position  ·  are the right players in the lineup?",
+             fontsize=9.5, color=T["muted"], va="top")
     fig.text(0.99, 0.005, _cap(s), ha="right", fontsize=7, color=T["faint"])
-    fig.tight_layout(rect=[0, 0.01, 1, 0.93])
+    fig.tight_layout(rect=[0, 0.01, 1, 0.855])
     return fig
 
 
@@ -1084,7 +1104,10 @@ def plot_schedule_swap(s: Season):
     cmap = mcolors.LinearSegmentedColormap.from_list("sw", ["#c0563f", "#f0f0e6", "#2c7fb8"])
     im = ax.imshow(piv.values, aspect="auto", cmap=cmap)
     ax.set_xticks(range(len(order)))
-    ax.set_xticklabels(order, rotation=40, ha="left")
+    # 60 (not 40) so adjacent column names clear each other -- at 40 a run of
+    # longer names (e.g. two 13+ character managers back to back) overlaps,
+    # since the rotated label's horizontal footprint shrinks with a steeper angle.
+    ax.set_xticklabels(order, rotation=60, ha="left")
     ax.xaxis.set_ticks_position("top")
     ax.set_yticks(range(len(order)))
     ax.set_yticklabels(order)
@@ -1135,7 +1158,10 @@ def plot_head_to_head(seasons: dict):
     cmap = mcolors.LinearSegmentedColormap.from_list("h2h", ["#c0563f", "#f0f0e6", "#2c7fb8"])
     im = ax.imshow(win.values, aspect="auto", cmap=cmap, vmin=0, vmax=100)
     ax.set_xticks(range(len(order)))
-    ax.set_xticklabels(order, rotation=40, ha="left")
+    # 60 (not 40) so adjacent column names clear each other -- at 40 a run of
+    # longer names (e.g. two 13+ character managers back to back) overlaps,
+    # since the rotated label's horizontal footprint shrinks with a steeper angle.
+    ax.set_xticklabels(order, rotation=60, ha="left")
     ax.xaxis.set_ticks_position("top")
     ax.set_yticks(range(len(order)))
     ax.set_yticklabels(order)
