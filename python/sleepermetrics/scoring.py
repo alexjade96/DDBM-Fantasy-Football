@@ -12,13 +12,22 @@ import pandas as pd
 from .api import sleeper_api
 
 _stats_cache: dict = {}
+_chart_cache: dict = {}
 
 
 def scoring_chart(league_id: str) -> pd.DataFrame:
-    """The league's point-calculation chart: one row per stat rule."""
-    sc = sleeper_api(f"/league/{league_id}")["scoring_settings"]
-    return (pd.DataFrame({"stat": list(sc), "weight": [float(v) for v in sc.values()]})
+    """The league's point-calculation chart: one row per stat rule (cached --
+    a league's scoring_settings don't change mid-season, and this was being
+    re-fetched over the network on every call: `rules_from` is called from
+    several places per report render, and the position-rank helpers alone
+    call it twice more, which made an uncached fetch a real, measured
+    slowdown -- not just theoretical waste)."""
+    if league_id not in _chart_cache:
+        sc = sleeper_api(f"/league/{league_id}")["scoring_settings"]
+        _chart_cache[league_id] = (
+            pd.DataFrame({"stat": list(sc), "weight": [float(v) for v in sc.values()]})
             .sort_values("stat").reset_index(drop=True))
+    return _chart_cache[league_id]
 
 
 def nfl_stats(season: str, week: int) -> dict:

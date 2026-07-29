@@ -5,19 +5,27 @@
    scored week (current_week) and badges it live, with a refresh that re-pulls
    scores; on a finished season `live` is False and it is a plain week browser. #}
 {% import "_chartmacro.html" as ch with context %}
+{% import "_ident.html" as idm with context %}
 <div class="rowhead">
   <h2>
     {% if live and is_current %}Current week{% else %}Week detail{% endif %}
     {% if live %}<span class="live-badge">Live</span>{% endif %}
   </h2>
-  {% if live %}
-  {# refresh=1 re-assembles the league (fresh scores) and keeps the week you're on. #}
-  <button class="ghost"
-          hx-get="/tab/weekly?refresh=1&week={{ week }}"
-          hx-target="#panel" hx-swap="innerHTML" hx-include="#league, #season, #theme">
-    Refresh scores
-  </button>
-  {% endif %}
+  <div class="rowhead-actions">
+    {% if live %}
+    {# refresh=1 re-assembles the league (fresh scores) and keeps the week you're on. #}
+    <button class="ghost"
+            hx-get="/tab/weekly?refresh=1&week={{ week }}"
+            hx-target="#panel" hx-swap="innerHTML" hx-include="#league, #season, #theme">
+      Refresh scores
+    </button>
+    {% endif %}
+    {# A stand-alone, shareable version of this week -- safe to link out or drop
+       in a group chat, unlike this tab which lives inside the dashboard shell. #}
+    <a class="ghost" target="_blank" rel="noopener"
+       href="/report/weekly?league={{ league }}&season={{ season }}&week={{ week }}"
+       title="A shareable page for this week">Shareable report &#8599;</a>
+  </div>
 </div>
 <nav class="rail" hx-target="#panel" hx-swap="innerHTML" hx-include="#league, #season, #theme">
   <span class="k">Week</span>
@@ -34,22 +42,14 @@
 {% endif %}
 
 <section class="stats">
-  <div class="stat gold">
-    <span class="k">Highest score</span>
-    <span class="v">{{ kpi_top }}</span>
+  {% for label, kpi, cls in [("Highest score", kpi_top, "gold"), ("Biggest blowout", kpi_blow, ""),
+                             ("Closest game", kpi_close, ""), ("Most points benched", kpi_bench, "")] %}
+  <div class="stat {{ cls }}">
+    <span class="k">{{ label }}</span>
+    <span class="v">{{ kpi.value if kpi else "—" }}</span>
+    {% if kpi %}<span class="sub">{{ idm.who(kpi.user_name) }}</span>{% endif %}
   </div>
-  <div class="stat">
-    <span class="k">Biggest blowout</span>
-    <span class="v">{{ kpi_blow }}</span>
-  </div>
-  <div class="stat">
-    <span class="k">Closest game</span>
-    <span class="v">{{ kpi_close }}</span>
-  </div>
-  <div class="stat">
-    <span class="k">Most points benched</span>
-    <span class="v">{{ kpi_bench }}</span>
-  </div>
+  {% endfor %}
 </section>
 
 {# Order: tiles -> THE GAMES (the dumbbell and the scoreboard it depicts,

@@ -128,6 +128,14 @@
       var m = t.match(/-?\d+(\.\d+)?/);
       return m ? parseFloat(m[0]) : null;
     }
+    // Fantasy position order, not alphabetical (DEF/K/QB/RB/TE/WR reads
+    // nothing like how anyone thinks about a roster). Any column literally
+    // headed "Pos" sorts this way instead of by cell text.
+    var POS_ORDER = { QB: 0, RB: 1, WR: 2, TE: 3, K: 4, DEF: 5 };
+    function posValue(td) {
+      var t = (td.textContent || '').trim().toUpperCase();
+      return Object.prototype.hasOwnProperty.call(POS_ORDER, t) ? POS_ORDER[t] : 99;
+    }
     function makeSortable(table) {
       if (table.dataset.sortable || table.closest('.nosort')) return;
       table.dataset.sortable = '1';
@@ -137,6 +145,7 @@
       Array.prototype.forEach.call(head.cells, function (th, i) {
         th.tabIndex = 0;
         th.setAttribute('role', 'button');
+        var isPos = th.textContent.trim().toLowerCase() === 'pos';
         var run = function () {
           var rows = Array.prototype.slice.call(body.rows);
           // Rows that aren't data (the neighbourhood table's "⋯" gap) stay put.
@@ -147,14 +156,14 @@
           });
           th.dataset.dir = asc ? 'asc' : 'desc';
           th.classList.add(asc ? 'sort-asc' : 'sort-desc');
-          var numeric = rows.every(function (r) {
+          var numeric = !isPos && rows.every(function (r) {
             return !r.cells[i] || sortValue(r.cells[i]) !== null;
           });
           rows.sort(function (a, b) {
             var x = a.cells[i], y = b.cells[i];
             if (!x || !y) return 0;
-            var d = numeric
-              ? sortValue(x) - sortValue(y)
+            var d = isPos ? posValue(x) - posValue(y)
+              : numeric ? sortValue(x) - sortValue(y)
               : x.textContent.trim().localeCompare(y.textContent.trim());
             return asc ? d : -d;
           });

@@ -4,10 +4,13 @@
      import "_ident.html" as idm with context   (in {%% %%} tags)
      idm.who(name)          -- manager team portrait + name
      idm.headshot(pid)      -- a player's Sleeper headshot (bare img)
+     idm.posrank(pid)       -- that player's position rank THIS WEEK
 
-   Both are best-effort and degrade cleanly: `who` shows the portrait only when a
+   All best-effort and degrade cleanly: `who` shows the portrait only when a
    manager avatar exists for that name (else just the name); a headshot that 404s
-   removes itself via onerror. No nested Jinja comments here -- they don't nest. #}
+   removes itself via onerror; `posrank` renders nothing if `week_pos_ranks` isn't
+   in context (only the weekly report supplies it) or has no entry for this
+   player. No nested Jinja comments here -- they don't nest. #}
 {# `is string` guards are deliberate: pandas NaN is truthy in Jinja, so a raw
    record (not run through records()) would otherwise render "nan" / a dead img. #}
 {% macro who(name) -%}
@@ -18,4 +21,11 @@
 
 {% macro headshot(pid) -%}
 {%- if pid is string and pid %}<img class="pface" src="https://sleepercdn.com/content/nfl/players/{{ pid }}.jpg" alt="" loading="lazy" onerror="this.remove()">{% endif -%}
+{%- endmacro %}
+
+{% macro posrank(pid) -%}
+{%- if week_pos_ranks and pid in week_pos_ranks -%}
+{%- set pr = week_pos_ranks[pid] -%}
+<span class="q posrank">{{ pr.position }} #{{ pr.rank }}</span>
+{%- endif -%}
 {%- endmacro %}

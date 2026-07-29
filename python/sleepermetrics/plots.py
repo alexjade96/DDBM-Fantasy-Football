@@ -1281,27 +1281,39 @@ def _mgr_rid(s: Season, manager: str):
     return None if m.empty else m.iloc[0]
 
 
-def _mgr_weeks(s: Season, manager: str):
-    """(their team_wk rows sorted by week, roster_id) or (None, None)."""
+def _mgr_weeks(s: Season, manager: str, through_week: int | None = None):
+    """(their team_wk rows sorted by week, roster_id) or (None, None).
+
+    `through_week` caps the rows at that week -- used when these season-wide
+    charts are reused in a WEEKLY context (the weekly report), so viewing
+    week 5 doesn't leak weeks 6-14 into a chart titled "week 5".
+    """
     rid = _mgr_rid(s, manager)
     tw = s.team_wk
     if rid is None or not {"roster_id", "week", "points"}.issubset(
             getattr(tw, "columns", [])):
         return None, None
-    mine = tw[tw["roster_id"] == rid].sort_values("week")
+    mine = tw[tw["roster_id"] == rid]
+    if through_week is not None:
+        mine = mine[mine["week"] <= through_week]
+    mine = mine.sort_values("week")
     return (None, None) if mine.empty else (mine, rid)
 
 
-def plot_mgr_score_band(s: Season, manager: str):
+def plot_mgr_score_band(s: Season, manager: str, through_week: int | None = None):
     """Their weekly score against the band every other team scored that week.
 
     The band answers the question a bare points line can't: was a 95-point week
-    bad, or was it just a low-scoring week league-wide?
+    bad, or was it just a low-scoring week league-wide? `through_week` caps the
+    season at that week (see `_mgr_weeks`), for the weekly report's reuse of
+    this otherwise season-wide chart.
     """
-    mine, _ = _mgr_weeks(s, manager)
+    mine, _ = _mgr_weeks(s, manager, through_week)
     if mine is None:
         return _no_data(f"No weekly scores for {manager} in {s.season}.")
     tw = s.team_wk
+    if through_week is not None:
+        tw = tw[tw["week"] <= through_week]
     band = (tw.groupby("week")["points"]
             .agg(lo="min", hi="max", mid="median").reset_index())
     fig, ax = plt.subplots(figsize=(9.5, 5.5))
@@ -1322,18 +1334,24 @@ def plot_mgr_score_band(s: Season, manager: str):
                    "Week", "Points", caption=_cap(s), grid_axis="y")
 
 
-def plot_mgr_optimal(s: Season, manager: str):
+def plot_mgr_optimal(s: Season, manager: str, through_week: int | None = None):
     """Started vs optimal each week, over the running cost of the bench.
 
     Two stacked panels rather than one chart with two y-scales: weekly points
     and a season-cumulative total are different magnitudes, and a dual axis
-    would make their crossings meaningless.
+    would make their crossings meaningless. `through_week` caps the season at
+    that week, for the weekly report's reuse of this otherwise season-wide
+    chart (the cumulative panel should run through the viewed week, not the
+    whole season).
     """
     lu = getattr(s, "lineup", None)
     if lu is None or not {"user_name", "week", "actual", "optimal"}.issubset(
             getattr(lu, "columns", [])):
         return _no_data(f"No lineup data for {manager} in {s.season}.")
-    d = lu[lu["user_name"] == manager].sort_values("week")
+    d = lu[lu["user_name"] == manager]
+    if through_week is not None:
+        d = d[d["week"] <= through_week]
+    d = d.sort_values("week")
     if d.empty:
         return _no_data(f"No lineup data for {manager} in {s.season}.")
     lost = (d["optimal"] - d["actual"]).clip(lower=0)
@@ -1367,19 +1385,22 @@ def plot_mgr_optimal(s: Season, manager: str):
         ax2.spines[sp].set_visible(False)
     ax2.spines["bottom"].set_color(T["spine"])
     total = float(lost.sum())
+    span_txt = f"through week {through_week}" if through_week is not None else "all season"
     return _finish(fig, ax, f"{manager} · Started vs Optimal",
                    "Grey = the best legal lineup that week; green = what they "
-                   f"started  ·  {total:.0f} pts left on the bench all season",
+                   f"started  ·  {total:.0f} pts left on the bench {span_txt}",
                    None, "Points", caption=_cap(s), grid_axis="y")
 
 
-def plot_mgr_margins(s: Season, manager: str):
+def plot_mgr_margins(s: Season, manager: str, through_week: int | None = None):
     """Every week's margin as a diverging bar -- blowouts vs coin flips.
 
     A game log shows the same numbers, but only the shape tells you whether a
-    losing season was four routs or four heartbreakers.
+    losing season was four routs or four heartbreakers. `through_week` caps the
+    season at that week, for the weekly report's reuse of this otherwise
+    season-wide chart.
     """
-    mine, _ = _mgr_weeks(s, manager)
+    mine, _ = _mgr_weeks(s, manager, through_week)
     if mine is None or "pa" not in mine.columns:
         return _no_data(f"No margins for {manager} in {s.season}.")
     d = mine[mine["pa"].notna()].copy()
@@ -1409,6 +1430,51 @@ def plot_mgr_margins(s: Season, manager: str):
                    f"Points scored minus points allowed  ·  {close} game(s) "
                    f"inside 10, {rout} decided by 40+",
                    "Week", "Margin", caption=_cap(s), grid_axis="y")
+
+
+def plot_mgr_sos(s: Season, manager: str, through_week: int | None = None):
+    """Strength of schedule as a dumbbell -- opponents' average PPG faced vs
+    this team's own PPG -- with ONE manager's row picked out.
+
+    The league-wide version (`plot_sos`) answers "who has it hardest"; this
+    answers "is MY record inflated or deflated by who I've played" for the
+    weekly report's manager view. A bare bar of `sos` alone wastes most of its
+    own axis (schedule strength never approaches zero) and shows only half the
+    question -- putting both numbers on one points scale, dumbbell-style
+    (same idiom as `plot_clutch`), makes the GAP between them, not a bar's
+    length, the thing you read. `through_week` caps it at that week, same as
+    the other mgr_* charts, so a week-5 report doesn't leak weeks 6-14 of
+    schedule into "strength of schedule so far".
+    """
+    d = metrics.strength_of_schedule(s, through_week).sort_values("sos").reset_index(drop=True)
+    if not len(d):
+        return _no_data(f"No schedule data for {manager} in {s.season}.")
+    fig, ax = plt.subplots(figsize=(9, 6))
+    cols = ["#2ca02c" if r["own_ppg"] >= r["sos"] else "#d62728" for _, r in d.iterrows()]
+    for i, r in d.iterrows():
+        hero = r["user_name"] == manager
+        ax.plot([r["sos"], r["own_ppg"]], [i, i], color=cols[i],
+                lw=(3 if hero else 1.8), alpha=(0.9 if hero else 0.45), zorder=2)
+    ax.scatter(d["sos"], range(len(d)), color="#a6a6a6", s=65, zorder=3,
+               label="opponents faced (PPG)")
+    ax.scatter(d["own_ppg"], range(len(d)), color=cols, s=95, zorder=4, label="own PPG")
+    mean_sos = d["sos"].mean()
+    ax.axvline(mean_sos, ls="--", color=T["rule"], zorder=1)
+    ax.text(mean_sos, len(d) - 0.4, "league avg", ha="center", va="top",
+            fontsize=8, color=T["muted"])
+    ax.set_yticks(range(len(d)))
+    labels = ax.set_yticklabels(d["user_name"])
+    for t, nm in zip(labels, d["user_name"]):
+        if nm == manager:
+            t.set_fontweight("bold")
+    _row_avatars(ax, d["user_name"], s)
+    ax.legend(loc="lower right", frameon=False, fontsize=8)
+    span_txt = f"through week {through_week}" if through_week is not None else "all season"
+    return _finish(fig, ax, f"Strength of Schedule ({manager} highlighted)",
+                   f"Grey = opponents' avg PPG faced, coloured = own PPG, {span_txt}  ·  "
+                   "green when output beat the schedule, red when it didn't",
+                   "Points per game",
+                   caption=_cap(s))
 
 
 def plot_week_matchups(s: Season, week: int):
@@ -1513,8 +1579,7 @@ def plot_week_luck(s: Season, week: int):
     # all-play), so it deliberately doesn't mirror the y-axis, which is just the
     # single opponent you happened to draw.
     fig = _finish(fig, ax, f"Week {week}: Beaten, or Just Unlucky?",
-                  "Colour is how many teams you outscored — a green dot in the "
-                  "red zone is the week's unlucky team, orange in green got away with one",
+                  "Colour = teams outscored  ·  green in red = unlucky, orange in green = got away with one",
                   "Your score vs the field", "Points against", caption=_cap(s), grid_axis="both")
     # After _finish: tight_layout has settled the axes, so the collision solver
     # is working with the geometry that will actually be drawn.
@@ -1555,3 +1620,32 @@ def plot_week_race(s: Season, week: int):
     return _finish(fig, ax, f"The Race Through Week {week}",
                    "Table position after each week — crossings are lead changes",
                    "Week", "Table position", caption=_cap(s), grid_axis="both")
+
+
+def plot_week_power(s: Season, week: int):
+    """Power rankings, capped through `week` -- the weekly report's reuse of
+    `plot_power_rank` (season-wide) so a week-5 report doesn't leak weeks 6-14
+    into the composite score."""
+    d = metrics.power_rank(s, through_week=week).sort_values("power").reset_index(drop=True)
+    if not len(d):
+        return _no_data(f"Nothing scored through week {week}.")
+    fig, ax = plt.subplots(figsize=(9.5, 6))
+    colors = ["#2c7fb8" if v > 0 else "#c0563f" for v in d["power"]]
+    ax.barh(range(len(d)), d["power"], color=colors, height=0.72, zorder=2)
+    ax.axvline(0, color=T["rule"], zorder=3)
+    ax.set_yticks(range(len(d)))
+    ax.set_yticklabels(d["user_name"])
+    _row_avatars(ax, d["user_name"], s)
+    span = d["power"].max() - d["power"].min()
+    _medals(ax, d, "power_rank", d["power"].min() - span * 0.04)
+    for i, (_, r) in enumerate(d.iterrows()):
+        off = span * 0.012
+        ha = "left" if r["power"] > 0 else "right"
+        ax.text(r["power"] + (off if r["power"] > 0 else -off), i,
+                f"{r['power']:+.2f}", va="center", ha=ha, fontsize=9, color=T["ink2"])
+    ax.set_xlim(d["power"].min() - span * 0.18, d["power"].max() + span * 0.16)
+    return _finish(fig, ax, f"Power Rankings Through Week {week}",
+                   "Composite of points, all-play win%, recent form and lineup efficiency  ·  0 = league average",
+                   "Power Score (standardised)", caption=_cap(s))
+
+

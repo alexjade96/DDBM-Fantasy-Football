@@ -3,6 +3,7 @@
    metrics further down. Dedicated template -- Career still uses tab_charts.html,
    so this current-week lead appears on Overview only. #}
 {% import "_chartmacro.html" as ch with context %}
+{% import "_ident.html" as idm with context %}
 
 {# ---- Lead: the current / latest week -------------------------------------- #}
 <div class="rowhead">
@@ -31,18 +32,13 @@
   cost the most. Full week analysis is on the <em>Weekly</em> tab.</p>
 
 <section class="stats">
-  <div class="stat gold">
-    <span class="k">Highest score</span><span class="v">{{ kpi_top }}</span>
+  {% for label, kpi, cls in [("Highest score", kpi_top, "gold"), ("Biggest blowout", kpi_blow, ""),
+                             ("Closest game", kpi_close, ""), ("Most points benched", kpi_bench, "")] %}
+  <div class="stat {{ cls }}">
+    <span class="k">{{ label }}</span><span class="v">{{ kpi.value if kpi else "—" }}</span>
+    {% if kpi %}<span class="sub">{{ idm.who(kpi.user_name) }}</span>{% endif %}
   </div>
-  <div class="stat">
-    <span class="k">Biggest blowout</span><span class="v">{{ kpi_blow }}</span>
-  </div>
-  <div class="stat">
-    <span class="k">Closest game</span><span class="v">{{ kpi_close }}</span>
-  </div>
-  <div class="stat">
-    <span class="k">Most points benched</span><span class="v">{{ kpi_bench }}</span>
-  </div>
+  {% endfor %}
 </section>
 
 <figure class="card chart">

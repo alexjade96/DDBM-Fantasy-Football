@@ -1,0 +1,478 @@
+{# Weekly report: a shareable, stand-alone page -- no dashboard shell, safe to
+   link out or drop in a group chat. Two views of the same week: the
+   league-wide recap (reuses _week_context's KPIs + weekly.summary_week, the
+   same text the Discord bot posts) and a manager-scoped view (reuses their
+   game from wk_games -- including its already-computed bench "regret" -- plus
+   their standings movement from _week_manager_context). The page's own light/
+   dark rendering follows the OS via style.css's prefers-color-scheme
+   variables automatically; only the server-rendered chart PNGs need a nudge,
+   done by the inline script at the bottom (matplotlib can't read a media
+   query). No baked images here (unlike /report) -- charts are ordinary
+   /chart/<key> PNGs loaded lazily, so the page itself renders instantly. #}
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ league_name }} · Week {{ week }}{% if manager %} · {{ manager }}{% endif %} — Weekly report</title>
+  <link rel="stylesheet" href="/static/style.css?v={{ asset_v }}">
+</head>
+<body>
+{% import "_chartmacro.html" as ch with context %}
+{% import "_ident.html" as idm with context %}
+<main class="reportpanel">
+  <p class="eyebrow">Weekly report</p>
+  <h2 class="rtitle">{% if manager %}{{ idm.who(manager) }}{% else %}{{ league_name }}{% endif %}</h2>
+  <p class="hint">{{ league_name }} · {{ season }} · Week {{ week }}
+    {%- if live and is_current %} <span class="live-badge">Live</span>{% endif %}</p>
+
+  <nav class="rail">
+    <span class="k">View</span>
+    <a class="year {% if not manager %}on{% endif %}"
+       href="/report/weekly?league={{ league }}&season={{ season }}&week={{ week }}">Whole league</a>
+    {% for m in managers %}
+    <a class="year {% if m == manager %}on{% endif %}"
+       href="/report/weekly?league={{ league }}&season={{ season }}&week={{ week }}&manager={{ m|urlencode }}">{{ idm.who(m) }}</a>
+    {% endfor %}
+  </nav>
+
+  <section class="stats">
+    {% if manager %}
+    {% for k, v, sub in mgr_tiles %}
+    <div class="stat {% if loop.first %}gold{% endif %}">
+      <span class="k">{{ k }}</span><span class="v">{{ v }}</span><span class="sub">{{ sub }}</span>
+    </div>
+    {% endfor %}
+    {% else %}
+    {% for label, kpi, cls in [("Highest score", kpi_top, "gold"), ("Biggest blowout", kpi_blow, ""),
+                               ("Closest game", kpi_close, ""), ("Most points benched", kpi_bench, "")] %}
+    <div class="stat {{ cls }}">
+      <span class="k">{{ label }}</span><span class="v">{{ kpi.value if kpi else "—" }}</span>
+      {% if kpi %}<span class="sub">{{ idm.who(kpi.user_name) }}</span>{% endif %}
+    </div>
+    {% endfor %}
+    {% endif %}
+  </section>
+
+  <div class="card narrative">
+    {% if manager %}<p>{{ mgr_narrative }}</p>{% else %}{{ summary_html }}{% endif %}
+  </div>
+
+  <h2>Week {{ week }} scoreboard</h2>
+  <p class="hint">{% if manager %}Their game is expanded below; the rest of the week for context.
+    {%- else %}Every game, biggest shoot-out first &mdash; expand one for both lineups and the
+    single legal swap that cost the most.{% endif %}</p>
+
+  {# The games chart leads the scoreboard section (rather than trailing it) --
+     it's this week's games in one glance, so it reads as the section's own
+     lede rather than a footnote after the table. League-wide only; the
+     manager view already opens straight on their own game below. #}
+  {% if not manager %}
+  <section class="grid">
+    {{ ch.chart("week_matchups", week=week) }}
+  </section>
+  {% endif %}
+  {% include "_week_scoreboard.html" %}
+
+  <section class="grid">
+    {% if manager %}
+    <figure class="card chart">
+      <img src="/chart/mgr_score_band?league={{ league }}&season={{ season }}&week={{ week }}&theme={{ theme }}&manager={{ manager|urlencode }}&_={{ bust }}"
+           alt="Weekly score against the league's range" loading="lazy">
+      <figcaption>Weekly score against the league&rsquo;s range, through week {{ week }}</figcaption>
+    </figure>
+    {% else %}
+    {{ ch.chart("week_luck", week=week) }}
+    {% endif %}
+  </section>
+
+  <h2>Season so far</h2>
+  <p class="hint">Everything below is capped at week {{ week }} &mdash; the same "don&rsquo;t leak
+    future weeks into a past report" rule the tables above follow.</p>
+  <section class="grid">
+    {% if manager %}
+    <figure class="card chart">
+      <img src="/chart/mgr_optimal?league={{ league }}&season={{ season }}&week={{ week }}&theme={{ theme }}&manager={{ manager|urlencode }}&_={{ bust }}"
+           alt="Started vs optimal, and the running cost of the bench" loading="lazy">
+      <figcaption>Started vs optimal, and the running cost of the bench</figcaption>
+    </figure>
+    <figure class="card chart">
+      <img src="/chart/mgr_sos?league={{ league }}&season={{ season }}&week={{ week }}&theme={{ theme }}&manager={{ manager|urlencode }}&_={{ bust }}"
+           alt="Strength of schedule, this manager highlighted" loading="lazy">
+      <figcaption>Strength of schedule so far &mdash; is their record earned or schedule-flattered?</figcaption>
+    </figure>
+    {% else %}
+    {{ ch.chart("week_race", week=week) }}
+    {% endif %}
+  </section>
+
+  <h2>{% if manager %}{{ manager }}&rsquo;s moves this week{% else %}Week {{ week }} transactions{% endif %}</h2>
+
+  <h3>Trades</h3>
+  {% if week_tx.trades %}
+  <p class="hint">{{ week_tx.trades|length }} trade{{ "" if week_tx.trades|length == 1 else "s" }} this
+     week. Each side lists who they received, that player&rsquo;s points <strong>this week</strong>,
+     and their points <strong>this season so far</strong> (any roster) &mdash; a trade this fresh
+     hasn&rsquo;t had time to prove a winner, so this leaves that read to you.</p>
+  <div class="deals">
+    {% for d in week_tx.trades %}
+    <article class="deal">
+      <header>
+        <span class="wk">Trade</span>
+        {% if d.n_teams > 2 %}<span class="tag">{{ d.n_teams }}-team</span>{% endif %}
+      </header>
+      <div class="sides">
+        {% for sd in d.sides %}
+        <div class="side">
+          <div class="who"><span>{{ idm.who(sd.user_name) }}</span></div>
+          <div class="got">
+            {% for p in sd.players %}
+            <div class="plr">
+              {{ idm.headshot(p.player_id) }}<strong>{{ p.player_name }}</strong> {{ idm.posrank(p.player_id) }}
+              <span class="q">{{ "%.1f"|format(p.week_pts) }} this week &middot;
+                {{ "%.1f"|format(p.season_pts) }} this season</span>
+            </div>
+            {% else %}
+            <span class="q">no players &mdash; picks or FAAB only</span>
+            {% endfor %}
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+    </article>
+    {% endfor %}
+  </div>
+  {% else %}
+  <p class="empty">{% if manager %}No trades for {{ manager }} this week.{% else %}No trades this week.{% endif %}</p>
+  {% endif %}
+
+  <h3>Waivers &amp; free agent pickups</h3>
+  {% if week_tx.waivers %}
+  <p class="hint">Waiver claims and free-agent adds this week. <strong>Trending</strong> is the
+     player's real performance over the last {{ [week, 4]|min }} weeks (through week {{ week }}),
+     priced with the league's scoring chart regardless of who rostered him then -- same read as the
+     free agents below. <strong>Points this week</strong> is what they scored the week they were
+     picked up. Click a column header to sort or group (e.g. by Manager or Via).</p>
+  <div class="card tablewrap scrolltable">
+    <table class="sortable">
+      <thead><tr>
+        <th>Manager</th><th>Player</th><th>Pos</th><th>Via</th>
+        <th class="trend-col">Trending</th><th class="n">Points this week</th>
+      </tr></thead>
+      <tbody>
+      {% for r in week_tx.waivers %}
+        <tr>
+          <td>{{ idm.who(r.user_name) }}</td>
+          <td>{{ idm.headshot(r.player_id) }}{{ r.player_name }}{% if r.times > 1 %}
+              <span class="q">&times;{{ r.times }}</span>{% endif %} {{ idm.posrank(r.player_id) }}</td>
+          <td>{{ r.position }}</td>
+          <td><span class="q">{{ r.via }}</span></td>
+          <td class="trend-col">
+            {{ "%.1f"|format(r.trend_total) }}
+            {% if r.trend %}
+            <div class="spark">
+              {% for t in r.trend %}
+              <div class="spark-bar" style="height: {{ t.pct }}%"
+                   title="Week {{ t.week }}: {{ '%.1f'|format(t.points) }}"></div>
+              {% endfor %}
+            </div>
+            {% endif %}
+          </td>
+          <td class="n">{{ "%.1f"|format(r.week_points) }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="empty">{% if manager %}No waiver or free-agent adds for {{ manager }} this week.
+    {%- else %}No waiver or free-agent adds this week.{% endif %}</p>
+  {% endif %}
+
+  {% macro fa_table(rows) %}
+  <table class="sortable">
+    <thead><tr>
+      <th>Player</th><th>Pos</th>
+      <th class="trend-col">Last {{ [week, 4]|min }} wks</th><th class="n">This week</th>
+      <th class="n">Fits</th>
+    </tr></thead>
+    <tbody>
+    {% for fa in rows %}
+      <tr class="fa-row{% if fa.best_fit %} fa-expandable{% endif %}">
+        <td>{{ idm.headshot(fa.player_id) }}<strong>{{ fa.player_name }}</strong> {{ idm.posrank(fa.player_id) }}</td>
+        <td>{{ fa.position }}</td>
+        <td class="trend-col">
+          {{ "%.1f"|format(fa.trend_total) }}
+          {% if fa.trend %}
+          <div class="spark">
+            {% for t in fa.trend %}
+            <div class="spark-bar" style="height: {{ t.pct }}%"
+                 title="Week {{ t.week }}: {{ '%.1f'|format(t.points) }}"></div>
+            {% endfor %}
+          </div>
+          {% endif %}
+        </td>
+        <td class="n">{{ "%.1f"|format(fa.points) }}</td>
+        <td class="n">{{ fa.best_fit|length }}</td>
+      </tr>
+      {% if fa.best_fit %}
+      <tr class="detail-row" hidden>
+        <td colspan="5" class="fa-fit-cell">
+          <div class="fa-fit-detail">
+            {% if fa.pos_rank %}<p class="q">The #{{ fa.pos_rank }} {{ fa.position }} free agent this week.</p>{% endif %}
+            {% if fa.prior_roster %}<p class="q">Rostered by {{ idm.who(fa.prior_roster.user_name) }}
+              through week {{ fa.prior_roster.week }}, then cut.</p>{% endif %}
+            <table class="fa-fit-table">
+              <thead><tr>
+                <th>Team</th><th>Their {{ fa.position }}</th><th>{{ fa.player_name }}</th><th class="n">+Diff</th>
+              </tr></thead>
+              <tbody>
+              {% for bf in fa.best_fit %}
+              <tr>
+                <td>{{ idm.who(bf.user_name) }}</td>
+                <td>{{ bf.started_player }} <span class="q">({{ "%.1f"|format(bf.started_pts) }})</span></td>
+                <td>{{ fa.player_name }} <span class="q">({{ "%.1f"|format(fa.points) }})</span></td>
+                <td class="n">+{{ "%.1f"|format(bf.gain) }}</td>
+              </tr>
+              {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </td>
+      </tr>
+      {% endif %}
+    {% endfor %}
+    </tbody>
+  </table>
+  {% endmacro %}
+
+  <h3>{% if manager %}Free agents not picked up who could have helped {{ manager }}{% else %}Free agents not picked up{% endif %}</h3>
+  <p class="hint">
+    {%- if manager %}Unrostered players who would have outscored something in
+    {{ manager }}&rsquo;s own starting lineup that week &mdash; not the league-wide standouts, just
+    the ones that mattered to THEM.
+    {%- else %}The best performers at each position among players on <strong>nobody&rsquo;s
+    roster</strong>, priced with the league&rsquo;s own scoring chart.{% endif %}
+    Sort by <strong>This week</strong> for the single-week explosion or <strong>Last
+    {{ [week, 4]|min }} wks</strong> for who&rsquo;s actually been hot &mdash; the bars are the same
+    span, tallest = that player&rsquo;s own best week in it. Click a row to expand the full list of
+    teams it would have upgraded, its position rank among free agents that week, and whether someone
+    already cut them. Use the position tabs or click a column header to sort.</p>
+  {% if fa_best_team %}
+  <div class="card fa-best tablewrap">
+    <p class="hint">The best legal lineup buildable entirely from this week&rsquo;s free agents.
+      {%- if fa_best_team.beats %} Would have beaten
+      {{ fa_best_team.beats|length }} of {{ fa_best_team.n_teams }} real team{{ "" if fa_best_team.n_teams == 1 else "s" }}
+      this week: {% for b in fa_best_team.beats[:3] %}{{ idm.who(b.user_name) }} (+{{ "%.1f"|format(b.gain) }}){% if not loop.last %}, {% endif %}{% endfor -%}
+      {%- if fa_best_team.beats|length > 3 %} +{{ fa_best_team.beats|length - 3 }} more{% endif %}.
+      {%- else %} Would not have beaten a single real team this week &mdash; a strong week league-wide.{% endif %}</p>
+    {% if fa_best_team.teams %}
+    <p class="hint">Free agents on the left, one real team&rsquo;s actual lineup on the right &mdash;
+      switch teams to compare slot by slot (same green/red highlighting as the scoreboard above).</p>
+    <div class="viewswitch fa-vs-team">
+      {% for t in fa_best_team.teams %}
+      <input type="radio" name="fateam" id="fat-{{ loop.index0 }}" class="vs-radio"{% if loop.first %} checked{% endif %}>
+      {% endfor %}
+      <div class="rail vs-tabs">
+        <span class="k">Team</span>
+        {% for t in fa_best_team.teams %}
+        <label class="year" for="fat-{{ loop.index0 }}">{{ t.user_name }}</label>
+        {% endfor %}
+      </div>
+      {% for t in fa_best_team.teams %}
+      {% set fa_won = t.gain > 0 %}
+      {% set tied = t.gain == 0 %}
+      <div class="vs-panel vs-p-{{ loop.index0 }}">
+        <p class="hint">
+          <span class="score {{ 'score-w' if fa_won else 'score-l' if not tied else '' }}">{{ "%.2f"|format(fa_best_team.total) }}</span>
+          <span class="q">&ndash;</span>
+          <span class="score {{ 'score-l' if fa_won else 'score-w' if not tied else '' }}">{{ "%.2f"|format(t.points) }}</span>
+          <span class="q">({{ "%+.1f"|format(t.gain) }})</span></p>
+        <div class="dt-tables">
+          <table class="dt-games">
+            <thead><tr><th colspan="2">Best available team</th>
+              <th class="n">{{ "%.2f"|format(fa_best_team.total) }}</th></tr></thead>
+            <tbody>
+            {% for p in t.fa_lineup %}
+              <tr {% if p.cmp == 'up' %}class="cmp-up"{% elif p.cmp == 'down' %}class="cmp-down"{% endif %}>
+                <td><span class="q">{{ p.slot }}</span></td>
+                <td>{{ idm.headshot(p.player_id) }}<strong>{{ p.player_name }}</strong> {{ idm.posrank(p.player_id) }}</td>
+                <td class="n">{{ "%.2f"|format(p.points) }}</td>
+              </tr>
+            {% endfor %}
+            </tbody>
+          </table>
+          <table class="dt-games">
+            <thead><tr><th colspan="2">{{ idm.who(t.user_name) }}</th>
+              <th class="n">{{ "%.2f"|format(t.points) }}</th></tr></thead>
+            <tbody>
+            {% for p in t.lineup %}
+              <tr {% if p.cmp == 'up' %}class="cmp-up"{% elif p.cmp == 'down' %}class="cmp-down"{% endif %}>
+                <td><span class="q">{{ p.slot }}</span></td>
+                <td>{{ idm.headshot(p.player_id) }}<strong>{{ p.player_name }}</strong> {{ idm.posrank(p.player_id) }}</td>
+                <td class="n">{{ "%.2f"|format(p.points) }}</td>
+              </tr>
+            {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+    {% else %}
+    <p class="empty">No other teams to compare against this week.</p>
+    {% endif %}
+  </div>
+  {% endif %}
+  {% if free_agents %}
+  <div class="viewswitch">
+    <input type="radio" name="fapos" id="fa-all" class="vs-radio" checked>
+    {% for pos in fa_positions %}
+    <input type="radio" name="fapos" id="fa-{{ pos }}" class="vs-radio">
+    {% endfor %}
+    <div class="rail vs-tabs">
+      <span class="k">Position</span>
+      <label class="year" for="fa-all">All</label>
+      {% for pos in fa_positions %}
+      <label class="year" for="fa-{{ pos }}">{{ pos }}</label>
+      {% endfor %}
+    </div>
+    <div class="vs-panel vs-p-all card tablewrap scrolltable">
+      {{ fa_table(free_agents) }}
+    </div>
+    {% for pos in fa_positions %}
+    <div class="vs-panel vs-p-{{ pos }} card tablewrap scrolltable">
+      {{ fa_table(free_agents|selectattr("position", "equalto", pos)|list) }}
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <p class="empty">{% if manager %}No free agent would have outscored anyone {{ manager }} started
+    this week.{% else %}No standout free-agent performances this week.{% endif %}</p>
+  {% endif %}
+</main>
+
+<script>
+  // The page's own colours follow the OS via style.css's prefers-color-scheme
+  // variables already -- only the server-rendered chart PNGs need a nudge,
+  // since matplotlib can't read a media query. All chart <img> src attributes
+  // are built with theme=light above, so swap that token when the OS is dark.
+  if (matchMedia('(prefers-color-scheme: dark)').matches) {
+    document.querySelectorAll('img[src*="/chart/"]').forEach(function (img) {
+      img.src = img.src.replace('theme=light', 'theme=dark');
+    });
+  }
+  // .card.chart img starts at opacity:0 (style.css) and normally fades in via
+  // the dashboard shell's prepCharts(), which this stand-alone page doesn't
+  // load -- without this, every chart here loads fine but stays invisible.
+  document.querySelectorAll('.card.chart img').forEach(function (img) {
+    var done = function () { img.classList.add('loaded'); };
+    if (img.complete && img.naturalWidth) { done(); return; }
+    img.addEventListener('load', done);
+    img.addEventListener('error', done);
+  });
+
+  // Click a column header to sort (and so, group -- sorting by Manager or Via
+  // clusters those rows together, no separate grouped view needed). Ported
+  // from index.html's makeSortable/sortValue, which is #panel-scoped and so
+  // doesn't reach this stand-alone page; kept behaviourally identical so a
+  // table sorts the same way everywhere in the app. Cells rank by their first
+  // embedded number when the column has one, else alphabetically.
+  function sortValue(td) {
+    var t = (td.textContent || '').trim().replace(/,/g, '');
+    var m = t.match(/-?\d+(\.\d+)?/);
+    return m ? parseFloat(m[0]) : null;
+  }
+  // Fantasy position order, not alphabetical (DEF/K/QB/RB/TE/WR reads nothing
+  // like how anyone thinks about a roster). Any column literally headed "Pos"
+  // sorts this way instead of by cell text. Mirrors index.html's copy.
+  var POS_ORDER = { QB: 0, RB: 1, WR: 2, TE: 3, K: 4, DEF: 5 };
+  function posValue(td) {
+    var t = (td.textContent || '').trim().toUpperCase();
+    return Object.prototype.hasOwnProperty.call(POS_ORDER, t) ? POS_ORDER[t] : 99;
+  }
+  function makeSortable(table) {
+    if (table.dataset.sortable) return;
+    table.dataset.sortable = '1';
+    var head = table.tHead && table.tHead.rows[0];
+    var body = table.tBodies[0];
+    if (!head || !body || body.rows.length < 2) return;
+    Array.prototype.forEach.call(head.cells, function (th, i) {
+      th.tabIndex = 0;
+      th.setAttribute('role', 'button');
+      var isPos = th.textContent.trim().toLowerCase() === 'pos';
+      var run = function () {
+        // Group each row with any immediately-following .detail-row (the
+        // free-agent table's per-row drilldown) so sorting always moves the
+        // pair together -- otherwise a reorder could separate a row from its
+        // own expanded content, or attach it to the wrong neighbour.
+        var all = Array.prototype.slice.call(body.rows);
+        var groups = [];
+        for (var idx = 0; idx < all.length; idx++) {
+          var r = all[idx];
+          if (r.classList.contains('detail-row')) continue;
+          var grp = [r];
+          var next = all[idx + 1];
+          if (next && next.classList.contains('detail-row')) { grp.push(next); idx++; }
+          groups.push(grp);
+        }
+        var asc = th.dataset.dir !== 'asc';
+        Array.prototype.forEach.call(head.cells, function (o) {
+          delete o.dataset.dir; o.classList.remove('sort-asc', 'sort-desc');
+        });
+        th.dataset.dir = asc ? 'asc' : 'desc';
+        th.classList.add(asc ? 'sort-asc' : 'sort-desc');
+        var numeric = !isPos && groups.every(function (g) {
+          return !g[0].cells[i] || sortValue(g[0].cells[i]) !== null;
+        });
+        groups.sort(function (a, b) {
+          var x = a[0].cells[i], y = b[0].cells[i];
+          if (!x || !y) return 0;
+          var d = isPos ? posValue(x) - posValue(y)
+            : numeric ? sortValue(x) - sortValue(y)
+            : x.textContent.trim().localeCompare(y.textContent.trim());
+          return asc ? d : -d;
+        });
+        groups.forEach(function (g) { g.forEach(function (r) { body.appendChild(r); }); });
+      };
+      th.addEventListener('click', run);
+      th.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); run(); }
+      });
+    });
+  }
+  // Row-level drilldown (the free-agent table): clicking a row with a
+  // .detail-row sibling toggles it -- native <details> can't wrap a <tr>, so
+  // this is the table equivalent of the scoreboard's <details> rows. Runs
+  // once at load; the row/detail element identity (and so these listeners)
+  // survives later re-sorting via makeSortable's pairing above.
+  function makeExpandable(table) {
+    var body = table.tBodies[0];
+    if (!body) return;
+    Array.prototype.forEach.call(body.rows, function (row) {
+      if (row.classList.contains('detail-row')) return;
+      var detail = row.nextElementSibling;
+      if (!detail || !detail.classList.contains('detail-row')) return;
+      row.classList.add('has-detail');
+      row.tabIndex = 0;
+      row.setAttribute('role', 'button');
+      row.setAttribute('aria-expanded', 'false');
+      var toggle = function () {
+        var willOpen = detail.hidden;
+        detail.hidden = !willOpen;
+        row.classList.toggle('open', willOpen);
+        row.setAttribute('aria-expanded', String(willOpen));
+      };
+      row.addEventListener('click', toggle);
+      row.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); }
+      });
+    });
+  }
+  document.querySelectorAll('.reportpanel table.sortable').forEach(function (t) {
+    makeSortable(t);
+    makeExpandable(t);
+  });
+</script>
+</body>
+</html>

@@ -26,7 +26,7 @@ from fastapi.templating import Jinja2Templates
 matplotlib.use("Agg")
 
 import sleepermetrics as sm  # noqa: E402
-from sleepermetrics import draft, metrics, plots, scoring, summaries  # noqa: E402
+from sleepermetrics import draft, metrics, plots, scoring, summaries, weekly  # noqa: E402
 # Aliased: the `/report` route function below would otherwise shadow the module.
 from sleepermetrics import report as sm_report  # noqa: E402
 
@@ -315,12 +315,14 @@ WEEK_CHARTS = {
     "week_matchups": plots.plot_week_matchups,   # dumbbell per game
     "week_luck": plots.plot_week_luck,           # PF vs PA, split by the tie line
     "week_race": plots.plot_week_race,           # table position, weeks 1..N
+    "week_power": plots.plot_week_power,         # power rankings, weeks 1..N
 }
 
 MANAGER_CHARTS = {
     "mgr_score_band": plots.plot_mgr_score_band,
     "mgr_optimal": plots.plot_mgr_optimal,
     "mgr_margins": plots.plot_mgr_margins,
+    "mgr_sos": plots.plot_mgr_sos,
 }
 
 
@@ -364,6 +366,7 @@ CHART_META = {
     "head_to_head": {"cap": "All-time record of every manager against every other."},
     "loyalty": {"cap": "The players a manager keeps re-rostering year after year."},
     # Week (used where these render via the macro, e.g. the season-so-far race)
+    "week_matchups": {"cap": "Every game this week — who played whom, and the margin.", "wide": True},
     "week_race": {"cap": "Table position after each week — where lines cross, the lead changed."},
 }
 tpl.env.globals["CHART_META"] = CHART_META
@@ -396,7 +399,16 @@ def chart(name: str, league: str = DEFAULT_LEAGUE, season: str | None = None,
         if name in MANAGER_CHARTS:
             # The chart draws its own "no data" panel for a manager this season
             # doesn't have, so an unknown scope degrades instead of 500ing.
-            return png(MANAGER_CHARTS[name](s, manager or ""))
+            # `week`, when given (the weekly report's reuse of these otherwise
+            # season-wide charts), caps them at that week -- the season report
+            # never sends it, so its charts stay full-season as before.
+            through = None
+            if week:
+                try:
+                    through = int(week)
+                except ValueError:
+                    through = None
+            return png(MANAGER_CHARTS[name](s, manager or "", through_week=through))
         if name == "career":
             return png(plots.plot_career(d["seasons"]))
         if name == "trajectory":
@@ -517,23 +529,161 @@ def _week_context(s, week: str | int | None = None) -> dict:
     close = wins.loc[wins["margin"].idxmin()] if len(wins) else None
     bench = (ws.loc[ws["left_on_bench"].idxmax()]
              if ws["left_on_bench"].notna().any() else None)
+    # Cumulative W-L through THIS week (not the final-season record) -- table_position
+    # already tracks it per week for the bump chart, so this is a free read, not a
+    # new metric. Shown next to each manager's name on the scoreboard.
+    tp = metrics.table_position(s)
+    tp_wk = tp[tp["week"] == wk]
+    records = {r.user_name: f"{int(r.wins)}-{int(r.losses)}" for r in tp_wk.itertuples()}
+    # {value, user_name} instead of a pre-joined string, so a template can put
+    # the manager's portrait (idm.who) next to the figure instead of a bare
+    # name -- None when there's no such game, and templates fall back to "—".
+    def kpi(row, val, fmt):
+        return None if row is None else {"value": fmt(row[val]), "user_name": row["user_name"]}
+
     return {
-        "week": wk, "weeks": list(range(1, last + 1)),
+        "week": wk, "weeks": list(range(1, last + 1)), "records": records,
         # Current-week framing: during a live season the view opens on
         # current_week and badges it live; on a finished season `live` is False.
         "current_week": s.current_week, "live": s.in_progress,
         "is_current": wk == s.current_week,
         # The scoreboard as GAMES, each drilling into both lineups.
         "wk_games": metrics.week_matchups(s, wk),
-        "kpi_top": (f"{top['points']:.1f} · {top['user_name']}"
-                    if top is not None else "—"),
-        "kpi_blow": (f"+{blow['margin']:.1f} · {blow['user_name']}"
-                     if blow is not None else "—"),
-        "kpi_close": (f"+{close['margin']:.1f} · {close['user_name']}"
-                      if close is not None else "—"),
-        "kpi_bench": (f"{bench['left_on_bench']:.1f} · {bench['user_name']}"
-                      if bench is not None else "—"),
+        "kpi_top": kpi(top, "points", lambda v: f"{v:.1f}"),
+        "kpi_blow": kpi(blow, "margin", lambda v: f"+{v:.1f}"),
+        "kpi_close": kpi(close, "margin", lambda v: f"+{v:.1f}"),
+        "kpi_bench": kpi(bench, "left_on_bench", lambda v: f"{v:.1f}"),
     }
+
+
+def _week_manager_context(s, week: int, manager: str, wk_games: list[dict]) -> dict:
+    """One manager's angle on a single week, for the weekly report's scoped view.
+
+    Reuses `wk_games` (metrics.week_matchups' output, already computed by
+    `_week_context`) to find their game and its `regret` (the single costliest
+    bench call, already computed there too), and `metrics.table_position` --
+    already tracked per week for the bump chart -- for how the week moved them
+    in the standings. No new metric: this is formatting glue, same as
+    `_week_context` itself.
+    """
+    game = next((g for g in wk_games
+                if any(sd["user_name"] == manager for sd in g["sides"])), None)
+    mine = theirs = None
+    if game is not None:
+        mine = next(sd for sd in game["sides"] if sd["user_name"] == manager)
+        theirs = next((sd for sd in game["sides"] if sd["user_name"] != manager), None)
+
+    tp = metrics.table_position(s)
+    cur = tp[(tp["week"] == week) & (tp["user_name"] == manager)]
+    prev = (tp[(tp["week"] == week - 1) & (tp["user_name"] == manager)]
+            if week > 1 else tp.iloc[0:0])
+    rank = int(cur["table_position"].iloc[0]) if len(cur) else None
+    rank_prev = int(prev["table_position"].iloc[0]) if len(prev) else None
+    rank_delta = (rank_prev - rank) if (rank is not None and rank_prev is not None) else None
+    regret = mine.get("regret") if mine else None
+
+    tiles = []
+    if mine is None:
+        tiles.append(("Result", "No game", "bye or eliminated"))
+    elif theirs is None:
+        tiles.append(("Result", f"{mine['points']:.1f}", "no opponent"))
+    else:
+        res = mine.get("result")
+        tiles.append((
+            "Result", res if res in ("W", "L", "T") else "—",
+            f"{mine['points']:.1f}–{theirs['points']:.1f} vs {theirs['user_name']}"))
+    if rank is not None:
+        if rank_delta is None:
+            tiles.append(("Standings", f"#{rank}", "season start"))
+        elif rank_delta > 0:
+            tiles.append(("Standings", f"↑{rank_delta} → #{rank}", f"from #{rank_prev}"))
+        elif rank_delta < 0:
+            tiles.append(("Standings", f"↓{-rank_delta} → #{rank}", f"from #{rank_prev}"))
+        else:
+            tiles.append(("Standings", f"Holding #{rank}", "unchanged"))
+    if regret:
+        tag = " — would have flipped it" if regret.get("flips") else ""
+        tiles.append(("Lineup call", f"-{regret['gain']:.1f} pts",
+                      f"started {regret['out']} over {regret['In']}{tag}"))
+    elif mine is not None:
+        tiles.append(("Lineup call", "Optimal", "nothing left costly on the bench"))
+
+    parts = []
+    if mine is None:
+        parts.append(f"{manager} had no game in week {week}.")
+    elif theirs is not None:
+        verb = ("beat" if mine.get("result") == "W" else
+                "lost to" if mine.get("result") == "L" else "tied")
+        parts.append(f"{manager} {verb} {theirs['user_name']} "
+                     f"{mine['points']:.1f}–{theirs['points']:.1f}.")
+    if rank is not None and rank_delta:
+        drc = "up" if rank_delta > 0 else "down"
+        parts.append(f"They moved {drc} {abs(rank_delta)} spot"
+                     f"{'s' if abs(rank_delta) != 1 else ''} to #{rank}.")
+    elif rank is not None:
+        parts.append(f"They're holding #{rank} in the standings.")
+    if regret and regret.get("flips"):
+        parts.append(f"Starting {regret['In']} over {regret['out']} at "
+                     f"{regret['position']} would have flipped the result.")
+
+    return {"mgr_tiles": tiles, "mgr_narrative": " ".join(parts),
+            "mgr_game": game, "mine": mine, "theirs": theirs}
+
+
+@app.get("/report/weekly", response_class=HTMLResponse)
+def report_weekly(request: Request, league: str = DEFAULT_LEAGUE, season: str | None = None,
+                  week: str | None = None, manager: str | None = None, theme: str = "light"):
+    """A shareable, stand-alone weekly report: no dashboard shell, safe to link
+    or drop in a group chat. Unlike /report (the season wrap-up), nothing here
+    is baked -- charts are ordinary /chart/<key> PNGs the browser loads lazily,
+    so the page itself renders instantly.
+
+    `manager` scopes the page to one team, same fallback as /report: a manager
+    the selected season doesn't have falls back to the whole-league view.
+    """
+    manager = manager or None
+    d, s, key = pick(league, season)
+    if manager and not (s.standings["user_name"] == manager).any():
+        manager = None
+    ctx = {
+        "league": league, "season": key, "theme": theme, "bust": 0,
+        "league_name": s.name, "manager": manager,
+        "managers": list(s.standings.sort_values("final_position")["user_name"]),
+        "avatars": _avatar_map(s), "asset_v": asset_v(),
+    }
+    ctx.update(_week_context(s, week))
+    ctx["summary_html"] = _md(weekly.summary_week(s, ctx["week"]))
+    if manager:
+        ctx.update(_week_manager_context(s, ctx["week"], manager, ctx["wk_games"]))
+    # The manager view stays about THEM (report.py's per-manager report does
+    # the same) -- their trades and their own waiver moves, not the whole
+    # league's. Free agents get the same treatment: free_agent_impact only
+    # keeps ones that would have beaten something in THEIR OWN lineup, rather
+    # than restating the league-wide standouts (most of whom have nothing to
+    # do with this manager's roster).
+    week_tx = metrics.week_transactions(s, ctx["week"])
+    if manager:
+        week_tx = {
+            "trades": [d for d in week_tx["trades"]
+                      if any(sd["user_name"] == manager for sd in d["sides"])],
+            "waivers": [w for w in week_tx["waivers"] if w["user_name"] == manager],
+        }
+    ctx["week_tx"] = week_tx
+    ctx["free_agents"] = (metrics.free_agent_impact(s, ctx["week"], manager) if manager
+                          else metrics.free_agent_standouts(s, ctx["week"]))
+    # Which position tabs actually have entries this week -- a shallow week
+    # (or a manager with nothing to gain at some position) simply gets fewer
+    # tabs rather than an empty one.
+    ctx["fa_positions"] = [p for p in metrics.POSITIONS
+                           if any(fa["position"] == p for fa in ctx["free_agents"])]
+    # League-wide only -- it's a "what if" against the whole field, not a
+    # per-manager stat, so it stays out of the manager view the same way
+    # free_agent_standouts itself does.
+    ctx["fa_best_team"] = None if manager else metrics.free_agent_best_team(s, ctx["week"])
+    # Positional rank for that week ("RB #1", "WR #57") for every player named
+    # anywhere on the page -- idm.posrank() looks names up here by player_id.
+    ctx["week_pos_ranks"] = metrics.week_position_ranks(s, ctx["week"])
+    return tpl.TemplateResponse(request, "weekly_report.html", ctx)
 
 
 @app.get("/tab/{name}", response_class=HTMLResponse)

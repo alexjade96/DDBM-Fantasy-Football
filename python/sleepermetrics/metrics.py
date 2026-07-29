@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import pandas as pd
 
+from .players import players
 from .season import Season
 
 POSITIONS = ["QB", "RB", "WR", "TE", "K", "DEF"]
@@ -23,8 +24,9 @@ def luck(s: Season) -> pd.DataFrame:
     return out.sort_values("luck", ascending=False).reset_index(drop=True)
 
 
-def efficiency(s: Season) -> pd.DataFrame:
-    g = s.lineup.groupby("user_name", as_index=False).agg(
+def efficiency(s: Season, through_week: int | None = None) -> pd.DataFrame:
+    lu = s.lineup if through_week is None else s.lineup[s.lineup["week"] <= through_week]
+    g = lu.groupby("user_name", as_index=False).agg(
         actual=("actual", "sum"), optimal=("optimal", "sum"), bench=("left_on_bench", "sum"))
     g["eff"] = (g["actual"] / g["optimal"] * 100).round(1)
     return g.sort_values("eff", ascending=False).reset_index(drop=True)
@@ -192,12 +194,18 @@ def allplay(s: Season) -> pd.DataFrame:
     return out
 
 
-def power_rank(s: Season, weights: dict | None = None, recent: int = 3) -> pd.DataFrame:
+def power_rank(s: Season, weights: dict | None = None, recent: int = 3,
+               through_week: int | None = None) -> pd.DataFrame:
     """Composite power ranking (mirrors R sl_power_rank).
 
     A z-scored blend of points for, all-play win%, recent form, and lineup
     efficiency. The composite is left unrounded (mean/sd derived); round on
     display, per the project's parity discipline.
+
+    `through_week` recomputes points/all-play/form/efficiency from `team_wk`
+    and `lineup` capped at that week instead of reading the season-end
+    `standings` -- the weekly report's reuse of this otherwise season-wide
+    ranking (a week-5 power ranking must not leak weeks 6-14).
     """
     w = weights or {"points": 0.35, "allplay": 0.30, "form": 0.20, "eff": 0.15}
 
@@ -207,11 +215,20 @@ def power_rank(s: Season, weights: dict | None = None, recent: int = 3) -> pd.Da
             return pd.Series(0.0, index=x.index)
         return (x - x.mean()) / sd
 
-    maxwk = s.team_wk["week"].max()
-    form = (s.team_wk[s.team_wk["week"] > maxwk - recent]
-            .groupby("user_name", as_index=False).agg(form=("points", "mean")))
-    eff = efficiency(s)[["user_name", "eff"]]
-    d = s.standings[["user_name", "points", "allplay_w", "allplay_l"]].copy()
+    if through_week is None:
+        maxwk = s.team_wk["week"].max()
+        form = (s.team_wk[s.team_wk["week"] > maxwk - recent]
+                .groupby("user_name", as_index=False).agg(form=("points", "mean")))
+        eff = efficiency(s)[["user_name", "eff"]]
+        d = s.standings[["user_name", "points", "allplay_w", "allplay_l"]].copy()
+    else:
+        tw = s.team_wk[s.team_wk["week"] <= through_week]
+        form = (tw[tw["week"] > through_week - recent]
+                .groupby("user_name", as_index=False).agg(form=("points", "mean")))
+        eff = efficiency(s, through_week)[["user_name", "eff"]]
+        d = tw.groupby("user_name", as_index=False).agg(
+            points=("points", "sum"), allplay_w=("allplay_w", "sum"),
+            allplay_l=("allplay_l", "sum"))
     d["allplay_pct"] = d["allplay_w"] / (d["allplay_w"] + d["allplay_l"]).clip(lower=1)
     d = d.merge(form, on="user_name", how="left").merge(eff, on="user_name", how="left")
     d["power"] = (w["points"] * z(d["points"]) + w["allplay"] * z(d["allplay_pct"])
@@ -321,18 +338,21 @@ def boom_bust(s: Season) -> pd.DataFrame:
     return g.sort_values("avg", ascending=False).reset_index(drop=True)
 
 
-def strength_of_schedule(s: Season) -> pd.DataFrame:
+def strength_of_schedule(s: Season, through_week: int | None = None) -> pd.DataFrame:
     """Average scoring strength of the opponents each team actually faced.
 
     Opponent strength is that opponent's season-long PPG (not their score in the
     one week you met), so a team that keeps drawing the league's best has a high
-    SOS regardless of the weekly noise.
+    SOS regardless of the weekly noise. `through_week` caps `team_wk` at that
+    week (both the opponents' PPG baseline and the games counted), for the
+    weekly report's reuse of this otherwise season-wide read.
     """
-    ppg = s.team_wk.groupby("roster_id")["points"].mean()
-    d = s.team_wk.dropna(subset=["opp"]).copy()
+    tw = s.team_wk if through_week is None else s.team_wk[s.team_wk["week"] <= through_week]
+    ppg = tw.groupby("roster_id")["points"].mean()
+    d = tw.dropna(subset=["opp"]).copy()
     d["opp_ppg"] = d["opp"].map(ppg)
     g = d.groupby("user_name", as_index=False).agg(sos=("opp_ppg", "mean"))
-    own = (s.team_wk.groupby("user_name", as_index=False)["points"].mean()
+    own = (tw.groupby("user_name", as_index=False)["points"].mean()
            .rename(columns={"points": "own_ppg"}))
     g = g.merge(own, on="user_name", how="left")
     g["sos"] = g["sos"].round(1)
@@ -472,20 +492,26 @@ def record_book(seasons: dict) -> list[dict]:
 
 _TRADE_COLS = ["week", "transaction_id", "user_name", "with", "received",
                "gave", "got_pts", "gave_pts", "net"]
-_WAIVER_COLS = ["week", "user_name", "player_name", "position", "via",
-                "times", "points", "starts", "weeks_rostered"]
+_WAIVER_COLS = ["week", "user_name", "player_id", "player_name", "position",
+                "via", "times", "points", "starts", "weeks_rostered",
+                "trend", "trend_total", "trend_avg"]
 
 
-def _pts_by_player_roster(s: Season) -> dict:
+def _pts_by_player_roster(s: Season, through_week: int | None = None) -> dict:
     """{(player_id, roster_id): points scored while on that roster}.
 
     pl_wk records roster membership week by week, so this already splits a
     traded player's season between the teams that held him -- no transaction
-    stint reconstruction needed.
+    stint reconstruction needed. `through_week` caps that sum at a given week,
+    for the weekly report's reuse of these otherwise season-wide ledgers (a
+    week-3 report must not credit a pickup with weeks 4-14's points, which
+    hadn't happened yet as of that week).
     """
     pl = s.pl_wk
     if not {"player_id", "roster_id", "points"}.issubset(getattr(pl, "columns", [])):
         return {}
+    if through_week is not None:
+        pl = pl[pl["week"] <= through_week]
     g = pl.groupby([pl["player_id"].astype(str), pl["roster_id"]])["points"].sum()
     return {k: float(v) for k, v in g.items()}
 
@@ -547,12 +573,25 @@ def trade_ledger(s: Season) -> pd.DataFrame:
             .reset_index(drop=True))
 
 
-def waiver_ledger(s: Season, top_n: int | None = 30) -> pd.DataFrame:
+def waiver_ledger(s: Season, top_n: int | None = 30, through_week: int | None = None,
+                  trend_weeks: int = 4) -> pd.DataFrame:
     """Waiver / free-agent pickups, one row per player per manager.
 
     Collapsed to unique (manager, player): a player picked up, cut and picked up
     again is one story, and `points` is already a per-(player, roster) total, so
     separate rows would repeat the same figure. `times` records the churn.
+    `through_week` caps `points`/`starts`/`weeks_rostered` at a given week (see
+    `_pts_by_player_roster`) -- the weekly report's reuse of this otherwise
+    season-wide ledger.
+
+    `trend`/`trend_total`/`trend_avg` mimic the free-agent trend exactly
+    (`_fa_trend`, shared): the player's real stat line priced with the
+    league's own scoring chart over the trailing `trend_weeks` through
+    `through_week` (or the latest scored week, season-wide), regardless of
+    WHICH roster (if any) held him in those earlier weeks. A pickup added
+    this week otherwise showed only a single bar (their one week on THIS
+    roster), which reads as "no history" for a player who may well have been
+    heating up on the wire before anyone grabbed him.
     """
     t = _live_tx(s, ["waiver", "free_agent"])
     if t.empty:
@@ -560,11 +599,15 @@ def waiver_ledger(s: Season, top_n: int | None = 30) -> pd.DataFrame:
     adds = t[t["transaction"] == "add"]
     if adds.empty:
         return pd.DataFrame(columns=_WAIVER_COLS)
-    pts = _pts_by_player_roster(s)
+    pts = _pts_by_player_roster(s, through_week)
     names = dict(zip(s.user_map["roster_id"], s.user_map["user_name"]))
     pl = s.pl_wk
+    if through_week is not None:
+        pl = pl[pl["week"] <= through_week]
     have = {"roster_id", "player_id", "is_starter", "week"}.issubset(
         getattr(pl, "columns", []))
+    anchor = through_week if through_week is not None else (
+        int(pl["week"].max()) if have and len(pl) else None)
     rows = []
     for (rid, pid), g in adds.groupby(["roster_id", "player_id"]):
         first = g.iloc[0]
@@ -576,12 +619,18 @@ def waiver_ledger(s: Season, top_n: int | None = 30) -> pd.DataFrame:
             weeks = int(w["week"].nunique())
         rows.append({
             "week": int(g["week"].min()), "user_name": names.get(rid, str(rid)),
-            "player_name": first["player_name"],
+            "player_id": pid, "player_name": first["player_name"],
             "position": first.get("position"),
             "via": "/".join(kinds), "times": len(g),
             "points": round(pts.get((pid, rid), 0.0), 1),
             "starts": starts, "weeks_rostered": weeks,
         })
+    if rows and anchor is not None:
+        from . import scoring
+        _fa_trend(s, anchor, rows, scoring.rules_from(s.league_id), trend_weeks)
+    else:
+        for r in rows:
+            r["trend"], r["trend_total"], r["trend_avg"] = [], 0.0, 0.0
     d = (pd.DataFrame(rows).sort_values("points", ascending=False)
          .reset_index(drop=True))
     return d.head(top_n) if top_n else d
@@ -1009,13 +1058,23 @@ def week_matchups(s: Season, week: int) -> list[dict]:
         }
         if len(st):
             ls = assign_slots(st, getattr(s, "slots", {}) or {})
-            row["lineup"] = [{"slot": x.slot, "player_name": x.player_name,
+            row["lineup"] = [{"slot": x.slot, "player_id": x.player_id,
+                              "player_name": x.player_name,
                               "position": x.position, "points": float(x.points)}
                              for x in ls.itertuples(index=False)]
         if len(bn):
             b = bn.sort_values("points", ascending=False).head(6)
-            row["bench"] = [{"player_name": x.player_name, "position": x.position,
-                             "points": float(x.points)}
+            # `would_start`: this bench player alone outscored the worst starter
+            # at their own position -- i.e. a legal swap that upgrades the
+            # lineup. Marked per-player (not just the single costliest one, see
+            # `regret` below) so the drilldown can flag every player who
+            # mattered, not just the headline swap.
+            worst_by_pos = (st.groupby("position")["points"].min()
+                            if len(st) else pd.Series(dtype=float))
+            row["bench"] = [{"player_id": x.player_id, "player_name": x.player_name,
+                             "position": x.position, "points": float(x.points),
+                             "would_start": bool(x.position in worst_by_pos.index
+                                                  and float(x.points) > worst_by_pos[x.position])}
                             for x in b.itertuples(index=False)]
         if lu is not None:
             m = lu[(lu["user_name"] == nm) & (lu["week"] == int(week))]
@@ -1036,7 +1095,8 @@ def week_matchups(s: Season, week: int) -> list[dict]:
                 gain = float(b.points) - float(w["points"])
                 if gain > 0 and (best is None or gain > best["gain"]):
                     best = {"gain": round(gain, 2), "In": b.player_name,
-                            "out": w["player_name"], "position": b.position}
+                            "in_id": b.player_id, "out": w["player_name"],
+                            "out_id": w["player_id"], "position": b.position}
             if best:
                 mg = row["margin"]
                 best["flips"] = bool(mg is not None and mg < 0 and best["gain"] > -mg)
@@ -1055,6 +1115,18 @@ def week_matchups(s: Season, week: int) -> list[dict]:
         sides = [side(x) for _, x in rows.iterrows()]
         sides.sort(key=lambda x: -x["points"])
         played = len(sides) > 1
+        # Per-slot "who won that position" -- matched by slot (QB vs QB, RB1 vs
+        # RB1, ...), not by index, since a slot list is already position-order.
+        # Only meaningful head-to-head, so bench is untouched.
+        if played:
+            opp_pts = [{p["slot"]: p["points"] for p in sd["lineup"]} for sd in sides]
+            for i, sd in enumerate(sides):
+                other = opp_pts[1 - i]
+                for p in sd["lineup"]:
+                    opp = other.get(p["slot"])
+                    p["cmp"] = (None if opp is None else
+                               "up" if p["points"] > opp else
+                               "down" if p["points"] < opp else "even")
         games.append({
             "matchup_id": mid if pd.notna(mid) else None,
             "sides": sides,
@@ -1066,3 +1138,472 @@ def week_matchups(s: Season, week: int) -> list[dict]:
         })
     games.sort(key=lambda g: (-g["total"] if g["played"] else 1e9))
     return games
+
+
+def week_trade_players(s: Season, week: int) -> list[dict]:
+    """That week's trades, per player -- no winner/net verdict.
+
+    `trade_deals` (season-wide) aggregates each side into a single net figure
+    to call a "winner," which the weekly report deliberately drops: a trade a
+    week old hasn't had time to prove anything. This lists what each traded
+    player actually did instead -- their points in the trade's own week, and
+    their season total through that week (any roster, for context on who was
+    moved) -- so the reader draws their own read rather than being handed a
+    verdict.
+    """
+    wk = int(week)
+    t = _live_tx(s, ["trade"])
+    if t.empty:
+        return []
+    # Every roster INVOLVED that week, not just those with an add -- a side
+    # that gave up a player for nothing back (no return piece, just picks/FAAB,
+    # or literally nothing) only ever appears as a "drop" row, and filtering to
+    # adds alone silently erased that side of the deal entirely (shipped: a
+    # 2-team trade rendered as a 1-team "trade", the give-away side vanishing
+    # rather than showing the existing "no players" fallback).
+    ev = t[t["week"] == wk]
+    if ev.empty:
+        return []
+    pl = s.pl_wk
+    have = {"player_id", "week", "points"}.issubset(getattr(pl, "columns", []))
+    wk_pts = (pl[pl["week"] == wk].groupby(pl["player_id"].astype(str))["points"].sum()
+             if have else pd.Series(dtype=float))
+    season_pts = (pl[pl["week"] <= wk].groupby(pl["player_id"].astype(str))["points"].sum()
+                 if have else pd.Series(dtype=float))
+    names = dict(zip(s.user_map["roster_id"], s.user_map["user_name"]))
+
+    out = []
+    for tid, g in ev.groupby("transaction_id"):
+        sides = []
+        for rid, gg in g.groupby("roster_id"):
+            players_ = []
+            for _, r in gg[gg["transaction"] == "add"].iterrows():
+                pid = str(r["player_id"])
+                players_.append({
+                    "player_id": pid, "player_name": r["player_name"],
+                    "week_pts": round(float(wk_pts.get(pid, 0.0)), 1),
+                    "season_pts": round(float(season_pts.get(pid, 0.0)), 1),
+                })
+            sides.append({"user_name": names.get(rid, str(rid)), "players": players_})
+        out.append({"week": wk, "transaction_id": str(tid),
+                    "sides": sides, "n_teams": len(sides)})
+    return sorted(out, key=lambda x: x["transaction_id"])
+
+
+def week_transactions(s: Season, week: int) -> dict:
+    """That week's roster moves: trades finalized and waiver/FA adds made.
+
+    Trades come from `week_trade_players` (per-player, no verdict -- see its
+    docstring); waivers reuse the season-wide `waiver_ledger` with
+    `through_week=week` so a week-3 report doesn't credit a pickup with points
+    from weeks 4 onward that hadn't been played yet. Returns {"trades": [...],
+    "waivers": [...]}, each empty when nothing happened that week (a quiet
+    week is normal, not an error).
+
+    Each waiver row also gets `week_points` -- what the pickup scored in THIS
+    week specifically, not `points` (the ledger's season-to-date total while
+    rostered) -- since every row here was added this same week, "was it worth
+    it" is a single-week question, not a cumulative one.
+    """
+    wk = int(week)
+    trades = week_trade_players(s, wk)
+    wl = waiver_ledger(s, top_n=None, through_week=wk)
+    waivers: list[dict] = []
+    if not wl.empty:
+        rows = wl[wl["week"] == wk].to_dict("records")
+        name_to_rid = dict(zip(s.user_map["user_name"], s.user_map["roster_id"]))
+        wk_pl = s.pl_wk[s.pl_wk["week"] == wk]
+        wk_pts = {(str(r.player_id), r.roster_id): float(r.points) for r in wk_pl.itertuples()}
+        for r in rows:
+            rid = name_to_rid.get(r["user_name"])
+            r["week_points"] = round(wk_pts.get((str(r["player_id"]), rid), 0.0), 1)
+        waivers = sorted(rows, key=lambda r: -r["week_points"])
+    return {"trades": trades, "waivers": waivers}
+
+
+def _position_totals(s: Season, weeks: range) -> tuple[dict, pd.Series]:
+    """(pid -> summed fantasy points over `weeks`, pid -> position). Split out
+    of `week_position_ranks` so the "price every NFL player's stat line" work
+    stays reusable if a cumulative read is ever needed again.
+    """
+    from . import scoring
+
+    rules = scoring.rules_from(s.league_id)
+    pool = players().dropna(subset=["player_id"]).drop_duplicates("player_id")
+    pos_map = pool.set_index(pool["player_id"].astype(str))["position"]
+
+    totals: dict = {}
+    for w in weeks:
+        lines = scoring.nfl_stats(s.season, w)
+        if not lines:
+            continue
+        for pid, line in lines.items():
+            if pos_map.get(pid) not in POSITIONS:
+                continue
+            pts = sum(v * rules[k] for k, v in line.items() if k in rules)
+            totals[pid] = totals.get(pid, 0.0) + pts
+    return totals, pos_map
+
+
+def _rank_by_position(totals: dict, pos_map: pd.Series) -> dict:
+    by_pos: dict = {}
+    for pid, pts in totals.items():
+        by_pos.setdefault(pos_map[pid], []).append((pid, pts))
+    out: dict = {}
+    for pos, lst in by_pos.items():
+        lst.sort(key=lambda x: -x[1])
+        for i, (pid, pts) in enumerate(lst, start=1):
+            out[pid] = {"position": pos, "rank": i, "points": round(pts, 1)}
+    return out
+
+
+def week_position_ranks(s: Season, week: int) -> dict:
+    """Position rank for a single week -- "the #3 RB THIS WEEK" -- for
+    context wherever a player's name appears in the weekly report. Unlike
+    `_fa_candidates`' `pos_rank` (that week's free agents only), this spans
+    EVERY player who scored that week, rostered or not, on any team.
+
+    Returns {player_id: {"position", "rank", "points"}}. Priced with the
+    league's own scoring chart, same primitive as everywhere else a player is
+    priced outside `pl_wk` (free agents, hand-submitted playoff lineups).
+    """
+    wk = int(week)
+    totals, pos_map = _position_totals(s, range(wk, wk + 1))
+    return _rank_by_position(totals, pos_map)
+
+
+def _fa_candidates(s: Season, week: int) -> tuple[list[dict], dict]:
+    """(candidate rows, scoring rules) -- every unrostered player who scored
+    this week, positioned and priced. Shared by `free_agent_standouts`
+    (league-wide) and `free_agent_impact` (one manager's own roster), so the
+    "who's actually a free agent, and what did they score" half of the work
+    isn't duplicated between them.
+    """
+    from . import scoring
+
+    wk = int(week)
+    pl = s.pl_wk[s.pl_wk["week"] == wk]
+    if pl.empty:
+        return [], {}
+    rostered = set(pl["player_id"].astype(str))
+    lines = scoring.nfl_stats(s.season, wk)
+    if not lines:
+        return [], {}
+    rules = scoring.rules_from(s.league_id)
+    pool = players().dropna(subset=["player_id"]).drop_duplicates("player_id")
+    pos_map = pool.set_index(pool["player_id"].astype(str))[["player_name", "position", "team"]]
+
+    rows = []
+    for pid, line in lines.items():
+        if pid in rostered or pid not in pos_map.index:
+            continue
+        info = pos_map.loc[pid]
+        pos = info["position"]
+        if pos not in POSITIONS:
+            continue
+        pts = round(sum(v * rules[k] for k, v in line.items() if k in rules), 2)
+        if pts <= 0:
+            continue
+        # A player between NFL teams has a real, not-missing team of NaN --
+        # scrub it to None here, at the boundary: pandas NaN is truthy in
+        # Jinja, so `{% if fa.team %}` alone would still render the literal
+        # "nan" (see CLAUDE.md's `records()` note -- same trap, same fix).
+        team = info["team"] if pd.notna(info["team"]) else None
+        rows.append({"player_id": pid, "player_name": info["player_name"],
+                     "position": pos, "team": team, "points": pts})
+
+    # Rank within position among EVERY free agent this week (1 = highest
+    # scoring), computed here before any caller caps to a top-N -- "the 2nd
+    # best RB free agent this week" needs the full pool, not just whichever
+    # slice a caller kept.
+    by_pos: dict = {}
+    for r in rows:
+        by_pos.setdefault(r["position"], []).append(r)
+    for lst in by_pos.values():
+        lst.sort(key=lambda r: -r["points"])
+        for i, r in enumerate(lst, start=1):
+            r["pos_rank"] = i
+    return rows, rules
+
+
+def _fa_prior_roster(s: Season, week: int, player_id: str) -> dict | None:
+    """If this free agent was rostered earlier this season, {user_name, week}
+    for the last week they were held before going unrostered -- so a drilldown
+    can say "cut by X after week Y" instead of implying nobody ever wanted
+    them. None if they've never been rostered this season (or on the week-1
+    report, where there IS no earlier week).
+    """
+    wk = int(week)
+    if wk <= 1 or s.user_map.empty:
+        return None
+    pl = s.pl_wk[(s.pl_wk["week"] < wk) & (s.pl_wk["player_id"].astype(str) == str(player_id))]
+    if pl.empty:
+        return None
+    last = pl.loc[pl["week"].idxmax()]
+    m = s.user_map[s.user_map["roster_id"] == last["roster_id"]]
+    if not len(m):
+        return None
+    return {"user_name": m["user_name"].iloc[0], "week": int(last["week"])}
+
+
+def _fa_trend(s: Season, week: int, entries: list[dict], rules: dict,
+              trend_weeks: int) -> None:
+    """Mutates `entries` in place, adding `trend`/`trend_total`/`trend_avg`.
+
+    `trend` is each entry's points across the trailing `trend_weeks` weeks
+    (through the viewed week), regardless of roster status in those earlier
+    weeks -- free-agent status is too volatile week to week to gate a trend
+    read on it, and the point is telling a hot streak from a one-week fluke.
+    `pct` (0-100, floored at 6 so a scoreless week still shows a sliver) is
+    each week normalized against that player's own best week in the window,
+    ready to drive a bar's height directly. `trend_total` sums the window and
+    `trend_avg` (PPG over that same span) divides it back down -- a short
+    early-season window otherwise makes `trend_total` look weak for reasons
+    that have nothing to do with the player, and PPG is the fairer number to
+    sort or compare by across different weeks.
+    """
+    from . import scoring
+
+    if not entries:
+        return
+    wk = int(week)
+    lo = max(1, wk - trend_weeks + 1)
+    # Dedupe: a player picked up by more than one roster over the season (drop,
+    # re-add elsewhere) appears as more than one `entries` row sharing the same
+    # player_id (waiver_ledger is one row per manager x player). Scoring a
+    # duplicated id list makes score_lineup emit that many copies of every
+    # week's line, which groupby("player_id") then lumps together undeduped --
+    # every entry sharing the id read a multiplied trend. Each id is only
+    # priced once; every entry sharing it looks the single result up.
+    ids = list(dict.fromkeys(e["player_id"] for e in entries))
+    sc = scoring.score_lineup(ids, s.season, range(lo, wk + 1), rules)
+    by_id = {pid: g.sort_values("week")[["week", "points"]].to_dict("records")
+            for pid, g in sc.groupby("player_id")}
+    for r in entries:
+        tr = by_id.get(r["player_id"], [])
+        top_pt = max((t["points"] for t in tr), default=0) or 1
+        for t in tr:
+            t["pct"] = round(max(6.0, min(100.0, t["points"] / top_pt * 100)), 0)
+        r["trend"] = tr
+        r["trend_total"] = round(sum(t["points"] for t in tr), 1)
+        r["trend_avg"] = round(r["trend_total"] / len(tr), 1) if tr else 0.0
+
+
+def _fa_who_could_use(starters: pd.DataFrame, pos: str, points: float) -> list[dict]:
+    """Every manager this free agent would have outscored their OWN weakest
+    same-position starter with that week, gain descending -- "who could have
+    used this" as a full list (for the drilldown) rather than naming only the
+    single weakest team league-wide. `starters` is that week's starters merged
+    with user_name; one row per manager (their weakest starter at `pos`) is
+    compared, so a manager appears at most once. Carries `started_player`/
+    `started_pts` so the drilldown can say exactly who they'd have replaced,
+    not just the point gain.
+    """
+    same_pos = starters[starters["position"] == pos]
+    if not len(same_pos):
+        return []
+    weak = same_pos.loc[same_pos.groupby("user_name")["points"].idxmin()]
+    out = []
+    for r in weak.itertuples():
+        gain = points - float(r.points)
+        if gain > 0:
+            out.append({"user_name": r.user_name, "gain": round(gain, 1),
+                       "started_player": r.player_name,
+                       "started_pts": round(float(r.points), 1)})
+    out.sort(key=lambda x: -x["gain"])
+    return out
+
+
+def free_agent_standouts(s: Season, week: int, per_position: int = 5,
+                         trend_weeks: int = 4) -> list[dict]:
+    """The week's best performances by players on NOBODY's roster.
+
+    A single flattened top-N across the whole player pool would bury the
+    shallow positions (a QB1 read and a kicker read are different questions),
+    so this takes the `per_position` best AT EACH position -- but returns them
+    flat, `position` included as a field on every entry, meant for a single
+    sortable table (sort by position to see one position at a time; sort by
+    points/trend_total/trend_avg for the league-wide read) rather than
+    pre-grouped panels. Sleeper's stats endpoint carries every NFL player's
+    raw stat line for the week regardless of roster status; `s.pl_wk` only
+    ever has rostered players (every other week_* metric relies on that), so
+    "free agent" here is simply "scored this week, but absent from every
+    roster that week." Priced with the league's own scoring chart
+    (`scoring.rules_from`) -- the same primitive `playoffs.py` uses to score
+    hand-submitted lineups Sleeper never rostered either, so pricing an
+    unrostered player this way is proven.
+
+    `best_fit` lists EVERY manager (via `_fa_who_could_use`) whose own weakest
+    same-position starter this standout would have beaten that week, gain
+    descending -- not just the single weakest team league-wide, since more
+    than one manager can usually stand to gain. For ONE manager's own view,
+    see `free_agent_impact` instead.
+
+    Returns a flat list sorted by `points` descending (a sensible default
+    before the reader re-sorts); each position gets at most `per_position`
+    entries, so a shallow position still shows up without flooding the table.
+    """
+    rows, rules = _fa_candidates(s, week)
+    if not rows:
+        return []
+
+    by_pos: dict = {}
+    for pos in POSITIONS:
+        cand = sorted((r for r in rows if r["position"] == pos), key=lambda r: -r["points"])
+        if cand:
+            by_pos[pos] = cand[:per_position]
+    all_top = [e for lst in by_pos.values() for e in lst]
+    if not all_top:
+        return []
+
+    wk = int(week)
+    pl = s.pl_wk[s.pl_wk["week"] == wk]
+    starters = pl[pl["is_starter"]]
+    if not s.user_map.empty:
+        starters = starters.merge(s.user_map[["roster_id", "user_name"]],
+                                  on="roster_id", how="left")
+    for r in all_top:
+        r["best_fit"] = _fa_who_could_use(starters, r["position"], r["points"])
+        r["prior_roster"] = _fa_prior_roster(s, week, r["player_id"])
+
+    _fa_trend(s, week, all_top, rules, trend_weeks)
+    return sorted(all_top, key=lambda r: -r["points"])
+
+
+def free_agent_impact(s: Season, week: int, manager: str, per_position: int = 5,
+                      trend_weeks: int = 4) -> list[dict]:
+    """Free agents that would have beaten something in ONE manager's OWN
+    starting lineup that week -- the manager-scoped view of the weekly
+    report cuts straight to "would this have helped ME", rather than
+    restating `free_agent_standouts`' league-wide top performers, most of
+    whom have nothing to do with this manager's own roster.
+
+    Unlike `free_agent_standouts`' `best_fit` (every manager who could have
+    used it), this compares every unrostered scorer against only THIS
+    manager's own same-position starter(s) that week. `best_fit` is still a
+    list (kept the same shape as `free_agent_standouts` so both feed the same
+    table template) but holds at most the one entry for `manager`.
+
+    A weak starter (say a kicker who scored 4) clears a low bar for almost
+    anyone -- so this keeps only the `per_position` biggest gains at each
+    position, same shape as `free_agent_standouts`' cap, rather than every
+    free agent that cleared it at all. Entries are sorted by gain descending
+    -- the most impactful swaps first -- rather than by raw points, since
+    "impact on this roster" is the question this view answers.
+    """
+    wk = int(week)
+    rows, rules = _fa_candidates(s, week)
+    if not rows or s.user_map.empty:
+        return []
+    m = s.user_map[s.user_map["user_name"] == manager]
+    if not len(m):
+        return []
+    rid = m["roster_id"].iloc[0]
+    pl = s.pl_wk[s.pl_wk["week"] == wk]
+    mine = pl[(pl["is_starter"]) & (pl["roster_id"] == rid)]
+    if mine.empty:
+        return []
+
+    by_pos: dict = {}
+    for r in rows:
+        same_pos = mine[mine["position"] == r["position"]]
+        if not len(same_pos):
+            continue
+        weak = same_pos.loc[same_pos["points"].idxmin()]
+        gain = r["points"] - float(weak["points"])
+        if gain <= 0:
+            continue
+        r = dict(r)
+        r["best_fit"] = [{"user_name": manager, "gain": round(gain, 1),
+                          "started_player": weak["player_name"],
+                          "started_pts": round(float(weak["points"]), 1)}]
+        r["prior_roster"] = _fa_prior_roster(s, week, r["player_id"])
+        by_pos.setdefault(r["position"], []).append(r)
+    if not by_pos:
+        return []
+
+    out = []
+    for pos, cand in by_pos.items():
+        cand.sort(key=lambda r: -r["best_fit"][0]["gain"])
+        out.extend(cand[:per_position])
+
+    out.sort(key=lambda r: -r["best_fit"][0]["gain"])
+    _fa_trend(s, week, out, rules, trend_weeks)
+    return out
+
+
+def free_agent_best_team(s: Season, week: int) -> dict | None:
+    """The best possible starting lineup built ENTIRELY from that week's free
+    agents -- "what if you'd drafted the waiver wire" -- and whether it would
+    have beaten any actual team's score.
+
+    Reuses the same roster-aware solver every real lineup in this codebase is
+    graded against (`optimal_lineup`/`assign_slots`, season.py), just handed
+    the free-agent pool instead of a manager's roster, so it fills the
+    league's actual slot counts (FLEX/SUPER_FLEX/etc. included) rather than
+    assuming a fixed shape. `beats` lists every real team this hypothetical
+    roster would have outscored that week, gain descending -- empty means it
+    wouldn't have beaten anyone, which is itself the point some weeks.
+    """
+    from .season import assign_slots, optimal_lineup
+
+    wk = int(week)
+    rows, _ = _fa_candidates(s, week)
+    if not rows:
+        return None
+    df = pd.DataFrame(rows)
+    picks = optimal_lineup(df, s.slots)
+    if picks.empty:
+        return None
+    picks = assign_slots(picks, s.slots)
+    total = round(float(picks["points"].sum()), 1)
+
+    tw = s.team_wk[s.team_wk["week"] == wk]
+    beats = [{"user_name": r.user_name, "points": round(float(r.points), 1),
+             "gain": round(total - float(r.points), 1)}
+            for r in tw.sort_values("points").itertuples(index=False)
+            if float(r.points) < total]
+    beats.sort(key=lambda x: -x["gain"])
+
+    fa_lineup = [{"slot": r.slot, "player_id": r.player_id,
+                  "player_name": r.player_name, "position": r.position,
+                  "points": round(float(r.points), 1)}
+                 for r in picks.itertuples(index=False)]
+
+    # Per-team comparison, slot-matched against the FA lineup and coloured the
+    # same way as the scoreboard's own two-lineup drilldown (`cmp` up/down/even
+    # per slot), so a manager can eyeball exactly where the FA team would have
+    # beaten their real one.
+    fa_pts_by_slot = {r["slot"]: r["points"] for r in fa_lineup}
+    plw = (s.pl_wk[s.pl_wk["week"] == wk]
+           .merge(s.user_map[["roster_id", "user_name"]], on="roster_id", how="left")
+           if len(s.pl_wk) else s.pl_wk)
+    teams = []
+    for r in tw.sort_values("points", ascending=False).itertuples(index=False):
+        g = plw[plw["user_name"] == r.user_name] if len(plw) else plw
+        st = g[g["is_starter"]] if len(g) else g
+        team_pts_by_slot, team_lineup = {}, []
+        if len(st):
+            for x in assign_slots(st, s.slots).itertuples(index=False):
+                team_pts_by_slot[x.slot] = float(x.points)
+                team_lineup.append({"slot": x.slot, "player_id": x.player_id,
+                                    "player_name": x.player_name, "points": float(x.points)})
+        for p in team_lineup:
+            opp = fa_pts_by_slot.get(p["slot"])
+            p["cmp"] = (None if opp is None else
+                       "up" if p["points"] > opp else
+                       "down" if p["points"] < opp else "even")
+        cmp_fa = []
+        for p in fa_lineup:
+            opp = team_pts_by_slot.get(p["slot"])
+            cmp_fa.append(dict(p, cmp=(None if opp is None else
+                               "up" if p["points"] > opp else
+                               "down" if p["points"] < opp else "even")))
+        teams.append({"user_name": r.user_name, "points": round(float(r.points), 1),
+                      "gain": round(total - float(r.points), 1),
+                      "lineup": team_lineup, "fa_lineup": cmp_fa})
+
+    return {
+        "total": total, "lineup": fa_lineup,
+        "beats": beats, "n_teams": int(len(tw)), "teams": teams,
+    }

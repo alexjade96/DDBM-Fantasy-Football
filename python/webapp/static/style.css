@@ -36,14 +36,19 @@ h1 { font-size: 20px; margin: 0; letter-spacing: -.01em; }
 .controls.inline { margin: 0 0 12px; }
 .controls label { display: flex; flex-direction: column; gap: 4px; }
 .controls span { font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: var(--faint); }
-input, select, button {
+input, select, button, a.ghost {
   font: inherit; color: var(--ink); background: var(--surface);
   border: 1px solid var(--line); border-radius: 8px; padding: 7px 10px;
 }
 input { width: 210px; font-family: ui-monospace, Consolas, monospace; font-size: 13px; }
 button { cursor: pointer; background: var(--turf); border-color: var(--turf); color: #fff; font-weight: 600; }
 button:hover { filter: brightness(1.06); }
-button.ghost { background: var(--surface); color: var(--ink); border-color: var(--line); font-weight: 500; }
+/* Not scoped to <button> -- the weekly report's "Shareable report" entry
+   point is a plain <a> (it opens a new tab, so it must be a real link, not a
+   JS-driven button) that wants the same look. */
+.ghost { background: var(--surface); color: var(--ink); border-color: var(--line); font-weight: 500; }
+a.ghost { text-decoration: none; display: inline-block; }
+a.ghost:hover { filter: brightness(1.06); }
 :focus-visible { outline: 2px solid var(--turf); outline-offset: 2px; }
 
 /* Landing / home page: a single centred card that leads into /dashboard. */
@@ -198,7 +203,13 @@ img { display: block; width: 100%; height: auto; border-radius: 7px; }
 @keyframes shimmer { 0% { background-position: 220% 0; } 100% { background-position: -120% 0; } }
 @media (prefers-reduced-motion: reduce) { .card.chart.skeleton { animation: none; } }
 
-.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(460px, 1fr)); gap: 16px; }
+/* align-items: start -- grid items default to stretch, so a short chart next
+   to a taller one in the same row was stretched to match it, leaving dead
+   card space below its own image/caption. Same fix as .dt-tables (see its
+   comment): each card should size to its own content, not its row's tallest
+   neighbour. */
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(460px, 1fr));
+  gap: 16px; align-items: start; }
 .grid.two { grid-template-columns: repeat(auto-fit, minmax(380px, 1fr)); }
 /* A wide-aspect chart (e.g. stacked weekly points, starter-vs-bench) spans the
    whole grid row instead of being crushed into a half-width column. */
@@ -391,11 +402,31 @@ details summary { cursor: pointer; font-weight: 600; }
 .reportpanel .tablewrap .drilltable + table,
 .reportpanel .tablewrap .drilltable + .dt-facts,
 .reportpanel .tablewrap .dt-facts + table,
-.reportpanel .tablewrap .dt-facts + .drilltable { margin-top: 26px; }
+.reportpanel .tablewrap .dt-facts + .drilltable { margin-top: 18px; }
+/* Exception: .dt-tables holds a matchup's two lineups SIDE BY SIDE, not
+   stacked -- the rule above can't tell the difference and was pushing the
+   second (right-hand) table down by the 26px meant for two tables stacked
+   vertically, once _week_scoreboard.html started rendering inside
+   .reportpanel too (the weekly report). Specificity here (3 classes, 2 types)
+   beats the rule above (2 classes, 2 types) regardless of source order. */
+.dt-tables > table.dt-games + table.dt-games { margin-top: 2px; }
 /* Blurbs lead into their block, and get air when they follow one. */
-.reportpanel .tablewrap p.blurb { margin: 2px 2px 14px; }
+.reportpanel .tablewrap p.blurb { margin: 2px 2px 10px; }
 .reportpanel .tablewrap table + p.blurb,
-.reportpanel .tablewrap .drilltable + p.blurb { margin-top: 20px; }
+.reportpanel .tablewrap .drilltable + p.blurb { margin-top: 14px; }
+/* Weekly report: this page runs long (scoreboard, transactions, free agents,
+   charts), so the same tables/rows/cards get tighter padding here than their
+   shared base rule gives every other tab -- scoped to .reportpanel so the
+   Roster/Coaching/Draft/Transactions tabs (which reuse these exact classes)
+   keep their own, more spacious, sizing. */
+.reportpanel .dt-head, .reportpanel .dt-row > summary { padding: 7px 24px 7px 10px; }
+.reportpanel .dt-detail { padding: 10px 14px 12px; }
+.reportpanel table.sortable th, .reportpanel table.sortable td { padding: 6px 9px; }
+.reportpanel .card.tablewrap { padding: 8px; }
+.reportpanel .deal > header { padding: 7px 12px; }
+.reportpanel .deal .side { padding: 9px 12px; }
+.reportpanel .deal .got { margin-top: 4px; }
+.reportpanel .deal .plr { margin-top: 4px; }
 .reportpanel table.teams.lead tbody tr:first-child td {
   background: color-mix(in srgb, var(--gold) 12%, transparent); }
 .reportpanel table.teams tbody tr.me td {
@@ -433,6 +464,17 @@ details summary { cursor: pointer; font-weight: 600; }
 .dt-row[open] > summary::after { content: '\25BE'; }
 .dt-row[open] > summary { background: color-mix(in srgb, var(--turf) 8%, transparent); }
 .dt-num { text-align: right; font-variant-numeric: tabular-nums; }
+/* Scoreboard summary row: the score sits BETWEEN the two names (symmetric
+   "Winner  score – score  Opponent" reading, names flanking inward), and
+   only the score is coloured win/lose (same green/red as the drill-down's
+   cmp-up/cmp-down) -- the names themselves stay plain. */
+.dt-head .dt-name-r, .dt-row > summary .dt-name-r { text-align: right; }
+.dt-head .dt-name-l, .dt-row > summary .dt-name-l { text-align: left; }
+.dt-head .dt-score-col, .dt-row > summary .dt-score-col {
+  text-align: center; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.dt-row > summary .score { font-size: 15px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.dt-row > summary .score-w { color: #2f9e44; }
+.dt-row > summary .score-l { color: #e03131; opacity: .75; }
 /* The expanded body reads as a nested panel: inset tint, its own breathing room. */
 .dt-detail { padding: 15px 16px 17px; font-size: 12.5px; color: var(--muted);
   border-top: 1px solid var(--line); line-height: 1.6; white-space: normal;
@@ -456,8 +498,15 @@ table.dt-games { border-collapse: collapse; font-size: 12.5px; width: auto;
 /* A drill body can hold facts and then mini-tables -- keep them apart. */
 .dt-detail .dt-facts + table.dt-games,
 .dt-detail .dt-facts + .dt-tables { margin-top: 16px; }
-/* Started vs optimal sit side by side when there's room. */
-.dt-tables { display: grid;
+/* Started vs optimal sit side by side when there's room. Grid items default to
+   align-items:stretch -- with two <table>s of different row counts (a team's
+   bench is rarely the same size as their opponent's), the shorter table was
+   stretched to match the taller one, and the table-height algorithm spreads
+   that extra height across ALL its rows (header included), not just as
+   trailing space. That drifted the shorter side's rows progressively lower
+   than its opponent's and blurred the bench-divider row into its neighbours.
+   start keeps each table at its own natural height. */
+.dt-tables { display: grid; align-items: start;
   grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 18px 36px; }
 .dt-block { min-width: 0; }
 .dt-sub { font-size: 10px; text-transform: uppercase; letter-spacing: .07em;
@@ -473,6 +522,21 @@ table.dt-games th:last-child, table.dt-games td:last-child {
   padding-right: 0; }
 table.dt-games td.n, table.dt-games th.n { text-align: right;
   font-variant-numeric: tabular-nums; }
+/* Which side won each SLOT (QB vs QB, RB1 vs RB1, ...) in the matchup
+   scorecard -- a subtler version of the trade sides' up/down tint, since a
+   whole row of green/red per player would be louder than one extra data
+   point deserves. */
+table.dt-games tr.cmp-up td { background: color-mix(in srgb, #2f9e44 10%, transparent); }
+table.dt-games tr.cmp-down td { background: color-mix(in srgb, #e03131 8%, transparent); }
+/* Weekly report: same tighten-up as the rest of this page's tables (see the
+   .reportpanel-scoped block above) -- scoped so Roster/Playoffs, which reuse
+   this exact lineup-table markup, keep their own roomier sizing. */
+.reportpanel .dt-facts { gap: 14px 24px; }
+.reportpanel .dt-tables { gap: 14px 26px; }
+.reportpanel table.dt-games th { padding: 0 16px 6px 0; }
+.reportpanel table.dt-games td { padding: 5px 16px 5px 0; }
+.reportpanel .dt-detail .dt-facts + table.dt-games,
+.reportpanel .dt-detail .dt-facts + .dt-tables { margin-top: 12px; }
 
 /* Rank badges: top third good, bottom third bad. */
 .rankpill { display: inline-block; padding: 1px 9px; border-radius: 20px;
@@ -544,9 +608,140 @@ footer code { font-family: ui-monospace, Consolas, monospace; }
 .deal .who { display: flex; justify-content: space-between; align-items: baseline;
   gap: 10px; font-weight: 650; font-size: 13.5px; }
 .deal .got { margin-top: 6px; font-size: 13px; line-height: 1.5; }
+/* Per-player trade breakdown (weekly report) -- no winner framing, just each
+   player's own week/season points, so .side.up/.down stay unused here. */
+.deal .plr { display: flex; align-items: center; gap: 6px; margin-top: 6px; }
+.deal .plr:first-child { margin-top: 0; }
 @media (max-width: 620px) {
   .deal .side + .side { box-shadow: none; border-top-color: var(--line); }
 }
+
+/* Sortable column headers for the weekly report's own tables (waivers, free
+   agents) -- the dashboard's equivalent rule (index.html's makeSortable) is
+   #panel-scoped, which this stand-alone page doesn't have; mirrored here
+   scoped to .reportpanel instead. JS lives in weekly_report.html. */
+.reportpanel table.sortable thead th[role="button"] { cursor: pointer; user-select: none;
+  position: relative; padding-right: 18px; }
+.reportpanel table.sortable thead th[role="button"]:hover { color: var(--ink); }
+.reportpanel table.sortable thead th.sort-asc::after,
+.reportpanel table.sortable thead th.sort-desc::after {
+  position: absolute; right: 6px; font-size: 9px; color: var(--turf); }
+.reportpanel table.sortable thead th.sort-asc::after { content: '\25B2'; }
+.reportpanel table.sortable thead th.sort-desc::after { content: '\25BC'; }
+
+/* Caps a long table's height instead of letting it push the whole page out --
+   a busy free-agency week can run 20+ rows. Sticky header so the (sortable)
+   column names stay visible while scrolling; harmless no-op when the table is
+   short enough not to need it. */
+.scrolltable { max-height: 420px; overflow-y: auto; }
+
+/* Native radio-driven tab switcher (no JS): the checked radio's matching
+   panel shows via the general-sibling selector, :has() flags its label as
+   the active tab (the same look .rail .year.on already uses elsewhere).
+   Positions are the fixed POSITIONS set, so enumerated explicitly rather
+   than generated -- a week/manager missing a position simply never renders
+   that radio+panel pair, and the unmatched CSS rule is a harmless no-op. */
+.viewswitch .vs-radio { position: absolute; opacity: 0; pointer-events: none; }
+.viewswitch .vs-tabs label { cursor: pointer; }
+.viewswitch .vs-panel { display: none; }
+.viewswitch #fa-all:checked ~ .vs-p-all,
+.viewswitch #fa-QB:checked ~ .vs-p-QB,
+.viewswitch #fa-RB:checked ~ .vs-p-RB,
+.viewswitch #fa-WR:checked ~ .vs-p-WR,
+.viewswitch #fa-TE:checked ~ .vs-p-TE,
+.viewswitch #fa-K:checked ~ .vs-p-K,
+.viewswitch #fa-DEF:checked ~ .vs-p-DEF { display: block; }
+.viewswitch:has(#fa-all:checked) .vs-tabs label[for="fa-all"],
+.viewswitch:has(#fa-QB:checked) .vs-tabs label[for="fa-QB"],
+.viewswitch:has(#fa-RB:checked) .vs-tabs label[for="fa-RB"],
+.viewswitch:has(#fa-WR:checked) .vs-tabs label[for="fa-WR"],
+.viewswitch:has(#fa-TE:checked) .vs-tabs label[for="fa-TE"],
+.viewswitch:has(#fa-K:checked) .vs-tabs label[for="fa-K"],
+.viewswitch:has(#fa-DEF:checked) .vs-tabs label[for="fa-DEF"] {
+  background: var(--ink); color: var(--surface); border-color: var(--ink);
+}
+.scrolltable table thead th { position: sticky; top: 0; background: var(--surface);
+  z-index: 1; box-shadow: 0 1px 0 var(--line); }
+
+/* Free-agent best team vs one real team: the same native radio-tab switcher
+   as the position tabs above, but indexed by POSITION IN THE LIST rather than
+   a fixed vocabulary -- team count/names are per-season variable, so ids are
+   generated as fat-0, fat-1, ... in weekly_report.html and matched here by
+   index. 14 slots is headroom well past any league size seen in this
+   codebase (documented max 10); an extra team beyond that simply gets no
+   working tab, same harmless-no-op fallback as an unmatched position rule. */
+.fa-vs-team #fat-0:checked ~ .vs-p-0, .fa-vs-team #fat-1:checked ~ .vs-p-1,
+.fa-vs-team #fat-2:checked ~ .vs-p-2, .fa-vs-team #fat-3:checked ~ .vs-p-3,
+.fa-vs-team #fat-4:checked ~ .vs-p-4, .fa-vs-team #fat-5:checked ~ .vs-p-5,
+.fa-vs-team #fat-6:checked ~ .vs-p-6, .fa-vs-team #fat-7:checked ~ .vs-p-7,
+.fa-vs-team #fat-8:checked ~ .vs-p-8, .fa-vs-team #fat-9:checked ~ .vs-p-9,
+.fa-vs-team #fat-10:checked ~ .vs-p-10, .fa-vs-team #fat-11:checked ~ .vs-p-11,
+.fa-vs-team #fat-12:checked ~ .vs-p-12, .fa-vs-team #fat-13:checked ~ .vs-p-13 {
+  display: block; }
+.fa-vs-team:has(#fat-0:checked) .vs-tabs label[for="fat-0"],
+.fa-vs-team:has(#fat-1:checked) .vs-tabs label[for="fat-1"],
+.fa-vs-team:has(#fat-2:checked) .vs-tabs label[for="fat-2"],
+.fa-vs-team:has(#fat-3:checked) .vs-tabs label[for="fat-3"],
+.fa-vs-team:has(#fat-4:checked) .vs-tabs label[for="fat-4"],
+.fa-vs-team:has(#fat-5:checked) .vs-tabs label[for="fat-5"],
+.fa-vs-team:has(#fat-6:checked) .vs-tabs label[for="fat-6"],
+.fa-vs-team:has(#fat-7:checked) .vs-tabs label[for="fat-7"],
+.fa-vs-team:has(#fat-8:checked) .vs-tabs label[for="fat-8"],
+.fa-vs-team:has(#fat-9:checked) .vs-tabs label[for="fat-9"],
+.fa-vs-team:has(#fat-10:checked) .vs-tabs label[for="fat-10"],
+.fa-vs-team:has(#fat-11:checked) .vs-tabs label[for="fat-11"],
+.fa-vs-team:has(#fat-12:checked) .vs-tabs label[for="fat-12"],
+.fa-vs-team:has(#fat-13:checked) .vs-tabs label[for="fat-13"] {
+  background: var(--ink); color: var(--surface); border-color: var(--ink); }
+.fa-vs-team .vs-panel .hint { margin: 0 0 8px; }
+
+/* Bars sized in Python (pct, floored at 6 so a scoreless week still shows a
+   sliver) -- height:0 on an empty bar would otherwise vanish entirely.
+   Centered (not right-aligned like a plain number column) so both the total
+   and the bars sit under the middle of the "Trending"/"Last N wks" header. */
+.spark { display: flex; align-items: flex-end; justify-content: center;
+  gap: 3px; height: 22px; margin-top: 4px; }
+.spark-bar { width: 7px; background: color-mix(in srgb, var(--turf) 65%, transparent);
+  border-radius: 1px 1px 0 0; }
+th.trend-col, td.trend-col { text-align: center; }
+
+/* Weekly report: the free-agent section's "best available team" card reuses
+   table.dt-games -- the exact lineup-table markup a real team's box score
+   uses in the scoreboard above -- so it reads as a lineup, not a novelty. */
+.reportpanel .fa-best .hint { margin: 0 0 8px; }
+
+/* Free-agent table: the PLAYER ROW itself is the drilldown trigger (a
+   .detail-row sibling toggled by weekly_report.html's makeExpandable), not a
+   column -- native <details> can't wrap a <tr>, so this is the minimal-script
+   table equivalent of the scoreboard's own <details> rows. Only rows with
+   something to show (fa-expandable) get the pointer + chevron. */
+.reportpanel tr.fa-expandable { cursor: pointer; }
+.reportpanel tr.fa-expandable:hover { background: color-mix(in srgb, var(--turf) 6%, transparent); }
+.reportpanel tr.fa-expandable td:first-child::before {
+  content: '\25B8'; display: inline-block; width: 12px; margin-right: 2px;
+  font-size: 10px; color: var(--faint); }
+.reportpanel tr.fa-expandable.open td:first-child::before { content: '\25BE'; }
+/* White-space must reopen for the detail cell -- the base th/td rule sets nowrap. */
+.reportpanel .fa-fit-cell { white-space: normal; }
+.reportpanel .fa-fit-detail { font-size: 12.5px; color: var(--muted); }
+.reportpanel .fa-fit-detail p { margin: 0 0 4px; }
+/* Structured team/their-pick/free-agent/diff table replacing the old prose
+   list -- deliberately its own small table rather than table.dt-games (that
+   one is width:auto for a narrow lineup card; this spans the drilldown cell). */
+.reportpanel .fa-fit-table { border-collapse: collapse; font-size: 12px;
+  width: 100%; margin-top: 4px; }
+.reportpanel .fa-fit-table th { font-size: 10px; text-transform: uppercase;
+  letter-spacing: .04em; color: var(--faint); text-align: left; padding: 0 14px 4px 0; }
+.reportpanel .fa-fit-table td { padding: 4px 14px 4px 0; white-space: nowrap; }
+.reportpanel .fa-fit-table th.n, .reportpanel .fa-fit-table td.n { text-align: right; padding-right: 0; }
+.posrank { margin-left: 2px; }
+
+/* Bench player who'd outscore a same-position starter: a soft tint + a *
+   marker (week_matchups' `would_start`) replacing the old "costliest call"
+   sentence, so every player who mattered is flagged, not just the single
+   biggest swap. Same color-mix idiom as the scoreboard's cmp-up/cmp-down. */
+tr.bench-impact td { background: color-mix(in srgb, #d9a441 8%, transparent); }
+.star { color: #d9a441; font-weight: 700; margin-left: 1px; }
 
 /* Drill listings that ARE the panel's table (the Roster tab's player and team
    listings), as opposed to one of a side-by-side `.dt-tables` pair.
