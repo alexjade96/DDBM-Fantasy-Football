@@ -81,30 +81,24 @@
            alt="Weekly score against the league's range" loading="lazy">
       <figcaption>Weekly score against the league&rsquo;s range, through week {{ week }}</figcaption>
     </figure>
-    {% else %}
-    {{ ch.chart("week_luck", week=week) }}
-    {% endif %}
-  </section>
-
-  <h2>Season so far</h2>
-  <p class="hint">Everything below is capped at week {{ week }} &mdash; the same "don&rsquo;t leak
-    future weeks into a past report" rule the tables above follow.</p>
-  <section class="grid">
-    {% if manager %}
-    <figure class="card chart">
-      <img src="/chart/mgr_optimal?league={{ league }}&season={{ season }}&week={{ week }}&theme={{ theme }}&manager={{ manager|urlencode }}&_={{ bust }}"
-           alt="Started vs optimal, and the running cost of the bench" loading="lazy">
-      <figcaption>Started vs optimal, and the running cost of the bench</figcaption>
-    </figure>
     <figure class="card chart">
       <img src="/chart/mgr_sos?league={{ league }}&season={{ season }}&week={{ week }}&theme={{ theme }}&manager={{ manager|urlencode }}&_={{ bust }}"
            alt="Strength of schedule, this manager highlighted" loading="lazy">
       <figcaption>Strength of schedule so far &mdash; is their record earned or schedule-flattered?</figcaption>
     </figure>
     {% else %}
-    {{ ch.chart("week_race", week=week) }}
+    {{ ch.chart("week_luck", week=week) }}
     {% endif %}
   </section>
+
+  {% if not manager %}
+  <h2>Season so far</h2>
+  <p class="hint">Everything below is capped at week {{ week }} &mdash; the same "don&rsquo;t leak
+    future weeks into a past report" rule the tables above follow.</p>
+  <section class="grid">
+    {{ ch.chart("week_race", week=week) }}
+  </section>
+  {% endif %}
 
   <h2>{% if manager %}{{ manager }}&rsquo;s moves this week{% else %}Week {{ week }} transactions{% endif %}</h2>
 
