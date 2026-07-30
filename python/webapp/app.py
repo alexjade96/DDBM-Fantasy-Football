@@ -26,7 +26,7 @@ from fastapi.templating import Jinja2Templates
 matplotlib.use("Agg")
 
 import sleepermetrics as sm  # noqa: E402
-from sleepermetrics import draft, metrics, plots, scoring, summaries, weekly  # noqa: E402
+from sleepermetrics import draft, metrics, plots, scoring, summaries  # noqa: E402
 # Aliased: the `/report` route function below would otherwise shadow the module.
 from sleepermetrics import report as sm_report  # noqa: E402
 
@@ -323,6 +323,8 @@ MANAGER_CHARTS = {
     "mgr_optimal": plots.plot_mgr_optimal,
     "mgr_margins": plots.plot_mgr_margins,
     "mgr_sos": plots.plot_mgr_sos,
+    "mgr_power_trend": plots.plot_mgr_power_trend,
+    "mgr_efficiency_trend": plots.plot_mgr_efficiency_trend,
 }
 
 
@@ -581,6 +583,7 @@ def _week_manager_context(s, week: int, manager: str, wk_games: list[dict]) -> d
     rank_prev = int(prev["table_position"].iloc[0]) if len(prev) else None
     rank_delta = (rank_prev - rank) if (rank is not None and rank_prev is not None) else None
     regret = mine.get("regret") if mine else None
+    allplay = metrics.mgr_allplay_snapshot(s, manager, week)
 
     tiles = []
     if mine is None:
@@ -607,6 +610,12 @@ def _week_manager_context(s, week: int, manager: str, wk_games: list[dict]) -> d
                       f"started {regret['out']} over {regret['In']}{tag}"))
     elif mine is not None:
         tiles.append(("Lineup call", "Optimal", "nothing left costly on the bench"))
+    if allplay:
+        aw, al, ad = allplay["allplay_w"], allplay["allplay_l"], allplay["rank_delta"]
+        sub = (f"#{allplay['allplay_rank']} all-play — earned" if not ad else
+               f"#{allplay['allplay_rank']} all-play — schedule flattered them by {ad}" if ad > 0 else
+               f"#{allplay['allplay_rank']} all-play — outplaying their record by {-ad}")
+        tiles.append(("All-play", f"{aw}-{al}", sub))
 
     parts = []
     if mine is None:
@@ -628,6 +637,107 @@ def _week_manager_context(s, week: int, manager: str, wk_games: list[dict]) -> d
 
     return {"mgr_tiles": tiles, "mgr_narrative": " ".join(parts),
             "mgr_game": game, "mine": mine, "theirs": theirs}
+
+
+def _week_recap(s, week: int, ws) -> dict:
+    """The league-wide recap: a short prose lead plus a handful of chips for
+    whatever's genuinely new that week.
+
+    Replaces the old bullet list (`weekly.summary_week()` rendered through
+    `_md()`), which mostly just restated the four KPI tiles above it in
+    sentence form. `weekly.summary_week()` itself is untouched -- it's also
+    what the Discord bot posts, and this is a webapp-only presentation
+    change, not a rewrite of that shared text.
+
+    `ws` is `week_stats(s, week)`, already computed by `_week_context` --
+    reused here instead of refetched. Every fact besides the lead's top
+    score/blowout is deliberately checked against the tiles ABOVE it (which
+    already cover top score, blowout, closest game, most benched) so nothing
+    doubles up between the tiles, the prose, and the chips.
+    """
+    if not len(ws):
+        return {"lead": "", "chips": []}
+    top = ws.iloc[0]
+    low = ws.iloc[-1]
+    decided = ws[ws["result"].isin(["W", "L", "T"])]
+    wins = decided[decided["margin"] > 0]
+    blow = wins.loc[wins["margin"].idxmax()] if len(wins) else None
+
+    lead = [f"{top['user_name']} posted the week's top score ({top['points']:.1f})"]
+    if blow is not None and blow["user_name"] == top["user_name"]:
+        lead[-1] += f" in a {blow['margin']:.1f}-point rout"
+    lead[-1] += "."
+
+    # Negative facts, gathered per manager -- whoever holds more than one
+    # gets a single combined "toughest week" sentence instead of three
+    # disconnected bullets that happen to name the same person.
+    negs: dict = {}
+    negs.setdefault(low["user_name"], []).append(f"posted the week's low score ({low['points']:.1f})")
+    bust = ws.loc[ws["left_on_bench"].idxmax()] if ws["left_on_bench"].notna().any() else None
+    if bust is not None:
+        negs.setdefault(bust["user_name"], []).append(
+            f"left {bust['left_on_bench']:.1f} points on the bench")
+
+    tp = metrics.table_position(s)
+    cur = tp[tp["week"] == week][["user_name", "table_position"]]
+    prev = tp[tp["week"] == week - 1][["user_name", "table_position"]] if week > 1 else tp.iloc[0:0]
+    faller = riser = None
+    if len(prev):
+        m = cur.merge(prev, on="user_name", suffixes=("_cur", "_prev"))
+        m["delta"] = m["table_position_prev"] - m["table_position_cur"]
+        # +-1 moves happen most weeks and aren't a story -- only a swing of 2+
+        # standings spots is worth naming.
+        movers = m[m["delta"].abs() >= 2]
+        fallers, risers = movers[movers["delta"] < 0], movers[movers["delta"] > 0]
+        if len(fallers):
+            faller = fallers.loc[fallers["delta"].idxmin()]
+            negs.setdefault(faller["user_name"], []).append(
+                f"fell {int(-faller['delta'])} spot{'s' if -faller['delta'] != 1 else ''} "
+                f"to #{int(faller['table_position_cur'])}")
+        if len(risers):
+            riser = risers.loc[risers["delta"].idxmax()]
+
+    worst_name, worst_facts = (max(negs.items(), key=lambda kv: len(kv[1]))
+                               if negs else (None, []))
+    if len(worst_facts) > 1:
+        lead.append(f"{worst_name} had the toughest week — "
+                    f"{worst_facts[0]}, on top of {', '.join(worst_facts[1:])}.")
+    elif worst_facts:
+        lead.append(f"{worst_name} {worst_facts[0]}.")
+
+    chips = []
+    if low["user_name"] != worst_name:
+        chips.append({"icon": "\U0001F4C9", "label": "Low score",
+                      "value": f"{low['user_name']} ({low['points']:.1f})"})
+    if riser is not None and riser["user_name"] != worst_name:
+        chips.append({"icon": "\U0001F4C8", "label": "Biggest riser",
+                      "value": f"{riser['user_name']}, up {int(riser['delta'])} "
+                               f"to #{int(riser['table_position_cur'])}"})
+    if faller is not None and faller["user_name"] != worst_name:
+        chips.append({"icon": "\U0001F4C9", "label": "Biggest faller",
+                      "value": f"{faller['user_name']}, down {int(-faller['delta'])} "
+                               f"to #{int(faller['table_position_cur'])}"})
+    # Luck: a win despite losing the all-play field, or a loss despite
+    # winning it -- the story the (now-removed-from-default-view) beaten-or-
+    # unlucky chart used to tell, still worth a line without the chart.
+    tw = s.team_wk[s.team_wk["week"] == int(week)].copy()
+    if {"allplay_w", "allplay_l", "result"}.issubset(tw.columns) and len(tw):
+        tw["allplay_pct"] = tw["allplay_w"] / (tw["allplay_w"] + tw["allplay_l"]).clip(lower=1)
+        lucky = tw[(tw["result"] == "W") & (tw["allplay_pct"] < 0.4)].sort_values("allplay_pct")
+        unlucky = tw[(tw["result"] == "L") & (tw["allplay_pct"] > 0.6)].sort_values(
+            "allplay_pct", ascending=False)
+        if len(lucky):
+            r = lucky.iloc[0]
+            chips.append({"icon": "\U0001F340", "label": "Luckiest win",
+                          "value": f"{r['user_name']} won despite outscoring only "
+                                   f"{int(r['allplay_w'])} of {int(r['allplay_w'] + r['allplay_l'])} teams"})
+        elif len(unlucky):
+            r = unlucky.iloc[0]
+            chips.append({"icon": "\U0001F62B", "label": "Unluckiest loss",
+                          "value": f"{r['user_name']} lost despite outscoring "
+                                   f"{int(r['allplay_w'])} of {int(r['allplay_w'] + r['allplay_l'])} teams"})
+
+    return {"lead": " ".join(lead), "chips": chips[:3]}
 
 
 @app.get("/report/weekly", response_class=HTMLResponse)
@@ -652,9 +762,10 @@ def report_weekly(request: Request, league: str = DEFAULT_LEAGUE, season: str | 
         "avatars": _avatar_map(s), "asset_v": asset_v(),
     }
     ctx.update(_week_context(s, week))
-    ctx["summary_html"] = _md(weekly.summary_week(s, ctx["week"]))
+    ctx["recap"] = _week_recap(s, ctx["week"], metrics.week_stats(s, ctx["week"]))
     if manager:
         ctx.update(_week_manager_context(s, ctx["week"], manager, ctx["wk_games"]))
+        ctx["mgr_activity"] = metrics.mgr_activity_snapshot(s, manager, ctx["week"])
     # The manager view stays about THEM (report.py's per-manager report does
     # the same) -- their trades and their own waiver moves, not the whole
     # league's. Free agents get the same treatment: free_agent_impact only

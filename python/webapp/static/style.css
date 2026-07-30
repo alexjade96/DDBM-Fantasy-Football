@@ -377,8 +377,22 @@ details summary { cursor: pointer; font-weight: 600; }
 .reportpanel .stats { margin: 18px 0; }
 .reportpanel .stat .sub { font-size: 12px; color: var(--muted); }
 .reportpanel .narrative { border-left: 3px solid var(--turf); padding: 4px 18px; }
-.reportpanel .narrative ul { margin: 10px 0; padding-left: 20px; }
-.reportpanel .narrative li, .reportpanel .narrative p { margin: 6px 0; }
+/* The recap (summary_week()'s markdown -- also what the Discord bot posts,
+   so its TEXT is never rewritten here) rendered as a wrapping row of small
+   cards instead of a plain bulleted list -- a quote-strip block full of
+   bullets read flatter than the rest of this report. The manager view's own
+   narrative is plain prose (a <p>, no <ul>), so it keeps the quote-strip
+   look via the base rule above; :has(ul) only fires for the recap. */
+.reportpanel .narrative:has(ul) { border-left: none; padding: 14px 16px; }
+.reportpanel .narrative h3 { margin: 0 0 10px; font-size: 12.5px; color: var(--muted);
+  text-transform: uppercase; letter-spacing: .05em; font-weight: 700; }
+.reportpanel .narrative ul { list-style: none; margin: 0; padding: 0;
+  display: flex; flex-wrap: wrap; gap: 10px; }
+.reportpanel .narrative li { flex: 1 1 200px; margin: 0;
+  background: color-mix(in srgb, var(--ink) 3%, transparent);
+  border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px;
+  font-size: 13px; line-height: 1.4; }
+.reportpanel .narrative p { margin: 6px 0; }
 .reportpanel figcaption { color: var(--faint); font-size: 12px; margin-top: 6px; }
 .reportpanel p.blurb { color: var(--muted); font-size: 13px; margin: 0 0 10px; }
 
@@ -495,9 +509,13 @@ details summary { cursor: pointer; font-weight: 600; }
 .fv .pts { font-variant-numeric: tabular-nums; font-weight: 700; }
 table.dt-games { border-collapse: collapse; font-size: 12.5px; width: auto;
   margin-top: 2px; }
-/* A drill body can hold facts and then mini-tables -- keep them apart. */
+/* A drill body can hold facts and then mini-tables -- keep them apart. The
+   matchup drilldown's lineups now sit inside .dt-lineup-mode (the
+   Actual/Optimized toggle), so that wrapper needs the same gap .dt-tables
+   itself would have gotten as .dt-facts' direct next sibling. */
 .dt-detail .dt-facts + table.dt-games,
-.dt-detail .dt-facts + .dt-tables { margin-top: 16px; }
+.dt-detail .dt-facts + .dt-tables,
+.dt-detail .dt-facts + .dt-lineup-mode { margin-top: 16px; }
 /* Started vs optimal sit side by side when there's room. Grid items default to
    align-items:stretch -- with two <table>s of different row counts (a team's
    bench is rarely the same size as their opponent's), the shorter table was
@@ -536,7 +554,8 @@ table.dt-games tr.cmp-down td { background: color-mix(in srgb, #e03131 8%, trans
 .reportpanel table.dt-games th { padding: 0 16px 6px 0; }
 .reportpanel table.dt-games td { padding: 5px 16px 5px 0; }
 .reportpanel .dt-detail .dt-facts + table.dt-games,
-.reportpanel .dt-detail .dt-facts + .dt-tables { margin-top: 12px; }
+.reportpanel .dt-detail .dt-facts + .dt-tables,
+.reportpanel .dt-detail .dt-facts + .dt-lineup-mode { margin-top: 12px; }
 
 /* Rank badges: top third good, bottom third bad. */
 .rankpill { display: inline-block; padding: 1px 9px; border-radius: 20px;
@@ -586,12 +605,12 @@ footer code { font-family: ui-monospace, Consolas, monospace; }
    would print a two-team trade twice as mirror images. Sides are ordered best
    net first, and tinted so who came out ahead reads before the numbers do. */
 .deals { display: grid; gap: 14px; }
-.deal { border: 1px solid var(--line); border-radius: 12px; overflow: hidden;
-  background: var(--surface); box-shadow: var(--shadow); }
-/* .tag's base rule is global now; .deal takes it unchanged. */
-.deal > header { display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
-  padding: 9px 14px; border-bottom: 1px solid var(--line);
-  background: color-mix(in srgb, var(--ink) 3%, transparent); }
+.deal { position: relative; border: 1px solid var(--line); border-radius: 12px;
+  overflow: hidden; background: var(--surface); box-shadow: var(--shadow); }
+/* .tag's base rule is global now; .deal takes it unchanged. A 3+-team deal's
+   count is a fact about the whole card, not any one side, so it sits as a
+   corner badge rather than taking a slot in the name grid below. */
+.deal .deal-tag { position: absolute; top: 10px; right: 12px; z-index: 1; }
 .deal .wk { font-size: 11px; font-weight: 700; letter-spacing: .06em;
   text-transform: uppercase; color: var(--faint); }
 .deal .verdict { margin-left: auto; font-size: 12.5px; color: var(--muted); }
@@ -608,12 +627,42 @@ footer code { font-family: ui-monospace, Consolas, monospace; }
 .deal .who { display: flex; justify-content: space-between; align-items: baseline;
   gap: 10px; font-weight: 650; font-size: 13.5px; }
 .deal .got { margin-top: 6px; font-size: 13px; line-height: 1.5; }
+/* Weekly report only: the manager's name lives INSIDE the same .side cell as
+   their players, styled as a column header with its own rule beneath it,
+   rather than as a separate header grid above the body. That used to be two
+   independent grids (one per row) whose auto-fit column counts could drift
+   apart at in-between widths, and whose own paddings had to be hand-matched
+   to keep the icons lined up -- a real .side-name + .got pair inside one
+   .side cell can't drift: it is the SAME grid computing the SAME column
+   once, so the divider, the wrap point, and the left inset are pixel-
+   identical to the players below by construction. No background tint on the
+   name (unlike the Transactions tab's plain `.who`) -- it sits on the same
+   surface as the rest of the card, on purpose: a tint plus `var(--line)` at
+   1px turned out too low-contrast to read as a real divider. No arrow/
+   connector between sides: with the vertical divider already marking the
+   split, a 3+-team deal has no single "direction" a symbol could honestly
+   show anyway, so the divider alone (used consistently for 2+ sides) does
+   the job. */
+.deal .side-name { font-weight: 700; font-size: 13.5px;
+  padding-bottom: 8px; margin-bottom: 8px; border-bottom: 1px solid var(--line); }
+.deal .side-name + .got { margin-top: 0; }
 /* Per-player trade breakdown (weekly report) -- no winner framing, just each
-   player's own week/season points, so .side.up/.down stay unused here. */
-.deal .plr { display: flex; align-items: center; gap: 6px; margin-top: 6px; }
+   player's own week/season points, so .side.up/.down stay unused here.
+   Week/season points are two DELIBERATELY separate lines (not one joined by
+   a middle dot) -- a trade this fresh can't prove a winner, and running them
+   together read as one figure at a glance. */
+.deal .plr { margin-top: 8px; }
 .deal .plr:first-child { margin-top: 0; }
+.deal .plr-name { display: flex; align-items: center; gap: 6px; }
+/* 3+-team deals only: which OTHER side a received player came from --
+   ambiguous with three-plus parties in a way it never is with two. Sits
+   between the name and the points, same indent as the points below it. */
+.deal .plr-from { margin-top: 2px; padding-left: 28px; }
+.deal .plr-pts { display: flex; flex-direction: column; gap: 1px;
+  margin-top: 2px; padding-left: 28px; }
 @media (max-width: 620px) {
   .deal .side + .side { box-shadow: none; border-top-color: var(--line); }
+  .deal .sides { grid-template-columns: 1fr; }
 }
 
 /* Sortable column headers for the weekly report's own tables (waivers, free
@@ -694,6 +743,59 @@ footer code { font-family: ui-monospace, Consolas, monospace; }
 .fa-vs-team:has(#fat-13:checked) .vs-tabs label[for="fat-13"] {
   background: var(--ink); color: var(--surface); border-color: var(--ink); }
 .fa-vs-team .vs-panel .hint { margin: 0 0 8px; }
+/* Same team switcher, second copy (fato-0, fato-1, ...) -- the "Optimized
+   roster" mode reuses the identical fa_vs_team_switcher() macro, which always
+   emits class="fa-vs-team", so this just extends the id vocabulary the base
+   rule above already matches against rather than re-deriving it. */
+.fa-vs-team #fato-0:checked ~ .vs-p-0, .fa-vs-team #fato-1:checked ~ .vs-p-1,
+.fa-vs-team #fato-2:checked ~ .vs-p-2, .fa-vs-team #fato-3:checked ~ .vs-p-3,
+.fa-vs-team #fato-4:checked ~ .vs-p-4, .fa-vs-team #fato-5:checked ~ .vs-p-5,
+.fa-vs-team #fato-6:checked ~ .vs-p-6, .fa-vs-team #fato-7:checked ~ .vs-p-7,
+.fa-vs-team #fato-8:checked ~ .vs-p-8, .fa-vs-team #fato-9:checked ~ .vs-p-9,
+.fa-vs-team #fato-10:checked ~ .vs-p-10, .fa-vs-team #fato-11:checked ~ .vs-p-11,
+.fa-vs-team #fato-12:checked ~ .vs-p-12, .fa-vs-team #fato-13:checked ~ .vs-p-13 {
+  display: block; }
+.fa-vs-team:has(#fato-0:checked) .vs-tabs label[for="fato-0"],
+.fa-vs-team:has(#fato-1:checked) .vs-tabs label[for="fato-1"],
+.fa-vs-team:has(#fato-2:checked) .vs-tabs label[for="fato-2"],
+.fa-vs-team:has(#fato-3:checked) .vs-tabs label[for="fato-3"],
+.fa-vs-team:has(#fato-4:checked) .vs-tabs label[for="fato-4"],
+.fa-vs-team:has(#fato-5:checked) .vs-tabs label[for="fato-5"],
+.fa-vs-team:has(#fato-6:checked) .vs-tabs label[for="fato-6"],
+.fa-vs-team:has(#fato-7:checked) .vs-tabs label[for="fato-7"],
+.fa-vs-team:has(#fato-8:checked) .vs-tabs label[for="fato-8"],
+.fa-vs-team:has(#fato-9:checked) .vs-tabs label[for="fato-9"],
+.fa-vs-team:has(#fato-10:checked) .vs-tabs label[for="fato-10"],
+.fa-vs-team:has(#fato-11:checked) .vs-tabs label[for="fato-11"],
+.fa-vs-team:has(#fato-12:checked) .vs-tabs label[for="fato-12"],
+.fa-vs-team:has(#fato-13:checked) .vs-tabs label[for="fato-13"] {
+  background: var(--ink); color: var(--surface); border-color: var(--ink); }
+
+/* Actual-vs-optimized roster mode switch: a plain 2-value viewswitch (same
+   idiom as the position tabs), wrapping a full fa-vs-team switcher in each
+   panel. */
+.fa-vs-mode #fam-actual:checked ~ .vs-p-actual,
+.fa-vs-mode #fam-opt:checked ~ .vs-p-opt { display: block; }
+.fa-vs-mode:has(#fam-actual:checked) .vs-tabs label[for="fam-actual"],
+.fa-vs-mode:has(#fam-opt:checked) .vs-tabs label[for="fam-opt"] {
+  background: var(--ink); color: var(--surface); border-color: var(--ink); }
+
+/* Matchup drilldown's own Actual/Optimized toggle (_week_scoreboard.html) --
+   one per GAME, so ids are per-game (gm0-actual, gm1-actual, ...) and can't
+   be enumerated by a fixed list the way fa-vs-team's ids are. Structural
+   selectors sidestep that entirely: within any one .dt-lineup-mode, the
+   radios and panels are always exactly 2 in a fixed order, so :first-of-type
+   / :nth-of-type(2) picks them out without knowing the game's index -- one
+   rule covers every game on the page instead of one enumerated block per
+   possible game count. (The ids still exist, purely so each <label for="">
+   can target its own radio.) */
+.dt-lineup-mode .vs-radio:first-of-type:checked ~ .vs-p-actual,
+.dt-lineup-mode .vs-radio:nth-of-type(2):checked ~ .vs-p-opt { display: block; }
+.dt-lineup-mode:has(.vs-radio:first-of-type:checked) .vs-tabs label:first-of-type,
+.dt-lineup-mode:has(.vs-radio:nth-of-type(2):checked) .vs-tabs label:nth-of-type(2) {
+  background: var(--ink); color: var(--surface); border-color: var(--ink); }
+.dt-lineup-mode { margin-top: 4px; }
+.fa-vs-mode > .vs-panel { margin-top: 10px; }
 
 /* Bars sized in Python (pct, floored at 6 so a scoreless week still shows a
    sliver) -- height:0 on an empty bar would otherwise vanish entirely.

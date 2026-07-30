@@ -274,6 +274,71 @@ def manager_profile(s: Season) -> pd.DataFrame:
     return out.sort_values(["moves", "lineup_iq"], ascending=False).reset_index(drop=True)
 
 
+def mgr_allplay_snapshot(s: Season, manager: str, through_week: int) -> dict | None:
+    """One manager's schedule-independent (all-play) record through a given
+    week, and how it compares to their actual table position that week.
+
+    Webapp-only addition (not parity-gated, same precedent as `boom_bust` /
+    `strength_of_schedule`) mirroring `allplay`'s math, but capped at
+    `through_week` and compared against the table position AT that week
+    rather than `allplay`'s season-end `final_position` -- a week-5 report
+    can't leak weeks 6-14 into "deserved record so far" the way that
+    season-end comparison would.
+    """
+    wk = int(through_week)
+    tw = s.team_wk[s.team_wk["week"] <= wk]
+    if not len(tw) or "allplay_w" not in tw.columns:
+        return None
+    g = tw.groupby("user_name", as_index=False).agg(
+        allplay_w=("allplay_w", "sum"), allplay_l=("allplay_l", "sum"))
+    if not len(g):
+        return None
+    g["allplay_pct"] = g["allplay_w"] / (g["allplay_w"] + g["allplay_l"]).clip(lower=1)
+    g = g.sort_values(["allplay_pct", "allplay_w"], ascending=False).reset_index(drop=True)
+    g["allplay_rank"] = g.index + 1
+    row = g[g["user_name"] == manager]
+    if not len(row):
+        return None
+    r = row.iloc[0]
+    tp = table_position(s)
+    cur = tp[(tp["week"] == wk) & (tp["user_name"] == manager)]
+    pos = int(cur["table_position"].iloc[0]) if len(cur) else None
+    return {
+        "allplay_w": int(r["allplay_w"]), "allplay_l": int(r["allplay_l"]),
+        "allplay_rank": int(r["allplay_rank"]), "table_position": pos,
+        "rank_delta": (int(r["allplay_rank"]) - pos) if pos is not None else None,
+    }
+
+
+def mgr_activity_snapshot(s: Season, manager: str, through_week: int) -> dict:
+    """One manager's moves/trades/drops and lineup IQ, capped at a given week.
+
+    Webapp-only addition mirroring `manager_profile`'s math for a single
+    manager, week-capped so a week-5 report doesn't count moves or lineup
+    weeks from 6-14.
+    """
+    wk = int(through_week)
+    tx = s.transactions
+    moves = trades = drops = 0
+    if len(tx):
+        mine = tx[(tx["user_name"] == manager) & (tx["status"] != "failed")]
+        if "week" in mine.columns:
+            mine = mine[mine["week"] <= wk]
+        moves = int(len(mine[mine["type"].isin(["waiver", "free_agent"])
+                             & (mine["transaction"] == "add")]))
+        trades = int(len(mine[(mine["type"] == "trade") & (mine["transaction"] == "add")]))
+        drops = int(len(mine[mine["transaction"] == "drop"]))
+    lu = s.lineup
+    lineup_iq = None
+    if len(lu) and {"user_name", "week", "actual", "optimal"}.issubset(lu.columns):
+        mine_lu = lu[(lu["user_name"] == manager) & (lu["week"] <= wk)]
+        if len(mine_lu):
+            r = mine_lu["actual"] / mine_lu["optimal"].clip(lower=1e-9)
+            lineup_iq = round(float(r.mean()) * 100, 1)
+    return {"moves": moves, "trades": trades, "drops": drops, "lineup_iq": lineup_iq,
+            "moves_per_wk": round(moves / wk, 2) if wk else None}
+
+
 # --- Transaction analytics (ported from ddbmFF.R) -------------------------
 
 def transactions(s: Season) -> pd.DataFrame:
@@ -1024,7 +1089,7 @@ def week_matchups(s: Season, week: int) -> list[dict]:
     nobody to play" is a real state, and silently omitting the row makes the
     scoreboard disagree with the standings.
     """
-    from .season import assign_slots
+    from .season import assign_slots, optimal_lineup
 
     tw, pl = s.team_wk, s.pl_wk
     if not len(tw) or "week" not in tw:
@@ -1062,6 +1127,21 @@ def week_matchups(s: Season, week: int) -> list[dict]:
                               "player_name": x.player_name,
                               "position": x.position, "points": float(x.points)}
                              for x in ls.itertuples(index=False)]
+        # The best legal lineup this team's OWN full roster (bench included)
+        # could have started -- lets the matchup drilldown toggle "what
+        # actually happened" against "what if they'd played it perfectly",
+        # same idea as the free-agent comparison's Actual/Optimized switch.
+        row["opt_lineup"] = []
+        if len(g):
+            opt_picks = optimal_lineup(g, getattr(s, "slots", {}) or {})
+            if not opt_picks.empty:
+                opt_picks = assign_slots(opt_picks, getattr(s, "slots", {}) or {})
+                row["opt_lineup"] = [{"slot": x.slot, "player_id": x.player_id,
+                                      "player_name": x.player_name,
+                                      "position": x.position, "points": float(x.points)}
+                                     for x in opt_picks.itertuples(index=False)]
+        row["opt_points"] = (round(sum(p["points"] for p in row["opt_lineup"]), 2)
+                             if row["opt_lineup"] else None)
         if len(bn):
             b = bn.sort_values("points", ascending=False).head(6)
             # `would_start`: this bench player alone outscored the worst starter
@@ -1127,6 +1207,14 @@ def week_matchups(s: Season, week: int) -> list[dict]:
                     p["cmp"] = (None if opp is None else
                                "up" if p["points"] > opp else
                                "down" if p["points"] < opp else "even")
+            opt_opp_pts = [{p["slot"]: p["points"] for p in sd["opt_lineup"]} for sd in sides]
+            for i, sd in enumerate(sides):
+                other = opt_opp_pts[1 - i]
+                for p in sd["opt_lineup"]:
+                    opp = other.get(p["slot"])
+                    p["cmp"] = (None if opp is None else
+                               "up" if p["points"] > opp else
+                               "down" if p["points"] < opp else "even")
         games.append({
             "matchup_id": mid if pd.notna(mid) else None,
             "sides": sides,
@@ -1175,14 +1263,23 @@ def week_trade_players(s: Season, week: int) -> list[dict]:
     out = []
     for tid, g in ev.groupby("transaction_id"):
         sides = []
+        # Who a player was dropped BY within this same transaction -- the
+        # source side of the move. In a 2-team trade it's always just "the
+        # other side" (not worth stating); in a 3+-team trade a received
+        # player could have come from either other team, so this is the only
+        # way to tell which.
+        drop_from = {str(r["player_id"]): r["roster_id"]
+                    for _, r in g[g["transaction"] == "drop"].iterrows()}
         for rid, gg in g.groupby("roster_id"):
             players_ = []
             for _, r in gg[gg["transaction"] == "add"].iterrows():
                 pid = str(r["player_id"])
+                from_rid = drop_from.get(pid)
                 players_.append({
                     "player_id": pid, "player_name": r["player_name"],
                     "week_pts": round(float(wk_pts.get(pid, 0.0)), 1),
                     "season_pts": round(float(season_pts.get(pid, 0.0)), 1),
+                    "from_team": names.get(from_rid) if from_rid is not None else None,
                 })
             sides.append({"user_name": names.get(rid, str(rid)), "players": players_})
         out.append({"week": wk, "transaction_id": str(tid),
@@ -1326,26 +1423,6 @@ def _fa_candidates(s: Season, week: int) -> tuple[list[dict], dict]:
     return rows, rules
 
 
-def _fa_prior_roster(s: Season, week: int, player_id: str) -> dict | None:
-    """If this free agent was rostered earlier this season, {user_name, week}
-    for the last week they were held before going unrostered -- so a drilldown
-    can say "cut by X after week Y" instead of implying nobody ever wanted
-    them. None if they've never been rostered this season (or on the week-1
-    report, where there IS no earlier week).
-    """
-    wk = int(week)
-    if wk <= 1 or s.user_map.empty:
-        return None
-    pl = s.pl_wk[(s.pl_wk["week"] < wk) & (s.pl_wk["player_id"].astype(str) == str(player_id))]
-    if pl.empty:
-        return None
-    last = pl.loc[pl["week"].idxmax()]
-    m = s.user_map[s.user_map["roster_id"] == last["roster_id"]]
-    if not len(m):
-        return None
-    return {"user_name": m["user_name"].iloc[0], "week": int(last["week"])}
-
-
 def _fa_trend(s: Season, week: int, entries: list[dict], rules: dict,
               trend_weeks: int) -> None:
     """Mutates `entries` in place, adding `trend`/`trend_total`/`trend_avg`.
@@ -1355,12 +1432,16 @@ def _fa_trend(s: Season, week: int, entries: list[dict], rules: dict,
     weeks -- free-agent status is too volatile week to week to gate a trend
     read on it, and the point is telling a hot streak from a one-week fluke.
     `pct` (0-100, floored at 6 so a scoreless week still shows a sliver) is
-    each week normalized against that player's own best week in the window,
-    ready to drive a bar's height directly. `trend_total` sums the window and
-    `trend_avg` (PPG over that same span) divides it back down -- a short
-    early-season window otherwise makes `trend_total` look weak for reasons
-    that have nothing to do with the player, and PPG is the fairer number to
-    sort or compare by across different weeks.
+    each week normalized against the BEST WEEK ANY ENTRY IN THIS BATCH HAD,
+    not that player's own best week -- a per-player scale made a 1-2-3-4 week
+    render bar-for-bar identical to a 10-20-30-40 week (both close on their
+    own personal high), which is exactly backwards: the bars should carry
+    absolute magnitude, the same way the numeric columns beside them already
+    do. `trend_total` sums the window and `trend_avg` (PPG over that same
+    span) divides it back down -- a short early-season window otherwise makes
+    `trend_total` look weak for reasons that have nothing to do with the
+    player, and PPG is the fairer number to sort or compare by across
+    different weeks.
     """
     from . import scoring
 
@@ -1379,9 +1460,9 @@ def _fa_trend(s: Season, week: int, entries: list[dict], rules: dict,
     sc = scoring.score_lineup(ids, s.season, range(lo, wk + 1), rules)
     by_id = {pid: g.sort_values("week")[["week", "points"]].to_dict("records")
             for pid, g in sc.groupby("player_id")}
+    top_pt = max((t["points"] for tr in by_id.values() for t in tr), default=0) or 1
     for r in entries:
         tr = by_id.get(r["player_id"], [])
-        top_pt = max((t["points"] for t in tr), default=0) or 1
         for t in tr:
             t["pct"] = round(max(6.0, min(100.0, t["points"] / top_pt * 100)), 0)
         r["trend"] = tr
@@ -1464,7 +1545,6 @@ def free_agent_standouts(s: Season, week: int, per_position: int = 5,
                                   on="roster_id", how="left")
     for r in all_top:
         r["best_fit"] = _fa_who_could_use(starters, r["position"], r["points"])
-        r["prior_roster"] = _fa_prior_roster(s, week, r["player_id"])
 
     _fa_trend(s, week, all_top, rules, trend_weeks)
     return sorted(all_top, key=lambda r: -r["points"])
@@ -1517,7 +1597,6 @@ def free_agent_impact(s: Season, week: int, manager: str, per_position: int = 5,
         r["best_fit"] = [{"user_name": manager, "gain": round(gain, 1),
                           "started_player": weak["player_name"],
                           "started_pts": round(float(weak["points"]), 1)}]
-        r["prior_roster"] = _fa_prior_roster(s, week, r["player_id"])
         by_pos.setdefault(r["position"], []).append(r)
     if not by_pos:
         return []
@@ -1599,11 +1678,45 @@ def free_agent_best_team(s: Season, week: int) -> dict | None:
             cmp_fa.append(dict(p, cmp=(None if opp is None else
                                "up" if p["points"] > opp else
                                "down" if p["points"] < opp else "even")))
+        # Second comparison: the FA lineup against what this team's OWN full
+        # roster (bench included) could have started -- "what if they'd
+        # played it perfectly" rather than what they actually ran out. Same
+        # solver as the FA lineup itself, just handed this team's players.
+        opt_pts_by_slot, opt_lineup = {}, []
+        if len(g):
+            opt_picks = optimal_lineup(g, s.slots)
+            if not opt_picks.empty:
+                opt_picks = assign_slots(opt_picks, s.slots)
+                for x in opt_picks.itertuples(index=False):
+                    opt_pts_by_slot[x.slot] = float(x.points)
+                    opt_lineup.append({"slot": x.slot, "player_id": x.player_id,
+                                       "player_name": x.player_name, "points": float(x.points)})
+        for p in opt_lineup:
+            opp = fa_pts_by_slot.get(p["slot"])
+            p["cmp"] = (None if opp is None else
+                       "up" if p["points"] > opp else
+                       "down" if p["points"] < opp else "even")
+        cmp_fa_opt = []
+        for p in fa_lineup:
+            opp = opt_pts_by_slot.get(p["slot"])
+            cmp_fa_opt.append(dict(p, cmp=(None if opp is None else
+                              "up" if p["points"] > opp else
+                              "down" if p["points"] < opp else "even")))
+        opt_total = round(sum(p["points"] for p in opt_lineup), 1) if opt_lineup else None
         teams.append({"user_name": r.user_name, "points": round(float(r.points), 1),
                       "gain": round(total - float(r.points), 1),
-                      "lineup": team_lineup, "fa_lineup": cmp_fa})
+                      "lineup": team_lineup, "fa_lineup": cmp_fa,
+                      "opt_lineup": opt_lineup, "fa_opt_lineup": cmp_fa_opt,
+                      "opt_points": opt_total,
+                      "opt_gain": (round(total - opt_total, 1) if opt_total is not None else None)})
+
+    # How many teams' OPTIMAL lineups (not just what they actually ran out)
+    # the FA total would still have beaten -- the Optimized-mode counterpart
+    # to `beats`, derived from `teams` rather than a second team_wk pass.
+    opt_beats = sum(1 for t in teams if t["opt_points"] is not None and t["opt_points"] < total)
 
     return {
         "total": total, "lineup": fa_lineup,
         "beats": beats, "n_teams": int(len(tw)), "teams": teams,
+        "opt_beats": opt_beats,
     }

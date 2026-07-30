@@ -1477,6 +1477,84 @@ def plot_mgr_sos(s: Season, manager: str, through_week: int | None = None):
                    caption=_cap(s))
 
 
+def plot_mgr_power_trend(s: Season, manager: str, through_week: int | None = None):
+    """Their composite power score (see `metrics.power_rank`), recomputed at
+    every week through `through_week`.
+
+    A single power-rank number (as on the Overview tab) only shows where they
+    stand right now; the trend shows whether they're climbing or sliding
+    independent of this single week's result. `through_week` caps the season
+    the same as the other mgr_* charts -- a week-5 report can't show weeks
+    6-14 of trend.
+    """
+    wk = int(through_week) if through_week is not None else s.last_week
+    rows = []
+    for w in range(1, wk + 1):
+        d = metrics.power_rank(s, through_week=w)
+        r = d[d["user_name"] == manager]
+        if len(r):
+            rows.append({"week": w, "power": float(r["power"].iloc[0]),
+                        "rank": int(r["power_rank"].iloc[0])})
+    if not rows:
+        return _no_data(f"No power-rank data for {manager} in {s.season}.")
+    import pandas as pd
+    d = pd.DataFrame(rows)
+    fig, ax = plt.subplots(figsize=(9.5, 5.5))
+    ax.axhline(0, color=T["rule"], lw=1.2, ls="--", zorder=1)
+    cols = ["#2c7fb8" if v >= 0 else "#c0563f" for v in d["power"]]
+    ax.plot(d["week"], d["power"], lw=1.8, color=T["neutral"], zorder=2)
+    ax.scatter(d["week"], d["power"], s=80, c=cols, zorder=3,
+               edgecolors=T["edge"], linewidths=1)
+    for _, r in d.iterrows():
+        ax.text(r["week"], r["power"] + (0.05 if r["power"] >= 0 else -0.05),
+                f"#{int(r['rank'])}", ha="center",
+                va="bottom" if r["power"] >= 0 else "top",
+                fontsize=7.5, color=T["muted"])
+    ax.set_xticks(list(d["week"]))
+    return _finish(fig, ax, f"{manager} · Power Rank Trend",
+                   "Composite of points, all-play, recent form and efficiency, "
+                   "recomputed each week  ·  0 = that week's league average",
+                   "Week", "Power score", caption=_cap(s), grid_axis="y")
+
+
+def plot_mgr_efficiency_trend(s: Season, manager: str, through_week: int | None = None):
+    """Their lineup efficiency (started / optimal, %) week by week.
+
+    The scoreboard drilldown already shows ONE week's efficiency; this is the
+    arc across the season -- is their coaching improving or slipping, not
+    just what happened this week. Same band-plus-line idiom as
+    `plot_mgr_score_band`. `through_week` caps the season the same as the
+    other mgr_* charts.
+    """
+    lu = getattr(s, "lineup", None)
+    if lu is None or not {"user_name", "week", "actual", "optimal"}.issubset(
+            getattr(lu, "columns", [])):
+        return _no_data(f"No lineup data for {manager} in {s.season}.")
+    cap = lu[lu["week"] <= through_week] if through_week is not None else lu
+    cap = cap.copy()
+    cap["eff"] = (cap["actual"] / cap["optimal"].clip(lower=1e-9) * 100).clip(upper=100)
+    mine = cap[cap["user_name"] == manager].sort_values("week")
+    if mine.empty:
+        return _no_data(f"No lineup data for {manager} in {s.season}.")
+    band = cap.groupby("week")["eff"].agg(lo="min", hi="max", mid="median").reset_index()
+    fig, ax = plt.subplots(figsize=(9.5, 5.5))
+    ax.fill_between(band["week"], band["lo"], band["hi"], color=T["neutral"],
+                    alpha=0.35, zorder=1, label="league range")
+    ax.plot(band["week"], band["mid"], ls="--", lw=1.6, color=T["rule"],
+            zorder=2, label="league median")
+    ax.plot(mine["week"], mine["eff"], lw=2, color=T["ink2"], zorder=3)
+    ax.scatter(mine["week"], mine["eff"], s=70, color="#2c7fb8", zorder=4,
+               edgecolors=T["edge"], linewidths=1.0)
+    ax.set_xticks(list(mine["week"]))
+    ax.set_ylim(0, 105)
+    avg = mine["eff"].mean()
+    ax.legend(loc="lower right", frameon=False, fontsize=8)
+    return _finish(fig, ax, f"{manager} · Lineup Efficiency by Week",
+                   f"Started points as a share of the best legal lineup  ·  "
+                   f"season avg {avg:.1f}%",
+                   "Week", "Efficiency %", caption=_cap(s), grid_axis="y")
+
+
 def plot_week_matchups(s: Season, week: int):
     """The week's games as dumbbells on one points axis.
 
@@ -1596,6 +1674,14 @@ def plot_week_race(s: Season, week: int):
     A snapshot of the standings says where everyone is; this says how they got
     there. Reading week 5 against the race up to week 5 is the point of a weekly
     tab -- the finished-season version of this chart lives on Overview.
+
+    Styled to match the rest of the report rather than a raw matplotlib
+    cycle: `palette()` gives each manager the SAME colour they carry on every
+    other chart, an avatar token marks their current-week position (same
+    identity language as the standings/power charts), and end-of-line labels
+    run through the shared collision solver -- a plain per-line annotate
+    prints straight through a neighbour whenever two teams are tied or close
+    at the final week, which happens often in a bump chart.
     """
     d = metrics.table_position(s)
     d = d[d["week"] <= int(week)]
@@ -1604,21 +1690,40 @@ def plot_week_race(s: Season, week: int):
     n = int(d["table_position"].max())
     fig, ax = plt.subplots(figsize=(10.5, max(4.5, n * 0.5)))
     last = d[d["week"] == d["week"].max()].sort_values("table_position")
-    palette = matplotlib.colormaps["tab10"]
-    for i, nm in enumerate(last["user_name"]):
+    cols = palette(last["user_name"])
+    for nm in last["user_name"]:
         g = d[d["user_name"] == nm].sort_values("week")
-        col = palette(i % 10)
-        ax.plot(g["week"], g["table_position"], color=col, lw=2.2, marker="o",
-                ms=5, zorder=3)
-        end = g.iloc[-1]
-        ax.annotate(f" {nm}", (end["week"], end["table_position"]),
-                    va="center", fontsize=9, color=col, fontweight="bold")
+        ax.plot(g["week"], g["table_position"], color=cols[nm], lw=2.2,
+                marker="o", ms=5, zorder=3)
     ax.set_ylim(n + 0.6, 0.4)
     ax.set_yticks(range(1, n + 1))
     ax.set_xticks(sorted(d["week"].unique()))
     ax.set_xlim(0.6, int(week) + (int(week) * 0.30))
+    ends = d[d["week"] == d["week"].max()].sort_values("table_position")
+    if not _point_avatars(ax, ends["week"], ends["table_position"], ends["user_name"], s, zoom=0.34):
+        # No avatars available (no network, no accounts) -- fall back to a
+        # plain coloured dot at the same spot so the endpoint still reads.
+        ax.scatter(ends["week"], ends["table_position"],
+                   c=[cols[nm] for nm in ends["user_name"]], s=60, zorder=4,
+                   edgecolors=T["edge"], linewidths=1)
+    # Plain horizontal labels, one per row -- `table_position` is always a
+    # unique integer 1..n, so every row already has its own dedicated y slot
+    # the same width as every other (the y-ticks are spaced identically).
+    # A general-purpose collision solver (tried first) sometimes bumped a
+    # label up or down to dodge a neighbour, which sliced a team's name away
+    # from its own row -- exactly the "1st/last place spliced above/below"
+    # problem a bump chart can't afford, since the row IS the answer.
+    # Medal-coloured names take the place of a separate podium disc for the
+    # top 3, so their standing reads without adding more geometry to dodge.
+    for r in ends.itertuples(index=False):
+        rk = int(r.table_position)
+        col = MEDAL[rk - 1] if rk <= 3 else T["ink"]
+        ax.annotate(f" {r.user_name}", (r.week, r.table_position),
+                   textcoords="offset points", xytext=(12, 0), va="center",
+                   fontsize=9, color=col, fontweight="bold", zorder=5)
     return _finish(fig, ax, f"The Race Through Week {week}",
-                   "Table position after each week — crossings are lead changes",
+                   "Table position after each week — crossings are lead changes  ·  "
+                   "gold/silver/bronze = this week's top 3",
                    "Week", "Table position", caption=_cap(s), grid_axis="both")
 
 
