@@ -712,68 +712,54 @@ footer code { font-family: ui-monospace, Consolas, monospace; }
 .scrolltable table thead th { position: sticky; top: 0; background: var(--surface);
   z-index: 1; box-shadow: 0 1px 0 var(--line); }
 
-/* Free-agent best team vs one real team: the same native radio-tab switcher
-   as the position tabs above, but indexed by POSITION IN THE LIST rather than
-   a fixed vocabulary -- team count/names are per-season variable, so ids are
-   generated as fat-0, fat-1, ... in weekly_report.html and matched here by
-   index. 14 slots is headroom well past any league size seen in this
-   codebase (documented max 10); an extra team beyond that simply gets no
-   working tab, same harmless-no-op fallback as an unmatched position rule. */
-.fa-vs-team #fat-0:checked ~ .vs-p-0, .fa-vs-team #fat-1:checked ~ .vs-p-1,
-.fa-vs-team #fat-2:checked ~ .vs-p-2, .fa-vs-team #fat-3:checked ~ .vs-p-3,
-.fa-vs-team #fat-4:checked ~ .vs-p-4, .fa-vs-team #fat-5:checked ~ .vs-p-5,
-.fa-vs-team #fat-6:checked ~ .vs-p-6, .fa-vs-team #fat-7:checked ~ .vs-p-7,
-.fa-vs-team #fat-8:checked ~ .vs-p-8, .fa-vs-team #fat-9:checked ~ .vs-p-9,
-.fa-vs-team #fat-10:checked ~ .vs-p-10, .fa-vs-team #fat-11:checked ~ .vs-p-11,
-.fa-vs-team #fat-12:checked ~ .vs-p-12, .fa-vs-team #fat-13:checked ~ .vs-p-13 {
+/* Free-agent best team vs one real team: team selection (fat-0, fat-1, ...)
+   and the Actual/Optimized mode (fam-actual/fam-opt) are TWO INDEPENDENT
+   radio groups sharing one .fa-vs-mode container, so either can change
+   without resetting the other -- previously each mode had its own private
+   copy of the team radios, so switching modes silently snapped the team
+   choice back to the first one. The team panels (.fa-team-0, ...) are
+   nested inside BOTH mode panels; :has() reaches from the shared container
+   down into whichever one is currently visible, rather than a sibling `~`
+   selector, which can't reach across into a descendant like this. team
+   count is per-season variable; 14 slots is headroom well past any league
+   size seen in this codebase (documented max 10) -- an extra team beyond
+   that simply gets no working tab, same harmless-no-op fallback as an
+   unmatched position rule. */
+.fa-vs-mode:has(#fat-0:checked) .fa-team-0,
+.fa-vs-mode:has(#fat-1:checked) .fa-team-1,
+.fa-vs-mode:has(#fat-2:checked) .fa-team-2,
+.fa-vs-mode:has(#fat-3:checked) .fa-team-3,
+.fa-vs-mode:has(#fat-4:checked) .fa-team-4,
+.fa-vs-mode:has(#fat-5:checked) .fa-team-5,
+.fa-vs-mode:has(#fat-6:checked) .fa-team-6,
+.fa-vs-mode:has(#fat-7:checked) .fa-team-7,
+.fa-vs-mode:has(#fat-8:checked) .fa-team-8,
+.fa-vs-mode:has(#fat-9:checked) .fa-team-9,
+.fa-vs-mode:has(#fat-10:checked) .fa-team-10,
+.fa-vs-mode:has(#fat-11:checked) .fa-team-11,
+.fa-vs-mode:has(#fat-12:checked) .fa-team-12,
+.fa-vs-mode:has(#fat-13:checked) .fa-team-13 {
   display: block; }
-.fa-vs-team:has(#fat-0:checked) .vs-tabs label[for="fat-0"],
-.fa-vs-team:has(#fat-1:checked) .vs-tabs label[for="fat-1"],
-.fa-vs-team:has(#fat-2:checked) .vs-tabs label[for="fat-2"],
-.fa-vs-team:has(#fat-3:checked) .vs-tabs label[for="fat-3"],
-.fa-vs-team:has(#fat-4:checked) .vs-tabs label[for="fat-4"],
-.fa-vs-team:has(#fat-5:checked) .vs-tabs label[for="fat-5"],
-.fa-vs-team:has(#fat-6:checked) .vs-tabs label[for="fat-6"],
-.fa-vs-team:has(#fat-7:checked) .vs-tabs label[for="fat-7"],
-.fa-vs-team:has(#fat-8:checked) .vs-tabs label[for="fat-8"],
-.fa-vs-team:has(#fat-9:checked) .vs-tabs label[for="fat-9"],
-.fa-vs-team:has(#fat-10:checked) .vs-tabs label[for="fat-10"],
-.fa-vs-team:has(#fat-11:checked) .vs-tabs label[for="fat-11"],
-.fa-vs-team:has(#fat-12:checked) .vs-tabs label[for="fat-12"],
-.fa-vs-team:has(#fat-13:checked) .vs-tabs label[for="fat-13"] {
+.fa-vs-mode:has(#fat-0:checked) .vs-tabs label[for="fat-0"],
+.fa-vs-mode:has(#fat-1:checked) .vs-tabs label[for="fat-1"],
+.fa-vs-mode:has(#fat-2:checked) .vs-tabs label[for="fat-2"],
+.fa-vs-mode:has(#fat-3:checked) .vs-tabs label[for="fat-3"],
+.fa-vs-mode:has(#fat-4:checked) .vs-tabs label[for="fat-4"],
+.fa-vs-mode:has(#fat-5:checked) .vs-tabs label[for="fat-5"],
+.fa-vs-mode:has(#fat-6:checked) .vs-tabs label[for="fat-6"],
+.fa-vs-mode:has(#fat-7:checked) .vs-tabs label[for="fat-7"],
+.fa-vs-mode:has(#fat-8:checked) .vs-tabs label[for="fat-8"],
+.fa-vs-mode:has(#fat-9:checked) .vs-tabs label[for="fat-9"],
+.fa-vs-mode:has(#fat-10:checked) .vs-tabs label[for="fat-10"],
+.fa-vs-mode:has(#fat-11:checked) .vs-tabs label[for="fat-11"],
+.fa-vs-mode:has(#fat-12:checked) .vs-tabs label[for="fat-12"],
+.fa-vs-mode:has(#fat-13:checked) .vs-tabs label[for="fat-13"] {
   background: var(--ink); color: var(--surface); border-color: var(--ink); }
-.fa-vs-team .vs-panel .hint { margin: 0 0 8px; }
-/* Same team switcher, second copy (fato-0, fato-1, ...) -- the "Optimized
-   roster" mode reuses the identical fa_vs_team_switcher() macro, which always
-   emits class="fa-vs-team", so this just extends the id vocabulary the base
-   rule above already matches against rather than re-deriving it. */
-.fa-vs-team #fato-0:checked ~ .vs-p-0, .fa-vs-team #fato-1:checked ~ .vs-p-1,
-.fa-vs-team #fato-2:checked ~ .vs-p-2, .fa-vs-team #fato-3:checked ~ .vs-p-3,
-.fa-vs-team #fato-4:checked ~ .vs-p-4, .fa-vs-team #fato-5:checked ~ .vs-p-5,
-.fa-vs-team #fato-6:checked ~ .vs-p-6, .fa-vs-team #fato-7:checked ~ .vs-p-7,
-.fa-vs-team #fato-8:checked ~ .vs-p-8, .fa-vs-team #fato-9:checked ~ .vs-p-9,
-.fa-vs-team #fato-10:checked ~ .vs-p-10, .fa-vs-team #fato-11:checked ~ .vs-p-11,
-.fa-vs-team #fato-12:checked ~ .vs-p-12, .fa-vs-team #fato-13:checked ~ .vs-p-13 {
-  display: block; }
-.fa-vs-team:has(#fato-0:checked) .vs-tabs label[for="fato-0"],
-.fa-vs-team:has(#fato-1:checked) .vs-tabs label[for="fato-1"],
-.fa-vs-team:has(#fato-2:checked) .vs-tabs label[for="fato-2"],
-.fa-vs-team:has(#fato-3:checked) .vs-tabs label[for="fato-3"],
-.fa-vs-team:has(#fato-4:checked) .vs-tabs label[for="fato-4"],
-.fa-vs-team:has(#fato-5:checked) .vs-tabs label[for="fato-5"],
-.fa-vs-team:has(#fato-6:checked) .vs-tabs label[for="fato-6"],
-.fa-vs-team:has(#fato-7:checked) .vs-tabs label[for="fato-7"],
-.fa-vs-team:has(#fato-8:checked) .vs-tabs label[for="fato-8"],
-.fa-vs-team:has(#fato-9:checked) .vs-tabs label[for="fato-9"],
-.fa-vs-team:has(#fato-10:checked) .vs-tabs label[for="fato-10"],
-.fa-vs-team:has(#fato-11:checked) .vs-tabs label[for="fato-11"],
-.fa-vs-team:has(#fato-12:checked) .vs-tabs label[for="fato-12"],
-.fa-vs-team:has(#fato-13:checked) .vs-tabs label[for="fato-13"] {
-  background: var(--ink); color: var(--surface); border-color: var(--ink); }
+.fa-team-panel .hint { margin: 0 0 8px; }
 
 /* Actual-vs-optimized roster mode switch: a plain 2-value viewswitch (same
-   idiom as the position tabs), wrapping a full fa-vs-team switcher in each
-   panel. */
+   idiom as the position tabs), each panel holding all the team content --
+   which of THOSE shows is decided by the shared team radios above. */
 .fa-vs-mode #fam-actual:checked ~ .vs-p-actual,
 .fa-vs-mode #fam-opt:checked ~ .vs-p-opt { display: block; }
 .fa-vs-mode:has(#fam-actual:checked) .vs-tabs label[for="fam-actual"],

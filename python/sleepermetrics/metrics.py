@@ -1142,6 +1142,27 @@ def week_matchups(s: Season, week: int) -> list[dict]:
                                      for x in opt_picks.itertuples(index=False)]
         row["opt_points"] = (round(sum(p["points"] for p in row["opt_lineup"]), 2)
                              if row["opt_lineup"] else None)
+        # Who the optimal lineup benches -- everyone else on the full roster,
+        # so the Optimized panel has its own bench to compare against the
+        # Actual panel's, rather than just showing the starters in isolation.
+        # `was_started` flags anyone who WAS an actual starter but got swapped
+        # out here -- the mirror of the Actual panel's `would_start` -- and
+        # every such player is guaranteed a row (not just whichever make the
+        # top 6 by points), since a swapped-out starter can easily be a low
+        # scorer and that's exactly the swap worth seeing.
+        row["opt_bench"] = []
+        if len(g) and row["opt_lineup"]:
+            opt_ids = {p["player_id"] for p in row["opt_lineup"]}
+            started_ids = set(st["player_id"]) if len(st) else set()
+            non_opt = g[~g["player_id"].isin(opt_ids)].copy()
+            non_opt["was_started"] = non_opt["player_id"].isin(started_ids)
+            swapped = non_opt[non_opt["was_started"]].sort_values("points", ascending=False)
+            rest = non_opt[~non_opt["was_started"]].sort_values("points", ascending=False)
+            ob = pd.concat([swapped, rest]).head(max(6, len(swapped)))
+            row["opt_bench"] = [{"player_id": x.player_id, "player_name": x.player_name,
+                                 "position": x.position, "points": float(x.points),
+                                 "was_started": bool(x.was_started)}
+                                for x in ob.itertuples(index=False)]
         if len(bn):
             b = bn.sort_values("points", ascending=False).head(6)
             # `would_start`: this bench player alone outscored the worst starter

@@ -87,17 +87,18 @@
   {% endif %}
   {% include "_week_scoreboard.html" %}
 
-  {# This-week context: their score against the field, plus the same
-     beaten-or-unlucky scatter the league-wide view leads with (it doesn't
-     take a manager param -- it's the whole field, they're just one dot in
-     it). Season-arc charts (SOS, power trend, efficiency trend) move to
-     "Season so far" below so this row stays about THIS week. #}
+  {# This-week context: their lineup efficiency against the field for just
+     this week (not a season arc -- that's what made the old score-band and
+     power-rank-trend charts here redundant with "Season so far" below), plus
+     the same beaten-or-unlucky scatter the league-wide view leads with (it
+     doesn't take a manager param -- it's the whole field, they're just one
+     dot in it). #}
   {% if manager %}
   <section class="grid">
     <figure class="card chart">
-      <img src="/chart/mgr_score_band?league={{ league }}&season={{ season }}&week={{ week }}&theme={{ theme }}&manager={{ manager|urlencode }}&_={{ bust }}"
-           alt="Weekly score against the league's range" loading="lazy">
-      <figcaption>Weekly score against the league&rsquo;s range, through week {{ week }}</figcaption>
+      <img src="/chart/mgr_efficiency_trend?league={{ league }}&season={{ season }}&week={{ week }}&theme={{ theme }}&manager={{ manager|urlencode }}&_={{ bust }}"
+           alt="Lineup efficiency this week, vs the league" loading="lazy">
+      <figcaption>This week&rsquo;s lineup efficiency &mdash; how their coaching stacked up against the other teams</figcaption>
     </figure>
     {{ ch.chart("week_luck", week=week) }}
   </section>
@@ -112,16 +113,6 @@
       <img src="/chart/mgr_sos?league={{ league }}&season={{ season }}&week={{ week }}&theme={{ theme }}&manager={{ manager|urlencode }}&_={{ bust }}"
            alt="Strength of schedule, this manager highlighted" loading="lazy">
       <figcaption>Strength of schedule so far &mdash; is their record earned or schedule-flattered?</figcaption>
-    </figure>
-    <figure class="card chart">
-      <img src="/chart/mgr_power_trend?league={{ league }}&season={{ season }}&week={{ week }}&theme={{ theme }}&manager={{ manager|urlencode }}&_={{ bust }}"
-           alt="Power rank trend" loading="lazy">
-      <figcaption>Power rank week by week &mdash; climbing or sliding, independent of any one result</figcaption>
-    </figure>
-    <figure class="card chart">
-      <img src="/chart/mgr_efficiency_trend?league={{ league }}&season={{ season }}&week={{ week }}&theme={{ theme }}&manager={{ manager|urlencode }}&_={{ bust }}"
-           alt="Lineup efficiency trend" loading="lazy">
-      <figcaption>Lineup efficiency by week &mdash; is the coaching getting better or worse</figcaption>
     </figure>
     {% else %}
     {{ ch.chart("week_race", week=week) }}
@@ -196,7 +187,7 @@
       <thead><tr>
         <th>Player</th><th>Pos</th>
         <th class="trend-col">Trending</th><th class="n">Points this week</th>
-        <th>Picked up by</th><th>Via</th>
+        <th>Via</th><th>Picked up by</th>
       </tr></thead>
       <tbody>
       {% for r in week_tx.waivers %}
@@ -216,8 +207,8 @@
             {% endif %}
           </td>
           <td class="n">{{ "%.1f"|format(r.week_points) }}</td>
-          <td>{{ idm.who(r.user_name) }}</td>
           <td><span class="q">{{ r.via }}</span></td>
+          <td>{{ idm.who(r.user_name) }}</td>
         </tr>
       {% endfor %}
       </tbody>
@@ -228,6 +219,119 @@
     {%- else %}No waiver or free-agent adds this week.{% endif %}</p>
   {% endif %}
 
+  {# Both FA sections below are league-wide "what if against the whole field"
+     content -- fa_best_team is already None for a manager scope, and the
+     per-manager individual-standouts listing was dropped from the manager
+     view (redundant with the trades/waivers section right above, which is
+     already scoped to them). #}
+  {% if not manager %}
+  <h3>Best available free-agent lineup</h3>
+  {% if fa_best_team %}
+  <div class="card fa-best tablewrap">
+    <p class="hint">The best legal lineup buildable entirely from this week&rsquo;s free agents.</p>
+    {% if fa_best_team.teams %}
+    {% macro fa_team_content(teams, lineup_key, fa_lineup_key, pts_key, gain_key) %}
+    {% for t in teams %}
+    {% set t_pts = t[pts_key] %}
+    {% set t_gain = t[gain_key] %}
+    <div class="vs-panel fa-team-panel fa-team-{{ loop.index0 }}">
+      {% if t_pts is none %}
+      <p class="empty">No usable roster data for {{ t.user_name }} this week.</p>
+      {% else %}
+      {% set fa_won = t_gain > 0 %}
+      {% set tied = t_gain == 0 %}
+      <p class="hint">
+        <span class="score {{ 'score-w' if fa_won else 'score-l' if not tied else '' }}">{{ "%.2f"|format(fa_best_team.total) }}</span>
+        <span class="q">&ndash;</span>
+        <span class="score {{ 'score-l' if fa_won else 'score-w' if not tied else '' }}">{{ "%.2f"|format(t_pts) }}</span>
+        <span class="q">({{ "%+.1f"|format(t_gain) }})</span></p>
+      <div class="dt-tables">
+        <table class="dt-games">
+          <thead><tr><th colspan="2">Best available team</th>
+            <th class="n">{{ "%.2f"|format(fa_best_team.total) }}</th></tr></thead>
+          <tbody>
+          {% for p in t[fa_lineup_key] %}
+            <tr {% if p.cmp == 'up' %}class="cmp-up"{% elif p.cmp == 'down' %}class="cmp-down"{% endif %}>
+              <td><span class="q">{{ p.slot }}</span></td>
+              <td>{{ idm.headshot(p.player_id) }}<strong>{{ p.player_name }}</strong> {{ idm.posrank(p.player_id) }}</td>
+              <td class="n">{{ "%.2f"|format(p.points) }}</td>
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+        <table class="dt-games">
+          <thead><tr><th colspan="2">{{ idm.who(t.user_name) }}</th>
+            <th class="n">{{ "%.2f"|format(t_pts) }}</th></tr></thead>
+          <tbody>
+          {% for p in t[lineup_key] %}
+            <tr {% if p.cmp == 'up' %}class="cmp-up"{% elif p.cmp == 'down' %}class="cmp-down"{% endif %}>
+              <td><span class="q">{{ p.slot }}</span></td>
+              <td>{{ idm.headshot(p.player_id) }}<strong>{{ p.player_name }}</strong> {{ idm.posrank(p.player_id) }}</td>
+              <td class="n">{{ "%.2f"|format(p.points) }}</td>
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% endif %}
+    </div>
+    {% endfor %}
+    {% endmacro %}
+
+    {# Team selection is ONE shared radio group (fat-0, fat-1, ...), declared
+       once here rather than inside each mode's own copy -- previously the
+       Actual and Optimized panels each had their OWN independent team-radio
+       group (fateam / fateamopt), so switching Actual<->Optimized silently
+       reset back to the first team, and there was no way to keep "team 4"
+       selected across the toggle. One shared group means either toggle
+       (mode or team) leaves the other exactly where it was. #}
+    <div class="viewswitch fa-vs-mode">
+      <input type="radio" name="famode" id="fam-actual" class="vs-radio" checked>
+      <input type="radio" name="famode" id="fam-opt" class="vs-radio">
+      {% for t in fa_best_team.teams %}
+      <input type="radio" name="fateam" id="fat-{{ loop.index0 }}" class="vs-radio"{% if loop.first %} checked{% endif %}>
+      {% endfor %}
+      <div class="rail vs-tabs">
+        <span class="k">Compare vs</span>
+        <label class="year" for="fam-actual">Actual roster</label>
+        <label class="year" for="fam-opt">Optimized roster</label>
+      </div>
+      <div class="rail vs-tabs">
+        <span class="k">Team</span>
+        {% for t in fa_best_team.teams %}
+        <label class="year" for="fat-{{ loop.index0 }}">{{ t.user_name }}</label>
+        {% endfor %}
+      </div>
+      <div class="vs-panel vs-p-actual">
+        <p class="hint"><strong>Beats {{ fa_best_team.beats|length }} of {{ fa_best_team.n_teams }}</strong>
+          team{{ "" if fa_best_team.n_teams == 1 else "s" }} this week, against what they actually started.
+          Free agents on the left, one real team&rsquo;s actual lineup on the right &mdash;
+          switch teams to compare slot by slot (same green/red highlighting as the scoreboard above).</p>
+        {{ fa_team_content(fa_best_team.teams, "lineup", "fa_lineup", "points", "gain") }}
+      </div>
+      <div class="vs-panel vs-p-opt">
+        <p class="hint"><strong>Beats {{ fa_best_team.opt_beats }} of {{ fa_best_team.n_teams }}</strong>
+          team{{ "" if fa_best_team.n_teams == 1 else "s" }} this week, against their best possible lineup.
+          Free agents on the left, the best legal lineup that team&rsquo;s OWN roster (bench included)
+          could have started on the right.</p>
+        {{ fa_team_content(fa_best_team.teams, "opt_lineup", "fa_opt_lineup", "opt_points", "opt_gain") }}
+      </div>
+    </div>
+    {% else %}
+    <p class="empty">No other teams to compare against this week.</p>
+    {% endif %}
+  </div>
+  {% endif %}
+
+  <h3>Free agents not picked up</h3>
+  <p class="hint">The best performers at each position among players on <strong>nobody&rsquo;s
+    roster</strong>, priced with the league&rsquo;s own scoring chart. Sort by <strong>This
+    week</strong> for the single-week explosion or <strong>Last {{ [week, 4]|min }} wks</strong>
+    for who&rsquo;s actually been hot &mdash; the bars are the same span, tallest = that
+    player&rsquo;s own best week in it. Click a row to expand the full list of teams it would
+    have upgraded, its position rank among free agents that week, and whether someone already
+    cut them. Use the position tabs or click a column header to sort.</p>
+  {% if free_agents %}
   {% macro fa_table(rows) %}
   <table class="sortable">
     <thead><tr>
@@ -282,111 +386,6 @@
     </tbody>
   </table>
   {% endmacro %}
-
-  <h3>{% if manager %}Free agents not picked up who could have helped {{ manager }}{% else %}Free agents not picked up{% endif %}</h3>
-  <p class="hint">
-    {%- if manager %}Unrostered players who would have outscored something in
-    {{ manager }}&rsquo;s own starting lineup that week &mdash; not the league-wide standouts, just
-    the ones that mattered to THEM.
-    {%- else %}The best performers at each position among players on <strong>nobody&rsquo;s
-    roster</strong>, priced with the league&rsquo;s own scoring chart.{% endif %}
-    Sort by <strong>This week</strong> for the single-week explosion or <strong>Last
-    {{ [week, 4]|min }} wks</strong> for who&rsquo;s actually been hot &mdash; the bars are the same
-    span, tallest = that player&rsquo;s own best week in it. Click a row to expand the full list of
-    teams it would have upgraded, its position rank among free agents that week, and whether someone
-    already cut them. Use the position tabs or click a column header to sort.</p>
-  {% if fa_best_team %}
-  <div class="card fa-best tablewrap">
-    <p class="hint">The best legal lineup buildable entirely from this week&rsquo;s free agents.</p>
-    {% if fa_best_team.teams %}
-    {% macro fa_vs_team_switcher(teams, radio_name, id_prefix, lineup_key, fa_lineup_key, pts_key, gain_key) %}
-    <div class="viewswitch fa-vs-team">
-      {% for t in teams %}
-      <input type="radio" name="{{ radio_name }}" id="{{ id_prefix }}-{{ loop.index0 }}" class="vs-radio"{% if loop.first %} checked{% endif %}>
-      {% endfor %}
-      <div class="rail vs-tabs">
-        <span class="k">Team</span>
-        {% for t in teams %}
-        <label class="year" for="{{ id_prefix }}-{{ loop.index0 }}">{{ t.user_name }}</label>
-        {% endfor %}
-      </div>
-      {% for t in teams %}
-      {% set t_pts = t[pts_key] %}
-      {% set t_gain = t[gain_key] %}
-      <div class="vs-panel vs-p-{{ loop.index0 }}">
-        {% if t_pts is none %}
-        <p class="empty">No usable roster data for {{ t.user_name }} this week.</p>
-        {% else %}
-        {% set fa_won = t_gain > 0 %}
-        {% set tied = t_gain == 0 %}
-        <p class="hint">
-          <span class="score {{ 'score-w' if fa_won else 'score-l' if not tied else '' }}">{{ "%.2f"|format(fa_best_team.total) }}</span>
-          <span class="q">&ndash;</span>
-          <span class="score {{ 'score-l' if fa_won else 'score-w' if not tied else '' }}">{{ "%.2f"|format(t_pts) }}</span>
-          <span class="q">({{ "%+.1f"|format(t_gain) }})</span></p>
-        <div class="dt-tables">
-          <table class="dt-games">
-            <thead><tr><th colspan="2">Best available team</th>
-              <th class="n">{{ "%.2f"|format(fa_best_team.total) }}</th></tr></thead>
-            <tbody>
-            {% for p in t[fa_lineup_key] %}
-              <tr {% if p.cmp == 'up' %}class="cmp-up"{% elif p.cmp == 'down' %}class="cmp-down"{% endif %}>
-                <td><span class="q">{{ p.slot }}</span></td>
-                <td>{{ idm.headshot(p.player_id) }}<strong>{{ p.player_name }}</strong> {{ idm.posrank(p.player_id) }}</td>
-                <td class="n">{{ "%.2f"|format(p.points) }}</td>
-              </tr>
-            {% endfor %}
-            </tbody>
-          </table>
-          <table class="dt-games">
-            <thead><tr><th colspan="2">{{ idm.who(t.user_name) }}</th>
-              <th class="n">{{ "%.2f"|format(t_pts) }}</th></tr></thead>
-            <tbody>
-            {% for p in t[lineup_key] %}
-              <tr {% if p.cmp == 'up' %}class="cmp-up"{% elif p.cmp == 'down' %}class="cmp-down"{% endif %}>
-                <td><span class="q">{{ p.slot }}</span></td>
-                <td>{{ idm.headshot(p.player_id) }}<strong>{{ p.player_name }}</strong> {{ idm.posrank(p.player_id) }}</td>
-                <td class="n">{{ "%.2f"|format(p.points) }}</td>
-              </tr>
-            {% endfor %}
-            </tbody>
-          </table>
-        </div>
-        {% endif %}
-      </div>
-      {% endfor %}
-    </div>
-    {% endmacro %}
-
-    <div class="viewswitch fa-vs-mode">
-      <input type="radio" name="famode" id="fam-actual" class="vs-radio" checked>
-      <input type="radio" name="famode" id="fam-opt" class="vs-radio">
-      <div class="rail vs-tabs">
-        <span class="k">Compare vs</span>
-        <label class="year" for="fam-actual">Actual roster</label>
-        <label class="year" for="fam-opt">Optimized roster</label>
-      </div>
-      <div class="vs-panel vs-p-actual">
-        <p class="hint"><strong>Beats {{ fa_best_team.beats|length }} of {{ fa_best_team.n_teams }}</strong>
-          team{{ "" if fa_best_team.n_teams == 1 else "s" }} this week, against what they actually started.
-          Free agents on the left, one real team&rsquo;s actual lineup on the right &mdash;
-          switch teams to compare slot by slot (same green/red highlighting as the scoreboard above).</p>
-        {{ fa_vs_team_switcher(fa_best_team.teams, "fateam", "fat", "lineup", "fa_lineup", "points", "gain") }}
-      </div>
-      <div class="vs-panel vs-p-opt">
-        <p class="hint"><strong>Beats {{ fa_best_team.opt_beats }} of {{ fa_best_team.n_teams }}</strong>
-          team{{ "" if fa_best_team.n_teams == 1 else "s" }} this week, against their best possible lineup.
-          Free agents on the left, the best legal lineup that team&rsquo;s OWN roster (bench included)
-          could have started on the right.</p>
-        {{ fa_vs_team_switcher(fa_best_team.teams, "fateamopt", "fato", "opt_lineup", "fa_opt_lineup", "opt_points", "opt_gain") }}
-      </div>
-    </div>
-    {% else %}
-    <p class="empty">No other teams to compare against this week.</p>
-    {% endif %}
-  </div>
-  {% endif %}
-  {% if free_agents %}
   <div class="viewswitch">
     <input type="radio" name="fapos" id="fa-all" class="vs-radio" checked>
     {% for pos in fa_positions %}
@@ -409,8 +408,8 @@
     {% endfor %}
   </div>
   {% else %}
-  <p class="empty">{% if manager %}No free agent would have outscored anyone {{ manager }} started
-    this week.{% else %}No standout free-agent performances this week.{% endif %}</p>
+  <p class="empty">No standout free-agent performances this week.</p>
+  {% endif %}
   {% endif %}
 </main>
 

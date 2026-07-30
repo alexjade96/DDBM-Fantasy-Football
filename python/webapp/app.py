@@ -323,7 +323,6 @@ MANAGER_CHARTS = {
     "mgr_optimal": plots.plot_mgr_optimal,
     "mgr_margins": plots.plot_mgr_margins,
     "mgr_sos": plots.plot_mgr_sos,
-    "mgr_power_trend": plots.plot_mgr_power_trend,
     "mgr_efficiency_trend": plots.plot_mgr_efficiency_trend,
 }
 
@@ -692,7 +691,7 @@ def _week_recap(s, week: int, ws) -> dict:
         if len(fallers):
             faller = fallers.loc[fallers["delta"].idxmin()]
             negs.setdefault(faller["user_name"], []).append(
-                f"fell {int(-faller['delta'])} spot{'s' if -faller['delta'] != 1 else ''} "
+                f"fell from #{int(faller['table_position_prev'])} "
                 f"to #{int(faller['table_position_cur'])}")
         if len(risers):
             riser = risers.loc[risers["delta"].idxmax()]
@@ -711,11 +710,11 @@ def _week_recap(s, week: int, ws) -> dict:
                       "value": f"{low['user_name']} ({low['points']:.1f})"})
     if riser is not None and riser["user_name"] != worst_name:
         chips.append({"icon": "\U0001F4C8", "label": "Biggest riser",
-                      "value": f"{riser['user_name']}, up {int(riser['delta'])} "
+                      "value": f"{riser['user_name']} up from #{int(riser['table_position_prev'])} "
                                f"to #{int(riser['table_position_cur'])}"})
     if faller is not None and faller["user_name"] != worst_name:
         chips.append({"icon": "\U0001F4C9", "label": "Biggest faller",
-                      "value": f"{faller['user_name']}, down {int(-faller['delta'])} "
+                      "value": f"{faller['user_name']} down from #{int(faller['table_position_prev'])} "
                                f"to #{int(faller['table_position_cur'])}"})
     # Luck: a win despite losing the all-play field, or a loss despite
     # winning it -- the story the (now-removed-from-default-view) beaten-or-
@@ -728,14 +727,28 @@ def _week_recap(s, week: int, ws) -> dict:
             "allplay_pct", ascending=False)
         if len(lucky):
             r = lucky.iloc[0]
-            chips.append({"icon": "\U0001F340", "label": "Luckiest win",
-                          "value": f"{r['user_name']} won despite outscoring only "
-                                   f"{int(r['allplay_w'])} of {int(r['allplay_w'] + r['allplay_l'])} teams"})
+            aw, al = int(r["allplay_w"]), int(r["allplay_l"])
+            # aw == 1 is the extreme case -- their score beat only the single
+            # worst lineup in the league that week, i.e. they were a hair from
+            # having the league's worst score themselves, and won anyway
+            # because their actual opponent happened to be that team.
+            if aw == 1:
+                value = (f"{r['user_name']} won with almost the league's worst score this "
+                         f"week — only their opponent scored less")
+            else:
+                value = (f"{r['user_name']} won despite outscoring only {aw} of {aw + al} teams")
+            chips.append({"icon": "\U0001F340", "label": "Luckiest win", "value": value})
         elif len(unlucky):
             r = unlucky.iloc[0]
-            chips.append({"icon": "\U0001F62B", "label": "Unluckiest loss",
-                          "value": f"{r['user_name']} lost despite outscoring "
-                                   f"{int(r['allplay_w'])} of {int(r['allplay_w'] + r['allplay_l'])} teams"})
+            aw, al = int(r["allplay_w"]), int(r["allplay_l"])
+            # al == 1 is the mirror extreme -- only ONE team in the league
+            # outscored them, and it happened to be the one they had to play.
+            if al == 1:
+                value = (f"{r['user_name']} lost despite having the league's best score this "
+                         f"week except for the one team they had to play")
+            else:
+                value = (f"{r['user_name']} lost despite outscoring {aw} of {aw + al} teams")
+            chips.append({"icon": "\U0001F62B", "label": "Unluckiest loss", "value": value})
 
     return {"lead": " ".join(lead), "chips": chips[:3]}
 
@@ -768,10 +781,7 @@ def report_weekly(request: Request, league: str = DEFAULT_LEAGUE, season: str | 
         ctx["mgr_activity"] = metrics.mgr_activity_snapshot(s, manager, ctx["week"])
     # The manager view stays about THEM (report.py's per-manager report does
     # the same) -- their trades and their own waiver moves, not the whole
-    # league's. Free agents get the same treatment: free_agent_impact only
-    # keeps ones that would have beaten something in THEIR OWN lineup, rather
-    # than restating the league-wide standouts (most of whom have nothing to
-    # do with this manager's roster).
+    # league's.
     week_tx = metrics.week_transactions(s, ctx["week"])
     if manager:
         week_tx = {
@@ -780,16 +790,14 @@ def report_weekly(request: Request, league: str = DEFAULT_LEAGUE, season: str | 
             "waivers": [w for w in week_tx["waivers"] if w["user_name"] == manager],
         }
     ctx["week_tx"] = week_tx
-    ctx["free_agents"] = (metrics.free_agent_impact(s, ctx["week"], manager) if manager
-                          else metrics.free_agent_standouts(s, ctx["week"]))
+    # Both league-wide "what if against the whole field" sections -- the
+    # manager view drops them (redundant with the trades/waivers section
+    # above, which is already scoped to them), so skip the work entirely.
+    ctx["free_agents"] = [] if manager else metrics.free_agent_standouts(s, ctx["week"])
     # Which position tabs actually have entries this week -- a shallow week
-    # (or a manager with nothing to gain at some position) simply gets fewer
-    # tabs rather than an empty one.
+    # simply gets fewer tabs rather than an empty one.
     ctx["fa_positions"] = [p for p in metrics.POSITIONS
                            if any(fa["position"] == p for fa in ctx["free_agents"])]
-    # League-wide only -- it's a "what if" against the whole field, not a
-    # per-manager stat, so it stays out of the manager view the same way
-    # free_agent_standouts itself does.
     ctx["fa_best_team"] = None if manager else metrics.free_agent_best_team(s, ctx["week"])
     # Positional rank for that week ("RB #1", "WR #57") for every player named
     # anywhere on the page -- idm.posrank() looks names up here by player_id.

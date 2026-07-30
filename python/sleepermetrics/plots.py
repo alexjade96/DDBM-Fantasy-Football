@@ -1477,82 +1477,48 @@ def plot_mgr_sos(s: Season, manager: str, through_week: int | None = None):
                    caption=_cap(s))
 
 
-def plot_mgr_power_trend(s: Season, manager: str, through_week: int | None = None):
-    """Their composite power score (see `metrics.power_rank`), recomputed at
-    every week through `through_week`.
-
-    A single power-rank number (as on the Overview tab) only shows where they
-    stand right now; the trend shows whether they're climbing or sliding
-    independent of this single week's result. `through_week` caps the season
-    the same as the other mgr_* charts -- a week-5 report can't show weeks
-    6-14 of trend.
-    """
-    wk = int(through_week) if through_week is not None else s.last_week
-    rows = []
-    for w in range(1, wk + 1):
-        d = metrics.power_rank(s, through_week=w)
-        r = d[d["user_name"] == manager]
-        if len(r):
-            rows.append({"week": w, "power": float(r["power"].iloc[0]),
-                        "rank": int(r["power_rank"].iloc[0])})
-    if not rows:
-        return _no_data(f"No power-rank data for {manager} in {s.season}.")
-    import pandas as pd
-    d = pd.DataFrame(rows)
-    fig, ax = plt.subplots(figsize=(9.5, 5.5))
-    ax.axhline(0, color=T["rule"], lw=1.2, ls="--", zorder=1)
-    cols = ["#2c7fb8" if v >= 0 else "#c0563f" for v in d["power"]]
-    ax.plot(d["week"], d["power"], lw=1.8, color=T["neutral"], zorder=2)
-    ax.scatter(d["week"], d["power"], s=80, c=cols, zorder=3,
-               edgecolors=T["edge"], linewidths=1)
-    for _, r in d.iterrows():
-        ax.text(r["week"], r["power"] + (0.05 if r["power"] >= 0 else -0.05),
-                f"#{int(r['rank'])}", ha="center",
-                va="bottom" if r["power"] >= 0 else "top",
-                fontsize=7.5, color=T["muted"])
-    ax.set_xticks(list(d["week"]))
-    return _finish(fig, ax, f"{manager} · Power Rank Trend",
-                   "Composite of points, all-play, recent form and efficiency, "
-                   "recomputed each week  ·  0 = that week's league average",
-                   "Week", "Power score", caption=_cap(s), grid_axis="y")
-
-
 def plot_mgr_efficiency_trend(s: Season, manager: str, through_week: int | None = None):
-    """Their lineup efficiency (started / optimal, %) week by week.
+    """This manager's lineup efficiency THIS WEEK against the rest of the league.
 
-    The scoreboard drilldown already shows ONE week's efficiency; this is the
-    arc across the season -- is their coaching improving or slipping, not
-    just what happened this week. Same band-plus-line idiom as
-    `plot_mgr_score_band`. `through_week` caps the season the same as the
-    other mgr_* charts.
+    Originally a season-long trend line, but that arc buried the one thing a
+    weekly report reader actually wants here: how did THIS week's coaching
+    compare to the other nine teams' THIS week. `through_week` is
+    reused as "the week to show" (the weekly report always passes the viewed
+    week; this key isn't in the season report's chart set, so there's no
+    season-wide caller to keep compatible). A Cleveland dot plot, not a
+    zero-based bar: efficiency is a tight band (usually 75-100%), so an
+    honestly-zoomed axis is what makes the spread readable at all.
     """
     lu = getattr(s, "lineup", None)
     if lu is None or not {"user_name", "week", "actual", "optimal"}.issubset(
             getattr(lu, "columns", [])):
         return _no_data(f"No lineup data for {manager} in {s.season}.")
-    cap = lu[lu["week"] <= through_week] if through_week is not None else lu
-    cap = cap.copy()
-    cap["eff"] = (cap["actual"] / cap["optimal"].clip(lower=1e-9) * 100).clip(upper=100)
-    mine = cap[cap["user_name"] == manager].sort_values("week")
-    if mine.empty:
-        return _no_data(f"No lineup data for {manager} in {s.season}.")
-    band = cap.groupby("week")["eff"].agg(lo="min", hi="max", mid="median").reset_index()
-    fig, ax = plt.subplots(figsize=(9.5, 5.5))
-    ax.fill_between(band["week"], band["lo"], band["hi"], color=T["neutral"],
-                    alpha=0.35, zorder=1, label="league range")
-    ax.plot(band["week"], band["mid"], ls="--", lw=1.6, color=T["rule"],
-            zorder=2, label="league median")
-    ax.plot(mine["week"], mine["eff"], lw=2, color=T["ink2"], zorder=3)
-    ax.scatter(mine["week"], mine["eff"], s=70, color="#2c7fb8", zorder=4,
-               edgecolors=T["edge"], linewidths=1.0)
-    ax.set_xticks(list(mine["week"]))
-    ax.set_ylim(0, 105)
-    avg = mine["eff"].mean()
-    ax.legend(loc="lower right", frameon=False, fontsize=8)
-    return _finish(fig, ax, f"{manager} · Lineup Efficiency by Week",
-                   f"Started points as a share of the best legal lineup  ·  "
-                   f"season avg {avg:.1f}%",
-                   "Week", "Efficiency %", caption=_cap(s), grid_axis="y")
+    wk = int(through_week) if through_week is not None else s.last_week
+    d = lu[lu["week"] == wk].copy()
+    if d.empty or manager not in set(d["user_name"]):
+        return _no_data(f"No lineup data for {manager}, week {wk}.")
+    d["eff"] = (d["actual"] / d["optimal"].clip(lower=1e-9) * 100).clip(upper=100)
+    d = d.sort_values("eff").reset_index(drop=True)
+    fig, ax = plt.subplots(figsize=(9, 5.5))
+    mine_mask = d["user_name"] == manager
+    cols = ["#2c7fb8" if m else T["neutral"] for m in mine_mask]
+    sizes = [120 if m else 60 for m in mine_mask]
+    ax.scatter(d["eff"], range(len(d)), s=sizes, c=cols, zorder=3,
+               edgecolors=T["edge"], linewidths=1)
+    ax.set_yticks(range(len(d)))
+    ax.set_yticklabels(d["user_name"])
+    _row_avatars(ax, d["user_name"], s)
+    for i, (_, r) in enumerate(d.iterrows()):
+        mine = r["user_name"] == manager
+        ax.text(r["eff"] + 0.4, i, f"{r['eff']:.1f}%", va="center", fontsize=8.5,
+                color=T["ink2"] if mine else T["muted"],
+                fontweight="bold" if mine else "normal")
+    lo, hi = float(d["eff"].min()), float(d["eff"].max())
+    pad = max((hi - lo) * 0.18, 3.0)
+    ax.set_xlim(lo - pad, hi + pad * 1.7)
+    return _finish(fig, ax, f"{manager} · Lineup Efficiency, Week {wk}",
+                   "Started points as % of the best legal lineup this week  ·  vs the rest of the league",
+                   "Efficiency %", caption=_cap(s))
 
 
 def plot_week_matchups(s: Season, week: int):

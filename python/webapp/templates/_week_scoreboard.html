@@ -109,6 +109,17 @@
               {% else %}
                 <tr><td colspan="3"><span class="q">No roster data.</span></td></tr>
               {% endfor %}
+              {% if sd.opt_bench %}
+                <tr><td colspan="3"><span class="q">Bench</span></td></tr>
+                {% for pl in sd.opt_bench %}
+                <tr {% if pl.was_started %}class="bench-impact"{% endif %}>
+                  <td><span class="q">{{ pl.position }}</span></td>
+                  <td>{{ idm.headshot(pl.player_id) }}{{ pl.player_name }} {{ idm.posrank(pl.player_id) }}
+                    {%- if pl.was_started %} <span class="q star" title="Started in the actual lineup, swapped out here">*</span>{% endif %}</td>
+                  <td class="n"><span class="q">{{ "%.2f"|format(pl.points) }}</span></td>
+                </tr>
+                {% endfor %}
+              {% endif %}
               </tbody>
             </table>
             {% endfor %}
