@@ -1,5 +1,8 @@
 {# Transactions tab: the roster-building charts, then the deals themselves --
-   every trade kept intact as a deal, and the waiver wire by what it returned. #}
+   every trade kept intact as a deal, and the waiver wire by what it returned --
+   then what was left unclaimed (fa_season, actual-points framing: value left
+   on the wire). The OPTIMAL-lineup framing of that same computation lives on
+   Coaching instead (a lineup-decision question, not an acquisition one). #}
 {% import "_chartmacro.html" as ch with context %}
 {% import "_ident.html" as idm with context %}
 {% include "_liveband.html" %}
@@ -29,6 +32,10 @@
 
 <h2>Trades</h2>
 {% if deals %}
+{# The chart sits directly above its own table, same convention as
+   waiver_performance above the Waiver wire table below -- not up in the
+   general chart grid, where the relationship read as coincidental. #}
+{{ ch.chart("trade_performance") }}
 <p class="hint">{{ n_deals }} trade{{ "" if n_deals == 1 else "s" }} in {{ season }}, one
    card per deal. Each side lists only what that team <strong>received</strong>, so every
    player appears once, under whoever got him. <strong>Net</strong> is what those players
@@ -73,15 +80,15 @@
 <h2>Waiver wire</h2>
 {% if waivers %}
 {# The chart is the top 15 of the same ranked list the table below shows in
-   full (top 30) -- kept here, directly above its own table, instead of up in
-   the general chart grid where the relationship read as coincidental. #}
+   full -- kept here, directly above its own table, instead of up in the
+   general chart grid where the relationship read as coincidental. #}
 {{ ch.chart("waiver_performance") }}
-<p class="hint">The {{ waivers | length }} best pickups of {{ season }} by what they
-   returned while rostered, out of {{ n_adds }} total. One row per manager per player &mdash;
-   <strong>&times;n</strong> marks someone picked up more than once. <strong>Starts</strong>
-   against weeks rostered separates a real contributor from a bench stash.</p>
-<div class="card tablewrap">
-  <table>
+<p class="hint">All {{ n_adds }} waiver and free-agent pickups of {{ season }}, ranked by what
+   they returned while rostered. One row per manager per player &mdash; <strong>&times;n</strong>
+   marks someone picked up more than once. <strong>Starts</strong> against weeks rostered
+   separates a real contributor from a bench stash. Click a column header to sort.</p>
+<div class="card tablewrap scrolltable">
+  <table class="sortable">
     <thead><tr>
       <th class="n">Wk</th><th>Manager</th><th>Player</th><th>Pos</th>
       <th>Via</th><th class="n">Starts</th><th class="n">Pts</th>
@@ -104,4 +111,42 @@
 </div>
 {% else %}
 <p class="empty">No waiver or free-agent moves recorded in {{ season }}.</p>
+{% endif %}
+
+{% if fa_season %}
+<div class="rowhead">
+  <h2>Free agents left on the wire</h2>
+  <div class="rowhead-actions">
+    {# Per-week detail (which specific players, and who they'd have upgraded)
+       lives only on the Weekly tab -- same cross-link pattern Overview and
+       Coaching use rather than repeating that content here. #}
+    <button type="button" class="ghost"
+            onclick="[...document.querySelectorAll('.tabs button')].find(b=>b.getAttribute('hx-get')==='/tab/weekly').click()">
+      Week-by-week detail &rarr;</button>
+  </div>
+</div>
+<p class="hint">The Waiver wire table above is what managers actually picked up; this is what
+   they left behind &mdash; a lineup built entirely from that week&rsquo;s free agents, every week
+   of the season, summed against each manager&rsquo;s ACTUAL points &mdash;
+   <strong>{{ "%.0f"|format(fa_season.total) }} points</strong> over {{ fa_season.weeks }} weeks.
+   <strong>Weeks beaten</strong> counts how many of those weekly free-agent lineups would have
+   outscored what that manager actually started.</p>
+<div class="grid two">
+  <div class="card tablewrap">
+    <table>
+      <thead><tr><th>Manager</th><th class="n">Season pts</th><th class="n">Gap</th><th class="n">Weeks beaten</th></tr></thead>
+      <tbody>
+      {% for t in fa_season.teams %}
+        <tr>
+          <td>{{ idm.who(t.user_name) }}</td>
+          <td class="n">{{ "%.0f"|format(t.points) }}</td>
+          <td class="n">{% if t.gain > 0 %}<span class="res l">+{{ "%.0f"|format(t.gain) }}</span>{% else %}<span class="res w">{{ "%.0f"|format(t.gain) }}</span>{% endif %}</td>
+          <td class="n">{{ t.weeks_beaten }} / {{ t.weeks }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {{ ch.chart("fa_season") }}
+</div>
 {% endif %}

@@ -1,5 +1,10 @@
-{# Coaching tab: the efficiency/consistency charts, then the decisions behind
-   them -- per manager week by week, and the individual calls that cost most. #}
+{# Coaching tab: the efficiency chart, then the decisions behind it -- per
+   manager week by week, and the individual calls that cost most. Also
+   carries the free-agent comparison's OPTIMAL-lineup framing ("would even
+   perfect coaching have beaten the wire") -- the actual-points framing of
+   the same underlying computation lives on Transactions instead (an
+   acquisition question, not a lineup-decision one), and per-week detail
+   lives only on the Weekly tab (was identical content rendered twice). #}
 {% import "_chartmacro.html" as ch with context %}
 {% import "_ident.html" as idm with context %}
 {% include "_liveband.html" %}
@@ -129,5 +134,49 @@
     {% endfor %}
     </tbody>
   </table>
+</div>
+{% endif %}
+
+{% if fa_season %}
+<div class="rowhead">
+  <h2>Your best lineup vs. the best available free agents</h2>
+  <div class="rowhead-actions">
+    {# Per-week detail (both this comparison and the free-agents-not-picked-up
+       list) lives only on the Weekly tab now -- it was identical content
+       rendered a second time here. Activates the Weekly nav button so the
+       tab strip tracks it, same pattern Overview uses for this same link. #}
+    <button type="button" class="ghost"
+            onclick="[...document.querySelectorAll('.tabs button')].find(b=>b.getAttribute('hx-get')==='/tab/weekly').click()">
+      Week-by-week detail &rarr;</button>
+  </div>
+</div>
+<p class="hint">Not "did they work the wire" (that&rsquo;s the Transactions tab) but "would even
+   PERFECT lineup-setting have been enough" &mdash; each manager&rsquo;s own best possible lineup
+   (bench included), summed across every week, against a lineup built entirely from that
+   week&rsquo;s free agents &mdash; <strong>{{ "%.0f"|format(fa_season.total) }} points</strong> over
+   {{ fa_season.weeks }} weeks. <strong>Weeks beaten</strong> counts how many of those weekly
+   free-agent lineups would have outscored that manager&rsquo;s own OPTIMAL lineup.</p>
+{# The chart sits directly beside its own table, same convention as
+   waiver_performance/trade_performance above their tables -- not up in the
+   general efficiency grid, where the relationship read as coincidental. #}
+<div class="grid two">
+  <div class="card tablewrap">
+    <table>
+      <thead><tr><th>Manager</th><th class="n">Best lineup, season</th><th class="n">Gap</th><th class="n">Weeks beaten</th></tr></thead>
+      <tbody>
+      {% for t in fa_season.teams %}
+        {% if t.opt_points is not none %}
+        <tr>
+          <td>{{ idm.who(t.user_name) }}</td>
+          <td class="n">{{ "%.0f"|format(t.opt_points) }}</td>
+          <td class="n">{% if t.opt_gain > 0 %}<span class="res l">+{{ "%.0f"|format(t.opt_gain) }}</span>{% else %}<span class="res w">{{ "%.0f"|format(t.opt_gain) }}</span>{% endif %}</td>
+          <td class="n">{{ t.weeks_beaten_optimal }} / {{ t.weeks }}</td>
+        </tr>
+        {% endif %}
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {{ ch.chart("fa_season_optimal") }}
 </div>
 {% endif %}

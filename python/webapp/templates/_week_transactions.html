@@ -1,0 +1,106 @@
+{# This week's moves: trades (as cards) and waivers/FA pickups (as a sortable
+   table). Shared by the weekly report and the Weekly tab. Needs `week_tx`
+   (metrics.week_transactions) and `week` in context; `manager`/`mgr_activity`
+   are optional -- absent (the Weekly tab) falls through to the league-wide
+   wording automatically, same degrade-gracefully pattern as
+   _week_narrative.html. #}
+{% import "_ident.html" as idm with context %}
+<h2>{% if manager %}{{ manager }}&rsquo;s moves this week{% else %}Week {{ week }} transactions{% endif %}</h2>
+{% if manager and mgr_activity %}
+<p class="hint">This season so far: <strong>{{ mgr_activity.moves }}</strong> waiver/FA add{{ "" if mgr_activity.moves == 1 else "s" }},
+  <strong>{{ mgr_activity.trades }}</strong> trade{{ "" if mgr_activity.trades == 1 else "s" }},
+  <strong>{{ mgr_activity.drops }}</strong> drop{{ "" if mgr_activity.drops == 1 else "s" }}
+  {%- if mgr_activity.lineup_iq is not none %}, and a <strong>{{ "%.1f"|format(mgr_activity.lineup_iq) }}%</strong>
+  lineup IQ (started points as a share of the best legal lineup, averaged across every week){% endif %}.</p>
+{% endif %}
+
+<h3>Trades</h3>
+{% if week_tx.trades %}
+<p class="hint">{{ week_tx.trades|length }} trade{{ "" if week_tx.trades|length == 1 else "s" }} this
+   week. Each side lists who they received, that player&rsquo;s points <strong>this week</strong>,
+   and their points <strong>this season so far</strong> (any roster) &mdash; a trade this fresh
+   hasn&rsquo;t had time to prove a winner, so this leaves that read to you.</p>
+<div class="deals">
+  {% for d in week_tx.trades %}
+  <article class="deal">
+    {% if d.n_teams > 2 %}<span class="tag deal-tag">{{ d.n_teams }}-team</span>{% endif %}
+    {# One grid, one column computation, for both the name and the players
+       beneath it -- name and detail share a single .side cell, so there is
+       no separate header grid that can wrap/collapse out of step with the
+       body at narrow widths. In a 3+-team deal, a received player's OWN
+       "from" team is shown too -- with only two sides that's always just
+       "the other one" and not worth saying, but with three it's genuinely
+       ambiguous which side a piece moved from. #}
+    <div class="sides">
+      {% for sd in d.sides %}
+      <div class="side">
+        <div class="side-name">{{ idm.who(sd.user_name) }}</div>
+        <div class="got">
+          {% for p in sd.players %}
+          <div class="plr">
+            <div class="plr-name">{{ idm.headshot(p.player_id) }}<strong>{{ p.player_name }}</strong> {{ idm.posrank(p.player_id) }}</div>
+            {% if d.n_teams > 2 and p.from_team %}
+            <div class="plr-from"><span class="q">from {{ idm.who(p.from_team) }}</span></div>
+            {% endif %}
+            <div class="plr-pts">
+              <span class="q">{{ "%.1f"|format(p.week_pts) }} this week</span>
+              <span class="q">{{ "%.1f"|format(p.season_pts) }} this season</span>
+            </div>
+          </div>
+          {% else %}
+          <span class="q">no players &mdash; picks or FAAB only</span>
+          {% endfor %}
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+  </article>
+  {% endfor %}
+</div>
+{% else %}
+<p class="empty">{% if manager %}No trades for {{ manager }} this week.{% else %}No trades this week.{% endif %}</p>
+{% endif %}
+
+<h3>Waivers &amp; free agent pickups</h3>
+{% if week_tx.waivers %}
+<p class="hint">Waiver claims and free-agent adds this week. <strong>Trending</strong> is the
+   player's real performance over the last {{ [week, 4]|min }} weeks (through week {{ week }}),
+   priced with the league's scoring chart regardless of who rostered him then -- same read as the
+   free agents below. <strong>Points this week</strong> is what they scored the week they were
+   picked up. Click a column header to sort or group (e.g. by who picked them up, or Via).</p>
+<div class="card tablewrap scrolltable">
+  <table class="sortable">
+    <thead><tr>
+      <th>Player</th><th>Pos</th>
+      <th class="trend-col">Trending</th><th class="n">Points this week</th>
+      <th>Via</th><th>Picked up by</th>
+    </tr></thead>
+    <tbody>
+    {% for r in week_tx.waivers %}
+      <tr>
+        <td>{{ idm.headshot(r.player_id) }}{{ r.player_name }}{% if r.times > 1 %}
+            <span class="q">&times;{{ r.times }}</span>{% endif %} {{ idm.posrank(r.player_id) }}</td>
+        <td>{{ r.position }}</td>
+        <td class="trend-col">
+          {{ "%.1f"|format(r.trend_total) }}
+          {% if r.trend %}
+          <div class="spark">
+            {% for t in r.trend %}
+            <div class="spark-bar" style="height: {{ t.pct }}%"
+                 title="Week {{ t.week }}: {{ '%.1f'|format(t.points) }}"></div>
+            {% endfor %}
+          </div>
+          {% endif %}
+        </td>
+        <td class="n">{{ "%.1f"|format(r.week_points) }}</td>
+        <td><span class="q">{{ r.via }}</span></td>
+        <td>{{ idm.who(r.user_name) }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<p class="empty">{% if manager %}No waiver or free-agent adds for {{ manager }} this week.
+  {%- else %}No waiver or free-agent adds this week.{% endif %}</p>
+{% endif %}

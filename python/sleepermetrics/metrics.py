@@ -274,6 +274,29 @@ def manager_profile(s: Season) -> pd.DataFrame:
     return out.sort_values(["moves", "lineup_iq"], ascending=False).reset_index(drop=True)
 
 
+def transaction_volume(s: Season) -> list[dict]:
+    """Player-movement events (adds/drops from trades, waivers and free agency)
+    per week across the regular season -- "how busy was the league, and when".
+
+    Per-manager averages already live on `manager_profile`'s `moves_per_wk`
+    axis, so this is deliberately just the week-by-week time series (the
+    league-wide counterpart), not a second per-manager average.
+    """
+    tx = s.transactions
+    out = []
+    for wk in range(1, s.last_week + 1):
+        if not len(tx):
+            out.append({"week": wk, "trades": 0, "waivers": 0, "free_agent": 0, "total": 0})
+            continue
+        wtx = tx[(tx["week"] == wk) & (tx["status"] != "failed")]
+        trades = int((wtx["type"] == "trade").sum())
+        waivers = int((wtx["type"] == "waiver").sum())
+        fa = int((wtx["type"] == "free_agent").sum())
+        out.append({"week": wk, "trades": trades, "waivers": waivers,
+                    "free_agent": fa, "total": trades + waivers + fa})
+    return out
+
+
 def mgr_allplay_snapshot(s: Season, manager: str, through_week: int) -> dict | None:
     """One manager's schedule-independent (all-play) record through a given
     week, and how it compares to their actual table position that week.
@@ -780,6 +803,48 @@ def roster_detail(s: Season) -> list[dict]:
     return sorted(out, key=lambda x: -x["started_pts"])
 
 
+def _best_combined(pl_for_week: pd.DataFrame, slots: dict, wk) -> dict | None:
+    """Shared core for week_best_combined()/roster_weeks(): the best legal
+    lineup pulled from EVERY player rostered anywhere in the league that
+    week (bench included), not one team's roster. `pl_for_week` must already
+    carry player_id/player_name/position/points/user_name, scoped to one week.
+    Same solver as free_agent_best_team, just handed the whole league's
+    rostered pool instead of the free-agent pool.
+    """
+    from .season import assign_slots, optimal_lineup
+
+    if not len(pl_for_week):
+        return None
+    df = pl_for_week[["player_id", "player_name", "position", "points"]]
+    picks = optimal_lineup(df, slots)
+    if picks.empty:
+        return None
+    picks = assign_slots(picks, slots)
+    names = pl_for_week.set_index("player_id")["user_name"]
+    lineup = [{"slot": r.slot, "player_id": r.player_id, "player_name": r.player_name,
+              "position": r.position, "points": round(float(r.points), 1),
+              "user_name": names.get(r.player_id)}
+             for r in picks.itertuples(index=False)]
+    return {"week": int(wk), "total": round(float(picks["points"].sum()), 1),
+            "lineup": lineup}
+
+
+def week_best_combined(s: Season, week: int) -> dict | None:
+    """The best possible lineup combining every player rostered ANYWHERE in
+    the league that week -- "if you could draft an all-star team from the
+    league's actual rosters that week" -- against the real teams. Used
+    standalone by the Weekly tab (one week); roster_weeks() below computes
+    the same thing for every week, reusing its own already-grouped frame
+    rather than calling this per week.
+    """
+    wk = int(week)
+    pl = s.pl_wk[s.pl_wk["week"] == wk]
+    if not len(pl):
+        return None
+    pl = pl.merge(s.user_map[["roster_id", "user_name"]], on="roster_id", how="left")
+    return _best_combined(pl, s.slots, wk)
+
+
 def roster_weeks(s: Season) -> list[dict]:
     """Per week: who got the most out of their roster, and who left the most on it."""
     if not _roster_ok(s):
@@ -813,6 +878,7 @@ def roster_weeks(s: Season) -> list[dict]:
             "league_pts": round(float(st["points"].sum()), 1),
             "best": teams[0] if teams else None,
             "worst": teams[-1] if teams else None,
+            "best_combined": _best_combined(g, s.slots, wk),
             "top_player": (None if top is None else
                            {"player_name": top["player_name"],
                             "position": top["position"],
@@ -1741,3 +1807,53 @@ def free_agent_best_team(s: Season, week: int) -> dict | None:
         "beats": beats, "n_teams": int(len(tw)), "teams": teams,
         "opt_beats": opt_beats,
     }
+
+
+def free_agent_best_team_season(s: Season) -> dict | None:
+    """The best possible free-agent lineup, week by week, summed across the
+    whole regular season -- "what if you'd drafted the waiver wire every
+    single week" -- against each manager's actual season point total.
+
+    Reuses `free_agent_best_team()` unchanged, one call per week, rather than
+    duplicating its optimal-lineup-selection logic; `s.last_week` is the
+    regular-season cap every other season-scoped metric here already uses.
+
+    Each team also carries `opt_points`/`opt_gain`/`weeks_beaten_optimal` --
+    the same comparison against their own best POSSIBLE lineup each week
+    (bench included), not what they actually started, summed the same way.
+    The actual-based fields read as "value left on the wire" (Transactions'
+    natural complement to the Waiver wire table); the optimal-based fields
+    read as "would even perfect coaching have beaten this" (Coaching's
+    natural complement to the efficiency chart). None is None for a manager
+    with no lineup data any week (a season with no `s.lineup`).
+    """
+    weekly = []
+    for wk in range(1, s.last_week + 1):
+        r = free_agent_best_team(s, wk)
+        if r:
+            weekly.append({
+                "week": wk, "total": r["total"],
+                "beats": {b["user_name"] for b in r["beats"]},
+                "opt_pts_by_team": {t["user_name"]: t["opt_points"] for t in r["teams"]
+                                    if t["opt_points"] is not None},
+            })
+    if not weekly:
+        return None
+    fa_total = round(sum(w["total"] for w in weekly), 1)
+    season_pts = s.team_wk.groupby("user_name")["points"].sum()
+    teams = []
+    for name, pts in season_pts.items():
+        wins = sum(1 for w in weekly if name in w["beats"])
+        opt_weeks = [w for w in weekly if name in w["opt_pts_by_team"]]
+        opt_total = sum(w["opt_pts_by_team"][name] for w in opt_weeks)
+        opt_wins = sum(1 for w in opt_weeks if w["opt_pts_by_team"][name] < w["total"])
+        teams.append({
+            "user_name": name, "points": round(float(pts), 1),
+            "gain": round(fa_total - float(pts), 1),
+            "weeks_beaten": wins, "weeks": len(weekly),
+            "opt_points": round(opt_total, 1) if opt_weeks else None,
+            "opt_gain": (round(fa_total - opt_total, 1) if opt_weeks else None),
+            "weeks_beaten_optimal": opt_wins if opt_weeks else None,
+        })
+    teams.sort(key=lambda t: -t["points"])
+    return {"total": fa_total, "weeks": len(weekly), "teams": teams}

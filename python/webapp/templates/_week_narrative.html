@@ -1,0 +1,20 @@
+{# The week's narrative: league-wide recap (prose + chip highlights from
+   app.py's `_week_recap`) or, when `manager` is set, their own narrative
+   (`mgr_narrative`). Shared by the weekly report and the Weekly tab -- see
+   _week_scoreboard.html for the sibling pattern this follows. Both context
+   vars degrade to Jinja's default-undefined-is-falsy when the caller never
+   sets `manager` (the Weekly tab), so this needs no caller-side branching. #}
+<div class="card narrative">
+  {% if manager %}
+  <p>{{ mgr_narrative }}</p>
+  {% else %}
+  <p>{{ recap.lead }}</p>
+  {% if recap.chips %}
+  <ul>
+    {% for c in recap.chips %}
+    <li>{{ c.icon }} <strong>{{ c.label }}:</strong> {{ c.value }}</li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+  {% endif %}
+</div>

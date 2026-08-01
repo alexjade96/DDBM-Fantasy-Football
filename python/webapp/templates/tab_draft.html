@@ -39,16 +39,17 @@
 <p class="hint">Ranked by value against draft position, not raw points — so a late
    flier that returned nothing sits near zero, while an early pick that returned
    nothing sinks. <strong>+/−</strong> is how many places the pick beat (or missed)
-   where it was taken. Value counts only points <em>started for the drafting
-   team</em>; where a bust went on to score for somebody else, that is noted
-   beside him &mdash; the difference between a bad player and a bad decision.</p>
+   where it was taken. <strong>Pts</strong> counts only points <em>started for the
+   drafting team</em>; <strong>Total</strong> is what the player scored for every
+   roster that held him all season &mdash; where a bust went on to score for
+   somebody else, that gap is the difference between a bad player and a bad decision.</p>
 <div class="grid two">
   <div class="card tablewrap">
     <h3>Gems</h3>
     <table>
       <thead><tr>
         <th>Pick</th><th>Player</th><th>Pos</th><th>Manager</th>
-        <th class="n">Pts</th><th class="n">+/&minus;</th>
+        <th class="n">Pts</th><th class="n">Total</th><th class="n">+/&minus;</th>
       </tr></thead>
       <tbody>
       {% for r in gems %}
@@ -58,6 +59,7 @@
           <td>{{ r.position }}</td>
           <td>{{ idm.who(r.user_name) }}</td>
           <td class="n">{{ "%.0f"|format(r.points) }}</td>
+          <td class="n">{{ "%.0f"|format(r.total) }}</td>
           <td class="n"><span class="res w">+{{ r.steal }}</span></td>
         </tr>
       {% endfor %}
@@ -69,7 +71,7 @@
     <table>
       <thead><tr>
         <th>Pick</th><th>Player</th><th>Pos</th><th>Manager</th>
-        <th class="n">Pts</th><th class="n">+/&minus;</th>
+        <th class="n">Pts</th><th class="n">Total</th><th class="n">+/&minus;</th>
       </tr></thead>
       <tbody>
       {% for r in busts %}
@@ -80,6 +82,7 @@
           <td>{{ r.position }}</td>
           <td>{{ idm.who(r.user_name) }}</td>
           <td class="n">{{ "%.0f"|format(r.points) }}</td>
+          <td class="n">{{ "%.0f"|format(r.total) }}</td>
           <td class="n"><span class="res l">{{ r.steal }}</span></td>
         </tr>
       {% endfor %}

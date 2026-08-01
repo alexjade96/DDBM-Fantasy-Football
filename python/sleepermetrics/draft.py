@@ -143,8 +143,11 @@ def draft_extremes(s: Season, n: int = 8) -> dict:
     # Carrying what he scored elsewhere keeps that visible: it distinguishes a
     # player who was simply bad from one the team gave up on.
     d["elsewhere"] = _points_elsewhere(s, d)
+    # Total = points for the drafting team + everywhere else -- the player's
+    # actual season output, regardless of who was rostering him when he scored it.
+    d["total"] = (d["points"] + d["elsewhere"]).round(1)
     cols = ["pick", "pick_no", "player_id", "player_name", "position", "user_name",
-            "points", "steal", "elsewhere"]
+            "points", "total", "steal", "elsewhere"]
     gems = d.sort_values(["steal", "points"], ascending=[False, False]).head(n)
     busts = d.sort_values(["steal", "points"], ascending=[True, True]).head(n)
     return {"gems": gems[cols].to_dict("records"),

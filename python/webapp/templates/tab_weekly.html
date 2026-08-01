@@ -52,6 +52,17 @@
   {% endfor %}
 </section>
 
+{# reportpanel is a scoping hook, not a layout container (no base CSS rule of
+   its own) -- several presentation tweaks in style.css are written as
+   `.reportpanel .narrative {...}` etc. because the same classes (.narrative,
+   .deal) are also used unmodified elsewhere (e.g. the Transactions tab's own
+   trade cards). Wrapping these included sections the same way tab_report.html
+   already wraps its own native report render keeps them visually consistent
+   with the standalone weekly report they're shared with. #}
+<div class="reportpanel">
+  {% include "_week_narrative.html" %}
+</div>
+
 {# Order: tiles -> THE GAMES (the dumbbell and the scoreboard it depicts,
    kept together — they are the same content at two resolutions) -> the
    analysis charts that put the week in context. Splitting the chart from its
@@ -68,6 +79,15 @@
 </figure>
 {% include "_week_scoreboard.html" %}
 
+<h3>Best combined roster this week</h3>
+<p class="hint">The best legal lineup buildable from EVERY player rostered anywhere in the
+   league this week &mdash; bench included, any team &mdash; against the week&rsquo;s real
+   scores above.</p>
+<div class="card tablewrap">
+  {% set combined = best_combined %}
+  {% include "_best_combined.html" %}
+</div>
+
 <h2>Week {{ week }} in context</h2>
 <p class="hint">Was the result deserved? On the left a team <strong>below</strong> the diagonal
    won and <strong>above</strong> it lost, with colour showing how many teams they outscored
@@ -79,4 +99,9 @@
          alt="Week {{ week }} luck" loading="lazy">
   </figure>
   {{ ch.chart("week_race", week=week) }}
+</div>
+
+<div class="reportpanel">
+  {% include "_week_transactions.html" %}
+  {% include "_week_fa.html" %}
 </div>

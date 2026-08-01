@@ -1,8 +1,21 @@
 {# Roster tab: the position/usage charts, then the rosters themselves --
    per manager and per week, each row expanding into its detail. The drill
-   markup (drilltable / dt-*) is global CSS, promoted out of .reportpanel. #}
+   markup (drilltable / dt-*) is global CSS, promoted out of .reportpanel.
+   `manager` scopes the whole tab to one team (charts + both drilldowns) --
+   same rail pattern as the Season report tab (tab_report.html), landing on
+   the whole-league view by default. #}
 {% import "_chartmacro.html" as ch with context %}
 {% import "_ident.html" as idm with context %}
+<nav class="rail" hx-target="#panel" hx-swap="innerHTML"
+     hx-include="#league, #season, #theme">
+  <span class="k">Scope</span>
+  <button class="year {% if not manager %}on{% endif %}"
+          hx-get="/tab/roster">Whole league</button>
+  {% for m in managers %}
+  <button class="year {% if m == manager %}on{% endif %}"
+          hx-get="/tab/roster?manager={{ m|urlencode }}">{{ m }}</button>
+  {% endfor %}
+</nav>
 {% include "_liveband.html" %}
 {% if standouts %}
 <h2>Roster standouts</h2>
@@ -22,11 +35,27 @@
    deliberately unconditional (unlike the standouts tiles above): it's the
    whole tab's reason for being separate from Coaching, so it must render even
    on a season where roster_standouts() happens to return nothing. #}
+{% if manager %}
+<p class="hint">{{ manager }}&rsquo;s own roster this season &mdash; where their points came
+   from, week by week. Switch to <strong>Whole league</strong> above for the
+   season-wide position/usage charts.</p>
+{% else %}
 <p class="hint">What teams <em>rostered</em> and where their points came from &mdash; separate
    from how well those players were started (that&rsquo;s Coaching). Each chart&rsquo;s
    takeaway is noted beneath it.</p>
+{% endif %}
 <section class="grid">
+  {% if manager %}
+  {% for c in charts %}
+  <figure class="card chart{% if CHART_META.get(c, {}).wide %} wide{% endif %}">
+    <img src="/chart/{{ c }}?league={{ league }}&season={{ season }}&theme={{ theme }}&manager={{ manager|urlencode }}&_={{ bust }}"
+         alt="{{ CHART_META.get(c, {}).cap or c }}" loading="lazy">
+    {%- if CHART_META.get(c, {}).cap %}<figcaption>{{ CHART_META[c].cap }}</figcaption>{%- endif %}
+  </figure>
+  {% endfor %}
+  {% else %}
   {% for c in charts %}{{ ch.chart(c) }}{% endfor %}
+  {% endif %}
 </section>
 
 {% if rosters %}
@@ -86,8 +115,8 @@
 
 {% if weeks %}
 <h2>Week by week</h2>
-<p class="hint">Expand a week for every roster in it &mdash; what each team started,
-   what sat on their bench, and how close they came to their best legal lineup.</p>
+<p class="hint">Expand a week for the best possible lineup that could have been built from
+   EVERY player rostered anywhere in the league that week &mdash; bench included, any team.</p>
 <div class="tablewrap">
 <div class="drilltable"
      style="--cols: minmax(60px,.5fr) minmax(105px,.8fr) minmax(150px,1.3fr) minmax(170px,1.6fr) minmax(170px,1.6fr)">
@@ -129,23 +158,12 @@
           <span class="pts">{{ "%.1f"|format(w.worst.started) }}</span></span></div>
         {% endif %}
       </div>
-      <table class="dt-games">
-        <thead><tr>
-          <th>Manager</th><th class="n">Started</th><th class="n">Bench</th>
-          <th class="n">Optimal</th><th class="n">Lineup %</th>
-        </tr></thead>
-        <tbody>
-        {% for t in w.teams %}
-          <tr>
-            <td><strong>{{ t.user_name }}</strong></td>
-            <td class="n">{{ "%.1f"|format(t.started) }}</td>
-            <td class="n"><span class="q">{{ "%.1f"|format(t.bench) }}</span></td>
-            <td class="n">{% if t.optimal is defined %}{{ "%.1f"|format(t.optimal) }}{% else %}—{% endif %}</td>
-            <td class="n">{% if t.eff is defined %}{{ "%.0f"|format(t.eff) }}%{% else %}—{% endif %}</td>
-          </tr>
-        {% endfor %}
-        </tbody>
-      </table>
+      {# The best legal lineup from EVERY player rostered anywhere in the
+         league that week -- not a per-manager comparison table -- since
+         that's what best answers "who got the most out of a roster" at a
+         glance: the ceiling, not a leaderboard of every team's own numbers. #}
+      {% set combined = w.best_combined %}
+      {% include "_best_combined.html" %}
     </div>
   </details>
   {% endfor %}

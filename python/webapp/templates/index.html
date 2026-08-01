@@ -178,6 +178,39 @@
     function prepTables() {
       document.querySelectorAll('#panel table').forEach(makeSortable);
     }
+    // Row-level drilldown (the Weekly tab's free-agent table, ported from
+    // weekly_report.html's own copy of this same function -- the standalone
+    // page has no shell to reach, so it keeps its inline original). Clicking
+    // a row with a .detail-row sibling toggles it; native <details> can't
+    // wrap a <tr>, so this is the table equivalent of the scoreboard's
+    // <details> rows. Guarded by dataset.expandable so a repeat htmx swap
+    // doesn't double-bind listeners on rows that survive the swap.
+    function prepFaRows() {
+      document.querySelectorAll('#panel table.sortable').forEach(function (table) {
+        var body = table.tBodies[0];
+        if (!body) return;
+        Array.prototype.forEach.call(body.rows, function (row) {
+          if (row.dataset.expandable || row.classList.contains('detail-row')) return;
+          var detail = row.nextElementSibling;
+          if (!detail || !detail.classList.contains('detail-row')) return;
+          row.dataset.expandable = '1';
+          row.classList.add('has-detail');
+          row.tabIndex = 0;
+          row.setAttribute('role', 'button');
+          row.setAttribute('aria-expanded', 'false');
+          var toggle = function () {
+            var willOpen = detail.hidden;
+            detail.hidden = !willOpen;
+            row.classList.toggle('open', willOpen);
+            row.setAttribute('aria-expanded', String(willOpen));
+          };
+          row.addEventListener('click', toggle);
+          row.addEventListener('keydown', function (e) {
+            if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); }
+          });
+        });
+      });
+    }
     // Keep the stylesheet current without a reload. htmx only swaps #panel, so
     // the <link> in <head> keeps whatever ?v= it had at page load -- a page left
     // open across a CSS edit renders new markup unstyled (grid rows collapse to
@@ -195,6 +228,7 @@
     });
     document.body.addEventListener('htmx:afterSwap', prepCharts);
     document.body.addEventListener('htmx:afterSwap', prepTables);
+    document.body.addEventListener('htmx:afterSwap', prepFaRows);
 
     // When the Playoffs tab loads (its editor is present) and no bracket token is
     // active, restore this browser's saved custom bracket by re-POSTing it for a
@@ -240,7 +274,7 @@
          just the panel: /load swaps those back out-of-band. Changing only the
          season is a plain tab reload -- the shell is already correct. -->
     <form class="controls" hx-get="/load" hx-target="#panel" hx-swap="innerHTML"
-          hx-include="#theme" hx-trigger="change from:#season, submit"
+          hx-include="#theme" hx-trigger="change from:#season, submit" hx-push-url="true"
           hx-on="htmx:afterRequest: document.querySelectorAll('.tabs button').forEach((b,i)=>b.classList.toggle('active', i===0))">
       <label>
         <span>League ID</span>
@@ -255,11 +289,11 @@
 
   </header>
 
-  <nav class="tabs" role="tablist"
+  <nav class="tabs" role="tablist" hx-push-url="true"
        hx-target="#panel" hx-swap="innerHTML" hx-include="#league, #season, #theme, #bracket">
     {% for id, label in tabs %}
     <button role="tab" hx-get="/tab/{{ id }}"
-            class="{% if loop.first %}active{% endif %}"
+            class="{% if id == initial_tab %}active{% endif %}"
             onclick="document.querySelectorAll('.tabs button').forEach(b=>b.classList.remove('active'));this.classList.add('active')">
       {{ label }}
     </button>
@@ -267,7 +301,7 @@
   </nav>
 
   <main id="panel"
-        hx-get="/tab/overview" hx-trigger="load" hx-include="#league, #season, #theme, #bracket">
+        hx-get="/tab/{{ initial_tab }}" hx-trigger="load" hx-include="#league, #season, #theme, #bracket">
     <p class="empty">Loading…</p>
   </main>
 

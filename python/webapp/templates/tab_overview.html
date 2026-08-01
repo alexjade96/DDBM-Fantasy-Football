@@ -1,11 +1,52 @@
-{# Season overview: leads with the latest / in-progress week (its metrics, its
-   scoreboard and the two week-analytics charts), then restates the season-to-date
-   metrics further down. Dedicated template -- Career still uses tab_charts.html,
-   so this current-week lead appears on Overview only. #}
+{# Season overview: leads with what's actually happening RIGHT NOW -- the
+   in-progress/latest regular-season week, the current playoff round once the
+   season moves into its postseason, or a season-complete banner -- then
+   restates the season-to-date metrics further down (unchanged in every
+   phase; those are already regular-season-scoped, not tied to "now").
+   Dedicated template -- Career still uses tab_charts.html, so this lead
+   appears on Overview only. `phase` ("regular"/"playoffs"/"complete") and
+   `overview_tiles` are built by the `overview` branch of the `tab()` route
+   in app.py (see `_season_phase()`). #}
 {% import "_chartmacro.html" as ch with context %}
 {% import "_ident.html" as idm with context %}
 
-{# ---- Lead: the current / latest week -------------------------------------- #}
+{# ---- Lead: current week, current playoff round, or season complete ------- #}
+{% if phase == "playoffs" %}
+<div class="rowhead">
+  <h2>Playoffs &mdash; {{ current_round.label }}
+    {% if live %}<span class="live-badge">Live</span>{% endif %}
+  </h2>
+  <div class="rowhead-actions">
+    {# Activate the Playoffs nav button so the full bracket opens and the tab
+       strip tracks it -- a bare panel swap would leave Overview highlighted. #}
+    <button type="button" class="ghost"
+            onclick="[...document.querySelectorAll('.tabs button')].find(b=>b.getAttribute('hx-get')==='/tab/playoffs').click()">
+      Playoff {{ current_round.label }} &rarr;</button>
+  </div>
+</div>
+<p class="hint">The postseason in progress at a glance &mdash; this round&rsquo;s games, expandable
+   to both submitted lineups. Full bracket and postseason analytics are on the
+   <em>Playoffs</em> tab.</p>
+{% elif phase == "complete" %}
+<div class="rowhead">
+  <h2>Season complete{% if champion %} &mdash; Champion: {{ champion }}{% endif %}</h2>
+  {% if playoff_recap %}
+  <div class="rowhead-actions">
+    <button type="button" class="ghost"
+            onclick="[...document.querySelectorAll('.tabs button')].find(b=>b.getAttribute('hx-get')==='/tab/playoffs').click()">
+      Full bracket &rarr;</button>
+  </div>
+  {% endif %}
+</div>
+{% if playoff_recap %}
+<p class="hint">The whole postseason, start to finish &mdash; headline numbers from every
+  round that was played. Full bracket, game log and postseason analytics are on the
+  <em>Playoffs</em> tab.</p>
+{% else %}
+<p class="hint">The season has wrapped up &mdash; the numbers below cover the whole
+  season. See <em>Regular season</em> for the full picture.</p>
+{% endif %}
+{% else %}
 <div class="rowhead">
   <h2>
     {% if live %}This week{% else %}Latest week{% endif %} &mdash; Week {{ week }}
@@ -22,7 +63,7 @@
        strip tracks it -- a bare panel swap would leave Overview highlighted. #}
     <button type="button" class="ghost"
             onclick="[...document.querySelectorAll('.tabs button')].find(b=>b.getAttribute('hx-get')==='/tab/weekly').click()">
-      Full week detail &rarr;</button>
+      Latest week &rarr;</button>
   </div>
 </div>
 <p class="hint">
@@ -30,17 +71,37 @@
   Headline numbers, then the games as a picture and in full &mdash; expand a row for both
   lineups in slot order, what sat on the bench, and the single legal same-position swap that
   cost the most. Full week analysis is on the <em>Weekly</em> tab.</p>
+{% endif %}
 
 <section class="stats">
-  {% for label, kpi, cls in [("Highest score", kpi_top, "gold"), ("Biggest blowout", kpi_blow, ""),
-                             ("Closest game", kpi_close, ""), ("Most points benched", kpi_bench, "")] %}
+  {% for label, kpi, cls in overview_tiles %}
   <div class="stat {{ cls }}">
     <span class="k">{{ label }}</span><span class="v">{{ kpi.value if kpi else "—" }}</span>
-    {% if kpi %}<span class="sub">{{ idm.who(kpi.user_name) }}</span>{% endif %}
+    {% if kpi and kpi.user_name %}<span class="sub">{{ idm.who(kpi.user_name) }}</span>{% endif %}
   </div>
   {% endfor %}
 </section>
 
+{% if phase == "playoffs" %}
+<figure class="card chart">
+  <img src="/chart/bracket?league={{ league }}&season={{ season }}&theme={{ theme }}&bracket={{ bracket }}&_={{ bust }}"
+       alt="Playoff bracket">
+</figure>
+{% set grp = current_round %}
+{% include "_playoff_round.html" %}
+{% elif phase == "complete" %}
+{# A finished season never shows the week-based chart trio below -- once the
+   season (and its playoffs, if any) is over, a single arbitrary week's chart
+   has nothing to add over the "Regular season" section beneath it. With a
+   played bracket, the bracket graphic replaces it; without one, there is
+   simply nothing here beyond the tiles above. #}
+{% if playoff_recap %}
+<figure class="card chart">
+  <img src="/chart/bracket?league={{ league }}&season={{ season }}&theme={{ theme }}&bracket={{ bracket }}&_={{ bust }}"
+       alt="Playoff bracket">
+</figure>
+{% endif %}
+{% else %}
 <figure class="card chart">
   <img src="/chart/week_matchups?league={{ league }}&season={{ season }}&week={{ week }}&theme={{ theme }}&_={{ bust }}"
        alt="Week {{ week }} matchups" loading="lazy">
@@ -55,24 +116,47 @@
   <img src="/chart/week_luck?league={{ league }}&season={{ season }}&week={{ week }}&theme={{ theme }}&_={{ bust }}"
        alt="Week {{ week }} luck" loading="lazy">
 </figure>
+{% endif %}
 
-{# ---- Season to date ------------------------------------------------------- #}
-<h2>Season so far{% if current_week %} &mdash; through week {{ current_week }}{% endif %}</h2>
+{# ---- Season to date --------------------------------------------------------
+   Deliberately labelled "Regular season", not "Season so far" -- during/after
+   playoffs the lead above already covers the postseason, so this section needs
+   to say plainly that everything below it (KPIs, charts) is regular-season-only
+   (weeks 1..current_week, which is itself capped to the regular season -- see
+   Season.current_week / Season.last_week in season.py) rather than reading as
+   "the whole season". #}
+<h2>Regular season{% if current_week %} &mdash; through week {{ current_week }}{% endif %}</h2>
 {% if summary %}
 <section class="card prose">
   {{ summary | md }}
 </section>
 {% endif %}
-<p class="hint">The season beyond any one week &mdash; standing, merit and the schedule&rsquo;s
-   hand in it. Each chart below carries the takeaway underneath.</p>
+{% if extra_insights %}
+{# Webapp-only bullets (app.py's _overview_insights) covering schedule
+   fairness / points against / table-position movement -- the takeaways the
+   charts demoted into "More season charts" below used to carry visually.
+   A separate card, not folded into the `summary` prose above: that markdown
+   is parity-mirrored with R and shared with the season/weekly report, so it
+   isn't where a webapp-only addition belongs. #}
+<section class="card prose">
+  {{ extra_insights | md }}
+</section>
+{% endif %}
+<p class="hint">The regular season beyond any one week &mdash; standing and merit at a
+   glance. Each chart below carries the takeaway underneath.</p>
 <section class="grid">
-  {# The table-position race through the current week leads the grid -- the
-     season-arc view of the standings, so it belongs with the season metrics
-     rather than the single-week lead above. This is the "race through week N"
-     chart; table_position (its identical full-span twin) is deliberately
-     dropped from this grid. Rendered via the same macro as its siblings
-     (previously a standalone call outside the grid) so it gets the same
-     classing/sizing as every other chart here. #}
-  {{ ch.chart("week_race", week=current_week) }}
   {% for c in charts %}{{ ch.chart(c) }}{% endfor %}
 </section>
+
+{% if more_charts %}
+<details class="card">
+  <summary>More season charts ({{ more_charts | length }})</summary>
+  <p class="hint">The season&rsquo;s arc, schedule fairness and scoring detail &mdash; one click
+     deeper than the headline standings above.</p>
+  <section class="grid">
+    {% for c in more_charts %}
+    {% if c == "week_race" %}{{ ch.chart(c, week=current_week) }}{% else %}{{ ch.chart(c) }}{% endif %}
+    {% endfor %}
+  </section>
+</details>
+{% endif %}

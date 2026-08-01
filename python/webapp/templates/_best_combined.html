@@ -1,0 +1,25 @@
+{# The best possible lineup combining every player rostered ANYWHERE in the
+   league that week (bench included) -- "if you could draft an all-star team
+   from the league's actual rosters that week". Expects `combined`
+   ({week, total, lineup}) in context; `idm` imported by the includer. Shared
+   by the Roster tab's week-by-week drilldown and the Weekly tab's matchup
+   section, so the two can't drift. #}
+{% if combined %}
+<table class="dt-games">
+  <thead><tr>
+    <th colspan="2">Best combined roster</th>
+    <th class="n">{{ "%.2f"|format(combined.total) }}</th>
+  </tr></thead>
+  <tbody>
+  {% for p in combined.lineup %}
+    <tr>
+      <td><span class="q">{{ p.slot }}</span></td>
+      <td><strong>{{ p.player_name }}</strong>{% if p.user_name %} {{ idm.who(p.user_name) }}{% endif %}</td>
+      <td class="n">{{ "%.2f"|format(p.points) }}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p class="empty">No roster data to build a combined lineup this week.</p>
+{% endif %}

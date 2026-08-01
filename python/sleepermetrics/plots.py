@@ -444,6 +444,36 @@ def plot_manager_profile(s: Season):
                    caption=_cap(s), grid_axis="both")
 
 
+def plot_transaction_volume(s: Season):
+    """Player movements per week, stacked by type -- how busy the league was,
+    and when. The dashed line is the season average total, covering "average"
+    without a second chart; per-manager averages already live on
+    `plot_manager_profile`'s moves_per_wk axis.
+    """
+    d = metrics.transaction_volume(s)
+    if not d:
+        return _no_data(f"No transactions in {s.season}.")
+    weeks = [r["week"] for r in d]
+    trades = [r["trades"] for r in d]
+    waivers = [r["waivers"] for r in d]
+    fa = [r["free_agent"] for r in d]
+    totals = [r["total"] for r in d]
+    avg = sum(totals) / len(totals) if totals else 0
+    fig, ax = plt.subplots(figsize=(9.5, 5.5))
+    ax.bar(weeks, trades, width=0.68, color="#c0563f", zorder=2, label="Trades")
+    bottom = list(trades)
+    ax.bar(weeks, waivers, width=0.68, bottom=bottom, color="#2c7fb8", zorder=2, label="Waivers")
+    bottom = [b + w for b, w in zip(bottom, waivers)]
+    ax.bar(weeks, fa, width=0.68, bottom=bottom, color=T["neutral"], zorder=2, label="Free agent")
+    ax.axhline(avg, ls="--", lw=1.4, color=T["rule"], zorder=3)
+    ax.text(weeks[-1] + 0.6, avg, f"avg {avg:.1f}", va="center", fontsize=8.5, color=T["muted"])
+    ax.set_xticks(weeks)
+    ax.legend(loc="upper right", frameon=False, fontsize=9)
+    return _finish(fig, ax, "Transaction Volume by Week",
+                   "Player movements each week, split by type  ·  dashed line = season average",
+                   "Week", "Movements", caption=_cap(s), grid_axis="y")
+
+
 def plot_consistency(s: Season):
     order = metrics.consistency(s).sort_values("median")["user_name"].tolist()
     pal = palette(s.team_wk["user_name"])
@@ -462,6 +492,64 @@ def plot_consistency(s: Season):
     return _finish(fig, ax, "Consistency: Weekly Score Distributions",
                    "Tight box = steady  ·  wide = boom-or-bust",
                    "Weekly Points", caption=_cap(s))
+
+
+def _plot_fa_season_bar(s: Season, r: dict, pts_key: str, weeks_key: str,
+                        title: str, subtitle: str):
+    """Shared bar chart for plot_fa_season/plot_fa_season_optimal: each
+    manager's total (either actual or their own optimal-lineup total) against
+    the season-long best-possible free-agent lineup total (dashed line).
+    """
+    d = sorted([t for t in r["teams"] if t[pts_key] is not None], key=lambda t: t[pts_key])
+    if not d:
+        return _no_data(f"No free-agent data for {s.season}.")
+    names = [t["user_name"] for t in d]
+    pts = [t[pts_key] for t in d]
+    pal = palette(names)
+    fig, ax = plt.subplots(figsize=(9, 6))
+    ax.barh(range(len(d)), pts, color=[pal[n] for n in names], height=0.72, zorder=2)
+    ax.axvline(r["total"], ls="--", lw=1.6, color=T["rule"], zorder=3)
+    ax.set_yticks(range(len(d)))
+    ax.set_yticklabels(names)
+    _row_avatars(ax, names, s)
+    xmax = max(pts + [r["total"]])
+    for i, t in enumerate(d):
+        ax.text(t[pts_key] + xmax * 0.01, i, f"beat it {t[weeks_key]}/{t['weeks']} wks",
+                va="center", fontsize=8, color=T["ink2"])
+    ax.text(r["total"], len(d) - 0.3, f"  best FA team: {r['total']:.0f}",
+            va="center", fontsize=8.5, color=T["muted"])
+    ax.set_xlim(0, xmax * 1.28)
+    return _finish(fig, ax, title, subtitle, "Season Points", caption=_cap(s))
+
+
+def plot_fa_season(s: Season):
+    """Every manager's ACTUAL season points against the season-long best-
+    possible free-agent lineup total -- "what if you'd drafted the waiver
+    wire every week", summed. Reads as value left on the wire -- the
+    Transactions tab's complement to the Waiver wire table.
+    """
+    r = metrics.free_agent_best_team_season(s)
+    if not r or not r["teams"]:
+        return _no_data(f"No free-agent data for {s.season}.")
+    return _plot_fa_season_bar(
+        s, r, "points", "weeks_beaten",
+        f"{s.season} vs the Best Available Free-Agent Team",
+        "Season points per manager  ·  dashed line = a lineup built ENTIRELY from free agents, every week")
+
+
+def plot_fa_season_optimal(s: Season):
+    """Every manager's OWN BEST POSSIBLE lineup (bench included), summed
+    across the season, against the same free-agent total -- would even
+    perfect coaching have beaten the wire. Coaching tab's complement to the
+    efficiency chart, not a restatement of `plot_fa_season`'s actual totals.
+    """
+    r = metrics.free_agent_best_team_season(s)
+    if not r or not r["teams"]:
+        return _no_data(f"No free-agent data for {s.season}.")
+    return _plot_fa_season_bar(
+        s, r, "opt_points", "weeks_beaten_optimal",
+        f"{s.season}: Your Best Lineup vs the Best Available Free-Agent Team",
+        "Season points from each manager's OWN optimal lineup every week  ·  dashed line = the free-agent total")
 
 
 def plot_career(seasons: dict):
@@ -1519,6 +1607,85 @@ def plot_mgr_efficiency_trend(s: Season, manager: str, through_week: int | None 
     return _finish(fig, ax, f"{manager} · Lineup Efficiency, Week {wk}",
                    "Started points as % of the best legal lineup this week  ·  vs the rest of the league",
                    "Efficiency %", caption=_cap(s))
+
+
+def plot_mgr_roster_heatmap(s: Season, manager: str, through_week: int | None = None):
+    """This manager's own scoring, by week and position -- the personal-timeline
+    analogue of the league-wide `plot_roster_heatmap` (which is manager x
+    position; this is week x position for the one manager). Counts every
+    rostered player-week (bench included), same convention as `metrics.roster`.
+    """
+    rid = _mgr_rid(s, manager)
+    pl = s.pl_wk
+    if rid is None or not {"roster_id", "week", "position", "points"}.issubset(
+            getattr(pl, "columns", [])):
+        return _no_data(f"No roster data for {manager} in {s.season}.")
+    d = pl[(pl["roster_id"] == rid) & (pl["position"].isin(POSITIONS))]
+    if through_week is not None:
+        d = d[d["week"] <= through_week]
+    if d.empty:
+        return _no_data(f"No roster data for {manager} in {s.season}.")
+    weeks = sorted(d["week"].unique())
+    piv = (d.groupby(["week", "position"])["points"].sum()
+           .unstack("position").reindex(index=weeks, columns=POSITIONS).fillna(0))
+    cmap = mcolors.LinearSegmentedColormap.from_list("sl", ["#eaf2f8", "#1f6f8b"])
+    fig, ax = plt.subplots(figsize=(9, 6))
+    im = ax.imshow(piv.values, aspect="auto", cmap=cmap)
+    ax.set_xticks(range(len(POSITIONS)))
+    ax.set_xticklabels(POSITIONS)
+    ax.xaxis.set_ticks_position("top")
+    ax.set_yticks(range(len(weeks)))
+    ax.set_yticklabels([f"Wk {w}" for w in weeks])
+    vmax = piv.values.max() if piv.values.size else 0
+    for i in range(len(weeks)):
+        for j in range(len(POSITIONS)):
+            v = piv.values[i, j]
+            if v > 0:
+                col = "white" if v > vmax * 0.6 else "#1a1a1a"
+                ax.text(j, i, f"{v:.1f}", ha="center", va="center",
+                        fontsize=8, color=col)
+    for sp in ax.spines.values():
+        sp.set_visible(False)
+    ax.tick_params(length=0, colors=T["tick"], labelsize=9.5)
+    fig.colorbar(im, ax=ax, fraction=0.035, pad=0.02, label="Pts")
+    ax.set_title(f"{manager} · Position Scoring by Week", loc="left", fontsize=16,
+                 fontweight="bold", color=T["ink"], pad=24)
+    fig.text(0.01, 0.01, "Points scored (starters and bench) by week and position",
+             ha="left", fontsize=8.5, color=T["muted"])
+    fig.text(0.99, 0.01, _cap(s), ha="right", fontsize=7, color=T["faint"])
+    fig.tight_layout(rect=(0, 0.03, 1, 1))
+    return fig
+
+
+def plot_mgr_starter_bench_weeks(s: Season, manager: str, through_week: int | None = None):
+    """This manager's started vs bench points, per week -- the personal-trend
+    analogue of the league-wide `plot_starter_bench` (which is one season-total
+    bar per manager per position; this is one week-by-week pair for one manager).
+    """
+    rid = _mgr_rid(s, manager)
+    pl = s.pl_wk
+    if rid is None or not {"roster_id", "week", "is_starter", "points"}.issubset(
+            getattr(pl, "columns", [])):
+        return _no_data(f"No roster data for {manager} in {s.season}.")
+    d = pl[pl["roster_id"] == rid]
+    if through_week is not None:
+        d = d[d["week"] <= through_week]
+    if d.empty:
+        return _no_data(f"No roster data for {manager} in {s.season}.")
+    weeks = sorted(d["week"].unique())
+    started = (d[d["is_starter"]].groupby("week")["points"].sum()
+               .reindex(weeks).fillna(0))
+    bench = (d[~d["is_starter"]].groupby("week")["points"].sum()
+             .reindex(weeks).fillna(0))
+    fig, ax = plt.subplots(figsize=(9.5, 5.5))
+    ax.bar(weeks, started.values, width=0.68, color="#2f9e44", zorder=2, label="Started")
+    ax.bar(weeks, bench.values, width=0.68, bottom=started.values,
+           color=T["neutral"], alpha=0.7, zorder=2, label="Bench")
+    ax.set_xticks(weeks)
+    ax.legend(loc="best", frameon=False, fontsize=9)
+    return _finish(fig, ax, f"{manager} · Started vs Bench by Week",
+                   "Every point the roster scored each week, split by whether it was started",
+                   "Week", "Points", caption=_cap(s), grid_axis="y")
 
 
 def plot_week_matchups(s: Season, week: int):

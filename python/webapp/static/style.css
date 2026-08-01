@@ -888,3 +888,7 @@ tr.bench-impact td { background: color-mix(in srgb, #d9a441 8%, transparent); }
 #panel > h2 + *, #panel > p.hint + * { margin-top: 10px; }
 /* .rowhead wraps its own h2; the wrapper already took the gap. */
 #panel > .rowhead h2 { margin-top: 0; }
+/* Sub-section labels inside a chart grid (e.g. Overview's grouped charts) hug
+   the grid they title, same convention as h2 above but a smaller gap since h3
+   is itself a lighter-weight label. */
+#panel > h3 + * { margin-top: 8px; }

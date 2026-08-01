@@ -16,6 +16,7 @@ import threading
 import time
 from html import escape as html_escape
 from pathlib import Path
+from urllib.parse import quote
 
 import matplotlib
 from fastapi import FastAPI, Query, Request
@@ -193,8 +194,8 @@ def _grouped_rules(settings: dict) -> list[tuple[str, list[dict]]]:
 # view with the most granular "why" tab in the app.
 TABS = [
     ("overview", "Season overview"), ("weekly", "Weekly trends"),
-    ("draft", "Draft"), ("roster", "Roster & positions"),
-    ("transactions", "Transactions"), ("coaching", "Coaching & scoring"),
+    ("draft", "Draft"), ("roster", "Roster"),
+    ("transactions", "Transactions"), ("coaching", "Coaching"),
     ("playoffs", "Playoffs"), ("career", "Career"),
     ("report", "Season report"),
 ]
@@ -262,6 +263,22 @@ def pick(league_id: str, season: str | None, fresh: bool = False):
     return d, d["seasons"][key], key
 
 
+def _pushed(resp, ctx: dict, tab_name: str):
+    """Sets HX-Push-Url so a tab/season switch updates the address bar to a
+    bookmarkable /dashboard?league=&season=&tab= URL, without changing what
+    htmx actually fetched (still /tab/<name> for the fragment). htmx only
+    acts on this header for a request whose TRIGGERING element opted into
+    hx-push-url (the top tabs nav, the league/season form) -- every other
+    request (chart images, in-tab rails like Roster's manager selector or
+    Coaching's week rail) simply ignores it, so setting it unconditionally
+    here is what keeps this scoped to tab+season and nothing deeper.
+    """
+    resp.headers["HX-Push-Url"] = (
+        f"/dashboard?league={quote(str(ctx['league']))}"
+        f"&season={quote(str(ctx['season']))}&tab={tab_name}")
+    return resp
+
+
 # matplotlib's pyplot state is global and not thread-safe, and the chart theme
 # is a module-level token that a request flips before drawing -- so every render
 # path holds this lock, or two concurrent requests could draw on each other's
@@ -289,10 +306,12 @@ def png(fig) -> Response:
 SEASON_CHARTS = {
     "standings": plots.plot_standings, "luck": plots.plot_luck,
     "efficiency": plots.plot_efficiency, "consistency": plots.plot_consistency,
+    "fa_season": plots.plot_fa_season, "fa_season_optimal": plots.plot_fa_season_optimal,
     "pf_pa": plots.plot_pf_pa, "table_position": plots.plot_table_position,
     "team_points": plots.plot_team_points,
     "allplay": plots.plot_allplay, "power_rank": plots.plot_power_rank,
     "manager_profile": plots.plot_manager_profile,
+    "tx_volume": plots.plot_transaction_volume,
     "position_scoring": plots.plot_position_scoring,
     "roster_heatmap": plots.plot_roster_heatmap,
     "starter_bench": plots.plot_starter_bench,
@@ -324,6 +343,8 @@ MANAGER_CHARTS = {
     "mgr_margins": plots.plot_mgr_margins,
     "mgr_sos": plots.plot_mgr_sos,
     "mgr_efficiency_trend": plots.plot_mgr_efficiency_trend,
+    "mgr_roster_heatmap": plots.plot_mgr_roster_heatmap,
+    "mgr_starter_bench_weeks": plots.plot_mgr_starter_bench_weeks,
 }
 
 
@@ -345,19 +366,24 @@ CHART_META = {
     "schedule_swap": {"cap": "Each team's record replayed under every rival's schedule."},
     # Coaching
     "efficiency": {"cap": "Points started as a share of the best legal lineup available — the cost of the decision."},
-    "consistency": {"cap": "Week-to-week spread — a short bar is dependable, a long one runs hot and cold."},
+    "fa_season_optimal": {"cap": "Even your OWN best possible lineup, summed all season, against the best available free agents."},
     "pf_pa": {"cap": "What each team scored against what it faced."},
-    "boom_bust": {"cap": "Each manager's ceiling and floor around their average week."},
     # Roster
     "position_scoring": {"cap": "Started points by position and each slot's share of the total."},
     "roster_counts": {"cap": "The average roster shape each manager carried."},
     "roster_heatmap": {"cap": "Where each team's scoring lived — points by manager and position."},
     "starter_bench": {"cap": "Started points against what sat on the bench, per manager.", "wide": True},
     "position_box": {"cap": "The scoring spread at each position — good weeks against bad."},
+    "boom_bust": {"cap": "Each manager's ceiling and floor around their average week."},
+    "consistency": {"cap": "Week-to-week spread — a short bar is dependable, a long one runs hot and cold."},
+    "mgr_roster_heatmap": {"cap": "Their own scoring, by week and position."},
+    "mgr_starter_bench_weeks": {"cap": "What they started vs what sat on the bench, week by week.", "wide": True},
     # Transactions
     "manager_profile": {"cap": "Moves, trades and drops per manager, with a lineup-IQ score."},
+    "tx_volume": {"cap": "How busy the league was, and when — trades vs. waiver/FA moves by week."},
     "trade_performance": {"cap": "Every traded player by the points he returned while rostered."},
     "waiver_performance": {"cap": "Every waiver or free-agent pickup by points returned while rostered."},
+    "fa_season": {"cap": "What every manager's ACTUAL season points left on the table, against the best available free agents."},
     # Draft
     "draft_value": {"cap": "Started points each pick returned to the team that drafted him."},
     "draft_grades": {"cap": "Value weighed against draft slot — a late steal grades above a costly early miss."},
@@ -474,12 +500,27 @@ def home(request: Request, league: str = DEFAULT_LEAGUE):
 # stays as a graceful fallback for the landing form when JS is unavailable.
 @app.get("/league={league}", response_class=HTMLResponse)
 @app.get("/dashboard", response_class=HTMLResponse)
-def dashboard(request: Request, league: str = DEFAULT_LEAGUE):
-    d = league_data(league)
+def dashboard(request: Request, league: str = DEFAULT_LEAGUE,
+              season: str | None = None, tab: str | None = None):
+    # season/tab let a bookmarked or shared /dashboard?...&tab=coaching URL
+    # (pushed there by _pushed() as tabs/seasons are switched) open directly
+    # on that view instead of always landing on Overview/the latest season.
+    try:
+        d = league_data(league)
+    except Exception:
+        # A stale or bad league id in a shared/bookmarked link shouldn't 500
+        # the whole page -- fall back to the default league, same
+        # graceful-degradation philosophy as /load's try/except.
+        league = DEFAULT_LEAGUE
+        d = league_data(league)
+    key = season if season in d["seasons"] else d["names"][-1]
+    valid_tabs = {tid for tid, _ in TABS}
+    initial_tab = tab if tab in valid_tabs else "overview"
     return tpl.TemplateResponse(request, "index.html", {
         "tabs": TABS, "league": league, "asset_v": asset_v(),
-        "seasons": list(reversed(d["names"])), "season": d["names"][-1],
-        "league_name": d["seasons"][d["names"][-1]].name,
+        "seasons": list(reversed(d["names"])), "season": key,
+        "league_name": d["seasons"][key].name,
+        "initial_tab": initial_tab,
     })
 
 
@@ -504,7 +545,9 @@ def load(request: Request, league: str = DEFAULT_LEAGUE, season: str | None = No
            "seasons": list(reversed(d["names"])),
            "summary": summaries.summary_season(s),
            "charts": ["standings", "power_rank", "allplay", "luck"]}
-    return tpl.TemplateResponse(request, "load.html", ctx)
+    # tab=overview: matches the client-side JS that already resets the active
+    # tab button to Overview on a league/season switch.
+    return _pushed(tpl.TemplateResponse(request, "load.html", ctx), ctx, "overview")
 
 
 def _week_context(s, week: str | int | None = None) -> dict:
@@ -555,6 +598,123 @@ def _week_context(s, week: str | int | None = None) -> dict:
         "kpi_close": kpi(close, "margin", lambda v: f"+{v:.1f}"),
         "kpi_bench": kpi(bench, "left_on_bench", lambda v: f"{v:.1f}"),
     }
+
+
+def _season_phase(s, d: dict, key: str) -> dict:
+    """Which real-world phase this season is in RIGHT NOW: still in its
+    regular season, mid-playoffs, or fully complete. Returns at least
+    `{"phase": ...}`, plus phase-specific keys (see below).
+
+    `Season.current_week`/`last_week` are deliberately capped to the regular
+    season (season.py's `min(lw, pws - 1)`) -- load-bearing for every
+    regular-season metric -- so they can't distinguish "mid-playoffs" from
+    "regular season just ended." This reads the SAME playoff data the
+    Playoffs tab already resolves (`d["playoffs"]`, `sleepermetrics.
+    game_log`/`toilet_bowl`) instead of touching `Season` at all.
+    """
+    p = d["playoffs"].get(key)
+    title_rounds = []
+    if p is not None:
+        log = sm.game_log(s, p, toilet=sm.toilet_bowl(s, p))
+        # game_log() only appends a round once it has games or byes (see its
+        # docstring), so title/mixed-kind groups here are exactly the rounds
+        # that have actually been played -- a round with no data yet simply
+        # isn't in `log`, so a season whose playoffs haven't started falls
+        # through to "regular" with no special-casing needed.
+        title_rounds = [g for g in log if g["kind"] in ("title", "mixed")]
+    if s.status == "complete":
+        # `title_rounds` (ALL played rounds, not just the last) lets the
+        # complete-phase lead recap the whole postseason run instead of
+        # freezing on whatever the last regular-season week happened to be.
+        return {"phase": "complete", "playoff": p,
+                "champion": (p.champion or None) if p else None,
+                "title_rounds": title_rounds}
+    if title_rounds:
+        # The LAST group is the most advanced round -- whether mid-round
+        # (some games still `pending`) or just finished.
+        return {"phase": "playoffs", "playoff": p, "current_round": title_rounds[-1]}
+    return {"phase": "regular"}
+
+
+def _playoff_tiles(games: list[dict], fourth: tuple) -> list[tuple]:
+    """Highest score / Biggest blowout / Closest game tiles from a set of
+    `game_log()` games, plus one caller-supplied 4th tile -- shared between
+    the playoffs-phase (current round only) and complete-phase (every played
+    round) Overview leads. Same `{value, user_name}` shape `_week_context`'s
+    kpi() tiles use, so the template's tile loop stays one generic block.
+    """
+    decided = [g for g in games if not g["pending"]]
+
+    def _winner(g):
+        return next((sd for sd in g["sides"] if sd["result"] == "W"), g["sides"][0])
+
+    scored = [(sd, g) for g in games for sd in g["sides"] if sd.get("points") is not None]
+    top = max(scored, key=lambda t: t[0]["points"]) if scored else None
+    margined = [g for g in decided if g.get("margin") is not None]
+    blow = max(margined, key=lambda g: g["margin"]) if margined else None
+    close = min(margined, key=lambda g: g["margin"]) if margined else None
+    return [
+        ("Highest score",
+         {"value": f"{top[0]['points']:.1f}", "user_name": top[0]["team"]} if top else None, "gold"),
+        ("Biggest blowout",
+         {"value": f"+{blow['margin']:.1f}", "user_name": _winner(blow)["team"]} if blow else None, ""),
+        ("Closest game",
+         {"value": f"+{close['margin']:.1f}", "user_name": _winner(close)["team"]} if close else None, ""),
+        fourth,
+    ]
+
+
+def _overview_insights(s) -> str | None:
+    """Extra Overview-only narrative bullets (as a markdown string, same
+    shape as summaries.summary_season() so the template's `| md` filter
+    renders both the same way) covering what the demoted schedule/scoring
+    charts (sos, pf_pa, week_race) show visually, so cutting them from the
+    default view doesn't lose the takeaway, just the graphic.
+
+    Deliberately separate from summary_season() itself -- that markdown is
+    parity-mirrored with R and reused by the season report and weekly report,
+    so it isn't the place for a webapp-only addition (same precedent as
+    boom_bust/strength_of_schedule being Python-only extras layered on top of
+    the parity-checked metrics rather than folded into a shared contract).
+    Returns None (not an empty string) when there's nothing to say, so the
+    template's `{% if extra_insights %}` skips the section cleanly.
+    """
+    bullets = []
+    sos = metrics.strength_of_schedule(s)
+    if len(sos):
+        hard = sos.loc[sos["sos"].idxmax()]
+        easy = sos.loc[sos["sos"].idxmin()]
+        bullets.append(
+            f"**Toughest schedule:** **{hard['user_name']}** averaged "
+            f"{hard['sos']:.1f} opponent points a week; **easiest:** "
+            f"**{easy['user_name']}** ({easy['sos']:.1f}).")
+    pfa = metrics.points_for_against(s)
+    if len(pfa):
+        stingy = pfa.loc[pfa["pa"].idxmin()]
+        bullets.append(
+            f"**Fewest points allowed:** **{stingy['user_name']}** "
+            f"({round(stingy['pa'])} against).")
+    tp = metrics.table_position(s)
+    if len(tp):
+        wk1, wkN = tp["week"].min(), tp["week"].max()
+        if wk1 != wkN:
+            a = tp[tp["week"] == wk1].set_index("user_name")["table_position"]
+            b = tp[tp["week"] == wkN].set_index("user_name")["table_position"]
+            common = a.index.intersection(b.index)
+            if len(common):
+                # Positive = climbed (a lower position number is better), so
+                # the max of (week-1 position - current position) is the
+                # biggest riser; a season with zero movement (or only one
+                # scored week) has no positive swing and says nothing rather
+                # than crediting a non-existent move.
+                swing = a[common] - b[common]
+                mover = swing.idxmax()
+                if swing[mover] > 0:
+                    n = int(swing[mover])
+                    bullets.append(
+                        f"**Biggest mover:** **{mover}** climbed {n} spot"
+                        f"{'' if n == 1 else 's'} in the table since week {int(wk1)}.")
+    return "\n".join(f"- {b}" for b in bullets) if bullets else None
 
 
 def _week_manager_context(s, week: int, manager: str, wk_games: list[dict]) -> dict:
@@ -753,6 +913,43 @@ def _week_recap(s, week: int, ws) -> dict:
     return {"lead": " ".join(lead), "chips": chips[:3]}
 
 
+def _week_extras(s, week: int, manager: str | None = None) -> dict:
+    """The recap, trades/waivers, and free-agent sections shared by the weekly
+    report and the Weekly tab (`_week_narrative.html` / `_week_transactions.html`
+    / `_week_fa.html`). Kept separate from `_week_context()` -- the Overview
+    tab's current-week lead section also calls `_week_context()` and doesn't
+    need any of this, so merging in would make every Overview load pay for
+    `free_agent_best_team()` etc. for nothing.
+
+    `manager` scopes trades/waivers to their own moves, same as report.py's
+    per-manager report; the free-agent sections are league-wide "what if
+    against the whole field" content and are dropped (not just filtered) for
+    a manager scope -- redundant with their own trades/waivers.
+    """
+    week_tx = metrics.week_transactions(s, week)
+    if manager:
+        week_tx = {
+            "trades": [d for d in week_tx["trades"]
+                      if any(sd["user_name"] == manager for sd in d["sides"])],
+            "waivers": [w for w in week_tx["waivers"] if w["user_name"] == manager],
+        }
+    free_agents = [] if manager else metrics.free_agent_standouts(s, week)
+    return {
+        "recap": _week_recap(s, week, metrics.week_stats(s, week)),
+        "week_tx": week_tx,
+        "free_agents": free_agents,
+        # Which position tabs actually have entries this week -- a shallow
+        # week simply gets fewer tabs rather than an empty one.
+        "fa_positions": [p for p in metrics.POSITIONS
+                         if any(fa["position"] == p for fa in free_agents)],
+        "fa_best_team": None if manager else metrics.free_agent_best_team(s, week),
+        # Positional rank for that week ("RB #1", "WR #57") for every player
+        # named anywhere on the page -- idm.posrank() looks names up here by
+        # player_id.
+        "week_pos_ranks": metrics.week_position_ranks(s, week),
+    }
+
+
 @app.get("/report/weekly", response_class=HTMLResponse)
 def report_weekly(request: Request, league: str = DEFAULT_LEAGUE, season: str | None = None,
                   week: str | None = None, manager: str | None = None, theme: str = "light"):
@@ -775,33 +972,10 @@ def report_weekly(request: Request, league: str = DEFAULT_LEAGUE, season: str | 
         "avatars": _avatar_map(s), "asset_v": asset_v(),
     }
     ctx.update(_week_context(s, week))
-    ctx["recap"] = _week_recap(s, ctx["week"], metrics.week_stats(s, ctx["week"]))
     if manager:
         ctx.update(_week_manager_context(s, ctx["week"], manager, ctx["wk_games"]))
         ctx["mgr_activity"] = metrics.mgr_activity_snapshot(s, manager, ctx["week"])
-    # The manager view stays about THEM (report.py's per-manager report does
-    # the same) -- their trades and their own waiver moves, not the whole
-    # league's.
-    week_tx = metrics.week_transactions(s, ctx["week"])
-    if manager:
-        week_tx = {
-            "trades": [d for d in week_tx["trades"]
-                      if any(sd["user_name"] == manager for sd in d["sides"])],
-            "waivers": [w for w in week_tx["waivers"] if w["user_name"] == manager],
-        }
-    ctx["week_tx"] = week_tx
-    # Both league-wide "what if against the whole field" sections -- the
-    # manager view drops them (redundant with the trades/waivers section
-    # above, which is already scoped to them), so skip the work entirely.
-    ctx["free_agents"] = [] if manager else metrics.free_agent_standouts(s, ctx["week"])
-    # Which position tabs actually have entries this week -- a shallow week
-    # simply gets fewer tabs rather than an empty one.
-    ctx["fa_positions"] = [p for p in metrics.POSITIONS
-                           if any(fa["position"] == p for fa in ctx["free_agents"])]
-    ctx["fa_best_team"] = None if manager else metrics.free_agent_best_team(s, ctx["week"])
-    # Positional rank for that week ("RB #1", "WR #57") for every player named
-    # anywhere on the page -- idm.posrank() looks names up here by player_id.
-    ctx["week_pos_ranks"] = metrics.week_position_ranks(s, ctx["week"])
+    ctx.update(_week_extras(s, ctx["week"], manager))
     return tpl.TemplateResponse(request, "weekly_report.html", ctx)
 
 
@@ -838,44 +1012,130 @@ def tab(name: str, request: Request, league: str = DEFAULT_LEAGUE,
         # below. The week lead is the same computation the Weekly tab uses.
         ctx.update(_week_context(s))
         ctx["summary"] = summaries.summary_season(s)
-        # The table-position race is rendered explicitly in Season-so-far (it
-        # needs the week param), so table_position is NOT in this list -- the two
-        # are the same bump chart and would duplicate. team_points stays: it
-        # describes the season's arc, not any one week.
-        # pf_pa (points for vs against) moved here from Coaching -- it measures
-        # roster/scoring quality, not lineup decisions, so it fits beside the
-        # other team-quality charts rather than the decision-focused Coaching tab.
-        ctx["charts"] = ["standings", "power_rank", "allplay", "pf_pa", "luck",
-                         "team_points", "sos", "schedule_swap"]
-        return tpl.TemplateResponse(request, "tab_overview.html", ctx)
+        # Only the two charts that answer "who's actually good" at a glance
+        # stay visible by default -- standings (the record) and power_rank
+        # (the composite merit blend). Everything else that used to render
+        # unconditionally (week_race, allplay, sos, schedule_swap, pf_pa,
+        # team_points) is demoted into a collapsed "More season charts"
+        # disclosure in the template: still one click away, not deleted, but
+        # not part of the default report-style wall of graphics. Their
+        # headline takeaways are narrated instead via _overview_insights().
+        # `luck` stays dropped: it's the same all-play computation as
+        # `allplay`'s rank_delta, already restated in the season prose's
+        # "Luckiest" bullet -- a third repetition of one fact added nothing.
+        ctx["charts"] = ["standings", "power_rank"]
+        ctx["more_charts"] = ["week_race", "allplay", "sos", "schedule_swap",
+                              "pf_pa", "team_points"]
+        ctx["extra_insights"] = _overview_insights(s)
+        # Which real-world phase the season is in RIGHT NOW decides what the
+        # lead above "Season so far" shows -- see _season_phase's docstring
+        # for why this can't be read off Season.current_week alone.
+        phase = _season_phase(s, d, key)
+        ctx["phase"] = phase["phase"]
+        if ctx["phase"] == "playoffs":
+            grp = phase["current_round"]
+            ctx["current_round"] = grp
+            games = grp["games"]
+            decided_ct = sum(1 for g in games if not g["pending"])
+            ctx["overview_tiles"] = _playoff_tiles(
+                games, ("Games decided", {"value": f"{decided_ct} of {len(games)}"}, ""))
+        elif ctx["phase"] == "complete" and phase.get("title_rounds"):
+            # A finished season with a played bracket recaps the WHOLE
+            # postseason here (bracket chart + its combined stats) instead of
+            # the frozen last-regular-season-week games -- "Season so far"
+            # below already covers whole-season aggregate metrics, so a
+            # single arbitrary week's chart trio has nothing left to add
+            # once the season (playoffs included) is actually over.
+            ctx["playoff_recap"] = True
+            ctx["champion"] = phase.get("champion")
+            games = [g for grp in phase["title_rounds"] for g in grp["games"]]
+            ctx["overview_tiles"] = _playoff_tiles(
+                games, ("Postseason games", {"value": str(len(games))}, ""))
+        else:
+            ctx["overview_tiles"] = [
+                ("Highest score", ctx["kpi_top"], "gold"),
+                ("Biggest blowout", ctx["kpi_blow"], ""),
+                ("Closest game", ctx["kpi_close"], ""),
+                ("Most points benched", ctx["kpi_bench"], ""),
+            ]
+            if ctx["phase"] == "complete":
+                ctx["champion"] = phase.get("champion")
+        return _pushed(tpl.TemplateResponse(request, "tab_overview.html", ctx), ctx, name)
     elif name == "weekly":
         # One week, in full: its superlatives, then the scoreboard as games
-        # that drill into both lineups. The season-arc charts live on Overview.
+        # that drill into both lineups, the same recap/transactions/free-agent
+        # sections as the shareable weekly report (via the shared partials),
+        # and the season-arc charts live on Overview. No manager scope here --
+        # that's a separate, bigger feature than bringing the report's
+        # league-wide analytics over.
         ctx.update(_week_context(s, week))
-        return tpl.TemplateResponse(request, "tab_weekly.html", ctx)
+        ctx.update(_week_extras(s, ctx["week"]))
+        # The best legal lineup from every player rostered anywhere in the
+        # league this week -- sits right under the matchup section, the same
+        # "what was actually possible" comparison the Roster tab's week-by-
+        # week drilldown now shows for every week.
+        ctx["best_combined"] = metrics.week_best_combined(s, ctx["week"])
+        return _pushed(tpl.TemplateResponse(request, "tab_weekly.html", ctx), ctx, name)
     elif name == "coaching":
         # Charts, then the decisions behind them: per-manager lineup weeks and
-        # the individual bench calls that cost the most. pf_pa (points for vs
-        # against) and boom_bust (scoring average vs volatility) measure roster
-        # QUALITY, not lineup DECISIONS -- this tab's own hint says twice that
-        # it's the latter, so those two moved to Overview and Roster respectively.
-        ctx["charts"] = ["efficiency", "consistency"]
+        # the individual bench calls that cost the most. pf_pa, boom_bust and
+        # consistency (points for/against, scoring average/spread vs
+        # volatility) measure roster QUALITY, not lineup DECISIONS -- this
+        # tab's own hint says twice that it's the latter, so those moved to
+        # Overview/Roster. fa_season_optimal stays here (not fa_season, which
+        # is Transactions') because it's keyed on each manager's own OPTIMAL
+        # lineup total -- "would even perfect coaching have beaten the wire"
+        # is a lineup-decision-ceiling question, not an acquisition one.
+        ctx["charts"] = ["efficiency", "fa_season_optimal"]
         ctx["standouts"] = metrics.coaching_standouts(s)
         ctx["coaching"] = metrics.coaching_detail(s)
         ctx["regrets"] = metrics.bench_regrets(s)
-        return tpl.TemplateResponse(request, "tab_coaching.html", ctx)
+        # Same season-cumulative computation Transactions uses (single call,
+        # cheap to repeat -- each request only ever renders one tab); the
+        # template reads its opt_points/opt_gain/weeks_beaten_optimal fields
+        # instead of the actual-based ones. Per-week detail (the old week
+        # rail + _week_fa.html) moved out entirely -- it's identical to the
+        # Weekly tab's own per-week section, which is now its only home.
+        ctx["fa_season"] = metrics.free_agent_best_team_season(s)
+        return _pushed(tpl.TemplateResponse(request, "tab_coaching.html", ctx), ctx, name)
     elif name == "roster":
         # Charts, then the rosters themselves: per manager and per week, each
         # row expanding into its detail.
         # boom_bust (scoring average vs volatility) moved here from Coaching --
         # it measures roster/scoring quality, not lineup decisions; it sits
         # beside position_box, which already covers positional scoring spread.
-        ctx["charts"] = ["position_scoring", "roster_counts", "roster_heatmap",
-                         "starter_bench", "position_box", "boom_bust"]
-        ctx["standouts"] = metrics.roster_standouts(s)
-        ctx["rosters"] = metrics.roster_detail(s)
-        ctx["weeks"] = metrics.roster_weeks(s)
-        return tpl.TemplateResponse(request, "tab_roster.html", ctx)
+        mgr = manager or None
+        if mgr and not (s.standings["user_name"] == mgr).any():
+            mgr = None                      # scope doesn't exist in this season
+        ctx["manager"] = mgr
+        ctx["managers"] = list(s.standings.sort_values("final_position")["user_name"])
+        if mgr:
+            # Manager view: the two personal-timeline charts (registered in
+            # MANAGER_CHARTS, rendered via manual <img manager=...> tags in the
+            # template -- the shared ch.chart() macro has no manager param, same
+            # as every other manager-scoped chart in this app), no league
+            # standouts (they're league-wide superlatives, don't translate to
+            # one team), and the roster/week drilldowns filtered to just them.
+            ctx["charts"] = ["mgr_roster_heatmap", "mgr_starter_bench_weeks"]
+            ctx["standouts"] = None
+            ctx["rosters"] = [r for r in metrics.roster_detail(s) if r["user_name"] == mgr]
+            weeks = metrics.roster_weeks(s)
+            for w in weeks:
+                w["teams"] = [t for t in w["teams"] if t["user_name"] == mgr]
+            ctx["weeks"] = weeks
+        else:
+            # League view (default/landing): unchanged.
+            # boom_bust and consistency (scoring average/spread vs volatility)
+            # moved here from Coaching -- both measure roster/scoring quality,
+            # not lineup decisions (neither compares against an optimal
+            # lineup, unlike efficiency); they sit beside position_box, which
+            # already covers positional scoring spread.
+            ctx["charts"] = ["position_scoring", "roster_counts", "roster_heatmap",
+                             "starter_bench", "position_box", "boom_bust", "consistency"]
+            ctx["standouts"] = metrics.roster_standouts(s)
+            ctx["rosters"] = metrics.roster_detail(s)
+            ctx["weeks"] = metrics.roster_weeks(s)
+        return _pushed(tpl.TemplateResponse(request, "tab_roster.html", ctx), ctx, name)
     elif name == "transactions":
         # Charts, then the deals themselves: trades kept whole (one row per team
         # in each) and the waiver wire ranked by what it actually returned.
@@ -883,17 +1143,27 @@ def tab(name: str, request: Request, league: str = DEFAULT_LEAGUE,
         # the Waiver wire table below (same metric/sort/source, top 15 vs top
         # 30), so it renders directly above that table instead, where the
         # relationship is explicit rather than coincidental.
-        ctx["charts"] = ["manager_profile", "trade_performance"]
+        ctx["charts"] = ["manager_profile", "tx_volume"]
         # One card per deal, not one row per team: the ledger's mirror-image
         # rows read as duplicates and print every player's name twice.
         ctx["standouts"] = metrics.transaction_standouts(s)
         deals = metrics.trade_deals(s)
-        wl = metrics.waiver_ledger(s, top_n=None)   # full list; sliced below
+        wl = metrics.waiver_ledger(s, top_n=None)
         ctx["deals"] = deals
         ctx["n_deals"] = len(deals)
-        ctx["waivers"] = records(wl.head(30))
+        # Every pickup, not just the top 30 -- the table is sortable and
+        # scrolls (same treatment as the weekly waiver table in
+        # _week_transactions.html), so there's no need to pre-trim it.
+        ctx["waivers"] = records(wl)
         ctx["n_adds"] = len(wl)
-        return tpl.TemplateResponse(request, "tab_transactions.html", ctx)
+        # Season-cumulative free-agent comparison, actual-points framing:
+        # "value left on the wire" -- the natural complement to the Waiver
+        # wire table above (what people picked up vs. what they could have).
+        # The optimal-lineup framing of the SAME underlying computation lives
+        # on the Coaching tab instead (ties to lineup decisions, not
+        # acquisitions); per-week detail lives only on the Weekly tab.
+        ctx["fa_season"] = metrics.free_agent_best_team_season(s)
+        return _pushed(tpl.TemplateResponse(request, "tab_transactions.html", ctx), ctx, name)
     elif name == "draft":
         # Draft board (round x slot) + value/grade charts for the selected
         # season; the header's picker is the only season control.
@@ -933,7 +1203,7 @@ def tab(name: str, request: Request, league: str = DEFAULT_LEAGUE,
             # Headline tiles, matching every other tab's own stats-row-before-
             # charts convention -- reshapes data already computed above.
             ctx["standouts"] = draft.draft_standouts(s)
-        return tpl.TemplateResponse(request, "tab_draft.html", ctx)
+        return _pushed(tpl.TemplateResponse(request, "tab_draft.html", ctx), ctx, name)
     elif name == "report":
         # The report rendered natively into the tab: its tables come straight from
         # report_parts, and its charts are ordinary /chart <img> so they stream in
@@ -946,7 +1216,7 @@ def tab(name: str, request: Request, league: str = DEFAULT_LEAGUE,
         ctx["manager"] = mgr
         ctx["managers"] = list(
             s.standings.sort_values("final_position")["user_name"])
-        return tpl.TemplateResponse(request, "tab_report.html", ctx)
+        return _pushed(tpl.TemplateResponse(request, "tab_report.html", ctx), ctx, name)
     elif name == "career":
         ctx["summary"] = summaries.summary_career(d["seasons"])
         ctx["charts"] = ["career", "trajectory", "head_to_head", "loyalty"]
@@ -978,7 +1248,7 @@ def tab(name: str, request: Request, league: str = DEFAULT_LEAGUE,
         ctx["has_committed"] = d["playoffs"].get(key) is not None
         if p is None:
             ctx["missing"] = key
-            return tpl.TemplateResponse(request, "tab_playoffs.html", ctx)
+            return _pushed(tpl.TemplateResponse(request, "tab_playoffs.html", ctx), ctx, name)
         r = p.results
         played = r[r["result"].isin(["W", "L", "T"])]
         top = played.loc[played["points"].idxmax()] if len(played) else None
@@ -1088,11 +1358,11 @@ def tab(name: str, request: Request, league: str = DEFAULT_LEAGUE,
             "rules": _grouped_rules(p.config.get("scoring_settings", {})),
             "n_rules": len(p.config.get("scoring_settings", {})),
         })
-        return tpl.TemplateResponse(request, "tab_playoffs.html", ctx)
+        return _pushed(tpl.TemplateResponse(request, "tab_playoffs.html", ctx), ctx, name)
     else:
         return HTMLResponse("<p class='empty'>Unknown tab.</p>", status_code=404)
 
-    return tpl.TemplateResponse(request, "tab_charts.html", ctx)
+    return _pushed(tpl.TemplateResponse(request, "tab_charts.html", ctx), ctx, name)
 
 
 def _report_html(d, s, key, manager: str | None = None) -> str:
