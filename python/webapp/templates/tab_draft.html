@@ -34,96 +34,175 @@
   {% for c in charts %}{{ ch.chart(c) }}{% endfor %}
 </section>
 
-{% if gems or busts %}
-<h2>Gems &amp; busts</h2>
-<p class="hint">Ranked by value against draft position, not raw points — so a late
-   flier that returned nothing sits near zero, while an early pick that returned
-   nothing sinks. <strong>+/−</strong> is how many places the pick beat (or missed)
-   where it was taken. <strong>Pts</strong> counts only points <em>started for the
-   drafting team</em>; <strong>Total</strong> is what the player scored for every
-   roster that held him all season &mdash; where a bust went on to score for
-   somebody else, that gap is the difference between a bad player and a bad decision.</p>
-<div class="grid two">
-  <div class="card tablewrap">
-    <h3>Gems</h3>
+{% if gems or busts or undrafted %}
+<h2>Draft finds</h2>
+<p class="hint">Gems, busts, undrafted value and a position-scarcity-adjusted read on the
+   same picks &mdash; switch between them below. Gems/busts/adjusted are ranked by
+   <strong>+/&minus;</strong> against where a player was picked, using his TRUE full season
+   output (every real stat line he had, regardless of who, if anyone, rostered or started
+   him) &mdash; so a pick who was drafted well but traded or dropped away still shows up as
+   a gem, and a genuinely bad pick can't hide by having sat on a bench. A
+   <span class="tag mixed" title="What this team actually banked from him tells a different story -- see the draft board for both numbers.">mixed</span>
+   tag means this player's value to the drafting team's OWN roster disagrees in sign with
+   his true value shown here. Click a column header to sort.</p>
+<div class="viewswitch gb-vs-mode">
+  <input type="radio" name="gbmode" id="gb-gems" class="vs-radio" checked>
+  <input type="radio" name="gbmode" id="gb-busts" class="vs-radio">
+  <input type="radio" name="gbmode" id="gb-adj" class="vs-radio">
+  <input type="radio" name="gbmode" id="gb-undrafted" class="vs-radio">
+  <div class="rail vs-tabs">
+    <label class="year" for="gb-gems">Gems</label>
+    <label class="year" for="gb-busts">Busts</label>
+    <label class="year" for="gb-adj">Position-adjusted</label>
+    <label class="year" for="gb-undrafted">Undrafted</label>
+  </div>
+
+  <div class="vs-panel vs-p-gems">
+    <div class="card tablewrap scrolltable">
     <table>
       <thead><tr>
-        <th>Pick</th><th>Player</th><th>Pos</th><th>Manager</th>
-        <th class="n">Pts</th><th class="n">Total</th><th class="n">+/&minus;</th>
+        <th>Pick</th><th>Player</th><th>Manager</th>
+        <th class="n">Total pts</th><th class="n">+/&minus;</th>
       </tr></thead>
       <tbody>
       {% for r in gems %}
         <tr>
           <td>{{ r.pick }}</td>
-          <td>{{ idm.headshot(r.player_id) }}{{ r.player_name }}</td>
-          <td>{{ r.position }}</td>
+          <td>{{ idm.headshot(r.player_id) }}{{ r.player_name }}
+              {% if r.pos_rank %}<span class="q">{{ r.position }} #{{ r.pos_rank }}</span>{% else %}<span class="q">{{ r.position }}</span>{% endif %}
+              {% if r.mixed %}<span class="tag mixed" title="What this team actually banked from him tells a different story -- see the draft board for both numbers.">mixed</span>{% endif %}</td>
           <td>{{ idm.who(r.user_name) }}</td>
-          <td class="n">{{ "%.0f"|format(r.points) }}</td>
           <td class="n">{{ "%.0f"|format(r.total) }}</td>
-          <td class="n"><span class="res w">+{{ r.steal }}</span></td>
+          <td class="n"><span class="res {% if r.total_steal >= 0 %}w{% else %}l{% endif %}">{{ "+" if r.total_steal >= 0 }}{{ r.total_steal }}</span></td>
         </tr>
       {% endfor %}
       </tbody>
     </table>
+    </div>
   </div>
-  <div class="card tablewrap">
-    <h3>Busts</h3>
+
+  <div class="vs-panel vs-p-busts">
+    <div class="card tablewrap scrolltable">
     <table>
       <thead><tr>
-        <th>Pick</th><th>Player</th><th>Pos</th><th>Manager</th>
-        <th class="n">Pts</th><th class="n">Total</th><th class="n">+/&minus;</th>
+        <th>Pick</th><th>Player</th><th>Manager</th>
+        <th class="n">Total pts</th><th class="n">+/&minus;</th>
       </tr></thead>
       <tbody>
       {% for r in busts %}
         <tr>
           <td>{{ r.pick }}</td>
-          <td>{{ idm.headshot(r.player_id) }}{{ r.player_name }}{% if r.elsewhere >= 20 %}
-              <span class="q" title="Started points this player scored for other teams after leaving">· {{ "%.0f"|format(r.elsewhere) }} elsewhere</span>{% endif %}</td>
-          <td>{{ r.position }}</td>
+          <td>{{ idm.headshot(r.player_id) }}{{ r.player_name }}
+              {% if r.pos_rank %}<span class="q">{{ r.position }} #{{ r.pos_rank }}</span>{% else %}<span class="q">{{ r.position }}</span>{% endif %}
+              {% if r.mixed %}<span class="tag mixed" title="What this team actually banked from him tells a different story -- see the draft board for both numbers.">mixed</span>{% endif %}</td>
           <td>{{ idm.who(r.user_name) }}</td>
-          <td class="n">{{ "%.0f"|format(r.points) }}</td>
           <td class="n">{{ "%.0f"|format(r.total) }}</td>
-          <td class="n"><span class="res l">{{ r.steal }}</span></td>
+          <td class="n"><span class="res {% if r.total_steal >= 0 %}w{% else %}l{% endif %}">{{ "+" if r.total_steal >= 0 }}{{ r.total_steal }}</span></td>
         </tr>
       {% endfor %}
       </tbody>
     </table>
+    </div>
+  </div>
+
+  <div class="vs-panel vs-p-adj">
+    <p class="hint">Instead of raw points, ranked by points above a <strong>startable-level</strong>
+       player at the position &mdash; roughly the Nth-best real option leaguewide, sized to
+       this league's own starting slots &mdash; so a strong TE finish (a shallow position)
+       can outrank a strong RB finish (a deep one) even on fewer raw points.</p>
+    <div class="grid two">
+      <div>
+        <h3>Gems</h3>
+        <div class="card tablewrap scrolltable">
+        <table>
+          <thead><tr>
+            <th>Pick</th><th>Player</th><th>Manager</th>
+            <th class="n">Pos-adj pts</th><th class="n">+/&minus;</th>
+          </tr></thead>
+          <tbody>
+          {% for r in adj_gems %}
+            <tr>
+              <td>{{ r.pick }}</td>
+              <td>{{ idm.headshot(r.player_id) }}{{ r.player_name }}
+                  {% if r.pos_rank %}<span class="q">{{ r.position }} #{{ r.pos_rank }}</span>{% else %}<span class="q">{{ r.position }}</span>{% endif %}</td>
+              <td>{{ idm.who(r.user_name) }}</td>
+              <td class="n">{{ "+" if r.pos_adj >= 0 }}{{ "%.0f"|format(r.pos_adj) }}</td>
+              <td class="n"><span class="res {% if r.adj_steal >= 0 %}w{% else %}l{% endif %}">{{ "+" if r.adj_steal >= 0 }}{{ r.adj_steal }}</span></td>
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+        </div>
+      </div>
+      <div>
+        <h3>Busts</h3>
+        <div class="card tablewrap scrolltable">
+        <table>
+          <thead><tr>
+            <th>Pick</th><th>Player</th><th>Manager</th>
+            <th class="n">Pos-adj pts</th><th class="n">+/&minus;</th>
+          </tr></thead>
+          <tbody>
+          {% for r in adj_busts %}
+            <tr>
+              <td>{{ r.pick }}</td>
+              <td>{{ idm.headshot(r.player_id) }}{{ r.player_name }}
+                  {% if r.pos_rank %}<span class="q">{{ r.position }} #{{ r.pos_rank }}</span>{% else %}<span class="q">{{ r.position }}</span>{% endif %}</td>
+              <td>{{ idm.who(r.user_name) }}</td>
+              <td class="n">{{ "+" if r.pos_adj >= 0 }}{{ "%.0f"|format(r.pos_adj) }}</td>
+              <td class="n"><span class="res {% if r.adj_steal >= 0 %}w{% else %}l{% endif %}">{{ "+" if r.adj_steal >= 0 }}{{ r.adj_steal }}</span></td>
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="vs-panel vs-p-undrafted">
+    <p class="hint">The other side of the draft: the best players nobody spent a pick on.
+       <strong>Pts</strong> is what he put up on a roster in this league, started or benched
+       &mdash; the <strong>Manager</strong> shown got the most out of him, and
+       <strong>&times;n teams</strong> marks a pickup who churned across more than one
+       roster; <strong>Total</strong> is his TRUE full season output regardless of
+       rostering, with <strong>Pos #N</strong> his leaguewide finish at the position from
+       that same number. This is where the waiver wire beat the draft.</p>
+    <div class="card tablewrap scrolltable">
+      <table>
+        <thead><tr>
+          <th>Player</th><th>Manager</th>
+          <th class="n">PPG</th><th class="n">Pts</th><th class="n">Total</th>
+        </tr></thead>
+        <tbody>
+        {% for r in undrafted %}
+          <tr>
+            <td>{{ idm.headshot(r.player_id) }}{{ r.player_name }}
+                {% if r.pos_rank %}<span class="q">{{ r.position }} #{{ r.pos_rank }}</span>{% else %}<span class="q">{{ r.position or "—" }}</span>{% endif %}
+                {% if r.teams and r.teams > 1 %}<span class="q">&times;{{ r.teams }} teams</span>{% endif %}</td>
+            <td>{{ idm.who(r.user_name) }}</td>
+            <td class="n">{{ "%.1f"|format(r.ppg) }}</td>
+            <td class="n">{{ "%.0f"|format(r.points) }}</td>
+            <td class="n">{{ "%.0f"|format(r.total) }}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
   </div>
 </div>
 {% endif %}
 
-{% if undrafted %}
-<h2>Undrafted standouts</h2>
-<p class="hint">The other side of the draft: the best players nobody spent a pick on. Ranked
-   by started points across the season &mdash; the <strong>Manager</strong> shown got the most
-   out of them, and <strong>&times;n teams</strong> marks a pickup who started for more than
-   one roster. This is where the waiver wire beat the draft.</p>
-<div class="card tablewrap">
-  <table>
-    <thead><tr>
-      <th>Player</th><th>Pos</th><th>Manager</th>
-      <th class="n">Starts</th><th class="n">Pts</th>
-    </tr></thead>
-    <tbody>
-    {% for r in undrafted %}
-      <tr>
-        <td>{{ idm.headshot(r.player_id) }}{{ r.player_name }}{% if r.teams and r.teams > 1 %}
-            <span class="q">&times;{{ r.teams }} teams</span>{% endif %}</td>
-        <td>{{ r.position or "—" }}</td>
-        <td>{{ idm.who(r.user_name) }}</td>
-        <td class="n">{{ r.starts }}</td>
-        <td class="n">{{ "%.0f"|format(r.points) }}</td>
-      </tr>
-    {% endfor %}
-    </tbody>
-  </table>
-</div>
-{% endif %}
-
 <div class="rowhead"><h2>{{ season }} draft board</h2></div>
-<p class="hint">Each column is a manager's draft slot, each row a round. The number under a
-   pick is the started points that player returned to the drafting team this season —
-   colour marks the position.</p>
+<p class="hint">Each column is a manager's draft slot, each row a round. The first number
+   under a pick is the points that player put up on the drafting team's roster this
+   season, started or benched; the second (in parens) is his TRUE full season output &mdash; every real stat
+   line he had, regardless of who (if anyone) rostered or started him &mdash; if that
+   differs. <strong>Pos #N</strong> is where he finished at his position leaguewide this
+   season, from that same true-season number &mdash; colour marks the position. Points are
+   tinted <span class="pts dv-pos">green</span> when the player's true season value beat
+   his draft slot by a full round or more and <span class="pts dv-neg">red</span> when
+   it missed by that much; anything closer to expectation is left unhighlighted.</p>
 {# nosort: the board is a round x slot grid, so re-ordering rows is meaningless #}
 <div class="tablewrap nosort">
   <table class="draftboard">
@@ -141,8 +220,10 @@
         <td class="pick">
           {% if c %}
           <span class="pk">#{{ c.pick_no }}</span>
-          <span class="pl pos-{{ c.pos }}">{{ c.player }}</span>
-          <span class="pts">{{ "%.0f"|format(c.points) }} pts</span>
+          <span class="pl pos-{{ c.pos }}">{{ idm.headshot(c.player_id) }}{{ c.player }}</span>
+          {% if c.pos_rank %}<span class="q">{{ c.pos }} #{{ c.pos_rank }}</span>{% endif %}
+          <span class="pts{% if c.dv %} dv-{{ c.dv }}{% endif %}">{{ "%.0f"|format(c.points) }} pts{% if c.total and (c.total - c.points) >= 1 %}
+            (Total {{ "%.0f"|format(c.total) }}){% endif %}</span>
           {% else %}<span class="pk">—</span>{% endif %}
         </td>
         {% endfor %}

@@ -1456,6 +1456,31 @@ def week_position_ranks(s: Season, week: int) -> dict:
     return _rank_by_position(totals, pos_map)
 
 
+def season_position_ranks(s: Season) -> dict:
+    """Position rank for the WHOLE season, postseason included -- "he
+    finished as the league's RB4" -- priced the same way as
+    `week_position_ranks` (every player's real NFL stat line times the
+    league's scoring chart), just summed across every scored week instead of
+    one.
+
+    Deliberately NOT `pl_wk`-derived: `pl_wk` only has rows for weeks a
+    player was actually on a roster in THIS league, so a player who was
+    dropped and sat on nobody's roster for a stretch would be missing those
+    weeks entirely. This is his true season output regardless of who (if
+    anyone) rostered or started him, which is what the draft tab's "Total"
+    figure and position ranks are meant to show.
+
+    Spans `last_week_all` (every week Sleeper scored, postseason included),
+    not the regular-season-only `last_week` most other metrics use -- this is
+    the player's real NFL production, not a league-standings input, so there
+    is no reason to stop at the regular season's last week.
+
+    Returns {player_id: {"position", "rank", "points"}}.
+    """
+    totals, pos_map = _position_totals(s, range(1, s.last_week_all + 1))
+    return _rank_by_position(totals, pos_map)
+
+
 def _fa_candidates(s: Season, week: int) -> tuple[list[dict], dict]:
     """(candidate rows, scoring rules) -- every unrostered player who scored
     this week, positioned and priced. Shared by `free_agent_standouts`

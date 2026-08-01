@@ -52,14 +52,21 @@ def test_record_book_reports_superlatives():
     assert labels["Highest score"]["value"] == "130.0"
 
 
-def test_undrafted_standouts_excludes_drafted_and_ranks_by_started_points():
-    """The best players who went undrafted, ranked by started points -- drafted
-    players are excluded, and a churned pickup is attributed to whoever got the
-    most out of him. Seeds a fake draft board so 'undrafted' is well defined."""
+def test_undrafted_standouts_excludes_drafted_and_ranks_by_started_points(monkeypatch):
+    """The best players who went undrafted, ranked by roster-accumulated points
+    -- drafted players are excluded, and a churned pickup is attributed to
+    whoever got the most out of him. Seeds a fake draft board so 'undrafted' is
+    well defined."""
     import dataclasses
 
     import pandas as pd
-    from sleepermetrics import draft
+    from sleepermetrics import draft, metrics as _metrics
+    # undrafted_standouts also computes true-season total/pos_rank via
+    # metrics.season_position_ranks, which prices every real NFL stat line --
+    # a real network call this fixture's fake league_id can't serve. Not what
+    # this test is checking, so stub it out rather than pull in the whole
+    # scoring/players mocking chain test_playoffs.py uses for that.
+    monkeypatch.setattr(_metrics, "season_position_ranks", lambda s: {})
     s = make_season()
     # A populated pl_wk: pDraft was drafted; pFA and pStash were not.
     pl = pd.DataFrame({

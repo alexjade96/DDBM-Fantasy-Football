@@ -147,16 +147,3 @@
 <section class="grid">
   {% for c in charts %}{{ ch.chart(c) }}{% endfor %}
 </section>
-
-{% if more_charts %}
-<details class="card">
-  <summary>More season charts ({{ more_charts | length }})</summary>
-  <p class="hint">The season&rsquo;s arc, schedule fairness and scoring detail &mdash; one click
-     deeper than the headline standings above.</p>
-  <section class="grid">
-    {% for c in more_charts %}
-    {% if c == "week_race" %}{{ ch.chart(c, week=current_week) }}{% else %}{{ ch.chart(c) }}{% endif %}
-    {% endfor %}
-  </section>
-</details>
-{% endif %}

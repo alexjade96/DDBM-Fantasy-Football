@@ -1277,7 +1277,7 @@ def plot_head_to_head(seasons: dict):
 
 
 def plot_draft_value(s: Season):
-    """Pick number vs points returned -- where the steals and busts landed."""
+    """Pick number vs roster points returned -- where the steals and busts landed."""
     from . import draft as _draft
     d = _draft.draft_board(s)
     fig, ax = plt.subplots(figsize=(10, 6))
@@ -1310,39 +1310,59 @@ def plot_draft_value(s: Season):
     return _finish(fig, ax, f"{s.season} Draft Value",
                    "Each dot = a pick  ·  green tags = biggest steals  ·  "
                    "red = early busts  ·  line = value decay by pick",
-                   "Overall pick number", "Started points returned", caption=_cap(s))
+                   "Overall pick number", "Roster points returned", caption=_cap(s))
 
 
-def plot_draft_grades(s: Season):
-    """Total started points each manager got out of their draft."""
+def plot_draft_grades_value(s: Season):
+    """Draft grades as a dumbbell: roster points kept vs. the SAME picks'
+    true full season output, one connecting line per manager (same idiom as
+    `plot_mgr_sos`). A long red line is value that got away -- traded or
+    dropped before the team ever benefited from it; a short grey line means
+    they drafted, and kept, close to what they got.
+
+    Ordered by `points` (roster points actually kept), not `total` (true
+    value) -- the bar that used to anchor the old bar-chart grade is the
+    honest "what did this manager actually bank" number, so reading top to
+    bottom traces perceived loss: rows near the top banked close to what
+    their picks were worth, rows sliding down the page gave more of it away.
+    """
     from . import draft as _draft
     d = _draft.draft_grades(s)
     fig, ax = plt.subplots(figsize=(9, 6))
     if d.empty:
         ax.axis("off")
-        ax.set_title("Draft Grades", loc="left", fontsize=16, fontweight="bold",
-                     color=T["ink"], pad=20)
+        ax.set_title("Draft Grades vs. True Value", loc="left", fontsize=16,
+                     fontweight="bold", color=T["ink"], pad=20)
         ax.text(0.5, 0.5, "No draft data for this season.", ha="center",
                 va="center", transform=ax.transAxes, fontsize=11.5, color=T["muted"])
         return fig
     d = d.sort_values("points").reset_index(drop=True)
-    cmap = matplotlib.colormaps["Greens"]
-    lo, hi = d["points"].min(), d["points"].max()
-    norm = mcolors.Normalize(vmin=lo - (hi - lo) * 0.5, vmax=hi)
-    ax.barh(range(len(d)), d["points"], height=0.72, zorder=2,
-            color=[cmap(norm(v)) for v in d["points"]])
+    d["gap"] = (d["total"] - d["points"]).round(1)
+    hi = float(d["total"].max())
+    # A line colours red once the gap clears the league's own median -- so
+    # "notable" scales with how leaky drafts are THIS season, not a fixed
+    # point cutoff that reads differently in a high- vs low-scoring year.
+    med_gap = d["gap"].median()
+    line_cols = ["#e03131" if g > med_gap else T["rule"] for g in d["gap"]]
+    for i, r in d.iterrows():
+        ax.plot([r["points"], r["total"]], [i, i], color=line_cols[i],
+                lw=2.4, alpha=0.8, zorder=2)
+    ax.scatter(d["points"], range(len(d)), color=T["neutral"], s=60, zorder=3,
+               edgecolors=T["edge"], linewidths=0.6, label="roster points kept")
+    ax.scatter(d["total"], range(len(d)), color="#2ca02c", s=75, zorder=4,
+               edgecolors=T["edge"], linewidths=0.6, label="players' true season value")
+    for i, r in d.iterrows():
+        note = f"+{r['gap']:.0f} lost" if r["gap"] > hi * 0.02 else "kept"
+        ax.text(r["total"] + hi * 0.015, i, note, va="center", fontsize=7.5, color=T["muted"])
     ax.set_yticks(range(len(d)))
     ax.set_yticklabels(d["user_name"])
     _row_avatars(ax, d["user_name"], s)
-    for i, r in d.iterrows():
-        ax.text(r["points"] + hi * 0.01, i,
-                f"{r['points']:.0f}  ({int(r['hits'])} hits · {r['ppp']:.0f}/pick)",
-                va="center", fontsize=8, color=T["ink2"])
-    ax.set_xlim(0, hi * 1.28)
-    return _finish(fig, ax, f"{s.season} Draft Grades",
-                   "Total started points from drafted players  ·  "
-                   "hit = a 100+ point season", "Started points from the draft",
-                   caption=_cap(s))
+    ax.legend(loc="lower right", frameon=False, fontsize=8)
+    ax.set_xlim(0, hi * 1.25)
+    return _finish(fig, ax, f"{s.season} Draft Grades vs. True Value",
+                   "Grey dot = roster points kept, green dot = the players' TRUE season "
+                   "total  ·  a red line is value traded or dropped away before it counted",
+                   "Points", caption=_cap(s))
 
 
 # --- manager-scoped charts -------------------------------------------------

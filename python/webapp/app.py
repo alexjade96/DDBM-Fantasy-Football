@@ -321,7 +321,8 @@ SEASON_CHARTS = {
     "waiver_performance": plots.plot_waiver_performance,
     "boom_bust": plots.plot_boom_bust, "sos": plots.plot_sos,
     "schedule_swap": plots.plot_schedule_swap,
-    "draft_value": plots.plot_draft_value, "draft_grades": plots.plot_draft_grades,
+    "draft_value": plots.plot_draft_value,
+    "draft_grades_value": plots.plot_draft_grades_value,
 }
 
 
@@ -385,8 +386,8 @@ CHART_META = {
     "waiver_performance": {"cap": "Every waiver or free-agent pickup by points returned while rostered."},
     "fa_season": {"cap": "What every manager's ACTUAL season points left on the table, against the best available free agents."},
     # Draft
-    "draft_value": {"cap": "Started points each pick returned to the team that drafted him."},
-    "draft_grades": {"cap": "Value weighed against draft slot — a late steal grades above a costly early miss."},
+    "draft_value": {"cap": "Roster points each pick returned to the team that drafted him."},
+    "draft_grades_value": {"cap": "Sorted by roster points actually kept — a long red line is value that got traded or dropped away before it counted."},
     # Career
     "career": {"cap": "Cumulative record and points across every season on record."},
     "trajectory": {"cap": "Where each manager finished, season by season."},
@@ -1013,19 +1014,18 @@ def tab(name: str, request: Request, league: str = DEFAULT_LEAGUE,
         ctx.update(_week_context(s))
         ctx["summary"] = summaries.summary_season(s)
         # Only the two charts that answer "who's actually good" at a glance
-        # stay visible by default -- standings (the record) and power_rank
-        # (the composite merit blend). Everything else that used to render
-        # unconditionally (week_race, allplay, sos, schedule_swap, pf_pa,
-        # team_points) is demoted into a collapsed "More season charts"
-        # disclosure in the template: still one click away, not deleted, but
-        # not part of the default report-style wall of graphics. Their
+        # stay on this page -- standings (the record) and power_rank (the
+        # composite merit blend). Overview is a landing page, not a wall of
+        # graphics or a click-to-expand gallery, so everything else that used
+        # to render here (week_race, allplay, sos, schedule_swap, pf_pa,
+        # team_points) is gone rather than tucked behind a disclosure; their
         # headline takeaways are narrated instead via _overview_insights().
-        # `luck` stays dropped: it's the same all-play computation as
-        # `allplay`'s rank_delta, already restated in the season prose's
-        # "Luckiest" bullet -- a third repetition of one fact added nothing.
+        # week_race is still reachable on the Weekly tab; the other four are
+        # only reachable via their raw /chart/<key> URL for now. `luck` stays
+        # dropped too: it's the same all-play computation as `allplay`'s
+        # rank_delta, already restated in the season prose's "Luckiest"
+        # bullet -- a third repetition of one fact added nothing.
         ctx["charts"] = ["standings", "power_rank"]
-        ctx["more_charts"] = ["week_race", "allplay", "sos", "schedule_swap",
-                              "pf_pa", "team_points"]
         ctx["extra_insights"] = _overview_insights(s)
         # Which real-world phase the season is in RIGHT NOW decides what the
         # lead above "Season so far" shows -- see _season_phase's docstring
@@ -1169,9 +1169,12 @@ def tab(name: str, request: Request, league: str = DEFAULT_LEAGUE,
         # season; the header's picker is the only season control.
         ctx["seasons"] = list(reversed(d["names"]))
         # Grades (per-manager summary, general) before value (per-pick detail,
-        # specific) -- matches the page's own "general -> specific" ordering,
-        # which this pair previously ran backwards.
-        ctx["charts"] = ["draft_grades", "draft_value"]
+        # specific) -- matches the page's own "general -> specific" ordering.
+        # The old plain bar chart is gone: draft_grades_value carries the
+        # grade on its own now (roster points kept, dumbbelled against the
+        # same picks' true value), so there's no separate "just points" bar
+        # duplicating it.
+        ctx["charts"] = ["draft_grades_value", "draft_value"]
         db = draft.draft_board(s)
         if db.empty:
             ctx["no_draft"] = True
@@ -1183,13 +1186,35 @@ def tab(name: str, request: Request, league: str = DEFAULT_LEAGUE,
             # manager; take the first row seen per slot.
             slot_user = (db.drop_duplicates("draft_slot")
                          .set_index("draft_slot")["user_name"].to_dict())
+            # A pick's points colour: "notably" over/under its slot means it
+            # beat/missed by a full round's worth of picks -- an adaptive
+            # threshold (round size varies 6-12 teams across this league's
+            # seasons) rather than a fixed point or rank gap, so a swing that
+            # size reads the same regardless of league size. Checked against
+            # `total_steal` -- ranked by the player's TRUE season points,
+            # not just what this drafting team started -- so the colour
+            # reflects whether the PLAYER was a good value, not whether this
+            # team happened to get the credit. Anything smaller than a round
+            # is left unhighlighted rather than tinting noise.
+            round_size = max(len(slots), 1)
             rounds = []
             for rnd, g in db.groupby("round"):
                 cells = {int(r["draft_slot"]): {
                     "pick_no": int(r["pick_no"]) if pd_notna(r["pick_no"]) else None,
                     "player": r["player_name"] or "—",
+                    "player_id": r["player_id"] if pd_notna(r["player_id"]) else None,
                     "pos": (r["position"] or "").upper(),
+                    "pos_rank": int(r["pos_rank"]) if pd_notna(r["pos_rank"]) else None,
                     "points": round(float(r["points"]), 1),
+                    # Season pts = the player's TRUE full season output, every
+                    # real stat line he had regardless of who (if anyone)
+                    # rostered him -- not just what accumulated on this
+                    # drafting team's roster -- shown alongside team pts so a
+                    # pick that was traded/dropped away still reads as a good
+                    # player, not just a blank pick.
+                    "total": round(float(r["total"]), 1),
+                    "dv": ("pos" if r["total_steal"] >= round_size
+                           else "neg" if r["total_steal"] <= -round_size else None),
                 } for _, r in g.iterrows()}
                 rounds.append({"round": int(rnd),
                                "cells": [cells.get(sl) for sl in slots]})

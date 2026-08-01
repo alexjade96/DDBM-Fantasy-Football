@@ -451,6 +451,10 @@ details summary { cursor: pointer; font-weight: 600; }
    good/bad badge, and a scoped rule would leave it silently unstyled there. */
 .res { font-weight: 700; }
 .res.w { color: #2f9e44; } .res.l { color: #e03131; }
+/* Draft gems/busts: Pts +/- and Total +/- disagree in sign -- the verdict
+   depends on which column you read, worth a flag rather than leaving it
+   buried in two side-by-side numbers. */
+.tag.mixed { color: #f08c00; border-color: #f08c00; }
 /* Global for the same reason as .res above: the draft tab reuses this muted
    qualifier, and the report's own uses all sit inside .reportpanel anyway. */
 .q { color: var(--muted); font-size: 12.5px; font-variant-numeric: tabular-nums; }
@@ -582,11 +586,21 @@ table.dt-games tr.cmp-down td { background: color-mix(in srgb, #e03131 8%, trans
   max-width: 130px; overflow: hidden; text-overflow: ellipsis; }
 .draftboard td.rnd, .draftboard th.rnd { text-align: center; color: var(--faint);
   font-variant-numeric: tabular-nums; font-weight: 600; }
-.draftboard td.pick { min-width: 116px; }
+.draftboard td.pick { min-width: 128px; }
 .draftboard .pk { color: var(--faint); font-size: 10.5px; font-variant-numeric: tabular-nums; }
 .draftboard .pl { display: block; font-weight: 600; padding-left: 6px;
   border-left: 3px solid var(--line); margin: 1px 0; }
+.draftboard .pl .pface { width: 15px; height: 15px; margin-right: 4px; }
+.draftboard .q { font-size: 10px; padding-left: 6px; }
 .draftboard .pts { color: var(--muted); font-size: 10.5px; font-variant-numeric: tabular-nums; }
+/* Draft value tint: a pick that beat/missed its slot by a full round or more,
+   "slight" enough not to fight the position-colour accent on .pl above it.
+   Global (not .draftboard-scoped) so the hint text's inline legend renders
+   with the same look. */
+.dv-pos { color: #2f9e44;
+  background: color-mix(in srgb, #2f9e44 14%, transparent); border-radius: 4px; padding: 0 3px; }
+.dv-neg { color: #e03131;
+  background: color-mix(in srgb, #e03131 14%, transparent); border-radius: 4px; padding: 0 3px; }
 /* Position accents (match the charts' POS_COLORS). */
 .pos-QB { border-left-color: #d62728 !important; }
 .pos-RB { border-left-color: #2ca02c !important; }
@@ -681,8 +695,25 @@ footer code { font-family: ui-monospace, Consolas, monospace; }
 /* Caps a long table's height instead of letting it push the whole page out --
    a busy free-agency week can run 20+ rows. Sticky header so the (sortable)
    column names stay visible while scrolling; harmless no-op when the table is
-   short enough not to need it. */
+   short enough not to need it. `border-collapse: collapse` (the base `table`
+   rule) silently disables `position: sticky` on `th`/`td` in every browser --
+   the header was never actually sticking, anywhere this class was used, until
+   this override. Cells here only ever carry a bottom border (never a full
+   box), so switching to separate borders with zero spacing draws identically. */
 .scrolltable { max-height: 420px; overflow-y: auto; }
+.scrolltable table { border-collapse: separate; border-spacing: 0; }
+/* When .card and .scrolltable land on the same element (the usual pairing),
+   .card's own 14px padding sits INSIDE the scrolling box, above the table.
+   `position: sticky` computes "top: 0" against that padding edge, so it
+   sticks correctly in principle -- but that top padding is itself part of
+   the scrolled content, and rows scrolling up past it can render a sliver
+   through it before the sticky header's own box has fully taken over that
+   space, since the padding strip has no row/cell of its own to opaquely
+   paint over what's scrolling underneath. Dropping the padding here removes
+   the gap entirely; the table's own per-cell padding already gives it
+   breathing room, so it reads the same as a deliberately flush table in a
+   card (the same treatment `.draftboard`/`.drilltable` already use). */
+.card.scrolltable { padding: 0; }
 
 /* Native radio-driven tab switcher (no JS): the checked radio's matching
    panel shows via the general-sibling selector, :has() flags its label as
@@ -709,7 +740,15 @@ footer code { font-family: ui-monospace, Consolas, monospace; }
 .viewswitch:has(#fa-DEF:checked) .vs-tabs label[for="fa-DEF"] {
   background: var(--ink); color: var(--surface); border-color: var(--ink);
 }
-.scrolltable table thead th { position: sticky; top: 0; background: var(--surface);
+/* !important is load-bearing here, not decorative: every th in a sortable
+   table (i.e. not .nosort) gets role="button" from index.html's JS, and
+   `#panel table:not(.nosort) thead th[role="button"] { position: relative }`
+   (the sort-arrow rule, above) carries an #panel id -- higher specificity
+   than this class-based selector -- so it silently overwrote `sticky` back
+   to `relative` regardless of source order. That's the actual reason the
+   header was still scrolling away after the border-collapse fix: there was
+   a real scroll container, but the th was never actually position:sticky. */
+.scrolltable table thead th { position: sticky !important; top: 0; background: var(--surface);
   z-index: 1; box-shadow: 0 1px 0 var(--line); }
 
 /* Free-agent best team vs one real team: team selection (fat-0, fat-1, ...)
@@ -764,6 +803,19 @@ footer code { font-family: ui-monospace, Consolas, monospace; }
 .fa-vs-mode #fam-opt:checked ~ .vs-p-opt { display: block; }
 .fa-vs-mode:has(#fam-actual:checked) .vs-tabs label[for="fam-actual"],
 .fa-vs-mode:has(#fam-opt:checked) .vs-tabs label[for="fam-opt"] {
+  background: var(--ink); color: var(--surface); border-color: var(--ink); }
+
+/* Draft tab: gems / busts / position-adjusted / undrafted, one shared
+   viewswitch instead of three separate always-visible sections -- fixed
+   4-id set (that grouping doesn't vary per league) rather than generated. */
+.gb-vs-mode #gb-gems:checked ~ .vs-p-gems,
+.gb-vs-mode #gb-busts:checked ~ .vs-p-busts,
+.gb-vs-mode #gb-adj:checked ~ .vs-p-adj,
+.gb-vs-mode #gb-undrafted:checked ~ .vs-p-undrafted { display: block; }
+.gb-vs-mode:has(#gb-gems:checked) .vs-tabs label[for="gb-gems"],
+.gb-vs-mode:has(#gb-busts:checked) .vs-tabs label[for="gb-busts"],
+.gb-vs-mode:has(#gb-adj:checked) .vs-tabs label[for="gb-adj"],
+.gb-vs-mode:has(#gb-undrafted:checked) .vs-tabs label[for="gb-undrafted"] {
   background: var(--ink); color: var(--surface); border-color: var(--ink); }
 
 /* Matchup drilldown's own Actual/Optimized toggle (_week_scoreboard.html) --
