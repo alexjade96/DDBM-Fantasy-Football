@@ -1186,17 +1186,18 @@ def tab(name: str, request: Request, league: str = DEFAULT_LEAGUE,
             # manager; take the first row seen per slot.
             slot_user = (db.drop_duplicates("draft_slot")
                          .set_index("draft_slot")["user_name"].to_dict())
-            # A pick's points colour: "notably" over/under its slot means it
-            # beat/missed by a full round's worth of picks -- an adaptive
-            # threshold (round size varies 6-12 teams across this league's
-            # seasons) rather than a fixed point or rank gap, so a swing that
-            # size reads the same regardless of league size. Checked against
-            # `total_steal` -- ranked by the player's TRUE season points,
-            # not just what this drafting team started -- so the colour
-            # reflects whether the PLAYER was a good value, not whether this
-            # team happened to get the credit. Anything smaller than a round
-            # is left unhighlighted rather than tinting noise.
-            round_size = max(len(slots), 1)
+            # A pick's points colour: "notably" over/under its slot means his
+            # TRUE season value would have gone a full round or more earlier
+            # (green) or later (red) than he actually was drafted --
+            # `redraft_round` vs `round`, both counted in the real draft's
+            # own round size, so the threshold reads the same regardless of
+            # league size. `redraft_round` comes from `value_rank`, ranked
+            # cross-position by `pos_adj` (points above THIS PLAYER'S OWN
+            # position's replacement level -- already normalized to be
+            # comparable across positions, unlike raw points, which is what
+            # let a bad QB season "beat" a points-based threshold purely by
+            # out-scoring RB/WR bench fliers -- see `draft._value_ranks`).
+            # Anything smaller than a round is left unhighlighted.
             rounds = []
             for rnd, g in db.groupby("round"):
                 cells = {int(r["draft_slot"]): {
@@ -1213,14 +1214,32 @@ def tab(name: str, request: Request, league: str = DEFAULT_LEAGUE,
                     # pick that was traded/dropped away still reads as a good
                     # player, not just a blank pick.
                     "total": round(float(r["total"]), 1),
-                    "dv": ("pos" if r["total_steal"] >= round_size
-                           else "neg" if r["total_steal"] <= -round_size else None),
+                    "dv": ("pos" if r["round"] - r["redraft_round"] >= 1
+                           else "neg" if r["redraft_round"] - r["round"] >= 1 else None),
                 } for _, r in g.iterrows()}
                 rounds.append({"round": int(rnd),
                                "cells": [cells.get(sl) for sl in slots]})
             ctx.update({"slots": slots,
                         "slot_user": [slot_user.get(sl) for sl in slots],
                         "rounds": rounds})
+            # Redraft toggle: the same round x slot grid, but filled by TRUE
+            # season value instead of actual order -- see
+            # `draft.redraft_board`'s docstring for what it compares.
+            rdb = draft.redraft_board(s)
+            redraft_rounds = []
+            for rnd, g in rdb.groupby("round"):
+                cells = {int(r["draft_slot"]): {
+                    "pick_no": int(r["pick_no"]) if pd_notna(r["pick_no"]) else None,
+                    "player": r["player_name"] or "—",
+                    "player_id": r["player_id"] if pd_notna(r["player_id"]) else None,
+                    "pos": (r["position"] or "").upper(),
+                    "pos_rank": int(r["pos_rank"]) if pd_notna(r["pos_rank"]) else None,
+                    "total": round(float(r["total"]), 1),
+                    "orig_pick": r["orig_pick"] if pd_notna(r["orig_pick"]) else None,
+                } for _, r in g.iterrows()}
+                redraft_rounds.append({"round": int(rnd),
+                                       "cells": [cells.get(sl) for sl in slots]})
+            ctx["redraft_rounds"] = redraft_rounds
             ctx.update(draft.draft_extremes(s))
             # records() scrubs NaN so `{{ r.user_name or "—" }}` fires (NaN is
             # truthy in Jinja); a churned pickup can have a null primary manager.

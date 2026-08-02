@@ -62,11 +62,13 @@ def test_undrafted_standouts_excludes_drafted_and_ranks_by_started_points(monkey
     import pandas as pd
     from sleepermetrics import draft, metrics as _metrics
     # undrafted_standouts also computes true-season total/pos_rank via
-    # metrics.season_position_ranks, which prices every real NFL stat line --
-    # a real network call this fixture's fake league_id can't serve. Not what
-    # this test is checking, so stub it out rather than pull in the whole
+    # metrics.season_position_ranks, and a trend sparkline via
+    # draft._season_trend -- both price every real NFL stat line, a real
+    # network call this fixture's fake league_id can't serve. Not what this
+    # test is checking, so stub both out rather than pull in the whole
     # scoring/players mocking chain test_playoffs.py uses for that.
     monkeypatch.setattr(_metrics, "season_position_ranks", lambda s: {})
+    monkeypatch.setattr(draft, "_season_trend", lambda s, ids: {})
     s = make_season()
     # A populated pl_wk: pDraft was drafted; pFA and pStash were not.
     pl = pd.DataFrame({
@@ -92,6 +94,68 @@ def test_undrafted_standouts_excludes_drafted_and_ranks_by_started_points(monkey
     ace = out.iloc[0]
     assert ace["points"] == 65.0 and ace["teams"] == 2   # started for rosters 2 and 3
     assert ace["user_name"] == "Cy"              # roster 3 got 40 > roster 2's 25
+    draft._cache.clear()
+
+
+def test_value_ranks_and_redraft_board_are_cross_position_normalized(monkeypatch):
+    """`_value_ranks` -- the primitive behind the Draft tab's round-based
+    highlight and its Actual/Redraft toggle -- ranks by points ABOVE
+    POSITION REPLACEMENT (pos_adj), not raw points, so a lower-scoring
+    player at a shallower position can rank above a bigger-volume player at
+    a deeper one once each is measured against his own position's bar (the
+    same cross-position normalization pos_adj already uses; ranking on raw
+    points would reintroduce the Cam Ward bug -- see draft.py). With
+    s.slots == {} (make_season's fixture), _replacement_level's pool size
+    is 1 at every position, so replacement = that position's own top
+    scorer.
+
+    redraft_board() then places the top-N (N = the real draft's pick count)
+    players by that ranking into the real grid's own pick sequence and team
+    ownership, noting where (if anywhere) each one actually went.
+    """
+    import pandas as pd
+    from sleepermetrics import draft, metrics as _metrics
+
+    s = make_season()
+    ranks = {
+        "pQB": {"position": "QB", "rank": 1, "points": 200.0},   # = QB replacement (top QB)
+        "pQB2": {"position": "QB", "rank": 2, "points": 150.0},  # 50 below replacement
+        "pTE": {"position": "TE", "rank": 1, "points": 80.0},    # = TE replacement (top TE)
+        "pTE2": {"position": "TE", "rank": 2, "points": 70.0},   # 10 below replacement
+    }
+    monkeypatch.setattr(_metrics, "season_position_ranks", lambda s: ranks)
+
+    vranks = draft._value_ranks(s, ranks)
+    # pQB2 outscores pTE2 in raw points (150 > 70) but is worse relative to
+    # his OWN position's bar (-50 vs -10) -- the cross-position-normalized
+    # ranking must prefer pTE2.
+    assert vranks["pQB2"] > vranks["pTE2"]
+    assert {vranks["pQB"], vranks["pTE"]} == {1, 2}   # both AT their own replacement level
+
+    # A tiny real 3-pick draft (one per user/slot): pQB2 went 1.01, pTE2
+    # went 1.02, pTE went 1.03. pQB was never drafted.
+    board = pd.DataFrame([{c: None for c in draft._COLS} for _ in range(3)])
+    board.loc[:, ["player_id", "pick_no", "round", "pick_in_round",
+                  "draft_slot", "roster_id", "user_name"]] = [
+        ["pQB2", 1, 1, 1, 1, 1, "Al"],
+        ["pTE2", 2, 1, 2, 2, 2, "Bo"],
+        ["pTE", 3, 1, 3, 3, 3, "Cy"],
+    ]
+    draft._cache[f"{s.league_id}:{s.season}"] = board
+    monkeypatch.setattr(draft, "players", lambda: pd.DataFrame({
+        "player_id": ["pQB", "pQB2", "pTE", "pTE2"],
+        "player_name": ["QB One", "QB Two", "TE One", "TE Two"],
+        "position": ["QB", "QB", "TE", "TE"],
+    }))
+
+    rdb = draft.redraft_board(s)
+    # Only the top 3 by value fit the 3-pick grid: pQB, pTE, pTE2 -- pQB2
+    # (worst by value) is bumped out entirely, even though he was drafted.
+    assert set(rdb["player_id"]) == {"pQB", "pTE", "pTE2"}
+    pqb_row = rdb[rdb["player_id"] == "pQB"].iloc[0]
+    assert pd.isna(pqb_row["orig_round"]) and pd.isna(pqb_row["orig_pick"])  # never drafted
+    pte_row = rdb[rdb["player_id"] == "pTE"].iloc[0]
+    assert pte_row["orig_pick"] == "1.03"          # notes where he really went
     draft._cache.clear()
 
 

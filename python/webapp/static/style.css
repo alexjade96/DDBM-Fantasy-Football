@@ -85,6 +85,20 @@ h2 { font-size: 13px; letter-spacing: .07em; text-transform: uppercase; color: v
      font-weight: 600; margin: 30px 0 12px; }
 h3 { font-size: 15px; margin: 0 0 2px; }
 .hint { color: var(--faint); font-size: 13px; margin: 0 0 12px; }
+
+/* Term glossary: segments a dense "here's what every column means"
+   paragraph into scannable term + description blocks instead of one long
+   run-on -- same voice/size as .hint, just structured so a reader can find
+   the one term they don't recognise instead of re-reading the whole thing.
+   dt/dd stay inline within their wrapping <div> (one per grid cell) so a
+   short description reads as a single flowing line, a long one wraps
+   underneath its own term rather than the next term's. */
+.glossary { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 6px 28px; margin: 0 0 14px; }
+.glossary > div { min-width: 0; }
+.glossary dt { display: inline; font-weight: 700; color: var(--muted); font-size: 13px; }
+.glossary dd { display: inline; margin: 0; color: var(--faint); font-size: 13px; line-height: 1.5; }
+.glossary dt::after { content: " \2014 "; font-weight: 400; color: var(--faint); }
 .empty { color: var(--faint); padding: 40px 0; }
 .rowhead { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .rowhead h2 { margin-bottom: 12px; }
@@ -805,17 +819,25 @@ footer code { font-family: ui-monospace, Consolas, monospace; }
 .fa-vs-mode:has(#fam-opt:checked) .vs-tabs label[for="fam-opt"] {
   background: var(--ink); color: var(--surface); border-color: var(--ink); }
 
-/* Draft tab: gems / busts / position-adjusted / undrafted, one shared
-   viewswitch instead of three separate always-visible sections -- fixed
-   4-id set (that grouping doesn't vary per league) rather than generated. */
+/* Draft tab: gems / busts / undrafted, one shared viewswitch instead of
+   three separate always-visible sections -- fixed 3-id set (that grouping
+   doesn't vary per league) rather than generated. The position-adjusted
+   read lives as an extra column on gems/busts (and undrafted) instead of
+   its own tab -- one less place to look for the same picks. */
 .gb-vs-mode #gb-gems:checked ~ .vs-p-gems,
 .gb-vs-mode #gb-busts:checked ~ .vs-p-busts,
-.gb-vs-mode #gb-adj:checked ~ .vs-p-adj,
 .gb-vs-mode #gb-undrafted:checked ~ .vs-p-undrafted { display: block; }
 .gb-vs-mode:has(#gb-gems:checked) .vs-tabs label[for="gb-gems"],
 .gb-vs-mode:has(#gb-busts:checked) .vs-tabs label[for="gb-busts"],
-.gb-vs-mode:has(#gb-adj:checked) .vs-tabs label[for="gb-adj"],
 .gb-vs-mode:has(#gb-undrafted:checked) .vs-tabs label[for="gb-undrafted"] {
+  background: var(--ink); color: var(--surface); border-color: var(--ink); }
+
+/* Draft tab: draft board Actual vs Redraft-by-true-value toggle -- same
+   fixed-id viewswitch idiom as gb-vs-mode above (one instance per page). */
+.db-vs-mode #db-actual:checked ~ .vs-p-actual,
+.db-vs-mode #db-redraft:checked ~ .vs-p-redraft { display: block; }
+.db-vs-mode:has(#db-actual:checked) .vs-tabs label[for="db-actual"],
+.db-vs-mode:has(#db-redraft:checked) .vs-tabs label[for="db-redraft"] {
   background: var(--ink); color: var(--surface); border-color: var(--ink); }
 
 /* Matchup drilldown's own Actual/Optimized toggle (_week_scoreboard.html) --
@@ -844,6 +866,25 @@ footer code { font-family: ui-monospace, Consolas, monospace; }
 .spark-bar { width: 7px; background: color-mix(in srgb, var(--turf) 65%, transparent);
   border-radius: 1px 1px 0 0; }
 th.trend-col, td.trend-col { text-align: center; }
+
+/* Draft tab's gems/busts/undrafted Trend column: a connected line (not the
+   bar sparkline above) reads a shape like a hot start that faded, or
+   boom/bust weeks, far more clearly than discrete bars do at this size,
+   which is the whole point of the column. Built as several short <line>
+   segments rather than one <polyline> so each can be coloured on its own --
+   green above / red below the position's startable-level average PPG, NOT
+   this player's own average (draft._sparkline's docstring: a player who
+   scored zero every week has an own-average of zero too, so grading against
+   himself paints the whole flat line green) -- split at the exact crossing
+   point, plus a dashed reference line at that position baseline. Scaled to
+   fit both the player's own best week and the baseline itself. non-scaling-
+   stroke keeps line weight constant even though preserveAspectRatio="none"
+   stretches the viewBox to fill the cell. */
+.spark-line { display: block; width: 56px; height: 16px; }
+.spark-line line { vector-effect: non-scaling-stroke; }
+.spark-line .spark-avg { stroke: var(--faint); stroke-width: 1; stroke-dasharray: 2 2; }
+.spark-line line.up { stroke: #2f9e44; stroke-width: 1.5; }
+.spark-line line.down { stroke: #e03131; stroke-width: 1.5; }
 
 /* Weekly report: the free-agent section's "best available team" card reuses
    table.dt-games -- the exact lineup-table markup a real team's box score
