@@ -840,6 +840,14 @@ footer code { font-family: ui-monospace, Consolas, monospace; }
 .db-vs-mode:has(#db-redraft:checked) .vs-tabs label[for="db-redraft"] {
   background: var(--ink); color: var(--surface); border-color: var(--ink); }
 
+/* Roster tab: Roster honors By manager / By position toggle -- same
+   fixed-id viewswitch idiom as gb-vs-mode above (one instance per page). */
+.rh-vs-mode #rh-manager:checked ~ .vs-p-manager,
+.rh-vs-mode #rh-position:checked ~ .vs-p-position { display: block; }
+.rh-vs-mode:has(#rh-manager:checked) .vs-tabs label[for="rh-manager"],
+.rh-vs-mode:has(#rh-position:checked) .vs-tabs label[for="rh-position"] {
+  background: var(--ink); color: var(--surface); border-color: var(--ink); }
+
 /* Matchup drilldown's own Actual/Optimized toggle (_week_scoreboard.html) --
    one per GAME, so ids are per-game (gm0-actual, gm1-actual, ...) and can't
    be enumerated by a fixed list the way fa-vs-team's ids are. Structural

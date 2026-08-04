@@ -79,13 +79,13 @@
 </figure>
 {% include "_week_scoreboard.html" %}
 
-<h3>Best combined roster this week</h3>
+<h3>Players of the Week</h3>
 <p class="hint">The best legal lineup buildable from EVERY player rostered anywhere in the
    league this week &mdash; bench included, any team &mdash; against the week&rsquo;s real
-   scores above.</p>
+   scores above. A star marks anyone who was actually benched by their real team.</p>
 <div class="card tablewrap">
-  {% set combined = best_combined %}
-  {% include "_best_combined.html" %}
+  {% set potw = players_of_week %}
+  {% include "_players_of_week.html" %}
 </div>
 
 <h2>Week {{ week }} in context</h2>

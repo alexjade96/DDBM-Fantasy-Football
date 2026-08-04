@@ -1,0 +1,29 @@
+{# That week's Players of the Week: the best possible lineup combining every
+   player rostered ANYWHERE in the league that week (bench included) --
+   "if you could draft an all-star team from the league's actual rosters
+   that week", one Player of the Week per slot leaguewide. Expects `potw`
+   ({week, total, lineup}) in context; `idm` imported by the includer. Shared
+   by the Roster tab's week-by-week drilldown and the Weekly tab's matchup
+   section, so the two can't drift. #}
+{% if potw %}
+<table class="dt-games">
+  <thead><tr>
+    <th colspan="3">Players of the Week</th>
+    <th class="n">{{ "%.2f"|format(potw.total) }}</th>
+  </tr></thead>
+  <tbody>
+  {% for p in potw.lineup %}
+    <tr>
+      <td><span class="q">{{ p.slot }}</span></td>
+      <td>{{ idm.headshot(p.player_id) }}<strong>{{ p.player_name }}</strong>
+          {% if not p.was_starter %} <span class="q star" title="Was benched on their actual roster this week">*</span>{% endif %}
+          {% if p.pos_rank %}<span class="q">{{ p.position }} #{{ p.pos_rank }}</span>{% else %}<span class="q">{{ p.position }}</span>{% endif %}</td>
+      <td>{% if p.user_name %}{{ idm.who(p.user_name) }}{% endif %}</td>
+      <td class="n">{{ "%.2f"|format(p.points) }}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p class="empty">No roster data to build a Players of the Week lineup this week.</p>
+{% endif %}
