@@ -34,6 +34,26 @@
 </section>
 {% endif %}
 {% endmacro %}
+{% macro roster_players_table(r) %}
+<table class="dt-games">
+  <thead><tr>
+    <th>Player</th><th class="n">Wks</th>
+    <th class="n">Pts</th><th class="n">PPG</th><th class="n">Bench pts</th>
+  </tr></thead>
+  <tbody>
+  {% for p in r.players %}
+    <tr>
+      <td>{{ idm.headshot(p.player_id) }}<strong>{{ p.player_name }}</strong>
+          {% if p.pos_rank %}<span class="q">{{ p.position }} #{{ p.pos_rank }}</span>{% else %}<span class="q">{{ p.position }}</span>{% endif %}</td>
+      <td class="n">{{ p.weeks }}</td>
+      <td class="n">{{ "%.1f"|format(p.started_pts) }}</td>
+      <td class="n">{{ "%.1f"|format(p.ppg) }}</td>
+      <td class="n">{{ "%.1f"|format(p.bench_pts) }}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endmacro %}
 <nav class="rail" hx-target="#panel" hx-swap="innerHTML"
      hx-include="#league, #season, #theme">
   <span class="k">Scope</span>
@@ -45,11 +65,13 @@
   {% endfor %}
 </nav>
 {% include "_liveband.html" %}
-{% if standouts %}
-<h2>Management standouts</h2>
+{% if standouts_roster or standouts_coaching %}
+<h2>Roster standouts</h2>
 <p class="hint">The season&rsquo;s extremes in what teams rostered and how well they used it.</p>
+{% if standouts_roster %}
+<h3>What they rostered</h3>
 <section class="stats">
-  {% for t in standouts %}
+  {% for t in standouts_roster %}
   <div class="stat {% if loop.index0 == 0 %}gold{% endif %}">
     <span class="k">{{ t.label }}</span>
     <span class="v">{{ t.value }}</span>
@@ -57,6 +79,19 @@
   </div>
   {% endfor %}
 </section>
+{% endif %}
+{% if standouts_coaching %}
+<h3>How they used it</h3>
+<section class="stats">
+  {% for t in standouts_coaching %}
+  <div class="stat {% if loop.index0 == 0 %}gold{% endif %}">
+    <span class="k">{{ t.label }}</span>
+    <span class="v">{{ t.value }}</span>
+    <span class="sub">{{ idm.who(t.holder) }}{% if t.detail %} · {{ t.detail }}{% endif %}</span>
+  </div>
+  {% endfor %}
+</section>
+{% endif %}
 {% endif %}
 
 {% if manager %}
@@ -123,51 +158,49 @@
           <span class="q">left on the bench in wk {{ r.worst_week.week }}</span></span></div>
         {% endif %}
       </div>
-      <div class="dt-tables">
-        <table class="dt-games">
-          <thead><tr>
-            <th>Player</th><th class="n">Wks</th>
-            <th class="n">Pts</th><th class="n">PPG</th><th class="n">Bench pts</th>
-          </tr></thead>
-          <tbody>
-          {% for p in r.players %}
-            <tr>
-              <td>{{ idm.headshot(p.player_id) }}<strong>{{ p.player_name }}</strong>
-                  {% if p.pos_rank %}<span class="q">{{ p.position }} #{{ p.pos_rank }}</span>{% else %}<span class="q">{{ p.position }}</span>{% endif %}</td>
-              <td class="n">{{ p.weeks }}</td>
-              <td class="n">{{ "%.1f"|format(p.started_pts) }}</td>
-              <td class="n">{{ "%.1f"|format(p.ppg) }}</td>
-              <td class="n">{{ "%.1f"|format(p.bench_pts) }}</td>
-            </tr>
-          {% endfor %}
-          </tbody>
-        </table>
-        {% if r.lineup_weeks %}
-        <table class="dt-games">
-          <thead><tr>
-            <th class="n">Wk</th><th class="n">Started</th><th class="n">Optimal</th>
-            <th class="n">Cost</th><th class="n">Lineup %</th><th>Result</th>
-          </tr></thead>
-          <tbody>
-          {% for w in r.lineup_weeks %}
-            <tr>
-              <td class="n">{{ w.week }}</td>
-              <td class="n">{{ "%.1f"|format(w.actual) }}</td>
-              <td class="n">{{ "%.1f"|format(w.optimal) }}</td>
-              <td class="n">{% if w.cost > 0.05 %}<span class="q">{{ "%.1f"|format(w.cost) }}</span>{% else %}&mdash;{% endif %}</td>
-              <td class="n">{{ "%.0f"|format(w.eff) }}%</td>
-              <td>
-                {%- if w.result is defined -%}
-                  <span class="res {{ 'w' if w.result == 'W' else 'l' if w.result == 'L' else '' }}">{{ w.result }}</span>
-                  {% if w.would_have_won %}<span class="q">&mdash; optimal wins it</span>{% endif %}
-                {%- else -%}&mdash;{%- endif -%}
-              </td>
-            </tr>
-          {% endfor %}
-          </tbody>
-        </table>
-        {% endif %}
+      {% if r.lineup_weeks %}
+      <div class="viewswitch rw-lineup-mode">
+        <input type="radio" name="rwmode{{ loop.index0 }}" id="rw{{ loop.index0 }}-roster" class="vs-radio" checked>
+        <input type="radio" name="rwmode{{ loop.index0 }}" id="rw{{ loop.index0 }}-eff" class="vs-radio">
+        <div class="rail vs-tabs">
+          <span class="k">View</span>
+          <label class="year" for="rw{{ loop.index0 }}-roster">Full roster</label>
+          <label class="year" for="rw{{ loop.index0 }}-eff">Efficiency</label>
+        </div>
+        <div class="vs-panel vs-p-roster">
+          {{ roster_players_table(r) }}
+        </div>
+        <div class="vs-panel vs-p-eff">
+          <table class="dt-games">
+            <thead><tr>
+              <th class="n">Wk</th><th class="n">Started</th><th class="n">Optimal</th>
+              <th class="n">Cost</th><th class="n">Lineup %</th><th>Result</th>
+            </tr></thead>
+            <tbody>
+            {% for w in r.lineup_weeks %}
+              <tr>
+                <td class="n">{{ w.week }}</td>
+                <td class="n">{{ "%.1f"|format(w.actual) }}</td>
+                <td class="n">{{ "%.1f"|format(w.optimal) }}</td>
+                <td class="n">{% if w.cost > 0.05 %}<span class="q">{{ "%.1f"|format(w.cost) }}</span>{% else %}&mdash;{% endif %}</td>
+                <td class="n">{{ "%.0f"|format(w.eff) }}%</td>
+                <td>
+                  {%- if w.result is defined -%}
+                    <span class="res {{ 'w' if w.result == 'W' else 'l' if w.result == 'L' else '' }}">{{ w.result }}</span>
+                    {% if w.would_have_won %}<span class="q">&mdash; optimal wins it</span>{% endif %}
+                  {%- else -%}&mdash;{%- endif -%}
+                </td>
+              </tr>
+            {% endfor %}
+            </tbody>
+          </table>
+        </div>
       </div>
+      {% else %}
+      <div class="dt-tables">
+        {{ roster_players_table(r) }}
+      </div>
+      {% endif %}
     </div>
   </details>
   {% endfor %}
@@ -192,36 +225,20 @@
    PERFECT lineup-setting have been enough" &mdash; each manager&rsquo;s own best possible lineup
    (bench included), summed across every week, against a lineup built entirely from that
    week&rsquo;s free agents &mdash; <strong>{{ "%.0f"|format(fa_season.total) }} points</strong> over
-   {{ fa_season.weeks }} weeks. <strong>Weeks beaten</strong> counts how many of those weekly
+   {{ fa_season.weeks }} weeks. Each dot&rsquo;s label counts how many of those weekly
    free-agent lineups would have outscored that manager&rsquo;s own OPTIMAL lineup.</p>
-{# The chart sits directly beside its own table, same convention as
-   waiver_performance/trade_performance above their tables -- not up in a
-   general grid, where the relationship would read as coincidental. #}
-<div class="grid two">
-  <div class="card tablewrap">
-    <table>
-      <thead><tr><th>Manager</th><th class="n">Best lineup, season</th><th class="n">Gap</th><th class="n">Weeks beaten</th></tr></thead>
-      <tbody>
-      {% for t in fa_season.teams %}
-        {% if t.opt_points is not none %}
-        <tr>
-          <td>{{ idm.who(t.user_name) }}</td>
-          <td class="n">{{ "%.0f"|format(t.opt_points) }}</td>
-          <td class="n">{% if t.opt_gain > 0 %}<span class="res l">+{{ "%.0f"|format(t.opt_gain) }}</span>{% else %}<span class="res w">{{ "%.0f"|format(t.opt_gain) }}</span>{% endif %}</td>
-          <td class="n">{{ t.weeks_beaten_optimal }} / {{ t.weeks }}</td>
-        </tr>
-        {% endif %}
-      {% endfor %}
-      </tbody>
-    </table>
-  </div>
+{# A dedicated table used to sit beside this chart, but the dot plot already
+   carries every number the table did (points, gap vs the dashed reference
+   line, weeks beaten) -- once the chart itself was fixed to show that
+   honestly, the table was pure duplication rather than a second view. #}
+<section class="grid">
   {{ ch.chart("fa_season_optimal") }}
-</div>
+</section>
 {% endif %}
 
 {% if weeks %}
 <h2>Week by week</h2>
-<p class="hint">Expand a week for that week&rsquo;s Players of the Week (POTW) &mdash; the best legal
+<p class="hint">Expand a week for that week&rsquo;s Team of the Week (TOTW) &mdash; the best legal
    lineup buildable from EVERY player rostered anywhere in the league that week, bench
    included, any team. A star marks anyone who was actually benched by their real team.</p>
 {{ chartgrid(charts_weeks) }}
@@ -230,7 +247,7 @@
      style="--cols: minmax(60px,.5fr) minmax(105px,.8fr) minmax(150px,1.3fr) minmax(150px,1.3fr) minmax(170px,1.6fr) minmax(170px,1.6fr)">
   <div class="dt-head">
     <span class="dt-num">Wk</span><span class="dt-num">League pts</span>
-    <span>Best lineup</span><span>Worst lineup</span><span>Best starter</span><span>Best bench</span>
+    <span>Best lineup</span><span>Worst lineup</span><span>Player of the Week</span><span>Worst starter</span>
   </div>
   {% for w in weeks %}
   <details class="dt-row">
@@ -241,10 +258,10 @@
             <span class="q">{{ "%.0f"|format(w.best.started) }}</span>{% endif %}</span>
       <span>{% if w.worst %}{{ idm.who(w.worst.user_name) }}
             <span class="q">{{ "%.0f"|format(w.worst.started) }}</span>{% endif %}</span>
-      <span>{% if w.top_player %}{{ idm.headshot(w.top_player.player_id) }}{{ w.top_player.player_name }}
-            <span class="q">{{ "%.0f"|format(w.top_player.points) }}</span>{% endif %}</span>
-      <span>{% if w.best_benched %}{{ idm.headshot(w.best_benched.player_id) }}{{ w.best_benched.player_name }}
-            <span class="q">{{ "%.0f"|format(w.best_benched.points) }}</span>{% endif %}</span>
+      <span>{% if w.player_of_week %}{{ idm.headshot(w.player_of_week.player_id) }}{{ w.player_of_week.player_name }}
+            <span class="q">{{ "%.0f"|format(w.player_of_week.points) }}</span>{% endif %}</span>
+      <span>{% if w.worst_player %}{{ idm.headshot(w.worst_player.player_id) }}{{ w.worst_player.player_name }}
+            <span class="q">{{ "%.0f"|format(w.worst_player.points) }}</span>{% endif %}</span>
     </summary>
     <div class="dt-detail">
       <div class="dt-tables">
@@ -252,69 +269,13 @@
            league that week -- not a per-manager comparison table -- since
            that's what best answers "who got the most out of a roster" at a
            glance: the ceiling, not a leaderboard of every team's own numbers. #}
-        {% set potw = w.players_of_week %}
-        {% include "_players_of_week.html" %}
-        {# Alongside it: the real scoreboard for the week -- every manager's
-           own started points, already sorted highest to lowest by
-           roster_weeks() -- so the hypothetical ceiling sits right next to
-           what actually happened. Points coloured by that week's W/L, name
-           tagged with the cumulative record THROUGH this week (not the
-           final season record). #}
-        <table class="dt-games">
-          <thead><tr><th colspan="2">Managers this week</th></tr></thead>
-          <tbody>
-          {% for t in w.teams %}
-            <tr>
-              <td>{{ idm.who(t.user_name) }}
-                  {% if t.record %}<span class="q">{{ t.record }}</span>{% endif %}</td>
-              <td class="n"><span class="res {% if t.result == 'W' %}w{% elif t.result == 'L' %}l{% endif %}">{{ "%.1f"|format(t.started) }}</span></td>
-            </tr>
-          {% endfor %}
-          </tbody>
-        </table>
+        {% set totw = w.team_of_week %}
+        {% include "_team_of_week.html" %}
       </div>
     </div>
   </details>
   {% endfor %}
 </div>
-</div>
-{% endif %}
-
-{% if regrets %}
-<h2>Costliest bench calls</h2>
-<p class="hint">The single best swap available each week that wasn&rsquo;t made &mdash; a benched
-   player who outscored a starter at the same position, so it was legal at the time.
-   The ones that <strong>flipped a result</strong> are listed first; the rest just hurt.</p>
-<div class="card tablewrap">
-  <table>
-    <thead><tr>
-      <th class="n">Wk</th><th>Manager</th><th>Pos</th><th>Benched</th>
-      <th class="n">Pts</th><th>Started instead</th><th class="n">Pts</th>
-      <th class="n">Swing</th><th>Result</th>
-    </tr></thead>
-    <tbody>
-    {% for r in regrets %}
-      <tr>
-        <td class="n">{{ r.week }}</td>
-        <td>{{ idm.who(r.user_name) }}</td>
-        <td>{{ r.position }}</td>
-        <td>{{ idm.headshot(r.benched_id) }}<strong>{{ r.benched }}</strong></td>
-        <td class="n">{{ "%.1f"|format(r.benched_pts) }}</td>
-        <td>{{ idm.headshot(r.started_id) }}{{ r.started }}</td>
-        <td class="n"><span class="q">{{ "%.1f"|format(r.started_pts) }}</span></td>
-        <td class="n"><span class="res l">+{{ "%.1f"|format(r.swing) }}</span></td>
-        <td>
-          {%- if r.flipped -%}
-            <span class="res l">lost by {{ "%.1f"|format(r.margin | abs) }}</span>
-            <span class="q">&mdash; this swap wins it</span>
-          {%- elif r.margin is not none -%}
-            <span class="q">{{ "%+.1f"|format(r.margin) }}</span>
-          {%- else -%}&mdash;{%- endif -%}
-        </td>
-      </tr>
-    {% endfor %}
-    </tbody>
-  </table>
 </div>
 {% endif %}
 
@@ -336,17 +297,17 @@
     <div class="drilltable"
          style="--cols: minmax(140px,1.4fr) minmax(100px,1fr) minmax(130px,1.2fr) minmax(140px,1.2fr) minmax(120px,1.2fr)">
       <div class="dt-head">
-        <span>Manager</span><span class="dt-num">POTW picks</span>
-        <span class="dt-num">Best lineup weeks</span><span class="dt-num">Best starter weeks</span>
+        <span>Manager</span><span class="dt-num">TOTW picks</span>
+        <span class="dt-num">Best lineup weeks</span><span class="dt-num">Player of the Week weeks</span>
         <span class="dt-num">Best bench weeks</span>
       </div>
       {% for h in honors %}
       <details class="dt-row">
         <summary>
           <span>{{ idm.who(h.user_name) }}</span>
-          <span class="dt-num">{{ h.potw_picks }}</span>
+          <span class="dt-num">{{ h.totw_picks }}</span>
           <span class="dt-num">{{ h.best_lineup_weeks }}</span>
-          <span class="dt-num">{{ h.best_starter_weeks }}</span>
+          <span class="dt-num">{{ h.player_of_week_weeks }}</span>
           <span class="dt-num">{{ h.best_benched_weeks }}</span>
         </summary>
         <div class="dt-detail">
@@ -378,7 +339,7 @@
          style="--cols: minmax(70px,.6fr) minmax(90px,.9fr) minmax(130px,1.2fr) minmax(140px,1.2fr) minmax(120px,1.2fr)">
       <div class="dt-head">
         <span>Pos</span><span class="dt-num">Players</span>
-        <span class="dt-num">POTW weeks</span><span class="dt-num">Best starter weeks</span>
+        <span class="dt-num">TOTW weeks</span><span class="dt-num">Player of the Week weeks</span>
         <span class="dt-num">Best bench weeks</span>
       </div>
       {% for g in phonors %}
@@ -386,24 +347,24 @@
         <summary>
           <span>{{ g.position }}</span>
           <span class="dt-num">{{ g.count }}</span>
-          <span class="dt-num">{{ g.potw_weeks }}</span>
-          <span class="dt-num">{{ g.best_starter_weeks }}</span>
+          <span class="dt-num">{{ g.totw_weeks }}</span>
+          <span class="dt-num">{{ g.player_of_week_weeks }}</span>
           <span class="dt-num">{{ g.best_benched_weeks }}</span>
         </summary>
         <div class="dt-detail">
           <table class="dt-games">
             <thead><tr>
               <th>Player</th>
-              <th class="n">POTW weeks</th>
-              <th class="n">Best starter weeks</th>
+              <th class="n">TOTW weeks</th>
+              <th class="n">Player of the Week weeks</th>
               <th class="n">Best bench weeks</th>
             </tr></thead>
             <tbody>
             {% for p in g.players %}
               <tr>
                 <td>{{ idm.headshot(p.player_id) }}<strong>{{ p.player_name }}</strong></td>
-                <td class="n">{{ p.potw_weeks }}</td>
-                <td class="n">{{ p.best_starter_weeks }}</td>
+                <td class="n">{{ p.totw_weeks }}</td>
+                <td class="n">{{ p.player_of_week_weeks }}</td>
                 <td class="n">{{ p.best_benched_weeks }}</td>
               </tr>
             {% endfor %}

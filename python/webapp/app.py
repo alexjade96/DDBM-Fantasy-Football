@@ -179,24 +179,14 @@ def _grouped_rules(settings: dict) -> list[tuple[str, list[dict]]]:
     d = sm.scoring_readable(settings)
     return [(g, records(rows)) for g, rows in d.groupby("group", sort=False)]
 
-# Tab order follows how a season is actually built and played, so the middle of
-# the rail reads as a causal chain rather than an arbitrary list:
-#   overview/weekly  -- what happened (the landing view, then it week by week)
-#   draft            -- where every roster came from
-#   roster           -- what those rosters became
-#   transactions     -- how they were changed
-#   coaching         -- how they were deployed
-#   playoffs         -- how the season ended (after every regular-season tab,
-#                       which now matters: the two are scoped apart)
-#   career/report    -- beyond this season, then the thing you take away
-# Draft used to sit AFTER transactions, i.e. after the tab that modifies the
-# rosters the draft created, and coaching sat second, interrupting the summary
-# view with the most granular "why" tab in the app.
+# Tab order: overview/weekly is the landing view (what happened, then week by
+# week), then playoffs/roster/draft sit together right after weekly trends,
+# then transactions, then career/report -- beyond this season, the thing you
+# take away.
 TABS = [
     ("overview", "Season overview"), ("weekly", "Weekly trends"),
-    ("draft", "Draft"), ("transactions", "Transactions"),
-    ("roster", "Management"),
-    ("playoffs", "Playoffs"), ("career", "Career"),
+    ("playoffs", "Playoffs"), ("roster", "Roster"), ("draft", "Draft"),
+    ("transactions", "Transactions"), ("career", "Career"),
     ("report", "Season report"),
 ]
 
@@ -368,11 +358,11 @@ CHART_META = {
     "pf_pa": {"cap": "What each team scored against what it faced."},
     # Management (Roster + former Coaching, reconciled 2026-08)
     "efficiency": {"cap": "Points started as a share of the best legal lineup available — the cost of the decision."},
-    "fa_season_optimal": {"cap": "Even your OWN best possible lineup, summed all season, against the best available free agents."},
+    "fa_season_optimal": {"cap": "Even your OWN best possible lineup, summed all season, against the best available free agents.", "wide": True},
     "position_scoring": {"cap": "Started points by position and each slot's share of the total."},
     "roster_counts": {"cap": "The average roster shape each manager carried."},
     "roster_heatmap": {"cap": "Where each team's scoring lived — points by manager and position."},
-    "starter_bench": {"cap": "Started points against what sat on the bench, per manager.", "wide": True},
+    "starter_bench": {"cap": "Share of each position's points left on the bench, by team."},
     "position_box": {"cap": "The scoring spread at each position — good weeks against bad."},
     "boom_bust": {"cap": "Each manager's ceiling and floor around their average week."},
     "consistency": {"cap": "Week-to-week spread — a short bar is dependable, a long one runs hot and cold."},
@@ -1074,7 +1064,7 @@ def tab(name: str, request: Request, league: str = DEFAULT_LEAGUE,
         # league this week -- sits right under the matchup section, the same
         # "what was actually possible" comparison the Roster tab's week-by-
         # week drilldown now shows for every week.
-        ctx["players_of_week"] = metrics.week_players_of_week(s, ctx["week"])
+        ctx["team_of_week"] = metrics.week_team_of_week(s, ctx["week"])
         return _pushed(tpl.TemplateResponse(request, "tab_weekly.html", ctx), ctx, name)
     elif name == "roster":
         # Charts, then the rosters themselves: per manager and per week, each
@@ -1127,22 +1117,13 @@ def tab(name: str, request: Request, league: str = DEFAULT_LEAGUE,
             ctx["charts_top"] = []
             ctx["charts_rosters"] = ["mgr_roster_heatmap", "mgr_optimal"]
             ctx["charts_weeks"] = ["mgr_starter_bench_weeks"]
-            ctx["standouts"] = None
+            ctx["standouts_roster"] = None
+            ctx["standouts_coaching"] = None
             ctx["rosters"] = enrich([r for r in metrics.roster_detail(s) if r["user_name"] == mgr])
-            weeks = metrics.roster_weeks(s)
-            for w in weeks:
-                w["teams"] = [t for t in w["teams"] if t["user_name"] == mgr]
-            ctx["weeks"] = weeks
+            ctx["weeks"] = metrics.roster_weeks(s)
             ctx["honors"] = [h for h in metrics.roster_honors(s) if h["user_name"] == mgr]
             mgr_phonors = [p for p in metrics.player_honors(s) if mgr in p["managers"]]
             ctx["phonors"] = metrics.player_honors_by_position(mgr_phonors)
-            # bench_regrets()'s top_n caps the LEAGUE-WIDE list, so a filter
-            # after that cap could show a manager zero rows even though they
-            # have real regrets that just didn't crack the top 15 -- fetch
-            # generously uncapped, then filter, same "filter, then shape"
-            # split every other manager-scoped section on this tab follows.
-            ctx["regrets"] = [r for r in metrics.bench_regrets(s, top_n=9999)
-                              if r["user_name"] == mgr]
             # fa_season (best-lineup-vs-FAs) has no manager-scoped CHART
             # counterpart, so it stays league-only -- see tab_roster.html.
             ctx["fa_season"] = None
@@ -1162,12 +1143,12 @@ def tab(name: str, request: Request, league: str = DEFAULT_LEAGUE,
             ctx["charts_rosters"] = ["roster_counts", "roster_heatmap", "starter_bench",
                                      "efficiency"]
             ctx["charts_weeks"] = ["boom_bust", "consistency"]
-            ctx["standouts"] = metrics.roster_standouts(s) + metrics.coaching_standouts(s)
+            ctx["standouts_roster"] = metrics.roster_standouts(s)
+            ctx["standouts_coaching"] = metrics.coaching_standouts(s)
             ctx["rosters"] = enrich(metrics.roster_detail(s))
             ctx["weeks"] = metrics.roster_weeks(s)
             ctx["honors"] = metrics.roster_honors(s)
             ctx["phonors"] = metrics.player_honors_by_position(metrics.player_honors(s))
-            ctx["regrets"] = metrics.bench_regrets(s)
             # fa_season_optimal's OPTIMAL-lineup framing of this same
             # computation ("would even perfect lineup-setting have beaten the
             # wire") -- the actual-points framing lives on Transactions

@@ -55,8 +55,13 @@ def _portraits(ax, labels, ids, positions, zoom=0.30):
                    [headshots.load(pid, pos, size=72) for pid, pos in zip(ids, positions)],
                    zoom=zoom)
 
-POS_COLORS = {"QB": "#d62728", "RB": "#2ca02c", "WR": "#1f77b4",
-              "TE": "#ff7f0e", "K": "#9467bd", "DEF": "#8c564b"}
+# Validated against the project's categorical color checker (adjacent-pair CVD
+# deltaE >= 8, chroma floor, light+dark contrast) -- the old tab10 set failed
+# all three (QB-red/RB-green sat right on the deutan confusion line; DEF-brown
+# read as flat gray). Order matters: it's the ADJACENT pairing that was
+# checked, so keep QB/RB/WR/TE/K/DEF in this order wherever it's consumed.
+POS_COLORS = {"QB": "#2a78d6", "RB": "#eb6834", "WR": "#1baf7a",
+              "TE": "#eda100", "K": "#e87ba4", "DEF": "#008300"}
 MEDAL = ["#f1c40f", "#c8cdd0", "#cd7f32"]  # gold, silver, bronze
 
 # --- theme ----------------------------------------------------------------
@@ -132,11 +137,16 @@ def _point_avatars(ax, xs, ys, names, s, zoom=0.5):
     """Draw each manager's avatar as the marker at their (x, y) point.
 
     Overlays the existing scatter dots, so a manager with no avatar still shows
-    their coloured dot underneath. Returns True if any avatar was drawn.
+    their coloured dot underneath. Returns the list of drawn AnnotationBbox
+    artists (empty if none), so a caller doing its own label placement can
+    pass them to `_place_labels(avoid=...)` -- the avatar's real rendered size
+    is much bigger than the underlying data point, and the collision solver
+    only dodges the point itself unless told about the image too. Falsy when
+    empty, so `if not _point_avatars(...)` callers are unaffected.
     """
     from matplotlib.offsetbox import AnnotationBbox, OffsetImage
     urls = _avatar_map(s)
-    drawn = False
+    drawn = []
     for x, y, n in zip(xs, ys, names):
         img = headshots.avatar_image(urls.get(n))
         if img is None:
@@ -145,15 +155,35 @@ def _point_avatars(ax, xs, ys, names, s, zoom=0.5):
                             pad=0, annotation_clip=False)
         ab.set_zorder(5)
         ax.add_artist(ab)
-        drawn = True
+        drawn.append(ab)
     return drawn
 
 
+# A stable colour per manager. Was matplotlib's 'Paired' colormap, which
+# failed the project's categorical checker outright: 6 of 12 swatches fell
+# outside the lightness band (several near-white, e.g. the pale yellow --
+# 1.0-1.6:1 contrast against a white chart surface, effectively invisible
+# until you read the label beside it) and 2 fell below the chroma floor
+# (read as flat gray). This ordered list passes chroma/CVD/contrast on both
+# the light and dark chart surfaces (only the aesthetic "ideal dark-mode
+# lightness band" check misses, which the fixed cross-theme architecture
+# can't fully satisfy without threading `T` through every categorical use --
+# not a legibility problem, since contrast still clears 3:1 throughout).
+# Beyond 10 names (career-spanning charts can exceed one season's roster) it
+# cycles rather than blending into worse colours the way `Paired` did past 12
+# -- repeats are an inherent limit of a finite categorical set, not a
+# regression, and every chart that uses this also carries avatars/direct
+# labels as the real identity channel (the required mitigation for a
+# categorical set this wide, which can't pass strict all-pairs CVD
+# separation by hue alone).
+_MANAGER_HUES = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4",
+                  "#008300", "#7b5ce0", "#e34948", "#0f9999", "#b5651d"]
+
+
 def palette(names) -> dict:
-    """A stable colour per manager (matplotlib 'Paired', like R sl_palette)."""
+    """A stable colour per manager, assigned in sorted-name order."""
     names = sorted(set(names))
-    cmap = matplotlib.colormaps["Paired"].resampled(max(len(names), 1))
-    return {n: mcolors.to_hex(cmap(i)) for i, n in enumerate(names)}
+    return {n: _MANAGER_HUES[i % len(_MANAGER_HUES)] for i, n in enumerate(names)}
 
 
 def _finish(fig, ax, title, subtitle=None, xlabel=None, ylabel=None, caption=None,
@@ -319,23 +349,62 @@ def plot_luck(s: Season):
 
 
 def plot_efficiency(s: Season):
+    """Cleveland dot plot, not a zero-based bar: a season's efficiency spread
+    is usually a tight band (80-90%), so a 0-100 bar buries the real spread
+    in a few pixels of length difference -- the same fix already applied to
+    the weekly `plot_mgr_efficiency_trend`, ported here for the season view.
+
+    Each season-average dot also gets a faint whisker spanning that manager's
+    worst-to-best WEEK -- the average alone can't tell a metronomic 85% every
+    week apart from a lurching 60-100%, and those are different stories (same
+    "average vs volatility" idea `plot_boom_bust` already applies elsewhere on
+    this tab, here applied to efficiency specifically). The axis is honestly
+    zoomed to the combined range (averages AND weekly extremes), not just the
+    averages, so a whisker is never clipped by an axis sized only for dots.
+    """
     d = metrics.efficiency(s).sort_values("eff").reset_index(drop=True)
+    lu = getattr(s, "lineup", None)
+    weekly_range = {}
+    if lu is not None and {"user_name", "actual", "optimal"}.issubset(
+            getattr(lu, "columns", [])):
+        wk = lu.copy()
+        wk["eff"] = (wk["actual"] / wk["optimal"].clip(lower=1e-9) * 100).clip(upper=100)
+        rng = wk.groupby("user_name")["eff"].agg(["min", "max"])
+        weekly_range = {n: (float(r["min"]), float(r["max"])) for n, r in rng.iterrows()}
     fig, ax = plt.subplots(figsize=(9, 6))
     cmap = matplotlib.colormaps["Greens"]
-    norm = mcolors.Normalize(vmin=70, vmax=100)
-    ax.barh(range(len(d)), d["eff"], height=0.72,
-            color=[cmap(norm(min(max(v, 70), 100))) for v in d["eff"]])
+    lo, hi = float(d["eff"].min()), float(d["eff"].max())
+    all_vals = [lo, hi] + [v for rng in weekly_range.values() for v in rng]
+    span_lo, span_hi = min(all_vals), max(all_vals)
+    norm = mcolors.Normalize(vmin=lo - (hi - lo) * 0.3, vmax=hi + (hi - lo) * 0.1)
+    for i, (_, r) in enumerate(d.iterrows()):
+        rng = weekly_range.get(r["user_name"])
+        if rng and rng[1] > rng[0]:
+            ax.plot(rng, [i, i], color=T["neutral"], lw=4, alpha=0.5, zorder=2,
+                    solid_capstyle="round")
+    ax.scatter(d["eff"], range(len(d)), s=130, c=[cmap(norm(v)) for v in d["eff"]],
+               zorder=3, edgecolors=T["edge"], linewidths=1)
     ax.set_yticks(range(len(d)))
     ax.set_yticklabels(d["user_name"])
     _row_avatars(ax, d["user_name"], s)
-    ax.axvline(100, ls="--", color=T["rule"], zorder=1)
-    ax.text(100, len(d) - 0.4, "optimal", ha="right", va="top", fontsize=8, color=T["rule"])
     for i, (_, r) in enumerate(d.iterrows()):
-        ax.text(r["eff"] + 0.5, i, f"{r['eff']:.1f}%  ({round(r['bench'])} pts benched)",
+        # Anchor past the WHISKER's far end, not just past the dot -- the
+        # range often reaches further right than the season-average dot
+        # does, and a label starting right at the dot used to sit on top of
+        # that trailing whisker segment (measured: the overlapped stretch of
+        # the semi-transparent line rendered invisible under the opaque
+        # text, not just visually crowded -- moving the label clear of it
+        # entirely is the robust fix, independent of that rendering quirk).
+        rng = weekly_range.get(r["user_name"])
+        right_edge = max(r["eff"], rng[1] if rng else r["eff"])
+        ax.text(right_edge + (span_hi - span_lo) * 0.02, i,
+                f"{r['eff']:.1f}%  ({round(r['bench'])} pts benched)",
                 va="center", fontsize=8, color=T["ink2"])
-    ax.set_xlim(0, 100)
+    pad = max((span_hi - span_lo) * 0.15, 1.5)
+    ax.set_xlim(span_lo - pad, span_hi + pad * 2.6)
     return _finish(fig, ax, "Lineup Efficiency (Coaching)",
-                   "Started points as % of the optimal lineup each week (darker = better)",
+                   "Started points as % of the optimal lineup each week  ·  darker = better  ·  "
+                   "faint bar = that manager's worst-to-best week",
                    "Efficiency %", caption=_cap(s))
 
 
@@ -496,29 +565,47 @@ def plot_consistency(s: Season):
 
 def _plot_fa_season_bar(s: Season, r: dict, pts_key: str, weeks_key: str,
                         title: str, subtitle: str):
-    """Shared bar chart for plot_fa_season/plot_fa_season_optimal: each
-    manager's total (either actual or their own optimal-lineup total) against
-    the season-long best-possible free-agent lineup total (dashed line).
+    """Shared Cleveland dot plot for plot_fa_season/plot_fa_season_optimal:
+    each manager's total (either actual or their own optimal-lineup total)
+    against the season-long best-possible free-agent lineup total (dashed
+    line). A zero-based bar wasted most of its own axis here too (season
+    totals cluster tightly relative to a from-zero scale) -- same fix as
+    `plot_efficiency`, zoomed to the combined range of every manager's total
+    AND the free-agent reference total, so the dashed line is never pushed
+    outside the drawn axis.
+
+    Colour is a single sequential ramp keyed to the dot's own value (darker =
+    higher), not a categorical colour per manager -- this is one ranked
+    series with names already on the axis, so a rainbow-per-dot (the old
+    `palette()` treatment) encoded nothing and just added visual noise.
     """
     d = sorted([t for t in r["teams"] if t[pts_key] is not None], key=lambda t: t[pts_key])
     if not d:
         return _no_data(f"No free-agent data for {s.season}.")
     names = [t["user_name"] for t in d]
     pts = [t[pts_key] for t in d]
-    pal = palette(names)
+    cmap = matplotlib.colormaps["Blues"]
+    lo, hi = min(pts), max(pts)
+    norm = mcolors.Normalize(vmin=lo - (hi - lo) * 0.3, vmax=hi + (hi - lo) * 0.15)
+    span_lo, span_hi = min(pts + [r["total"]]), max(pts + [r["total"]])
     fig, ax = plt.subplots(figsize=(9, 6))
-    ax.barh(range(len(d)), pts, color=[pal[n] for n in names], height=0.72, zorder=2)
-    ax.axvline(r["total"], ls="--", lw=1.6, color=T["rule"], zorder=3)
+    ax.axvline(r["total"], ls="--", lw=1.6, color=T["rule"], zorder=1)
+    ax.scatter(pts, range(len(d)), s=130, c=[cmap(norm(v)) for v in pts], zorder=3,
+               edgecolors=T["edge"], linewidths=1)
     ax.set_yticks(range(len(d)))
     ax.set_yticklabels(names)
     _row_avatars(ax, names, s)
-    xmax = max(pts + [r["total"]])
+    pad = max((span_hi - span_lo) * 0.15, 5)
     for i, t in enumerate(d):
-        ax.text(t[pts_key] + xmax * 0.01, i, f"beat it {t[weeks_key]}/{t['weeks']} wks",
+        ax.text(t[pts_key] + pad * 0.15, i, f"beat it {t[weeks_key]}/{t['weeks']} wks",
                 va="center", fontsize=8, color=T["ink2"])
-    ax.text(r["total"], len(d) - 0.3, f"  best FA team: {r['total']:.0f}",
-            va="center", fontsize=8.5, color=T["muted"])
-    ax.set_xlim(0, xmax * 1.28)
+    # Explicit ylim (rather than relying on scatter's autoscale margin, which
+    # differs from the old barh's) -- the top row otherwise sat close enough
+    # to the axes edge that this label collided with the subtitle above it.
+    ax.set_ylim(-0.5, len(d) - 0.5)
+    ax.text(r["total"], len(d) - 1, f"  best FA team: {r['total']:.0f}",
+            va="bottom", fontsize=8.5, color=T["muted"])
+    ax.set_xlim(span_lo - pad, span_hi + pad * 2.4)
     return _finish(fig, ax, title, subtitle, "Season Points", caption=_cap(s))
 
 
@@ -553,12 +640,18 @@ def plot_fa_season_optimal(s: Season):
 
 
 def plot_career(seasons: dict):
+    """Career standings, ranked by win %. Colour is a sequential ramp on the
+    bar's own value (darker = higher win %) rather than a categorical colour
+    per manager -- same reasoning as `_plot_fa_season_bar`: one ranked series
+    with names already on the axis, so hue-per-manager was decorative.
+    """
     d = metrics.career(seasons).copy()
     d["rank"] = d["win_pct"].rank(ascending=False, method="first").astype(int)
     d = d.sort_values("win_pct").reset_index(drop=True)
-    pal = palette(d["user_name"])
+    cmap = matplotlib.colormaps["Blues"]
+    norm = mcolors.Normalize(vmin=-20, vmax=100)
     fig, ax = plt.subplots(figsize=(9, 6))
-    ax.barh(range(len(d)), d["win_pct"], color=[pal[n] for n in d["user_name"]],
+    ax.barh(range(len(d)), d["win_pct"], color=[cmap(norm(v)) for v in d["win_pct"]],
             height=0.72, zorder=2)
     ax.set_yticks(range(len(d)))
     ax.set_yticklabels(d["user_name"])
@@ -667,39 +760,50 @@ def plot_roster_heatmap(s: Season):
 
 
 def plot_starter_bench(s: Season):
+    """Bench-share heatmap: what share of each position's average points a
+    team left unstarted, team x position. Replaces a 6-facet grouped-bar
+    wall (10 managers x 6 positions x 2 bars = 120 bars) with one scannable
+    panel -- same shape and row order as `plot_roster_heatmap` (which sits
+    right beside it), so the two read as a pair: that one is what a team
+    scored, this is how much of it sat on the bench.
+    """
+    import pandas as pd
     d = metrics.starter_bench(s)
     users = sorted(d["user_name"].unique())
-    fig, axes = plt.subplots(1, len(POSITIONS), figsize=(15, 6), sharey=True)
-    yy = list(range(len(users)))
-    for ax, p in zip(axes, POSITIONS):
-        sub = d[d["position"] == p]
-        st = sub[sub["status"] == "Starters"].set_index("user_name")["avg"].reindex(users).fillna(0)
-        bn = sub[sub["status"] == "Bench"].set_index("user_name")["avg"].reindex(users).fillna(0)
-        ax.barh([y + 0.2 for y in yy], st.values, height=0.38, color="#2f9e44", label="Starters")
-        ax.barh([y - 0.2 for y in yy], bn.values, height=0.38, color=T["neutral"], label="Bench")
-        ax.set_title(p, fontsize=12, fontweight="bold", color=T["ink2"])
-        ax.grid(axis="x", color=T["grid"], linewidth=0.7)
-        ax.set_axisbelow(True)
-        ax.tick_params(length=0, colors=T["tick"], labelsize=9)
-        for sp in ("top", "right", "left"):
-            ax.spines[sp].set_visible(False)
-        ax.spines["bottom"].set_color(T["spine"])
-    axes[0].set_yticks(yy)
-    axes[0].set_yticklabels(users)
-    h, l = axes[0].get_legend_handles_labels()
-    fig.legend(h, l, loc="upper right", frameon=False, fontsize=9,
-               bbox_to_anchor=(0.99, 1.0))
-    # Explicit y for both: the default suptitle y and a fixed subtitle y were
-    # only ~3.5% of figure height apart (measured: they overlapped outright),
-    # since neither accounts for the other's actual rendered height. Pin them
-    # far enough apart here, and pull the subplot area's top boundary (in
-    # tight_layout's rect) down to clear both.
-    fig.suptitle("Starters vs Bench   ", x=0.01, y=0.99, ha="left", va="top",
-                 fontsize=16, fontweight="bold", color=T["ink"])
-    fig.text(0.01, 0.895, "Average points by position  ·  are the right players in the lineup?",
-             fontsize=9.5, color=T["muted"], va="top")
-    fig.text(0.99, 0.005, _cap(s), ha="right", fontsize=7, color=T["faint"])
-    fig.tight_layout(rect=[0, 0.01, 1, 0.855])
+    st = (d[d["status"] == "Starters"].pivot(index="user_name", columns="position", values="avg")
+          .reindex(index=users, columns=POSITIONS).fillna(0))
+    bn = (d[d["status"] == "Bench"].pivot(index="user_name", columns="position", values="avg")
+          .reindex(index=users, columns=POSITIONS).fillna(0))
+    total = st + bn
+    share = (bn / total.mask(total == 0) * 100)
+    cmap = matplotlib.colormaps["OrRd"]
+    vmax = float(share.max(numeric_only=True).max()) if share.notna().any().any() else 1.0
+    fig, ax = plt.subplots(figsize=(9, 6))
+    im = ax.imshow(share.values.astype(float), aspect="auto", cmap=cmap, vmin=0, vmax=max(vmax, 1))
+    ax.set_xticks(range(len(POSITIONS)))
+    ax.set_xticklabels(POSITIONS)
+    ax.xaxis.set_ticks_position("top")
+    ax.set_yticks(range(len(users)))
+    ax.set_yticklabels(users)
+    for i in range(len(users)):
+        for j, pos in enumerate(POSITIONS):
+            v = share.iloc[i, j]
+            if pd.notna(v):
+                col = "white" if v > vmax * 0.6 else "#1a1a1a"
+                ax.text(j, i, f"{v:.0f}%\n{bn.iloc[i, j]:.1f} pts", ha="center", va="center",
+                        fontsize=7.5, color=col, linespacing=0.95)
+    for sp in ax.spines.values():
+        sp.set_visible(False)
+    ax.tick_params(length=0, colors=T["tick"], labelsize=9.5)
+    fig.colorbar(im, ax=ax, fraction=0.035, pad=0.02, label="Bench share %")
+    ax.set_title("Starters vs Bench", loc="left", fontsize=16, fontweight="bold",
+                 color=T["ink"], pad=24)
+    fig.text(0.01, 0.01,
+             "Share of each position's average points left on the bench, by team  ·  "
+             "darker = more stranded",
+             ha="left", fontsize=8.5, color=T["muted"])
+    fig.text(0.99, 0.01, _cap(s), ha="right", fontsize=7, color=T["faint"])
+    fig.tight_layout(rect=(0, 0.03, 1, 1))
     return fig
 
 
@@ -796,8 +900,10 @@ def plot_roster_counts(s: Season):
     x = range(len(POSITIONS))
     bench = [d[(d["position"] == p) & (d["status"] == "Bench")]["avg_count"].sum() for p in POSITIONS]
     start = [d[(d["position"] == p) & (d["status"] == "Starters")]["avg_count"].sum() for p in POSITIONS]
-    ax.bar(list(x), start, width=0.7, color="#2f9e44", label="Starters")
-    ax.bar(list(x), bench, width=0.7, bottom=start, color=T["neutral"], label="Bench")
+    ax.bar(list(x), start, width=0.7, color="#2f9e44",
+           edgecolor=T["bg"], linewidth=1.2, label="Starters")
+    ax.bar(list(x), bench, width=0.7, bottom=start, color=T["neutral"], alpha=0.85,
+           edgecolor=T["bg"], linewidth=1.2, label="Bench")
     for j in x:
         if start[j] > 0:
             ax.text(j, start[j] / 2, f"{start[j]:.1f}", ha="center", va="center",
@@ -1132,25 +1238,30 @@ def plot_boom_bust(s: Season):
     ax.axhline(my, ls="--", color=T["rule"], zorder=1)
     ax.scatter(d["avg"], d["sd"], s=95, c=[pal[n] for n in d["user_name"]],
                edgecolors=T["edge"], linewidths=1, zorder=3)
-    _point_avatars(ax, d["avg"], d["sd"], d["user_name"], s, zoom=0.44)
-    for _, r in d.iterrows():
-        ax.text(r["avg"], r["sd"] + (d["sd"].max() - d["sd"].min()) * 0.03,
-                r["user_name"], ha="center", va="bottom", fontsize=8, color=T["ink2"])
+    avatars = _point_avatars(ax, d["avg"], d["sd"], d["user_name"], s, zoom=0.44)
     xr = (d["avg"].max() - d["avg"].min()) or 1
     yr = (d["sd"].max() - d["sd"].min()) or 1
     ax.set_xlim(d["avg"].min() - xr * 0.12, d["avg"].max() + xr * 0.12)
     ax.set_ylim(d["sd"].min() - yr * 0.18, d["sd"].max() + yr * 0.2)
-    for x, y, ha, va, txt in [
-        (ax.get_xlim()[1], ax.get_ylim()[1], "right", "top", "boom or bust"),
-        (ax.get_xlim()[1], ax.get_ylim()[0], "right", "bottom", "elite & steady"),
-        (ax.get_xlim()[0], ax.get_ylim()[0], "left", "bottom", "quietly steady"),
-        (ax.get_xlim()[0], ax.get_ylim()[1], "left", "top", "low & volatile")]:
+    corners = [
         ax.text(x, y, txt, ha=ha, va=va, fontsize=8, style="italic",
                 color=T["faint"], zorder=1)
-    return _finish(fig, ax, "Boom or Bust: Average vs Volatility",
+        for x, y, ha, va, txt in [
+            (ax.get_xlim()[1], ax.get_ylim()[1], "right", "top", "boom or bust"),
+            (ax.get_xlim()[1], ax.get_ylim()[0], "right", "bottom", "elite & steady"),
+            (ax.get_xlim()[0], ax.get_ylim()[0], "left", "bottom", "quietly steady"),
+            (ax.get_xlim()[0], ax.get_ylim()[1], "left", "top", "low & volatile")]]
+    fig = _finish(fig, ax, "Boom or Bust: Average vs Volatility",
                    "Right = scores more  ·  up = swingier week to week",
                    "Average points per week", "Std. dev of weekly points",
                    caption=_cap(s), grid_axis="both")
+    # After _finish (tight_layout has settled the axes) so the collision
+    # solver works with the geometry that will actually be drawn -- and
+    # avoiding the avatar images themselves, not just the raw data points,
+    # since a name used to print straight through its own team's avatar.
+    _place_labels(fig, ax, list(d["avg"]), list(d["sd"]), list(d["user_name"]),
+                  avoid=(*avatars, *corners))
+    return fig
 
 
 def plot_sos(s: Season):
@@ -1659,11 +1770,15 @@ def plot_mgr_roster_heatmap(s: Season, manager: str, through_week: int | None = 
     vmax = piv.values.max() if piv.values.size else 0
     for i in range(len(weeks)):
         for j in range(len(POSITIONS)):
+            # Every cell here is a real value (already fillna(0)'d), so a
+            # genuine 0.0 week (e.g. no DEF rostered) must still get a label
+            # -- `if v > 0` used to skip it, and on the lightest heatmap step
+            # that read as a blank gap rather than "zero," indistinguishable
+            # from missing data.
             v = piv.values[i, j]
-            if v > 0:
-                col = "white" if v > vmax * 0.6 else "#1a1a1a"
-                ax.text(j, i, f"{v:.1f}", ha="center", va="center",
-                        fontsize=8, color=col)
+            col = "white" if v > vmax * 0.6 else "#1a1a1a"
+            ax.text(j, i, f"{v:.1f}", ha="center", va="center",
+                    fontsize=8, color=col)
     for sp in ax.spines.values():
         sp.set_visible(False)
     ax.tick_params(length=0, colors=T["tick"], labelsize=9.5)
@@ -1698,9 +1813,11 @@ def plot_mgr_starter_bench_weeks(s: Season, manager: str, through_week: int | No
     bench = (d[~d["is_starter"]].groupby("week")["points"].sum()
              .reindex(weeks).fillna(0))
     fig, ax = plt.subplots(figsize=(9.5, 5.5))
-    ax.bar(weeks, started.values, width=0.68, color="#2f9e44", zorder=2, label="Started")
+    ax.bar(weeks, started.values, width=0.68, color="#2f9e44", zorder=2,
+           edgecolor=T["bg"], linewidth=1.0, label="Started")
     ax.bar(weeks, bench.values, width=0.68, bottom=started.values,
-           color=T["neutral"], alpha=0.7, zorder=2, label="Bench")
+           color=T["neutral"], alpha=0.7, zorder=2,
+           edgecolor=T["bg"], linewidth=1.0, label="Bench")
     ax.set_xticks(weeks)
     ax.legend(loc="best", frameon=False, fontsize=9)
     return _finish(fig, ax, f"{manager} · Started vs Bench by Week",

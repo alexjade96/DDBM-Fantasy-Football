@@ -533,7 +533,8 @@ table.dt-games { border-collapse: collapse; font-size: 12.5px; width: auto;
    itself would have gotten as .dt-facts' direct next sibling. */
 .dt-detail .dt-facts + table.dt-games,
 .dt-detail .dt-facts + .dt-tables,
-.dt-detail .dt-facts + .dt-lineup-mode { margin-top: 16px; }
+.dt-detail .dt-facts + .dt-lineup-mode,
+.dt-detail .dt-facts + .rw-lineup-mode { margin-top: 16px; }
 /* Started vs optimal sit side by side when there's room. Grid items default to
    align-items:stretch -- with two <table>s of different row counts (a team's
    bench is rarely the same size as their opponent's), the shorter table was
@@ -863,6 +864,17 @@ footer code { font-family: ui-monospace, Consolas, monospace; }
 .dt-lineup-mode:has(.vs-radio:nth-of-type(2):checked) .vs-tabs label:nth-of-type(2) {
   background: var(--ink); color: var(--surface); border-color: var(--ink); }
 .dt-lineup-mode { margin-top: 4px; }
+
+/* Roster tab: "Rosters by manager" drilldown's Full roster / Efficiency
+   toggle -- one per MANAGER ROW, same structural (not fixed-id) idiom as
+   .dt-lineup-mode above, for the same reason (one instance per row, ids
+   can't be enumerated by a fixed list). */
+.rw-lineup-mode .vs-radio:first-of-type:checked ~ .vs-p-roster,
+.rw-lineup-mode .vs-radio:nth-of-type(2):checked ~ .vs-p-eff { display: block; }
+.rw-lineup-mode:has(.vs-radio:first-of-type:checked) .vs-tabs label:first-of-type,
+.rw-lineup-mode:has(.vs-radio:nth-of-type(2):checked) .vs-tabs label:nth-of-type(2) {
+  background: var(--ink); color: var(--surface); border-color: var(--ink); }
+.rw-lineup-mode { margin-top: 4px; }
 .fa-vs-mode > .vs-panel { margin-top: 10px; }
 
 /* Bars sized in Python (pct, floored at 6 so a scoreless week still shows a
@@ -952,6 +964,18 @@ tr.bench-impact td { background: color-mix(in srgb, #d9a441 8%, transparent); }
 #panel .dt-detail > table.dt-games tbody td:last-child { padding-right: 0; }
 /* Give the listing room to breathe under the facts row above it. */
 #panel .dt-detail .dt-facts + table.dt-games { margin-top: 18px; }
+/* Same fix, same reason, for the "Rosters by manager" Full roster / Efficiency
+   toggle: each .vs-panel holds exactly ONE full-width listing table (not a
+   narrow side-by-side pair like .dt-lineup-mode's), so it needs the same
+   width:100% + header/cell padding match as a bare table.dt-games would have
+   gotten as .dt-detail's direct child -- the .rw-lineup-mode/.vs-panel
+   wrapper otherwise defeats the `> table.dt-games` child selector above and
+   the table falls back to width:auto, packed against the left edge. */
+#panel .rw-lineup-mode .vs-panel > table.dt-games { width: 100%; }
+#panel .rw-lineup-mode .vs-panel > table.dt-games thead th,
+#panel .rw-lineup-mode .vs-panel > table.dt-games tbody td { padding-right: 28px; }
+#panel .rw-lineup-mode .vs-panel > table.dt-games thead th:last-child,
+#panel .rw-lineup-mode .vs-panel > table.dt-games tbody td:last-child { padding-right: 0; }
 
 /* Titular rows: the head + each summary. Fixed-width columns beside an `fr`
    column let the fr one absorb ALL the slack -- the name column sprawled to
