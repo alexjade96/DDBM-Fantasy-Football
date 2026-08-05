@@ -44,6 +44,7 @@ def main():
         ("position_scoring", plots.plot_position_scoring),
         ("roster_heatmap", plots.plot_roster_heatmap),
         ("starter_bench", plots.plot_starter_bench),
+        ("flex_usage", plots.plot_flex_usage),
         ("position_box", plots.plot_position_box),
         ("roster_counts", plots.plot_roster_counts),
         ("trade_performance", plots.plot_trade_performance),

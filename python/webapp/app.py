@@ -304,7 +304,7 @@ SEASON_CHARTS = {
     "tx_volume": plots.plot_transaction_volume,
     "position_scoring": plots.plot_position_scoring,
     "roster_heatmap": plots.plot_roster_heatmap,
-    "starter_bench": plots.plot_starter_bench,
+    "flex_usage": plots.plot_flex_usage,
     "position_box": plots.plot_position_box,
     "roster_counts": plots.plot_roster_counts,
     "trade_performance": plots.plot_trade_performance,
@@ -361,8 +361,8 @@ CHART_META = {
     "fa_season_optimal": {"cap": "Even your OWN best possible lineup, summed all season, against the best available free agents.", "wide": True},
     "position_scoring": {"cap": "Started points by position and each slot's share of the total."},
     "roster_counts": {"cap": "The average roster shape each manager carried."},
-    "roster_heatmap": {"cap": "Where each team's scoring lived — points by manager and position."},
-    "starter_bench": {"cap": "Share of each position's points left on the bench, by team."},
+    "roster_heatmap": {"cap": "How deep each team built at every position — weeks rostered, by manager."},
+    "flex_usage": {"cap": "Which position — RB, WR or TE — fills the flex spot most often, by manager."},
     "position_box": {"cap": "The scoring spread at each position — good weeks against bad."},
     "boom_bust": {"cap": "Each manager's ceiling and floor around their average week."},
     "consistency": {"cap": "Week-to-week spread — a short bar is dependable, a long one runs hot and cold."},
@@ -1103,6 +1103,16 @@ def tab(name: str, request: Request, league: str = DEFAULT_LEAGUE,
                 r["lineup_weeks"] = c["weeks"] if c else []
             return rows
 
+        # Per-position cross-manager max (weeks rostered), for the "Position
+        # build" fact's bar scaling -- computed from the FULL league, not the
+        # filtered manager view, so a single manager's bar still reads against
+        # the whole league rather than trivially maxing out at their own value.
+        all_rosters = metrics.roster_detail(s)
+        ctx["pos_max"] = {
+            p: max((r["pos_counts"].get(p, 0) for r in all_rosters), default=0)
+            for p in ["QB", "RB", "WR", "TE", "K", "DEF"]
+        }
+
         if mgr:
             # Manager view: the personal-timeline charts (registered in
             # MANAGER_CHARTS, rendered via manual <img manager=...> tags in the
@@ -1119,7 +1129,7 @@ def tab(name: str, request: Request, league: str = DEFAULT_LEAGUE,
             ctx["charts_weeks"] = ["mgr_starter_bench_weeks"]
             ctx["standouts_roster"] = None
             ctx["standouts_coaching"] = None
-            ctx["rosters"] = enrich([r for r in metrics.roster_detail(s) if r["user_name"] == mgr])
+            ctx["rosters"] = enrich([r for r in all_rosters if r["user_name"] == mgr])
             ctx["weeks"] = metrics.roster_weeks(s)
             ctx["honors"] = [h for h in metrics.roster_honors(s) if h["user_name"] == mgr]
             mgr_phonors = [p for p in metrics.player_honors(s) if mgr in p["managers"]]
@@ -1134,18 +1144,20 @@ def tab(name: str, request: Request, league: str = DEFAULT_LEAGUE,
             # precedent the relocated free-agent comparison below already
             # used on the old Coaching tab: position_scoring/position_box are
             # genuinely league-wide (positional usage, not tied to one
-            # manager) so they stay as the opener; roster_counts/
-            # roster_heatmap/starter_bench/efficiency are the league-wide
-            # visual of what "Rosters by manager" lists row by row (shape,
-            # position scoring, bench cost, lineup %); boom_bust/consistency
+            # manager) so they stay as the opener; roster_counts/efficiency
+            # are the league-wide visual of what "Rosters by manager" lists
+            # row by row (shape, lineup %) -- roster depth and flex
+            # allocation used to have their own standalone charts here
+            # (roster_heatmap/flex_usage) but now fold into that same
+            # table's "Position build"/"Flex allocation" facts instead, so
+            # there's no separate chart for either; boom_bust/consistency
             # are the picture behind "Week by week"'s own week-to-week detail.
             ctx["charts_top"] = ["position_scoring", "position_box"]
-            ctx["charts_rosters"] = ["roster_counts", "roster_heatmap", "starter_bench",
-                                     "efficiency"]
+            ctx["charts_rosters"] = ["roster_counts", "efficiency"]
             ctx["charts_weeks"] = ["boom_bust", "consistency"]
             ctx["standouts_roster"] = metrics.roster_standouts(s)
             ctx["standouts_coaching"] = metrics.coaching_standouts(s)
-            ctx["rosters"] = enrich(metrics.roster_detail(s))
+            ctx["rosters"] = enrich(all_rosters)
             ctx["weeks"] = metrics.roster_weeks(s)
             ctx["honors"] = metrics.roster_honors(s)
             ctx["phonors"] = metrics.player_honors_by_position(metrics.player_honors(s))

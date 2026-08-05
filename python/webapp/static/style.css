@@ -2,6 +2,11 @@
   --bg: #f6f7f5; --surface: #fff; --ink: #1d2321; --muted: #5a6360; --faint: #8b938f;
   --line: #e2e6e3; --turf: #2f7d4f; --gold: #d9a441;
   --shadow: 0 1px 2px rgba(20,35,25,.05), 0 8px 24px -14px rgba(20,35,25,.18);
+  /* Position hues -- mirrors POS_COLORS in sleepermetrics/plots.py exactly, so a
+     manager's roster reads the same color whether it's a chart or this markup.
+     Semantic like --turf/--gold's charted counterparts, so fixed across themes
+     (read on either ground), not redefined under the dark media query. */
+  --qb: #2a78d6; --rb: #eb6834; --wr: #1baf7a; --te: #eda100; --k: #e87ba4; --def: #008300;
 }
 @media (prefers-color-scheme: dark) {
   :root {
@@ -525,6 +530,28 @@ details summary { cursor: pointer; font-weight: 600; }
 .fv .pos { color: var(--muted); font-size: 11px; font-weight: 600;
   margin: 0 2px; }
 .fv .pts { font-variant-numeric: tabular-nums; font-weight: 700; }
+/* Position hue utility classes -- .pos-X sets both color (for a plain label)
+   and background (for a bar-fill span); each use site only reads the one
+   property that applies to it. */
+.pos-qb { color: var(--qb); background: var(--qb); }
+.pos-rb { color: var(--rb); background: var(--rb); }
+.pos-wr { color: var(--wr); background: var(--wr); }
+.pos-te { color: var(--te); background: var(--te); }
+.pos-k { color: var(--k); background: var(--k); }
+.pos-def { color: var(--def); background: var(--def); }
+/* Roster tab's "Roster breakdown" tab panel (Roster Construction / Flex
+   Allocation charts folded inline instead of their own standalone graphics). */
+.posbuild { display: flex; flex-direction: column; gap: 5px; margin-bottom: 4px; }
+.pbrow { display: flex; align-items: center; gap: 8px; }
+.pblabel { width: 30px; flex: none; font-size: 11px; font-weight: 700; }
+.pbtrack { flex: 1; height: 10px; border-radius: 3px;
+  background: var(--line); overflow: hidden; }
+.pbtrack span { display: block; height: 100%; border-radius: 3px; }
+.pbval { width: 130px; flex: none; text-align: right; }
+.flexbar { display: flex; height: 15px; border-radius: 4px; overflow: hidden; margin-bottom: 4px; }
+.flexbar span { display: flex; align-items: center; justify-content: center;
+  font-size: 9px; font-weight: 700; color: #fff; }
+.vs-p-breakdown p.q { margin: 6px 0 10px; }
 table.dt-games { border-collapse: collapse; font-size: 12.5px; width: auto;
   margin-top: 2px; }
 /* A drill body can hold facts and then mini-tables -- keep them apart. The
@@ -534,7 +561,7 @@ table.dt-games { border-collapse: collapse; font-size: 12.5px; width: auto;
 .dt-detail .dt-facts + table.dt-games,
 .dt-detail .dt-facts + .dt-tables,
 .dt-detail .dt-facts + .dt-lineup-mode,
-.dt-detail .dt-facts + .rw-lineup-mode { margin-top: 16px; }
+.dt-detail .dt-facts + .rv-panels { margin-top: 16px; }
 /* Started vs optimal sit side by side when there's room. Grid items default to
    align-items:stretch -- with two <table>s of different row counts (a team's
    bench is rarely the same size as their opponent's), the shorter table was
@@ -865,16 +892,27 @@ footer code { font-family: ui-monospace, Consolas, monospace; }
   background: var(--ink); color: var(--surface); border-color: var(--ink); }
 .dt-lineup-mode { margin-top: 4px; }
 
-/* Roster tab: "Rosters by manager" drilldown's Full roster / Efficiency
-   toggle -- one per MANAGER ROW, same structural (not fixed-id) idiom as
-   .dt-lineup-mode above, for the same reason (one instance per row, ids
-   can't be enumerated by a fixed list). */
-.rw-lineup-mode .vs-radio:first-of-type:checked ~ .vs-p-roster,
-.rw-lineup-mode .vs-radio:nth-of-type(2):checked ~ .vs-p-eff { display: block; }
-.rw-lineup-mode:has(.vs-radio:first-of-type:checked) .vs-tabs label:first-of-type,
-.rw-lineup-mode:has(.vs-radio:nth-of-type(2):checked) .vs-tabs label:nth-of-type(2) {
+/* Roster tab: "Rosters by manager" drilldown's Roster breakdown / Roster /
+   Efficiency toggle -- ONE instance for the whole section (not per row), so
+   it's the same fixed-id idiom as .rh-vs-mode above rather than
+   .dt-lineup-mode's structural one. The radios sit in the section header;
+   `~` reaches past the intervening hint/chart siblings into EVERY row's
+   .vs-panel, however deep it's nested inside its own <details> -- a
+   general-sibling combinator is not depth-limited on the descendant side,
+   so one shared toggle can drive all ten managers' panels at once without
+   :has(). Each row keeps its own .rv-panels wrapper (the three .vs-panel
+   divs, no radios of their own anymore) -- Roster breakdown and Roster are
+   always populated (roster shape and the player list both come straight off
+   roster_detail(), independent of lineup data), only Efficiency falls back
+   to a plain message for a manager with no lineup weeks. */
+.roster-view-mode #rv-breakdown:checked ~ .tablewrap .vs-p-breakdown,
+.roster-view-mode #rv-roster:checked ~ .tablewrap .vs-p-roster,
+.roster-view-mode #rv-eff:checked ~ .tablewrap .vs-p-eff { display: block; }
+.roster-view-mode:has(#rv-breakdown:checked) .vs-tabs label[for="rv-breakdown"],
+.roster-view-mode:has(#rv-roster:checked) .vs-tabs label[for="rv-roster"],
+.roster-view-mode:has(#rv-eff:checked) .vs-tabs label[for="rv-eff"] {
   background: var(--ink); color: var(--surface); border-color: var(--ink); }
-.rw-lineup-mode { margin-top: 4px; }
+.rv-panels { margin-top: 4px; }
 .fa-vs-mode > .vs-panel { margin-top: 10px; }
 
 /* Bars sized in Python (pct, floored at 6 so a scoreless week still shows a
@@ -968,14 +1006,14 @@ tr.bench-impact td { background: color-mix(in srgb, #d9a441 8%, transparent); }
    toggle: each .vs-panel holds exactly ONE full-width listing table (not a
    narrow side-by-side pair like .dt-lineup-mode's), so it needs the same
    width:100% + header/cell padding match as a bare table.dt-games would have
-   gotten as .dt-detail's direct child -- the .rw-lineup-mode/.vs-panel
-   wrapper otherwise defeats the `> table.dt-games` child selector above and
-   the table falls back to width:auto, packed against the left edge. */
-#panel .rw-lineup-mode .vs-panel > table.dt-games { width: 100%; }
-#panel .rw-lineup-mode .vs-panel > table.dt-games thead th,
-#panel .rw-lineup-mode .vs-panel > table.dt-games tbody td { padding-right: 28px; }
-#panel .rw-lineup-mode .vs-panel > table.dt-games thead th:last-child,
-#panel .rw-lineup-mode .vs-panel > table.dt-games tbody td:last-child { padding-right: 0; }
+   gotten as .dt-detail's direct child -- the .rv-panels/.vs-panel wrapper
+   otherwise defeats the `> table.dt-games` child selector above and the
+   table falls back to width:auto, packed against the left edge. */
+#panel .rv-panels .vs-panel > table.dt-games { width: 100%; }
+#panel .rv-panels .vs-panel > table.dt-games thead th,
+#panel .rv-panels .vs-panel > table.dt-games tbody td { padding-right: 28px; }
+#panel .rv-panels .vs-panel > table.dt-games thead th:last-child,
+#panel .rv-panels .vs-panel > table.dt-games tbody td:last-child { padding-right: 0; }
 
 /* Titular rows: the head + each summary. Fixed-width columns beside an `fr`
    column let the fr one absorb ALL the slack -- the name column sprawled to
@@ -1013,6 +1051,11 @@ tr.bench-impact td { background: color-mix(in srgb, #d9a441 8%, transparent); }
 #panel > h2 + *, #panel > p.hint + * { margin-top: 10px; }
 /* .rowhead wraps its own h2; the wrapper already took the gap. */
 #panel > .rowhead h2 { margin-top: 0; }
+/* Roster tab's section-wide Roster breakdown/Roster/Efficiency toggle
+   (.roster-view-mode) needs no special rhythm rule of its own: it's a plain
+   #panel child (the h2/hint/chart grid it applies to sit as ordinary
+   siblings BEFORE it, not wrapped inside it), and .rail's own
+   margin-bottom already gaps it from the .tablewrap that follows. */
 /* Sub-section labels inside a chart grid (e.g. Overview's grouped charts) hug
    the grid they title, same convention as h2 above but a smaller gap since h3
    is itself a lighter-weight label. */

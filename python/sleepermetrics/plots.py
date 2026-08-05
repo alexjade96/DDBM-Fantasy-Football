@@ -719,6 +719,15 @@ def plot_position_scoring(s: Season):
 
 
 def plot_roster_heatmap(s: Season):
+    """Roster-building depth: how many weeks each position held a roster spot
+    (starters + bench combined), by team and position.
+
+    Color is keyed to WEEKS ROSTERED, not scoring -- that's what "construction"
+    means here (how a team builds its roster/bench across the season), and it
+    was previously the reverse (color = avg points, weeks relegated to small
+    text), which pictured scoring quality more than roster-building habit. Avg
+    points stays in the cell label as secondary context.
+    """
     d = metrics.roster(s)
     users = sorted(d["user_name"].unique())
     piv_avg = d.pivot(index="user_name", columns="position", values="avg").reindex(
@@ -727,24 +736,24 @@ def plot_roster_heatmap(s: Season):
         index=users, columns=POSITIONS)
     cmap = mcolors.LinearSegmentedColormap.from_list("sl", ["#eaf2f8", "#1f6f8b"])
     fig, ax = plt.subplots(figsize=(9, 6))
-    im = ax.imshow(piv_avg.values, aspect="auto", cmap=cmap)
+    im = ax.imshow(piv_spots.values, aspect="auto", cmap=cmap)
     ax.set_xticks(range(len(POSITIONS)))
     ax.set_xticklabels(POSITIONS)
     ax.xaxis.set_ticks_position("top")
     ax.set_yticks(range(len(users)))
     ax.set_yticklabels(users)
-    vmax = piv_avg.values.max()
+    vmax = piv_spots.values.max()
     for i in range(len(users)):
         for j in range(len(POSITIONS)):
             sp, av = piv_spots.values[i, j], piv_avg.values[i, j]
             if sp == sp:  # not NaN
-                col = "white" if av > vmax * 0.6 else "#1a1a1a"
+                col = "white" if sp > vmax * 0.6 else "#1a1a1a"
                 ax.text(j, i, f"{int(sp)} wk\n{av:.1f}", ha="center", va="center",
                         fontsize=7.5, color=col, linespacing=0.95)
     for sp in ax.spines.values():
         sp.set_visible(False)
     ax.tick_params(length=0, colors=T["tick"], labelsize=9.5)
-    fig.colorbar(im, ax=ax, fraction=0.035, pad=0.02, label="Avg pts")
+    fig.colorbar(im, ax=ax, fraction=0.035, pad=0.02, label="Weeks rostered")
     ax.set_title("Roster Construction", loc="left", fontsize=16, fontweight="bold",
                  color=T["ink"], pad=24)
     # This is a matrix chart with its column labels (positions) on the TOP axis,
@@ -752,8 +761,8 @@ def plot_roster_heatmap(s: Season):
     # there collides with either the tick labels or the title (measured: it sat
     # inside the title's own bounding box). Put it at the bottom instead, like
     # those two charts already do.
-    fig.text(0.01, 0.01, "Player-weeks rostered and average points, by team and position",
-             ha="left", fontsize=8.5, color=T["muted"])
+    fig.text(0.01, 0.01, "Weeks each position held a roster spot (color) and its "
+             "average points (label), by team", ha="left", fontsize=8.5, color=T["muted"])
     fig.text(0.99, 0.01, _cap(s), ha="right", fontsize=7, color=T["faint"])
     fig.tight_layout(rect=(0, 0.03, 1, 1))
     return fig
@@ -761,11 +770,13 @@ def plot_roster_heatmap(s: Season):
 
 def plot_starter_bench(s: Season):
     """Bench-share heatmap: what share of each position's average points a
-    team left unstarted, team x position. Replaces a 6-facet grouped-bar
-    wall (10 managers x 6 positions x 2 bars = 120 bars) with one scannable
-    panel -- same shape and row order as `plot_roster_heatmap` (which sits
-    right beside it), so the two read as a pair: that one is what a team
-    scored, this is how much of it sat on the bench.
+    team left unstarted, team x position.
+
+    Kept as a chart (mirrors R's `sl_plot_starter_bench`) even though the
+    webapp's Roster tab now shows `plot_flex_usage` instead -- bench-share
+    across all six positions buried the RB/WR/TE flex-allocation signal under
+    QB/K/DEF cells that were mostly a flat 0% (no bench depth there, not a
+    real decision, since flex doesn't apply to those positions at all).
     """
     import pandas as pd
     d = metrics.starter_bench(s)
@@ -805,6 +816,60 @@ def plot_starter_bench(s: Season):
     fig.text(0.99, 0.01, _cap(s), ha="right", fontsize=7, color=T["faint"])
     fig.tight_layout(rect=(0, 0.03, 1, 1))
     return fig
+
+
+def plot_flex_usage(s: Season):
+    """Grouped dot plot: which position fills a manager's flex slot(s), and
+    how often. Replaces a bench-share heatmap that spanned all six positions
+    (`plot_starter_bench`) -- flex allocation is only a question for RB/WR/TE,
+    and the old chart's QB/K/DEF columns were mostly a flat 0% (no bench depth
+    to speak of at those spots, not a real decision), which buried the real
+    RB/WR/TE signal under structural noise.
+
+    Reconstructed from each manager's REAL started lineup via
+    `metrics.flex_usage` (`assign_slots`), not the optimal one -- Sleeper's own
+    slot assignment isn't stored, so this is the same reconstruction technique
+    the week/lineup drilldowns already use for display, applied here as an
+    aggregate.
+    """
+    d = metrics.flex_usage(s)
+    if d.empty:
+        return _no_data(f"No flex-slot data for {s.season}.")
+    users = sorted(d["user_name"].unique())
+    positions = ["RB", "WR", "TE"]
+    piv_share = d.pivot(index="user_name", columns="position", values="share").reindex(
+        index=users, columns=positions).fillna(0)
+    piv_weeks = d.pivot(index="user_name", columns="position", values="weeks").reindex(
+        index=users, columns=positions).fillna(0)
+    offsets = {"RB": -0.22, "WR": 0.0, "TE": 0.22}
+    fig, ax = plt.subplots(figsize=(9, 6))
+    for pos in positions:
+        y = [i + offsets[pos] for i in range(len(users))]
+        x = piv_share[pos].values
+        ax.scatter(x, y, s=70, color=POS_COLORS[pos], zorder=3,
+                   edgecolors=T["edge"], linewidths=0.8, label=pos)
+        for i, (xi, wk) in enumerate(zip(x, piv_weeks[pos].values)):
+            if wk > 0:
+                ax.text(xi + 2, i + offsets[pos], f"{xi:.0f}%", va="center",
+                        fontsize=7, color=POS_COLORS[pos])
+    ax.set_yticks(range(len(users)))
+    ax.set_yticklabels(users)
+    # imshow (plot_roster_heatmap, which this reads as a pair with) puts row 0
+    # at the TOP by default; a bare scatter doesn't, so without inverting, the
+    # two charts would list managers in opposite vertical order.
+    ax.invert_yaxis()
+    _row_avatars(ax, users, s)
+    hi = float(piv_share.values.max()) if piv_share.size else 100.0
+    ax.set_xlim(0, max(hi * 1.2, 20))
+    ax.xaxis.set_major_formatter(lambda v, _: f"{v:.0f}%")
+    handles = [plt.Rectangle((0, 0), 1, 1, color=POS_COLORS[p]) for p in positions]
+    # "best" (not a fixed corner) -- shares cluster near both 0% and 100%
+    # depending on the manager, so no fixed corner is reliably clear of data.
+    ax.legend(handles, positions, loc="best", frameon=False, fontsize=9, ncol=3)
+    return _finish(fig, ax, "Flex Allocation",
+                   "Share of each manager's flex-slot starts filled by RB, WR or TE  ·  "
+                   "reconstructed from their actual started lineups",
+                   "Share of flex-slot weeks", caption=_cap(s), grid_axis="x")
 
 
 # --- Weekly-standings & transaction charts (ported from ddbmFF.R) ----------

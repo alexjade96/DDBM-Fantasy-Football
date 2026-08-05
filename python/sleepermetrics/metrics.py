@@ -137,12 +137,59 @@ def roster(s: Season) -> pd.DataFrame:
 
 
 def starter_bench(s: Season) -> pd.DataFrame:
-    """Average points, starters vs bench, per team and position."""
+    """Average points, starters vs bench, per team and position.
+
+    Kept as a metric (parity-checked against R's `sl_starter_bench`) even
+    though the webapp no longer charts it directly -- `plot_flex_usage`
+    replaced its old chart, `plot_starter_bench`, as the Roster tab's visual
+    (see flex_usage() below): bench-share across all six positions buried the
+    RB/WR/TE flex-allocation signal under QB/K/DEF cells that were mostly a
+    flat 0% (no bench depth there, not a real decision).
+    """
     d = s.pl_wk.merge(s.user_map[["roster_id", "user_name"]], on="roster_id", how="left")
     d = d[d["position"].isin(POSITIONS)].copy()
     d["status"] = d["is_starter"].map({True: "Starters", False: "Bench"})
     g = d.groupby(["user_name", "position", "status"], as_index=False).agg(avg=("points", "mean"))
     return _pos_cat(g).sort_values(["user_name", "position", "status"]).reset_index(drop=True)
+
+
+_FLEX_LABELS = {"FLEX", "REC_FLEX", "WRRB_FLEX", "SUPER_FLEX"}
+
+
+def flex_usage(s: Season) -> pd.DataFrame:
+    """How often each flex-eligible position fills a manager's actual flex
+    slot(s), reconstructed from the REAL started lineup each week via
+    `assign_slots` -- the same technique the week/lineup drilldowns already use
+    to label a chosen lineup, since Sleeper's own slot assignment isn't stored
+    (`assemble_season` keeps starters as a set). QB is excluded even in a
+    superflex league -- this is specifically the RB/WR/TE flex choice.
+
+    Returns one row per (user_name, position in {RB, WR, TE}) with `weeks`
+    (flex-slot instances won by that position that season) and `share` (% of
+    that manager's own flex-slot instances). A manager who never had a flex
+    slot to fill contributes nothing.
+    """
+    from .season import assign_slots
+    d = s.pl_wk.merge(s.user_map[["roster_id", "user_name"]], on="roster_id", how="left")
+    d = d[d["is_starter"]]
+    counts: dict[tuple[str, str], int] = {}
+    for (_, _wk), g in d.groupby(["roster_id", "week"]):
+        picks = assign_slots(g[["player_id", "position", "points"]], s.slots)
+        if picks.empty:
+            continue
+        base = picks["slot"].str.rstrip("0123456789")
+        flex = picks[base.isin(_FLEX_LABELS) & picks["position"].isin(["RB", "WR", "TE"])]
+        if flex.empty:
+            continue
+        user = g["user_name"].iloc[0]
+        for pos in flex["position"]:
+            counts[(user, pos)] = counts.get((user, pos), 0) + 1
+    if not counts:
+        return pd.DataFrame(columns=["user_name", "position", "weeks", "share"])
+    g = pd.DataFrame([{"user_name": u, "position": p, "weeks": n}
+                      for (u, p), n in counts.items()])
+    g["share"] = g["weeks"] / g.groupby("user_name")["weeks"].transform("sum") * 100
+    return _pos_cat(g).sort_values(["user_name", "position"]).reset_index(drop=True)
 
 
 def table_position(s: Season) -> pd.DataFrame:
@@ -774,13 +821,18 @@ def roster_detail(s: Season) -> list[dict]:
     `pos_counts` is how many player-WEEKS were spent ROSTERING each position
     (started or benched, from the full team-week frame, not just starters) --
     this tab is about what a team carried, not lineup decisions (that's
-    Coaching), so the count shouldn't silently be a start count. `flex_top`
-    is the one deliberate exception: it's a genuine slot-assignment read
-    (which position a start went to a FLEX-type slot restricted to RB/WR/TE,
-    excluding SUPER_FLEX) since "which position did the flex spot mostly go
-    to" can't be read off a player's own position -- FLEX cuts across three
-    of them, and the interesting question is which one a manager leaned on,
-    not just a raw count.
+    Coaching), so the count shouldn't silently be a start count. `pos_avg` is
+    the average points per roster-week at that position (started or benched),
+    alongside `pos_counts` so the drilldown can show roster depth and scoring
+    quality in one place instead of a separate standalone chart. `flex_top`
+    is a genuine slot-assignment read (which position a start went to a
+    FLEX-type slot restricted to RB/WR/TE, excluding SUPER_FLEX) since "which
+    position did the flex spot mostly go to" can't be read off a player's own
+    position -- FLEX cuts across three of them, and the interesting question
+    is which one a manager leaned on, not just a raw count. `flex_share` is
+    the fuller picture behind that same read: each of RB/WR/TE's % share of
+    this manager's flex-slot starts (summing to ~100%), reusing the same
+    `flex_counts` tally rather than a second slot-assignment pass.
     """
     from collections import Counter
 
@@ -814,6 +866,7 @@ def roster_detail(s: Season) -> list[dict]:
             })
         players.sort(key=lambda x: -x["started_pts"])
         pos_rostered = g["position"].value_counts()
+        pos_avg = g.groupby("position")["points"].mean()
         # Flex starts only exist at team-week scope (a slot assignment is
         # meaningless summed across different weeks' rosters), so this walks
         # each of this manager's team-weeks separately rather than doing it
@@ -826,6 +879,7 @@ def roster_detail(s: Season) -> list[dict]:
                 ls = assign_slots(wg, getattr(s, "slots", {}) or {})
                 flex_counts.update(ls.loc[ls["slot"].isin(flex_labels), "position"])
         flex_top, flex_top_n = flex_counts.most_common(1)[0] if flex_counts else (None, 0)
+        flex_total = sum(flex_counts.values())
         out.append({
             "user_name": name,
             "players_used": int(g["player_name"].nunique()),
@@ -834,8 +888,11 @@ def roster_detail(s: Season) -> list[dict]:
             "bench_share": round(float(bn["points"].sum())
                                  / max(float(g["points"].sum()), 1) * 100, 1),
             "flex_top": flex_top, "flex_top_n": flex_top_n,
-            "flex_total": sum(flex_counts.values()),
+            "flex_total": flex_total,
+            "flex_share": ({p: round(flex_counts.get(p, 0) / flex_total * 100)
+                           for p in ("RB", "WR", "TE")} if flex_total else {}),
             "pos_counts": {p: int(pos_rostered.get(p, 0)) for p in POSITIONS},
+            "pos_avg": {p: round(float(pos_avg.get(p, 0.0)), 1) for p in POSITIONS},
             "players": players,
         })
     return sorted(out, key=lambda x: -x["started_pts"])
@@ -1346,11 +1403,6 @@ def coaching_standouts(s: Season) -> list[dict]:
         tile("Worst single week", f"{worst['worst_week']['cost']:.1f}",
              worst["user_name"],
              f"benched in wk {worst['worst_week']['week']}")
-    reg = bench_regrets(s, top_n=1)
-    if reg:
-        r = reg[0]
-        tile("Costliest bench call", f"{r['swing']:.1f}", r["user_name"],
-             f"{r['benched']} over {r['started']} · wk {r['week']}")
     return out
 
 

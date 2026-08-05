@@ -106,15 +106,27 @@
 
 {% if rosters %}
 <h2>Rosters by manager</h2>
-<p class="hint">Expand a manager for every player they rostered this season and their
-   week-by-week lineup calls. <strong>Bench pts</strong> is what their bench scored &mdash;
-   the cost of the roster they carried; <strong>Points below optimal</strong> (in the
-   drilldown) is the cost of the decisions &mdash; only the bench points a legal swap
-   would actually have converted.</p>
+<p class="hint">Expand a manager for their roster shape and flex habit (<strong>Roster
+   breakdown</strong>), every player they rostered (<strong>Roster</strong>), or their
+   week-by-week lineup calls (<strong>Efficiency</strong>) &mdash; whichever view is
+   selected below. <strong>Bench pts</strong> is what their bench scored &mdash; the cost
+   of the roster they carried; <strong>Points below optimal</strong> (in the drilldown) is
+   the cost of the decisions &mdash; only the bench points a legal swap would actually
+   have converted.</p>
 {{ chartgrid(charts_rosters) }}
-<div class="tablewrap">
-<div class="drilltable"
-     style="--cols: minmax(130px,1.5fr) minmax(80px,.9fr) repeat(2, minmax(95px,1fr)) minmax(80px,.9fr) minmax(90px,1fr) minmax(105px,1.1fr)">
+<div class="viewswitch roster-view-mode">
+  <input type="radio" name="rvmode" id="rv-breakdown" class="vs-radio" checked>
+  <input type="radio" name="rvmode" id="rv-roster" class="vs-radio">
+  <input type="radio" name="rvmode" id="rv-eff" class="vs-radio">
+  <div class="rail vs-tabs">
+    <span class="k">View</span>
+    <label class="year" for="rv-breakdown">Roster breakdown</label>
+    <label class="year" for="rv-roster">Roster</label>
+    <label class="year" for="rv-eff">Efficiency</label>
+  </div>
+  <div class="tablewrap">
+  <div class="drilltable"
+       style="--cols: minmax(130px,1.5fr) minmax(80px,.9fr) repeat(2, minmax(95px,1fr)) minmax(80px,.9fr) minmax(90px,1fr) minmax(105px,1.1fr)">
   <div class="dt-head">
     <span>Manager</span><span class="dt-num">Players</span>
     <span class="dt-num">Pts</span>
@@ -134,15 +146,6 @@
     </summary>
     <div class="dt-detail">
       <div class="dt-facts">
-        {% for pos, n in r.pos_counts.items() %}
-        <div class="fact"><span class="fl">{{ pos }}&rsquo;s rostered</span>
-          <span class="fv"><span class="pts">{{ n }}</span></span></div>
-        {% endfor %}
-        {% if r.flex_total %}
-        <div class="fact"><span class="fl">Flex mostly</span>
-          <span class="fv"><span class="pts">{{ r.flex_top }}</span>
-            <span class="q">{{ r.flex_top_n }} of {{ r.flex_total }}</span></span></div>
-        {% endif %}
         {% if r.perfect is not none %}
         <div class="fact"><span class="fl">Perfect lineups</span><span class="fv">
           <span class="pts">{{ r.perfect }}</span>
@@ -158,19 +161,40 @@
           <span class="q">left on the bench in wk {{ r.worst_week.week }}</span></span></div>
         {% endif %}
       </div>
-      {% if r.lineup_weeks %}
-      <div class="viewswitch rw-lineup-mode">
-        <input type="radio" name="rwmode{{ loop.index0 }}" id="rw{{ loop.index0 }}-roster" class="vs-radio" checked>
-        <input type="radio" name="rwmode{{ loop.index0 }}" id="rw{{ loop.index0 }}-eff" class="vs-radio">
-        <div class="rail vs-tabs">
-          <span class="k">View</span>
-          <label class="year" for="rw{{ loop.index0 }}-roster">Full roster</label>
-          <label class="year" for="rw{{ loop.index0 }}-eff">Efficiency</label>
+      <div class="rv-panels">
+        <div class="vs-panel vs-p-breakdown">
+          <div class="posbuild">
+            {% for pos in ["QB", "RB", "WR", "TE", "K", "DEF"] %}
+            {% set n = r.pos_counts.get(pos, 0) %}
+            {% set mx = pos_max.get(pos, 0) %}
+            <div class="pbrow">
+              <span class="pblabel pos-{{ pos|lower }}">{{ pos }}</span>
+              <div class="pbtrack"><span class="pos-{{ pos|lower }}"
+                   style="width: {{ ((n / mx * 100) if mx else 0) | round(1) }}%"></span></div>
+              <span class="pbval q">{{ n }} wks &middot; {{ "%.1f"|format(r.pos_avg.get(pos, 0)) }} avg</span>
+            </div>
+            {% endfor %}
+          </div>
+          <p class="q">Position build: each bar scaled to its own position&rsquo;s league-wide max.</p>
+          {% if r.flex_share %}
+          <div class="flexbar">
+            {% for pos in ["RB", "WR", "TE"] %}
+            {% set pct = r.flex_share.get(pos, 0) %}
+            {% if pct > 0 %}
+            <span class="pos-{{ pos|lower }}" style="width: {{ pct }}%">{% if pct >= 12 %}{{ pos }} {{ pct }}%{% endif %}</span>
+            {% endif %}
+            {% endfor %}
+          </div>
+          <p class="q">Flex allocation: RB {{ r.flex_share.get("RB", 0) }}% &middot;
+            WR {{ r.flex_share.get("WR", 0) }}% &middot;
+            TE {{ r.flex_share.get("TE", 0) }}%</p>
+          {% endif %}
         </div>
         <div class="vs-panel vs-p-roster">
           {{ roster_players_table(r) }}
         </div>
         <div class="vs-panel vs-p-eff">
+          {% if r.lineup_weeks %}
           <table class="dt-games">
             <thead><tr>
               <th class="n">Wk</th><th class="n">Started</th><th class="n">Optimal</th>
@@ -194,16 +218,15 @@
             {% endfor %}
             </tbody>
           </table>
+          {% else %}
+          <p class="hint">No week-by-week lineup data for this manager.</p>
+          {% endif %}
         </div>
       </div>
-      {% else %}
-      <div class="dt-tables">
-        {{ roster_players_table(r) }}
-      </div>
-      {% endif %}
     </div>
   </details>
   {% endfor %}
+</div>
 </div>
 </div>
 {% endif %}
@@ -298,8 +321,8 @@
          style="--cols: minmax(140px,1.4fr) minmax(100px,1fr) minmax(130px,1.2fr) minmax(140px,1.2fr) minmax(120px,1.2fr)">
       <div class="dt-head">
         <span>Manager</span><span class="dt-num">TOTW picks</span>
-        <span class="dt-num">Best lineup weeks</span><span class="dt-num">Player of the Week weeks</span>
-        <span class="dt-num">Best bench weeks</span>
+        <span class="dt-num">Best lineup picks</span><span class="dt-num">POTW picks</span>
+        <span class="dt-num">Best bench picks</span>
       </div>
       {% for h in honors %}
       <details class="dt-row">
@@ -336,18 +359,17 @@
   <div class="vs-panel vs-p-position">
     <div class="tablewrap">
     <div class="drilltable"
-         style="--cols: minmax(70px,.6fr) minmax(90px,.9fr) minmax(130px,1.2fr) minmax(140px,1.2fr) minmax(120px,1.2fr)">
+         style="--cols: minmax(70px,.6fr) minmax(110px,1fr) minmax(140px,1.2fr) minmax(120px,1.2fr)">
       <div class="dt-head">
-        <span>Pos</span><span class="dt-num">Players</span>
-        <span class="dt-num">TOTW weeks</span><span class="dt-num">Player of the Week weeks</span>
-        <span class="dt-num">Best bench weeks</span>
+        <span>Pos</span><span class="dt-num">Unique players</span>
+        <span class="dt-num">POTW picks</span>
+        <span class="dt-num">Best bench picks</span>
       </div>
       {% for g in phonors %}
       <details class="dt-row">
         <summary>
           <span>{{ g.position }}</span>
           <span class="dt-num">{{ g.count }}</span>
-          <span class="dt-num">{{ g.totw_weeks }}</span>
           <span class="dt-num">{{ g.player_of_week_weeks }}</span>
           <span class="dt-num">{{ g.best_benched_weeks }}</span>
         </summary>
@@ -355,9 +377,9 @@
           <table class="dt-games">
             <thead><tr>
               <th>Player</th>
-              <th class="n">TOTW weeks</th>
-              <th class="n">Player of the Week weeks</th>
-              <th class="n">Best bench weeks</th>
+              <th class="n">TOTW picks</th>
+              <th class="n">POTW picks</th>
+              <th class="n">Best bench picks</th>
             </tr></thead>
             <tbody>
             {% for p in g.players %}
