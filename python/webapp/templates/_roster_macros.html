@@ -5,24 +5,14 @@
 {% import "_ident.html" as idm with context %}
 {# Charts are split across spots on this tab rather than one block up top --
    each group sits beside the table it's actually the picture of (see
-   app.py's roster branch for which chart maps to which table). `manager`
-   has no manager param on the shared ch.chart() macro, so a manager-scoped
-   view renders its own <img manager=...> tags instead, same as every other
-   manager-scoped chart in this app. #}
+   app.py's roster branch for which chart maps to which table). ch.chart()'s
+   manager= param (None when unscoped) folds the manager/league-wide branches
+   into one loop -- they used to be two independent copies of the same figure
+   markup, one hand-rolled to add &manager=. #}
 {% macro chartgrid(names) %}
 {% if names %}
 <section class="grid">
-  {% if manager %}
-  {% for c in names %}
-  <figure class="card chart{% if CHART_META.get(c, {}).wide %} wide{% endif %}">
-    <img src="/chart/{{ c }}?league={{ league }}&season={{ season }}&theme={{ theme }}&manager={{ manager|urlencode }}&_={{ bust }}"
-         alt="{{ CHART_META.get(c, {}).cap or c }}" loading="lazy">
-    {%- if CHART_META.get(c, {}).cap %}<figcaption>{{ CHART_META[c].cap }}</figcaption>{%- endif %}
-  </figure>
-  {% endfor %}
-  {% else %}
-  {% for c in names %}{{ ch.chart(c) }}{% endfor %}
-  {% endif %}
+  {% for c in names %}{{ ch.chart(c, manager=manager) }}{% endfor %}
 </section>
 {% endif %}
 {% endmacro %}

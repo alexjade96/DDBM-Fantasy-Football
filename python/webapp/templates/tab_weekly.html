@@ -75,10 +75,7 @@
    one for both lineups in scoreboard order, what each manager left on their bench, and the
    single legal same-position swap that cost them most. A <span class="tag">could have won</span>
    tag means that one swap alone would have turned that manager&rsquo;s loss into a win.</p>
-<figure class="card chart">
-  <img src="/chart/week_matchups?league={{ league }}&season={{ season }}&week={{ week }}&theme={{ theme }}&_={{ bust }}"
-       alt="Week {{ week }} matchups" loading="lazy">
-</figure>
+{{ ch.chart("week_matchups", week=week, alt="Week " ~ week ~ " matchups") }}
 {{ lz.lazy("/tab/weekly/part/scoreboard" ~ part_qs, height="200px") }}
 
 {{ lz.lazy("/tab/weekly/part/totw" ~ part_qs, height="220px") }}
@@ -89,10 +86,7 @@
    &mdash; so a green dot in the red zone is the week&rsquo;s unlucky team and an orange one in
    the green got away with it. The chart on the right carries its own caption below it.</p>
 <div class="grid two">
-  <figure class="card chart">
-    <img src="/chart/week_luck?league={{ league }}&season={{ season }}&week={{ week }}&theme={{ theme }}&_={{ bust }}"
-         alt="Week {{ week }} luck" loading="lazy">
-  </figure>
+  {{ ch.chart("week_luck", week=week, alt="Week " ~ week ~ " luck") }}
   {{ ch.chart("week_race", week=week) }}
 </div>
 

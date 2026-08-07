@@ -1,0 +1,56 @@
+{# One team's lineup as a `table.dt-games`: a colspan-2 title + total header,
+   then one row per player (slot, identity, points), optionally followed by a
+   bench section. Shared by every "show a submitted/optimal lineup" spot in
+   the app -- _week_scoreboard.html's Actual/Optimized panels (which used to
+   be two copies of this table pasted into the same file), _playoff_round.html
+   (a simpler submitted-lineup-only variant), and _week_fa.html's free-agent
+   vs. real-team comparison. Import "with context" so idm.headshot/posrank
+   read `week_pos_ranks` without every caller threading it through:
+     import "_lineupmacro.html" as lu with context
+
+   `rows` carries `slot`/`player_id`/`player_name`/`points`, optionally `cmp`
+   ('up'/'down', the slot-vs-slot matchup highlight -- absent rows just don't
+   highlight). `show_id` drops the headshot+posrank for callers with no
+   `player_id` to key off of (the playoff engine's submitted lineups, which
+   only ever carry a name). `points` may be None (a submitted lineup with no
+   score yet) and renders as an em dash rather than a bogus "0.00".
+
+   `bench`, when given, adds the "Bench" divider + rows below the main table --
+   `bench_flag`/`bench_flag_title` name which boolean field on each bench row
+   marks it (the wording and the field itself differ between an Actual panel's
+   "would have outscored a starter" and an Optimized panel's "was benched to
+   make room for this pick", so both are passed in rather than hardcoded). #}
+{% import "_ident.html" as idm with context %}
+{% macro lineup_table(title_html, total_fmt, rows, bench=None, bench_flag=None,
+                       bench_flag_title="", show_id=True,
+                       empty_text="No lineup recorded.") %}
+<table class="dt-games">
+  <thead><tr>
+    <th colspan="2">{{ title_html }}</th>
+    <th class="n">{{ total_fmt }}</th>
+  </tr></thead>
+  <tbody>
+  {% for pl in rows %}
+    <tr {% if pl.cmp == 'up' %}class="cmp-up"{% elif pl.cmp == 'down' %}class="cmp-down"{% endif %}>
+      <td><span class="q">{{ pl.slot }}</span></td>
+      <td>{% if show_id %}{{ idm.headshot(pl.player_id) }}{% endif %}<strong>{{ pl.player_name }}</strong>{% if show_id %} {{ idm.posrank(pl.player_id) }}{% endif %}</td>
+      <td class="n">{% if pl.points is not none %}{{ "%.2f"|format(pl.points) }}{% else %}&mdash;{% endif %}</td>
+    </tr>
+  {% else %}
+    <tr><td colspan="3"><span class="q">{{ empty_text }}</span></td></tr>
+  {% endfor %}
+  {% if bench %}
+    <tr><td colspan="3"><span class="q">Bench</span></td></tr>
+    {% for pl in bench %}
+    {% set flagged = pl[bench_flag] if bench_flag else false %}
+    <tr {% if flagged %}class="bench-impact"{% endif %}>
+      <td><span class="q">{{ pl.position }}</span></td>
+      <td>{{ idm.headshot(pl.player_id) }}{{ pl.player_name }} {{ idm.posrank(pl.player_id) }}
+        {%- if flagged %} <span class="q star" title="{{ bench_flag_title }}">*</span>{% endif %}</td>
+      <td class="n"><span class="q">{{ "%.2f"|format(pl.points) }}</span></td>
+    </tr>
+    {% endfor %}
+  {% endif %}
+  </tbody>
+</table>
+{% endmacro %}

@@ -83,11 +83,9 @@
      dot in it). #}
   {% if manager %}
   <section class="grid">
-    <figure class="card chart">
-      <img src="/chart/mgr_efficiency_trend?league={{ league }}&season={{ season }}&week={{ week }}&theme={{ theme }}&manager={{ manager|urlencode }}&_={{ bust }}"
-           alt="Lineup efficiency this week, vs the league" loading="lazy">
-      <figcaption>This week&rsquo;s lineup efficiency &mdash; how their coaching stacked up against the other teams</figcaption>
-    </figure>
+    {{ ch.chart("mgr_efficiency_trend", week=week, manager=manager,
+                alt="Lineup efficiency this week, vs the league",
+                caption="This week’s lineup efficiency — how their coaching stacked up against the other teams") }}
     {{ ch.chart("week_luck", week=week) }}
   </section>
   {% endif %}
@@ -97,11 +95,9 @@
     future weeks into a past report" rule the tables above follow.</p>
   <section class="grid">
     {% if manager %}
-    <figure class="card chart">
-      <img src="/chart/mgr_sos?league={{ league }}&season={{ season }}&week={{ week }}&theme={{ theme }}&manager={{ manager|urlencode }}&_={{ bust }}"
-           alt="Strength of schedule, this manager highlighted" loading="lazy">
-      <figcaption>Strength of schedule so far &mdash; is their record earned or schedule-flattered?</figcaption>
-    </figure>
+    {{ ch.chart("mgr_sos", week=week, manager=manager,
+                alt="Strength of schedule, this manager highlighted",
+                caption="Strength of schedule so far — is their record earned or schedule-flattered?") }}
     {% else %}
     {{ ch.chart("week_race", week=week) }}
     {% endif %}

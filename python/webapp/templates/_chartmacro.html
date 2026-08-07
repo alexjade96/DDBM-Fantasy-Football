@@ -2,18 +2,26 @@
    context" so it reads league/season/theme/bust and the CHART_META global
    without every caller threading them through. Callers do:
      import "_chartmacro.html" as ch with context   (in {%% %%} tags)
-     ch.chart("standings")           -- season-scoped
-     ch.chart("week_race", week=n)   -- week-scoped
+     ch.chart("standings")                       -- season-scoped
+     ch.chart("week_race", week=n)               -- week-scoped
+     ch.chart("mgr_sos", manager=name)            -- manager-scoped
+     ch.chart("bracket", bracket=token)           -- playoff-bracket-scoped
+     ch.chart("playoff_players", scope=scope)     -- playoff-analytics-scoped
+   `alt`/`caption` override the CHART_META-derived defaults for a key that has
+   no CHART_META entry (or a bespoke one for this call site) -- e.g. a chart
+   key with no registered `cap` would otherwise fall back to its bare key as
+   alt text and render no caption at all.
    NB: no nested Jinja comment markers here -- Jinja comments don't nest, so an
    inner one would close this block early. The chart PNG already carries its own
    title/subtitle, so the caption frames why the chart is here, not how to read
    its axes. `wide` (from CHART_META) spans the full grid row for wide-aspect
    charts. Unknown keys degrade to a plain, caption-less figure. #}
-{% macro chart(key, week=None) -%}
+{% macro chart(key, week=None, manager=None, bracket=None, scope=None, alt=None, caption=None) -%}
 {%- set m = CHART_META.get(key, {}) -%}
+{%- set cap = caption if caption is not none else m.cap -%}
 <figure class="card chart{% if m.wide %} wide{% endif %}">
-  <img src="/chart/{{ key }}?league={{ league }}&season={{ season }}{% if week is not none %}&week={{ week }}{% endif %}&theme={{ theme }}&_={{ bust }}"
-       alt="{{ m.cap or key }}" loading="lazy">
-  {%- if m.cap %}<figcaption>{{ m.cap }}</figcaption>{%- endif %}
+  <img src="/chart/{{ key }}?league={{ league }}&season={{ season }}{% if week is not none %}&week={{ week }}{% endif %}{% if manager is not none %}&manager={{ manager|urlencode }}{% endif %}{% if bracket %}&bracket={{ bracket }}{% endif %}{% if scope %}&scope={{ scope }}{% endif %}&theme={{ theme }}&_={{ bust }}"
+       alt="{{ alt or cap or key }}" loading="lazy">
+  {%- if cap %}<figcaption>{{ cap }}</figcaption>{%- endif %}
 </figure>
 {%- endmacro %}

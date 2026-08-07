@@ -1,6 +1,7 @@
 {# No season rail: the header's season picker selects the season for every tab,
    and a second switcher in here meant the postseason could sit on a different
    season from the rest of the page. #}
+{% import "_chartmacro.html" as ch with context %}
 {% import "_ident.html" as idm with context %}
 {% import "_lazy.html" as lz %}
 {% with oob = true %}{% include "_seasons.html" %}{% endwith %}
@@ -71,10 +72,7 @@
   </div>
 </div>
 {% include "_bracket_editor.html" %}
-<figure class="card chart">
-  <img src="/chart/bracket?league={{ league }}&season={{ season }}&theme={{ theme }}&bracket={{ bracket }}&_={{ bust }}"
-       alt="Playoff bracket">
-</figure>
+{{ ch.chart("bracket", bracket=bracket, alt="Playoff bracket") }}
 
 {# One game log for the whole postseason. The bracket graphic above is the visual
    map; this is the readable log beneath it -- every game as a scoreboard row that
@@ -107,19 +105,10 @@
    {%- if not has_conso %} The {{ season }} bracket has no consolation games, so there is
    nothing to include or exclude and the control is hidden.{% endif %}</p>
 <div class="grid two">
-  <figure class="card chart">
-    <img src="/chart/playoff_players?league={{ league }}&season={{ season }}&scope={{ scope }}&theme={{ theme }}&bracket={{ bracket }}&_={{ bust }}"
-         alt="Best playoff players" loading="lazy">
-  </figure>
-  <figure class="card chart">
-    <img src="/chart/clutch?league={{ league }}&season={{ season }}&scope={{ scope }}&theme={{ theme }}&bracket={{ bracket }}&_={{ bust }}"
-         alt="Clutch index" loading="lazy">
-  </figure>
+  {{ ch.chart("playoff_players", scope=scope, bracket=bracket, alt="Best playoff players") }}
+  {{ ch.chart("clutch", scope=scope, bracket=bracket, alt="Clutch index") }}
 </div>
-<figure class="card chart">
-  <img src="/chart/playoff_stats?league={{ league }}&season={{ season }}&scope={{ scope }}&theme={{ theme }}&bracket={{ bracket }}&_={{ bust }}"
-       alt="{{ season }} playoff record" loading="lazy">
-</figure>
+{{ ch.chart("playoff_stats", scope=scope, bracket=bracket, alt=season ~ " playoff record") }}
 
 <section class="finalplace">
   <h2>Postseason results</h2>

@@ -473,7 +473,6 @@ details summary { cursor: pointer; font-weight: 600; }
 .reportpanel .dt-detail { padding: 10px 14px 12px; }
 .reportpanel table.sortable th, .reportpanel table.sortable td { padding: 6px 9px; }
 .reportpanel .card.tablewrap { padding: 8px; }
-.reportpanel .deal > header { padding: 7px 12px; }
 .reportpanel .deal .side { padding: 9px 12px; }
 .reportpanel .deal .got { margin-top: 4px; }
 .reportpanel .deal .plr { margin-top: 4px; }
@@ -678,17 +677,31 @@ footer code { font-family: ui-monospace, Consolas, monospace; }
    would print a two-team trade twice as mirror images. Sides are ordered best
    net first, and tinted so who came out ahead reads before the numbers do. */
 .deals { display: grid; gap: 14px; }
+/* Groups a deal's card with the week/verdict caption that sits above it, so
+   the 14px `.deals` gap separates one deal from the next while the caption
+   stays snug against its OWN card -- same idea as a figure and its caption.
+   Week/verdict aren't facts about any one side (unlike the per-side .res
+   badge), so they live outside the card entirely rather than in a header bar
+   inside it -- the card itself now matches the weekly report's headerless
+   .deal exactly, just fed season-cumulative numbers instead of this week's. */
+.deal-group { display: flex; flex-direction: column; gap: 8px; }
+/* Same divider convention as the weekly card's own per-side header
+   (.side-name below) -- a rule under the caption text, not just whitespace,
+   is what reads as "this labels the card beneath it" rather than a stray
+   line of text sitting above an unrelated block. */
+.deal-meta { display: flex; align-items: baseline; gap: 10px; padding: 0 2px 7px;
+  border-bottom: 1px solid var(--line); }
+.deal-meta .wk { font-size: 11px; font-weight: 700; letter-spacing: .06em;
+  text-transform: uppercase; color: var(--faint); }
+.deal-meta .verdict { margin-left: auto; font-size: 12.5px; color: var(--muted); }
+.deal-meta .verdict b { color: var(--ink); }
+.deal-meta .verdict.even { font-style: italic; }
 .deal { position: relative; border: 1px solid var(--line); border-radius: 12px;
   overflow: hidden; background: var(--surface); box-shadow: var(--shadow); }
 /* .tag's base rule is global now; .deal takes it unchanged. A 3+-team deal's
    count is a fact about the whole card, not any one side, so it sits as a
    corner badge rather than taking a slot in the name grid below. */
 .deal .deal-tag { position: absolute; top: 10px; right: 12px; z-index: 1; }
-.deal .wk { font-size: 11px; font-weight: 700; letter-spacing: .06em;
-  text-transform: uppercase; color: var(--faint); }
-.deal .verdict { margin-left: auto; font-size: 12.5px; color: var(--muted); }
-.deal .verdict b { color: var(--ink); }
-.deal .verdict.even { font-style: italic; }
 /* Sides sit side by side and wrap to stacked on a narrow panel; a 3-team deal
    simply gets a third column. */
 .deal .sides { display: grid;
@@ -698,7 +711,15 @@ footer code { font-family: ui-monospace, Consolas, monospace; }
 .deal .side.up { background: color-mix(in srgb, #2f9e44 8%, transparent); }
 .deal .side.down { background: color-mix(in srgb, #e03131 6%, transparent); }
 .deal .who { display: flex; justify-content: space-between; align-items: baseline;
-  gap: 10px; font-weight: 650; font-size: 13.5px; }
+  gap: 10px; font-weight: 650; font-size: 13.5px;
+  padding-bottom: 8px; margin-bottom: 8px;
+  /* Same header-divider idea as .side-name below, but mixed against --ink
+     rather than plain --line: .who sits on the TINTED .side.up/.side.down
+     background, and a plain 1px --line line washed out to invisible there --
+     the exact low-contrast trap noted below for .side-name, which is why
+     .side-name (no tint under it) can get away with --line but this can't. */
+  border-bottom: 1px solid color-mix(in srgb, var(--ink) 16%, transparent); }
+.deal .who + .got { margin-top: 0; }
 .deal .got { margin-top: 6px; font-size: 13px; line-height: 1.5; }
 /* Weekly report only: the manager's name lives INSIDE the same .side cell as
    their players, styled as a column header with its own rule beneath it,
@@ -709,21 +730,23 @@ footer code { font-family: ui-monospace, Consolas, monospace; }
    .side cell can't drift: it is the SAME grid computing the SAME column
    once, so the divider, the wrap point, and the left inset are pixel-
    identical to the players below by construction. No background tint on the
-   name (unlike the Transactions tab's plain `.who`) -- it sits on the same
-   surface as the rest of the card, on purpose: a tint plus `var(--line)` at
-   1px turned out too low-contrast to read as a real divider. No arrow/
-   connector between sides: with the vertical divider already marking the
-   split, a 3+-team deal has no single "direction" a symbol could honestly
-   show anyway, so the divider alone (used consistently for 2+ sides) does
-   the job. */
+   name -- it sits on the same surface as the rest of the card, on purpose: a
+   tint plus `var(--line)` at 1px turned out too low-contrast to read as a
+   real divider (see .who above, which hits this for real and mixes against
+   --ink instead). No arrow/connector between sides: with the vertical
+   divider already marking the split, a 3+-team deal has no single
+   "direction" a symbol could honestly show anyway, so the divider alone
+   (used consistently for 2+ sides) does the job. */
 .deal .side-name { font-weight: 700; font-size: 13.5px;
   padding-bottom: 8px; margin-bottom: 8px; border-bottom: 1px solid var(--line); }
 .deal .side-name + .got { margin-top: 0; }
-/* Per-player trade breakdown (weekly report) -- no winner framing, just each
-   player's own week/season points, so .side.up/.down stay unused here.
-   Week/season points are two DELIBERATELY separate lines (not one joined by
-   a middle dot) -- a trade this fresh can't prove a winner, and running them
-   together read as one figure at a glance. */
+/* Per-player trade breakdown: each player received, named individually with
+   their own points, rather than one joined name string + a side total --
+   shared by the weekly report's fresh-trade cards (no winner framing yet, a
+   week/season points pair per player) and the Transactions tab's season
+   cards (.side.up/.down + .res ARE in play there, one points-since-the-trade
+   line per player). Same markup either way; only which numbers get passed
+   in differs. */
 .deal .plr { margin-top: 8px; }
 .deal .plr:first-child { margin-top: 0; }
 .deal .plr-name { display: flex; align-items: center; gap: 6px; }

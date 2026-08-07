@@ -15,6 +15,7 @@
    collapsed row when the same "would have flipped it" fact is already one
    click away in the expanded costliest-call line below. #}
 {% import "_ident.html" as idm with context %}
+{% import "_lineupmacro.html" as lu with context %}
 <div class="tablewrap">
 <div class="drilltable"
      style="--cols: minmax(150px,1.6fr) minmax(150px,1.3fr) minmax(150px,1.6fr)">
@@ -60,68 +61,24 @@
         <div class="vs-panel vs-p-actual">
           <div class="dt-tables">
             {% for sd in g.sides %}
-            <table class="dt-games">
-              <thead><tr>
-                <th colspan="2">{{ idm.who(sd.user_name) }}{% if sd.result == 'W' %} &mdash; won{% elif sd.result == 'L' %} &mdash; lost{% endif %}</th>
-                <th class="n">{{ "%.2f"|format(sd.points) }}</th>
-              </tr></thead>
-              <tbody>
-              {% for pl in sd.lineup %}
-                <tr {% if pl.cmp == 'up' %}class="cmp-up"{% elif pl.cmp == 'down' %}class="cmp-down"{% endif %}>
-                  <td><span class="q">{{ pl.slot }}</span></td>
-                  <td>{{ idm.headshot(pl.player_id) }}<strong>{{ pl.player_name }}</strong> {{ idm.posrank(pl.player_id) }}</td>
-                  <td class="n">{{ "%.2f"|format(pl.points) }}</td>
-                </tr>
-              {% else %}
-                <tr><td colspan="3"><span class="q">No lineup recorded.</span></td></tr>
-              {% endfor %}
-              {% if sd.bench %}
-                <tr><td colspan="3"><span class="q">Bench</span></td></tr>
-                {% for pl in sd.bench %}
-                <tr {% if pl.would_start %}class="bench-impact"{% endif %}>
-                  <td><span class="q">{{ pl.position }}</span></td>
-                  <td>{{ idm.headshot(pl.player_id) }}{{ pl.player_name }} {{ idm.posrank(pl.player_id) }}
-                    {%- if pl.would_start %} <span class="q star" title="Would have outscored a same-position starter">*</span>{% endif %}</td>
-                  <td class="n"><span class="q">{{ "%.2f"|format(pl.points) }}</span></td>
-                </tr>
-                {% endfor %}
-              {% endif %}
-              </tbody>
-            </table>
+            {{ lu.lineup_table(
+                 idm.who(sd.user_name) ~ (" — won" if sd.result == 'W' else " — lost" if sd.result == 'L' else ""),
+                 "%.2f"|format(sd.points), sd.lineup, bench=sd.bench,
+                 bench_flag="would_start",
+                 bench_flag_title="Would have outscored a same-position starter") }}
             {% endfor %}
           </div>
         </div>
         <div class="vs-panel vs-p-opt">
           <div class="dt-tables">
             {% for sd in g.sides %}
-            <table class="dt-games">
-              <thead><tr>
-                <th colspan="2">{{ idm.who(sd.user_name) }} &mdash; optimized</th>
-                <th class="n">{{ "%.2f"|format(sd.opt_points) if sd.opt_points is not none else "—" }}</th>
-              </tr></thead>
-              <tbody>
-              {% for pl in sd.opt_lineup %}
-                <tr {% if pl.cmp == 'up' %}class="cmp-up"{% elif pl.cmp == 'down' %}class="cmp-down"{% endif %}>
-                  <td><span class="q">{{ pl.slot }}</span></td>
-                  <td>{{ idm.headshot(pl.player_id) }}<strong>{{ pl.player_name }}</strong> {{ idm.posrank(pl.player_id) }}</td>
-                  <td class="n">{{ "%.2f"|format(pl.points) }}</td>
-                </tr>
-              {% else %}
-                <tr><td colspan="3"><span class="q">No roster data.</span></td></tr>
-              {% endfor %}
-              {% if sd.opt_bench %}
-                <tr><td colspan="3"><span class="q">Bench</span></td></tr>
-                {% for pl in sd.opt_bench %}
-                <tr {% if pl.was_started %}class="bench-impact"{% endif %}>
-                  <td><span class="q">{{ pl.position }}</span></td>
-                  <td>{{ idm.headshot(pl.player_id) }}{{ pl.player_name }} {{ idm.posrank(pl.player_id) }}
-                    {%- if pl.was_started %} <span class="q star" title="Started in the actual lineup, swapped out here">*</span>{% endif %}</td>
-                  <td class="n"><span class="q">{{ "%.2f"|format(pl.points) }}</span></td>
-                </tr>
-                {% endfor %}
-              {% endif %}
-              </tbody>
-            </table>
+            {{ lu.lineup_table(
+                 idm.who(sd.user_name) ~ " — optimized",
+                 ("%.2f"|format(sd.opt_points) if sd.opt_points is not none else "—"),
+                 sd.opt_lineup, bench=sd.opt_bench,
+                 bench_flag="was_started",
+                 bench_flag_title="Started in the actual lineup, swapped out here",
+                 empty_text="No roster data.") }}
             {% endfor %}
           </div>
         </div>

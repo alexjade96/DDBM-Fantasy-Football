@@ -626,7 +626,7 @@ def record_book(seasons: dict) -> list[dict]:
 # per-player rows. Webapp-only, so they are not part of the parity contract.
 
 _TRADE_COLS = ["week", "transaction_id", "user_name", "with", "received",
-               "gave", "got_pts", "gave_pts", "net"]
+               "received_players", "gave", "got_pts", "gave_pts", "net"]
 _WAIVER_COLS = ["week", "user_name", "player_id", "player_name", "position",
                 "via", "times", "points", "starts", "weeks_rostered",
                 "trend", "trend_total", "trend_avg"]
@@ -668,6 +668,10 @@ def _live_tx(s: Season, kinds: list) -> pd.DataFrame:
     return t
 
 
+def _str_or(v, default="—"):
+    return v if isinstance(v, str) else default
+
+
 def trade_ledger(s: Season) -> pd.DataFrame:
     """Every completed trade, one row per team involved in it.
 
@@ -675,6 +679,11 @@ def trade_ledger(s: Season) -> pd.DataFrame:
     players they gave up scored for whoever received them -- so the two sides of
     a two-team deal are mirror images, and a three-way deal still attributes
     each player's points to the roster that actually got him.
+
+    `received_players` breaks `received`/`got_pts` down per player -- the same
+    per-player detail the weekly report's trade cards show (headshot, points),
+    so `trade_deals()` can render both cards from equally detailed data instead
+    of this one falling back to a plain joined name string.
     """
     t = _live_tx(s, ["trade"])
     if t.empty:
@@ -684,7 +693,12 @@ def trade_ledger(s: Season) -> pd.DataFrame:
     rows = []
     for tid, ev in t.groupby("transaction_id"):
         adds = ev[ev["transaction"] == "add"]
+        drops = ev[ev["transaction"] == "drop"]
         dest = dict(zip(adds["player_id"], adds["roster_id"]))
+        # Which roster GAVE UP a given player, i.e. the source side of an add --
+        # only meaningful (and only shown) in a 3+-team deal, where "the other
+        # side" is genuinely ambiguous.
+        source = dict(zip(drops["player_id"], drops["roster_id"]))
         wk = int(ev["week"].min())
         for rid, g in ev.groupby("roster_id"):
             got = g[g["transaction"] == "add"]
@@ -693,11 +707,19 @@ def trade_ledger(s: Season) -> pd.DataFrame:
             gave_pts = sum(pts.get((p, dest.get(p)), 0.0) for p in gave["player_id"])
             others = sorted({names.get(r, str(r)) for r in ev["roster_id"]
                              if r != rid})
+            received_players = sorted((
+                {"player_id": p.player_id, "player_name": _str_or(p.player_name),
+                 "position": _str_or(p.position, None),
+                 "points": round(pts.get((p.player_id, rid), 0.0), 1),
+                 "from_team": names.get(source.get(p.player_id))}
+                for p in got.itertuples()
+            ), key=lambda r: r["points"], reverse=True)
             rows.append({
                 "week": wk, "transaction_id": str(tid),
                 "user_name": names.get(rid, str(rid)),
                 "with": ", ".join(others) or "—",
                 "received": ", ".join(got["player_name"].astype(str)) or "—",
+                "received_players": received_players,
                 "gave": ", ".join(gave["player_name"].astype(str)) or "—",
                 "got_pts": round(got_pts, 1), "gave_pts": round(gave_pts, 1),
                 "net": round(got_pts - gave_pts, 1),
@@ -787,7 +809,8 @@ def trade_deals(s: Season) -> list[dict]:
     out = []
     for tid, g in led.groupby("transaction_id", sort=False):
         g = g.sort_values("net", ascending=False)
-        sides = g[["user_name", "received", "got_pts", "net"]].to_dict("records")
+        sides = g[["user_name", "received", "received_players",
+                   "got_pts", "net"]].to_dict("records")
         best = sides[0]
         margin = round(abs(float(best["net"])), 1)
         out.append({

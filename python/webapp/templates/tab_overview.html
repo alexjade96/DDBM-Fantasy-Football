@@ -84,10 +84,7 @@
 </section>
 
 {% if phase == "playoffs" %}
-<figure class="card chart">
-  <img src="/chart/bracket?league={{ league }}&season={{ season }}&theme={{ theme }}&bracket={{ bracket }}&_={{ bust }}"
-       alt="Playoff bracket">
-</figure>
+{{ ch.chart("bracket", bracket=bracket, alt="Playoff bracket") }}
 {% set grp = current_round %}
 {% include "_playoff_round.html" %}
 {% elif phase == "complete" %}
@@ -97,16 +94,10 @@
    played bracket, the bracket graphic replaces it; without one, there is
    simply nothing here beyond the tiles above. #}
 {% if playoff_recap %}
-<figure class="card chart">
-  <img src="/chart/bracket?league={{ league }}&season={{ season }}&theme={{ theme }}&bracket={{ bracket }}&_={{ bust }}"
-       alt="Playoff bracket">
-</figure>
+{{ ch.chart("bracket", bracket=bracket, alt="Playoff bracket") }}
 {% endif %}
 {% else %}
-<figure class="card chart">
-  <img src="/chart/week_matchups?league={{ league }}&season={{ season }}&week={{ week }}&theme={{ theme }}&_={{ bust }}"
-       alt="Week {{ week }} matchups" loading="lazy">
-</figure>
+{{ ch.chart("week_matchups", week=week, alt="Week " ~ week ~ " matchups") }}
 
 {# The scoreboard as a per-game drilldown (shared with the Weekly tab): expand a
    row for both lineups in slot order, benches, and the costliest legal swap.
@@ -116,10 +107,7 @@
 {{ lz.lazy("/tab/overview/part/scoreboard?league=" ~ league|urlencode ~ "&season=" ~ season|urlencode ~ "&theme=" ~ theme ~ "&week=" ~ week, height="200px") }}
 
 {# The one week-context chart that stays in the lead: was the result deserved? #}
-<figure class="card chart">
-  <img src="/chart/week_luck?league={{ league }}&season={{ season }}&week={{ week }}&theme={{ theme }}&_={{ bust }}"
-       alt="Week {{ week }} luck" loading="lazy">
-</figure>
+{{ ch.chart("week_luck", week=week, alt="Week " ~ week ~ " luck") }}
 {% endif %}
 
 {# ---- Season to date --------------------------------------------------------

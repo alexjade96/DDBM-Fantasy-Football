@@ -7,6 +7,7 @@
    a manager scope server-side. Needs `fa_best_team`, `free_agents`,
    `fa_positions`, `week` in context. #}
 {% import "_ident.html" as idm with context %}
+{% import "_lineupmacro.html" as lu with context %}
 {% if not manager %}
 <h3>Best available free-agent lineup</h3>
 {% if fa_best_team %}
@@ -29,32 +30,8 @@
       <span class="score {{ 'score-l' if fa_won else 'score-w' if not tied else '' }}">{{ "%.2f"|format(t_pts) }}</span>
       <span class="q">({{ "%+.1f"|format(t_gain) }})</span></p>
     <div class="dt-tables">
-      <table class="dt-games">
-        <thead><tr><th colspan="2">Best available team</th>
-          <th class="n">{{ "%.2f"|format(fa_best_team.total) }}</th></tr></thead>
-        <tbody>
-        {% for p in t[fa_lineup_key] %}
-          <tr {% if p.cmp == 'up' %}class="cmp-up"{% elif p.cmp == 'down' %}class="cmp-down"{% endif %}>
-            <td><span class="q">{{ p.slot }}</span></td>
-            <td>{{ idm.headshot(p.player_id) }}<strong>{{ p.player_name }}</strong> {{ idm.posrank(p.player_id) }}</td>
-            <td class="n">{{ "%.2f"|format(p.points) }}</td>
-          </tr>
-        {% endfor %}
-        </tbody>
-      </table>
-      <table class="dt-games">
-        <thead><tr><th colspan="2">{{ idm.who(t.user_name) }}</th>
-          <th class="n">{{ "%.2f"|format(t_pts) }}</th></tr></thead>
-        <tbody>
-        {% for p in t[lineup_key] %}
-          <tr {% if p.cmp == 'up' %}class="cmp-up"{% elif p.cmp == 'down' %}class="cmp-down"{% endif %}>
-            <td><span class="q">{{ p.slot }}</span></td>
-            <td>{{ idm.headshot(p.player_id) }}<strong>{{ p.player_name }}</strong> {{ idm.posrank(p.player_id) }}</td>
-            <td class="n">{{ "%.2f"|format(p.points) }}</td>
-          </tr>
-        {% endfor %}
-        </tbody>
-      </table>
+      {{ lu.lineup_table("Best available team", "%.2f"|format(fa_best_team.total), t[fa_lineup_key]) }}
+      {{ lu.lineup_table(idm.who(t.user_name), "%.2f"|format(t_pts), t[lineup_key]) }}
     </div>
     {% endif %}
   </div>

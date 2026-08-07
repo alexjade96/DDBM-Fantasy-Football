@@ -2,6 +2,7 @@
    report_parts; charts are ordinary /chart <img> so they stream in lazily with
    the shared skeleton and follow the dashboard theme. The Download button still
    hands over the self-contained file. #}
+{% import "_chartmacro.html" as ch with context %}
 <nav class="rail" hx-target="#panel" hx-swap="innerHTML"
      hx-include="#league, #season, #theme">
   <span class="k">Scope</span>
@@ -52,11 +53,7 @@
   {% if sec.charts %}
   <section class="grid">
     {% for key, desc in sec.charts %}
-    <figure class="card chart">
-      <img src="/chart/{{ key }}?league={{ league }}&season={{ season }}&theme={{ theme }}&manager={{ (manager or '')|urlencode }}&_={{ bust }}"
-           alt="{{ desc }}" loading="lazy">
-      <figcaption>{{ desc }}</figcaption>
-    </figure>
+    {{ ch.chart(key, manager=(manager or ''), alt=desc, caption=desc) }}
     {% endfor %}
   </section>
   {% endif %}
