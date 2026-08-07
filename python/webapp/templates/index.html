@@ -302,7 +302,7 @@
   </nav>
 
   <main id="panel"
-        hx-get="/tab/{{ initial_tab }}" hx-trigger="load" hx-include="#league, #season, #theme, #bracket">
+        hx-get="/tab/{{ initial_tab }}?boot=1" hx-trigger="load" hx-include="#league, #season, #theme, #bracket">
     <p class="empty">Loading…</p>
   </main>
 

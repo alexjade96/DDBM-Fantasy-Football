@@ -1,0 +1,18 @@
+{# "Record book" tiles: league superlatives across every season on record.
+   Deferred behind /tab/career/part/records (see app.py's TAB_PARTS) since
+   record_book() runs several cross-season groupby passes over every
+   season's data -- see tab_career.html, which renders this fragment's
+   placeholder. #}
+{% if records %}
+<h2>Record book</h2>
+<p class="hint">League superlatives across every season on record.</p>
+<section class="stats">
+  {% for r in records %}
+  <div class="stat {% if loop.index0 == 0 %}gold{% endif %}">
+    <span class="k">{{ r.label }}</span>
+    <span class="v">{{ r.value }}</span>
+    <span class="sub">{{ r.holder }}{% if r.detail %} · {{ r.detail }}{% endif %}</span>
+  </div>
+  {% endfor %}
+</section>
+{% endif %}

@@ -1,0 +1,111 @@
+{# "Draft finds" section: gems/busts/undrafted. Deferred behind
+   /tab/draft/part/finds (see app.py's TAB_PARTS) since draft.draft_extremes()/
+   undrafted_standouts() materialize the whole draft board to rank it -- see
+   tab_draft.html, which renders this same fragment's placeholder. #}
+{% import "_ident.html" as idm with context %}
+{% import "_draft_macros.html" as dm %}
+{% if gems or busts or undrafted %}
+<h2>Draft finds</h2>
+<p class="hint">Click a column header to sort.</p>
+<dl class="glossary">
+  <div><dt>+/&minus;</dt><dd>Spots better or worse than expected at his position, compared
+    to where he was drafted.</dd></div>
+  <div><dt>Pos-adj</dt><dd>True points above <strong>replacement level</strong> at his
+    position.</dd></div>
+  <div><dt>Trend</dt><dd>Weekly output shape all season, coloured against his
+    position&rsquo;s replacement level.</dd></div>
+  <div><dt><span class="tag mixed">mixed</span></dt><dd>Team value
+    (<strong>steal</strong>) and true value (<strong>+/&minus;</strong>) disagree in
+    sign.</dd></div>
+</dl>
+<div class="viewswitch gb-vs-mode">
+  <input type="radio" name="gbmode" id="gb-gems" class="vs-radio" checked>
+  <input type="radio" name="gbmode" id="gb-busts" class="vs-radio">
+  <input type="radio" name="gbmode" id="gb-undrafted" class="vs-radio">
+  <div class="rail vs-tabs">
+    <label class="year" for="gb-gems">Gems</label>
+    <label class="year" for="gb-busts">Busts</label>
+    <label class="year" for="gb-undrafted">Undrafted</label>
+  </div>
+
+  <div class="vs-panel vs-p-gems">
+    <div class="card tablewrap scrolltable">
+    <table>
+      <thead><tr>
+        <th>Pick</th><th>Player</th><th>Manager</th><th>Trend</th>
+        <th class="n">+/&minus;</th><th class="n">PPG</th><th class="n">Pos-adj</th><th class="n">Total pts</th>
+      </tr></thead>
+      <tbody>
+      {% for r in gems %}
+        <tr>
+          <td>{{ r.pick }}</td>
+          <td>{{ idm.headshot(r.player_id) }}{{ r.player_name }}
+              {% if r.pos_rank %}<span class="q">{{ r.position }} #{{ r.pos_rank }}</span>{% else %}<span class="q">{{ r.position }}</span>{% endif %}
+              {% if r.mixed %}<span class="tag mixed" title="What this team actually banked from him tells a different story -- see the draft board for both numbers.">mixed</span>{% endif %}</td>
+          <td>{{ idm.who(r.user_name) }}</td>
+          <td>{{ dm.spark(r.trend) }}</td>
+          <td class="n"><span class="res {% if r.pos_steal >= 0 %}w{% else %}l{% endif %}">{{ "+" if r.pos_steal >= 0 }}{{ r.pos_steal }}</span></td>
+          <td class="n">{{ "%.1f"|format(r.ppg) }}</td>
+          <td class="n"><span class="res {% if r.pos_adj >= 0 %}w{% else %}l{% endif %}">{{ "+" if r.pos_adj >= 0 }}{{ "%.0f"|format(r.pos_adj) }}</span></td>
+          <td class="n">{{ "%.0f"|format(r.total) }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    </div>
+  </div>
+
+  <div class="vs-panel vs-p-busts">
+    <div class="card tablewrap scrolltable">
+    <table>
+      <thead><tr>
+        <th>Pick</th><th>Player</th><th>Manager</th><th>Trend</th>
+        <th class="n">+/&minus;</th><th class="n">PPG</th><th class="n">Pos-adj</th><th class="n">Total pts</th>
+      </tr></thead>
+      <tbody>
+      {% for r in busts %}
+        <tr>
+          <td>{{ r.pick }}</td>
+          <td>{{ idm.headshot(r.player_id) }}{{ r.player_name }}
+              {% if r.pos_rank %}<span class="q">{{ r.position }} #{{ r.pos_rank }}</span>{% else %}<span class="q">{{ r.position }}</span>{% endif %}
+              {% if r.mixed %}<span class="tag mixed" title="What this team actually banked from him tells a different story -- see the draft board for both numbers.">mixed</span>{% endif %}</td>
+          <td>{{ idm.who(r.user_name) }}</td>
+          <td>{{ dm.spark(r.trend) }}</td>
+          <td class="n"><span class="res {% if r.pos_steal >= 0 %}w{% else %}l{% endif %}">{{ "+" if r.pos_steal >= 0 }}{{ r.pos_steal }}</span></td>
+          <td class="n">{{ "%.1f"|format(r.ppg) }}</td>
+          <td class="n"><span class="res {% if r.pos_adj >= 0 %}w{% else %}l{% endif %}">{{ "+" if r.pos_adj >= 0 }}{{ "%.0f"|format(r.pos_adj) }}</span></td>
+          <td class="n">{{ "%.0f"|format(r.total) }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    </div>
+  </div>
+
+  <div class="vs-panel vs-p-undrafted">
+    <div class="card tablewrap scrolltable">
+      <table>
+        <thead><tr>
+          <th>Player</th><th>Manager</th><th>Trend</th>
+          <th class="n">+/&minus;</th><th class="n">PPG</th><th class="n">Pos-adj</th><th class="n">Total pts</th>
+        </tr></thead>
+        <tbody>
+        {% for r in undrafted %}
+          <tr>
+            <td>{{ idm.headshot(r.player_id) }}{{ r.player_name }}
+                {% if r.pos_rank %}<span class="q">{{ r.position }} #{{ r.pos_rank }}</span>{% else %}<span class="q">{{ r.position or "—" }}</span>{% endif %}
+                {% if r.teams and r.teams > 1 %}<span class="q">&times;{{ r.teams }} teams</span>{% endif %}</td>
+            <td>{{ idm.who(r.user_name) }}</td>
+            <td>{{ dm.spark(r.trend) }}</td>
+            <td class="n"><span class="res {% if r.pos_steal >= 0 %}w{% else %}l{% endif %}">{{ "+" if r.pos_steal >= 0 }}{{ r.pos_steal }}</span></td>
+            <td class="n">{{ "%.1f"|format(r.ppg) }}</td>
+            <td class="n"><span class="res {% if r.pos_adj >= 0 %}w{% else %}l{% endif %}">{{ "+" if r.pos_adj >= 0 }}{{ "%.0f"|format(r.pos_adj) }}</span></td>
+            <td class="n">{{ "%.0f"|format(r.total) }}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endif %}

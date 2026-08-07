@@ -2,6 +2,7 @@
    and a second switcher in here meant the postseason could sit on a different
    season from the rest of the page. #}
 {% import "_ident.html" as idm with context %}
+{% import "_lazy.html" as lz %}
 {% with oob = true %}{% include "_seasons.html" %}{% endwith %}
 
 {# Bracket source: always available, even with no committed bracket, so a season
@@ -82,18 +83,7 @@
    bowl are folded in as their own rows/group. This replaces the old bracket walk,
    the per-matchup chart and the separate postseason-weeks table -- each of which
    re-drew these same games. #}
-<h2>Games</h2>
-{% if log %}
-<p class="hint">Every postseason game, grouped by round with its week. Each row is the
-   scoreboard &mdash; open it for both lineups, slot by slot. Byes advanced without playing
-   (their real weekly score is shown for reference). The <strong>toilet bowl</strong> &mdash;
-   games between teams that missed the bracket &mdash; is bracketed here too, as its own group.</p>
-{% for grp in log %}
-{% include "_playoff_round.html" %}
-{% endfor %}
-{% else %}
-<p class="empty">No games have been played in this bracket yet.</p>
-{% endif %}
+{{ lz.lazy("/tab/playoffs/part/games?league=" ~ league|urlencode ~ "&season=" ~ season|urlencode ~ "&theme=" ~ theme ~ "&bracket=" ~ bracket|urlencode, height="260px") }}
 
 <div class="rowhead">
   <h2>Playoff analytics</h2>

@@ -1,0 +1,12 @@
+{# "Team of the Week" section. Deferred behind /tab/weekly/part/totw (see
+   app.py's TAB_PARTS) since week_team_of_week() builds an optimal lineup from
+   every player rostered anywhere in the league that week -- see
+   tab_weekly.html, which renders this fragment's placeholder. #}
+{% import "_ident.html" as idm with context %}
+<h3>Team of the Week</h3>
+<p class="hint">The best legal lineup buildable from EVERY player rostered anywhere in the
+   league this week &mdash; bench included, any team &mdash; against the week&rsquo;s real
+   scores above. A star marks anyone who was actually benched by their real team.</p>
+<div class="card tablewrap">
+  {% include "_team_of_week.html" %}
+</div>

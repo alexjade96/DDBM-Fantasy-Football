@@ -1,0 +1,132 @@
+{# "Rosters by manager" section. Deferred behind /tab/roster/part/rosters (see
+   app.py's TAB_PARTS) since it's backed by roster_detail()+coaching_detail(),
+   each a full per-manager/per-week loop -- see tab_roster.html, which renders
+   this fragment's placeholder. #}
+{% import "_ident.html" as idm with context %}
+{% import "_roster_macros.html" as rm with context %}
+{% if rosters %}
+<h2>Rosters by manager</h2>
+<p class="hint">Expand a manager for their roster shape and flex habit (<strong>Roster
+   breakdown</strong>), every player they rostered (<strong>Roster</strong>), or their
+   week-by-week lineup calls (<strong>Efficiency</strong>) &mdash; whichever view is
+   selected below. <strong>Bench pts</strong> is what their bench scored &mdash; the cost
+   of the roster they carried; <strong>Points below optimal</strong> (in the drilldown) is
+   the cost of the decisions &mdash; only the bench points a legal swap would actually
+   have converted.</p>
+{{ rm.chartgrid(charts_rosters) }}
+<div class="viewswitch roster-view-mode">
+  <input type="radio" name="rvmode" id="rv-breakdown" class="vs-radio" checked>
+  <input type="radio" name="rvmode" id="rv-roster" class="vs-radio">
+  <input type="radio" name="rvmode" id="rv-eff" class="vs-radio">
+  <div class="rail vs-tabs">
+    <span class="k">View</span>
+    <label class="year" for="rv-breakdown">Roster breakdown</label>
+    <label class="year" for="rv-roster">Roster</label>
+    <label class="year" for="rv-eff">Efficiency</label>
+  </div>
+  <div class="tablewrap">
+  <div class="drilltable"
+       style="--cols: minmax(130px,1.5fr) minmax(80px,.9fr) repeat(2, minmax(95px,1fr)) minmax(80px,.9fr) minmax(90px,1fr) minmax(105px,1.1fr)">
+  <div class="dt-head">
+    <span>Manager</span><span class="dt-num">Players</span>
+    <span class="dt-num">Pts</span>
+    <span class="dt-num">Bench pts</span><span class="dt-num">Bench %</span>
+    <span class="dt-num">Lineup %</span><span class="dt-num">Lost to bench</span>
+  </div>
+  {% for r in rosters %}
+  <details class="dt-row">
+    <summary>
+      <span>{{ idm.who(r.user_name) }}</span>
+      <span class="dt-num">{{ r.players_used }}</span>
+      <span class="dt-num">{{ "%.0f"|format(r.started_pts) }}</span>
+      <span class="dt-num">{{ "%.0f"|format(r.bench_pts) }}</span>
+      <span class="dt-num">{{ "%.0f"|format(r.bench_share) }}%</span>
+      <span class="dt-num">{% if r.eff is not none %}{{ "%.1f"|format(r.eff) }}%{% else %}&mdash;{% endif %}</span>
+      <span class="dt-num">{% if r.cost_losses %}<span class="res l">{{ r.cost_losses }}</span>{% else %}&mdash;{% endif %}</span>
+    </summary>
+    <div class="dt-detail">
+      <div class="dt-facts">
+        {% if r.perfect is not none %}
+        <div class="fact"><span class="fl">Perfect lineups</span><span class="fv">
+          <span class="pts">{{ r.perfect }}</span>
+          <span class="q">of {{ r.lineup_weeks | length }} weeks</span></span></div>
+        {% endif %}
+        {% if r.points_below_optimal is not none %}
+        <div class="fact"><span class="fl">Points below optimal</span><span class="fv">
+          <span class="pts">{{ "%.1f"|format(r.points_below_optimal) }}</span></span></div>
+        {% endif %}
+        {% if r.worst_week %}
+        <div class="fact"><span class="fl">Worst week</span><span class="fv">
+          <span class="pts">{{ "%.1f"|format(r.worst_week.cost) }}</span>
+          <span class="q">left on the bench in wk {{ r.worst_week.week }}</span></span></div>
+        {% endif %}
+      </div>
+      <div class="rv-panels">
+        <div class="vs-panel vs-p-breakdown">
+          <div class="posbuild">
+            {% for pos in ["QB", "RB", "WR", "TE", "K", "DEF"] %}
+            {% set n = r.pos_counts.get(pos, 0) %}
+            {% set mx = pos_max.get(pos, 0) %}
+            <div class="pbrow">
+              <span class="pblabel pos-{{ pos|lower }}">{{ pos }}</span>
+              <div class="pbtrack"><span class="pos-{{ pos|lower }}"
+                   style="width: {{ ((n / mx * 100) if mx else 0) | round(1) }}%"></span></div>
+              <span class="pbval q">{{ n }} wks &middot; {{ "%.1f"|format(r.pos_avg.get(pos, 0)) }} avg</span>
+            </div>
+            {% endfor %}
+          </div>
+          <p class="q">Position build: each bar scaled to its own position&rsquo;s league-wide max.</p>
+          {% if r.flex_share %}
+          <div class="flexbar">
+            {% for pos in ["RB", "WR", "TE"] %}
+            {% set pct = r.flex_share.get(pos, 0) %}
+            {% if pct > 0 %}
+            <span class="pos-{{ pos|lower }}" style="width: {{ pct }}%">{% if pct >= 12 %}{{ pos }} {{ pct }}%{% endif %}</span>
+            {% endif %}
+            {% endfor %}
+          </div>
+          <p class="q">Flex allocation: RB {{ r.flex_share.get("RB", 0) }}% &middot;
+            WR {{ r.flex_share.get("WR", 0) }}% &middot;
+            TE {{ r.flex_share.get("TE", 0) }}%</p>
+          {% endif %}
+        </div>
+        <div class="vs-panel vs-p-roster">
+          {{ rm.roster_players_table(r) }}
+        </div>
+        <div class="vs-panel vs-p-eff">
+          {% if r.lineup_weeks %}
+          <table class="dt-games">
+            <thead><tr>
+              <th class="n">Wk</th><th class="n">Started</th><th class="n">Optimal</th>
+              <th class="n">Cost</th><th class="n">Lineup %</th><th>Result</th>
+            </tr></thead>
+            <tbody>
+            {% for w in r.lineup_weeks %}
+              <tr>
+                <td class="n">{{ w.week }}</td>
+                <td class="n">{{ "%.1f"|format(w.actual) }}</td>
+                <td class="n">{{ "%.1f"|format(w.optimal) }}</td>
+                <td class="n">{% if w.cost > 0.05 %}<span class="q">{{ "%.1f"|format(w.cost) }}</span>{% else %}&mdash;{% endif %}</td>
+                <td class="n">{{ "%.0f"|format(w.eff) }}%</td>
+                <td>
+                  {%- if w.result is defined -%}
+                    <span class="res {{ 'w' if w.result == 'W' else 'l' if w.result == 'L' else '' }}">{{ w.result }}</span>
+                    {% if w.would_have_won %}<span class="q">&mdash; optimal wins it</span>{% endif %}
+                  {%- else -%}&mdash;{%- endif -%}
+                </td>
+              </tr>
+            {% endfor %}
+            </tbody>
+          </table>
+          {% else %}
+          <p class="hint">No week-by-week lineup data for this manager.</p>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </details>
+  {% endfor %}
+</div>
+</div>
+</div>
+{% endif %}

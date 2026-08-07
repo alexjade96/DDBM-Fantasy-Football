@@ -1,0 +1,17 @@
+{# Shared by tab_draft.html's fast response and its lazy /tab/draft/part/*
+   sections (see app.py's TAB_PARTS) -- promoted out of tab_draft.html so both
+   can include it instead of only the tab that happens to render first. #}
+{# Weekly-shape sparkline for the Trend column (gems/busts/undrafted): a
+   dashed line at the position's REPLACEMENT-LEVEL PPG (not the player's own
+   average -- see draft._sparkline's docstring for why), with the connecting
+   line itself green above / red below it -- t is draft._sparkline()'s output. #}
+{% macro spark(t) %}
+{% if t %}
+<svg class="spark-line" viewBox="0 0 56 16" preserveAspectRatio="none">
+  <line class="spark-avg" x1="0" y1="{{ t.avg_y }}" x2="56" y2="{{ t.avg_y }}"></line>
+  {% for seg in t.segs %}
+  <line class="{{ 'up' if seg.up else 'down' }}" x1="{{ seg.x1 }}" y1="{{ seg.y1 }}" x2="{{ seg.x2 }}" y2="{{ seg.y2 }}"></line>
+  {% endfor %}
+</svg>
+{% endif %}
+{% endmacro %}

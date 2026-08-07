@@ -1,0 +1,7 @@
+{# Out-of-band shell sync: brings the header title + season picker back in step
+   with whatever league/season is actually loaded. Used by /load (a league or
+   season switch) and by /tab/<name>?boot=1 (the very first panel fetch after
+   /dashboard renders its shell instantly, before the real league data is
+   known -- see app.py's dashboard()/tab()/_pushed()). #}
+<h1 id="league-name" hx-swap-oob="true">{{ league_name }}</h1>
+{% with oob = true %}{% include "_seasons.html" %}{% endwith %}

@@ -1,0 +1,43 @@
+{# "Waiver wire" section: every pickup of the season, sortable. Deferred
+   behind /tab/transactions/part/waivers (see app.py's TAB_PARTS) -- not
+   because waiver_ledger() itself is expensive (it's bounded by move count,
+   not weeks), but because it's every row rather than a trimmed top-N, so it's
+   real bytes/parse-time the tab's headline content shouldn't wait behind. See
+   tab_transactions.html, which renders this fragment's placeholder. #}
+{% import "_chartmacro.html" as ch with context %}
+{% import "_ident.html" as idm with context %}
+<h2>Waiver wire</h2>
+{% if waivers %}
+{# The chart is the top 15 of the same ranked list the table below shows in
+   full -- kept here, directly above its own table, instead of up in the
+   general chart grid where the relationship read as coincidental. #}
+{{ ch.chart("waiver_performance") }}
+<p class="hint">All {{ n_adds }} waiver and free-agent pickups of {{ season }}, ranked by what
+   they returned while rostered. One row per manager per player &mdash; <strong>&times;n</strong>
+   marks someone picked up more than once. <strong>Starts</strong> against weeks rostered
+   separates a real contributor from a bench stash. Click a column header to sort.</p>
+<div class="card tablewrap scrolltable">
+  <table class="sortable">
+    <thead><tr>
+      <th class="n">Wk</th><th>Manager</th><th>Player</th><th>Pos</th>
+      <th>Via</th><th class="n">Starts</th><th class="n">Pts</th>
+    </tr></thead>
+    <tbody>
+    {% for r in waivers %}
+      <tr>
+        <td class="n">{{ r.week }}</td>
+        <td>{{ idm.who(r.user_name) }}</td>
+        <td>{{ r.player_name }}{% if r.times > 1 %}
+            <span class="q">&times;{{ r.times }}</span>{% endif %}</td>
+        <td>{{ r.position }}</td>
+        <td><span class="q">{{ r.via }}</span></td>
+        <td class="n">{{ r.starts }}<span class="q"> of {{ r.weeks_rostered }}</span></td>
+        <td class="n">{{ "%.0f"|format(r.points) }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<p class="empty">No waiver or free-agent moves recorded in {{ season }}.</p>
+{% endif %}

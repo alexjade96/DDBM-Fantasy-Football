@@ -9,6 +9,7 @@
    in app.py (see `_season_phase()`). #}
 {% import "_chartmacro.html" as ch with context %}
 {% import "_ident.html" as idm with context %}
+{% import "_lazy.html" as lz %}
 
 {# ---- Lead: current week, current playoff round, or season complete ------- #}
 {% if phase == "playoffs" %}
@@ -108,8 +109,11 @@
 </figure>
 
 {# The scoreboard as a per-game drilldown (shared with the Weekly tab): expand a
-   row for both lineups in slot order, benches, and the costliest legal swap. #}
-{% include "_week_scoreboard.html" %}
+   row for both lineups in slot order, benches, and the costliest legal swap.
+   Deferred -- week_matchups() builds the full lineup/optimal-lineup detail for
+   every game, so it shouldn't block this lead section's headline tiles/charts.
+   See app.py's @tab_part("overview", "scoreboard"). #}
+{{ lz.lazy("/tab/overview/part/scoreboard?league=" ~ league|urlencode ~ "&season=" ~ season|urlencode ~ "&theme=" ~ theme ~ "&week=" ~ week, height="200px") }}
 
 {# The one week-context chart that stays in the lead: was the result deserved? #}
 <figure class="card chart">

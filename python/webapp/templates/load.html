@@ -1,5 +1,4 @@
 {# Response to a league/season load: the overview panel, plus out-of-band swaps
    that bring the shell back in step with the league now being shown. #}
-<h1 id="league-name" hx-swap-oob="true">{{ league_name }}</h1>
-{% with oob = true %}{% include "_seasons.html" %}{% endwith %}
+{% include "_shell_sync.html" %}
 {% include "tab_charts.html" %}

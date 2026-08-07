@@ -1,0 +1,35 @@
+{# "Roster standouts" tiles. Deferred behind /tab/roster/part/standouts (see
+   app.py's TAB_PARTS) -- roster_standouts() is cheap on its own, but
+   coaching_standouts() calls coaching_detail() (the same full per-manager
+   loop "Rosters by manager" needs), so the pair is kept together as one
+   section rather than splitting one visual block across two loading states.
+   See tab_roster.html, which renders this fragment's placeholder. #}
+{% import "_ident.html" as idm with context %}
+{% if standouts_roster or standouts_coaching %}
+<h2>Roster standouts</h2>
+<p class="hint">The season&rsquo;s extremes in what teams rostered and how well they used it.</p>
+{% if standouts_roster %}
+<h3>What they rostered</h3>
+<section class="stats">
+  {% for t in standouts_roster %}
+  <div class="stat {% if loop.index0 == 0 %}gold{% endif %}">
+    <span class="k">{{ t.label }}</span>
+    <span class="v">{{ t.value }}</span>
+    <span class="sub">{{ idm.who(t.holder) }}{% if t.detail %} · {{ t.detail }}{% endif %}</span>
+  </div>
+  {% endfor %}
+</section>
+{% endif %}
+{% if standouts_coaching %}
+<h3>How they used it</h3>
+<section class="stats">
+  {% for t in standouts_coaching %}
+  <div class="stat {% if loop.index0 == 0 %}gold{% endif %}">
+    <span class="k">{{ t.label }}</span>
+    <span class="v">{{ t.value }}</span>
+    <span class="sub">{{ idm.who(t.holder) }}{% if t.detail %} · {{ t.detail }}{% endif %}</span>
+  </div>
+  {% endfor %}
+</section>
+{% endif %}
+{% endif %}

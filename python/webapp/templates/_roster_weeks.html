@@ -1,0 +1,49 @@
+{# "Week by week" section. Deferred behind /tab/roster/part/weeks (see
+   app.py's TAB_PARTS) since roster_weeks() builds a Team-of-the-Week for
+   every week of the season -- see tab_roster.html, which renders this
+   fragment's placeholder. Not manager-scoped: the underlying computation is
+   leaguewide regardless (same call either way -- see app.py). #}
+{% import "_ident.html" as idm with context %}
+{% import "_roster_macros.html" as rm with context %}
+{% if weeks %}
+<h2>Week by week</h2>
+<p class="hint">Expand a week for that week&rsquo;s Team of the Week (TOTW) &mdash; the best legal
+   lineup buildable from EVERY player rostered anywhere in the league that week, bench
+   included, any team. A star marks anyone who was actually benched by their real team.</p>
+{{ rm.chartgrid(charts_weeks) }}
+<div class="tablewrap">
+<div class="drilltable"
+     style="--cols: minmax(60px,.5fr) minmax(105px,.8fr) minmax(150px,1.3fr) minmax(150px,1.3fr) minmax(170px,1.6fr) minmax(170px,1.6fr)">
+  <div class="dt-head">
+    <span class="dt-num">Wk</span><span class="dt-num">League pts</span>
+    <span>Best lineup</span><span>Worst lineup</span><span>Player of the Week</span><span>Worst starter</span>
+  </div>
+  {% for w in weeks %}
+  <details class="dt-row">
+    <summary>
+      <span class="dt-num">{{ w.week }}</span>
+      <span class="dt-num">{{ "%.0f"|format(w.league_pts) }}</span>
+      <span>{% if w.best %}{{ idm.who(w.best.user_name) }}
+            <span class="q">{{ "%.0f"|format(w.best.started) }}</span>{% endif %}</span>
+      <span>{% if w.worst %}{{ idm.who(w.worst.user_name) }}
+            <span class="q">{{ "%.0f"|format(w.worst.started) }}</span>{% endif %}</span>
+      <span>{% if w.player_of_week %}{{ idm.headshot(w.player_of_week.player_id) }}{{ w.player_of_week.player_name }}
+            <span class="q">{{ "%.0f"|format(w.player_of_week.points) }}</span>{% endif %}</span>
+      <span>{% if w.worst_player %}{{ idm.headshot(w.worst_player.player_id) }}{{ w.worst_player.player_name }}
+            <span class="q">{{ "%.0f"|format(w.worst_player.points) }}</span>{% endif %}</span>
+    </summary>
+    <div class="dt-detail">
+      <div class="dt-tables">
+        {# The best legal lineup from EVERY player rostered anywhere in the
+           league that week -- not a per-manager comparison table -- since
+           that's what best answers "who got the most out of a roster" at a
+           glance: the ceiling, not a leaderboard of every team's own numbers. #}
+        {% set totw = w.team_of_week %}
+        {% include "_team_of_week.html" %}
+      </div>
+    </div>
+  </details>
+  {% endfor %}
+</div>
+</div>
+{% endif %}

@@ -6,6 +6,8 @@
    scores; on a finished season `live` is False and it is a plain week browser. #}
 {% import "_chartmacro.html" as ch with context %}
 {% import "_ident.html" as idm with context %}
+{% import "_lazy.html" as lz %}
+{% set part_qs = "?league=" ~ league|urlencode ~ "&season=" ~ season|urlencode ~ "&theme=" ~ theme ~ "&week=" ~ week %}
 <div class="rowhead">
   <h2>
     {% if live and is_current %}Current week{% else %}Week detail{% endif %}
@@ -77,16 +79,9 @@
   <img src="/chart/week_matchups?league={{ league }}&season={{ season }}&week={{ week }}&theme={{ theme }}&_={{ bust }}"
        alt="Week {{ week }} matchups" loading="lazy">
 </figure>
-{% include "_week_scoreboard.html" %}
+{{ lz.lazy("/tab/weekly/part/scoreboard" ~ part_qs, height="200px") }}
 
-<h3>Team of the Week</h3>
-<p class="hint">The best legal lineup buildable from EVERY player rostered anywhere in the
-   league this week &mdash; bench included, any team &mdash; against the week&rsquo;s real
-   scores above. A star marks anyone who was actually benched by their real team.</p>
-<div class="card tablewrap">
-  {% set totw = team_of_week %}
-  {% include "_team_of_week.html" %}
-</div>
+{{ lz.lazy("/tab/weekly/part/totw" ~ part_qs, height="220px") }}
 
 <h2>Week {{ week }} in context</h2>
 <p class="hint">Was the result deserved? On the left a team <strong>below</strong> the diagonal
@@ -101,7 +96,4 @@
   {{ ch.chart("week_race", week=week) }}
 </div>
 
-<div class="reportpanel">
-  {% include "_week_transactions.html" %}
-  {% include "_week_fa.html" %}
-</div>
+{{ lz.lazy("/tab/weekly/part/moves" ~ part_qs, height="320px") }}

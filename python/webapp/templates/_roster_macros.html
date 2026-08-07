@@ -1,0 +1,48 @@
+{# Shared by tab_roster.html's fast response and its lazy /tab/roster/part/*
+   sections (see app.py's TAB_PARTS) -- promoted out of tab_roster.html so
+   both can include it instead of only the tab that happens to render first. #}
+{% import "_chartmacro.html" as ch with context %}
+{% import "_ident.html" as idm with context %}
+{# Charts are split across spots on this tab rather than one block up top --
+   each group sits beside the table it's actually the picture of (see
+   app.py's roster branch for which chart maps to which table). `manager`
+   has no manager param on the shared ch.chart() macro, so a manager-scoped
+   view renders its own <img manager=...> tags instead, same as every other
+   manager-scoped chart in this app. #}
+{% macro chartgrid(names) %}
+{% if names %}
+<section class="grid">
+  {% if manager %}
+  {% for c in names %}
+  <figure class="card chart{% if CHART_META.get(c, {}).wide %} wide{% endif %}">
+    <img src="/chart/{{ c }}?league={{ league }}&season={{ season }}&theme={{ theme }}&manager={{ manager|urlencode }}&_={{ bust }}"
+         alt="{{ CHART_META.get(c, {}).cap or c }}" loading="lazy">
+    {%- if CHART_META.get(c, {}).cap %}<figcaption>{{ CHART_META[c].cap }}</figcaption>{%- endif %}
+  </figure>
+  {% endfor %}
+  {% else %}
+  {% for c in names %}{{ ch.chart(c) }}{% endfor %}
+  {% endif %}
+</section>
+{% endif %}
+{% endmacro %}
+{% macro roster_players_table(r) %}
+<table class="dt-games">
+  <thead><tr>
+    <th>Player</th><th class="n">Wks</th>
+    <th class="n">Pts</th><th class="n">PPG</th><th class="n">Bench pts</th>
+  </tr></thead>
+  <tbody>
+  {% for p in r.players %}
+    <tr>
+      <td>{{ idm.headshot(p.player_id) }}<strong>{{ p.player_name }}</strong>
+          {% if p.pos_rank %}<span class="q">{{ p.position }} #{{ p.pos_rank }}</span>{% else %}<span class="q">{{ p.position }}</span>{% endif %}</td>
+      <td class="n">{{ p.weeks }}</td>
+      <td class="n">{{ "%.1f"|format(p.started_pts) }}</td>
+      <td class="n">{{ "%.1f"|format(p.ppg) }}</td>
+      <td class="n">{{ "%.1f"|format(p.bench_pts) }}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endmacro %}

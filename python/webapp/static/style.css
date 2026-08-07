@@ -204,23 +204,40 @@ h3 { font-size: 15px; margin: 0 0 2px; }
 figure { margin: 0; }
 img { display: block; width: 100%; height: auto; border-radius: 7px; }
 
-/* Per-chart loading skeleton. A chart is a server-rendered PNG with no width
-   until it arrives, so while a figure carries `.skeleton` it reserves height and
-   shows a shimmer; the image fades in once it loads. Wired up in index.html on
-   every htmx swap, so no per-chart markup is needed. */
-.card.chart.skeleton { min-height: 300px; position: relative;
+/* Shared shimmer look for anything that's still loading -- a chart (a
+   server-rendered PNG with no width until it arrives) or a lazy tab SECTION
+   (a heavier table/drilldown deferred behind its own hx-get, see _lazy.html
+   and .lazysec below). One base rule so both stay visually identical rather
+   than drifting into two different "loading" looks. */
+.skeleton { position: relative;
   background: linear-gradient(100deg,
       var(--line) 20%,
       color-mix(in srgb, var(--line) 45%, var(--surface)) 45%,
       var(--line) 70%);
   background-size: 220% 100%; animation: shimmer 1.3s ease-in-out infinite; }
+@keyframes shimmer { 0% { background-position: 220% 0; } 100% { background-position: -120% 0; } }
+@media (prefers-reduced-motion: reduce) { .skeleton { animation: none; } }
+
+/* Per-chart loading skeleton. While a figure carries `.skeleton` it reserves
+   height and shows the shimmer; the image fades in once it loads. Wired up in
+   index.html on every htmx swap, so no per-chart markup is needed. */
+.card.chart.skeleton { min-height: 300px; }
 .card.chart img { opacity: 0; transition: opacity .3s ease; }
 .card.chart img.loaded { opacity: 1; }
 /* Per-chart insight caption, interspersed with each graphic. */
 .card.chart figcaption { color: var(--muted); font-size: 12.5px; line-height: 1.45;
   margin-top: 8px; padding: 0 4px 2px; }
-@keyframes shimmer { 0% { background-position: 220% 0; } 100% { background-position: -120% 0; } }
-@media (prefers-reduced-motion: reduce) { .card.chart.skeleton { animation: none; } }
+
+/* A lazy tab SECTION: a heavier table/drilldown (per-manager, per-week, draft
+   board, etc.) deferred behind its own hx-get="/tab/<name>/part/<part>"
+   (built by the `lz.lazy()` macro, _lazy.html) rather than blocking the whole
+   tab's first paint on every manager/week loop finishing. htmx's own
+   hx-swap="outerHTML" replaces this placeholder with the real fragment on
+   arrival -- no JS needed, unlike the chart <img> case (which needs the class
+   toggled off manually since <img> loading isn't an htmx concern). Height is
+   set inline per call site (`lz.lazy(url, height=...)`) to roughly match
+   what's coming, so the page doesn't jump much when it swaps in. */
+.lazysec.skeleton { border-radius: 12px; }
 
 /* align-items: start -- grid items default to stretch, so a short chart next
    to a taller one in the same row was stretched to match it, leaving dead

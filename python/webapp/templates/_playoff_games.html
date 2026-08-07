@@ -1,0 +1,18 @@
+{# "Games" section: the whole postseason as one round-grouped game log, each
+   game expanding to both submitted lineups. Deferred behind
+   /tab/playoffs/part/games (see app.py's TAB_PARTS) since sm.game_log()
+   builds that full lineup breakdown for every postseason game -- see
+   tab_playoffs.html, which renders this fragment's placeholder. #}
+{% import "_ident.html" as idm with context %}
+<h2>Games</h2>
+{% if log %}
+<p class="hint">Every postseason game, grouped by round with its week. Each row is the
+   scoreboard &mdash; open it for both lineups, slot by slot. Byes advanced without playing
+   (their real weekly score is shown for reference). The <strong>toilet bowl</strong> &mdash;
+   games between teams that missed the bracket &mdash; is bracketed here too, as its own group.</p>
+{% for grp in log %}
+{% include "_playoff_round.html" %}
+{% endfor %}
+{% else %}
+<p class="empty">No games have been played in this bracket yet.</p>
+{% endif %}

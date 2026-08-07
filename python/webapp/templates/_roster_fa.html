@@ -1,0 +1,33 @@
+{# "Best lineup vs. the best available free agents" section. Deferred behind
+   /tab/roster/part/fa (see app.py's TAB_PARTS) -- free_agent_best_team_season()
+   re-solves an optimal lineup for every week of the season. League-only (see
+   tab_roster.html: the lazy placeholder for this part isn't even emitted in
+   manager-scoped view). #}
+{% import "_chartmacro.html" as ch with context %}
+{% if fa_season %}
+<div class="rowhead">
+  <h2>Best lineup vs. the best available free agents</h2>
+  <div class="rowhead-actions">
+    {# Per-week detail (both this comparison and the free-agents-not-picked-up
+       list) lives only on the Weekly tab -- it would otherwise be identical
+       content rendered a second time here. Activates the Weekly nav button so
+       the tab strip tracks it, same pattern Overview uses for this same link. #}
+    <button type="button" class="ghost"
+            onclick="[...document.querySelectorAll('.tabs button')].find(b=>b.getAttribute('hx-get')==='/tab/weekly').click()">
+      Week-by-week detail &rarr;</button>
+  </div>
+</div>
+<p class="hint">Not "did they work the wire" (that&rsquo;s the Transactions tab) but "would even
+   PERFECT lineup-setting have been enough" &mdash; each manager&rsquo;s own best possible lineup
+   (bench included), summed across every week, against a lineup built entirely from that
+   week&rsquo;s free agents &mdash; <strong>{{ "%.0f"|format(fa_season.total) }} points</strong> over
+   {{ fa_season.weeks }} weeks. Each dot&rsquo;s label counts how many of those weekly
+   free-agent lineups would have outscored that manager&rsquo;s own OPTIMAL lineup.</p>
+{# A dedicated table used to sit beside this chart, but the dot plot already
+   carries every number the table did (points, gap vs the dashed reference
+   line, weeks beaten) -- once the chart itself was fixed to show that
+   honestly, the table was pure duplication rather than a second view. #}
+<section class="grid">
+  {{ ch.chart("fa_season_optimal") }}
+</section>
+{% endif %}

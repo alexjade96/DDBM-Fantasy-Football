@@ -5,7 +5,7 @@ from dataclasses import dataclass, field
 
 import pandas as pd
 
-from .api import sleeper_api
+from .api import sleeper_api, sleeper_api_many
 from .league import league_chain, starter_slots
 from .players import players
 
@@ -284,8 +284,20 @@ def assemble_season(link: dict) -> Season:
     slots = starter_slots(link["roster_positions"])
     pinfo = players()
 
-    users_raw = sleeper_api(f"/league/{lid}/users")
-    rosters_raw = sleeper_api(f"/league/{lid}/rosters")
+    # users/rosters plus every week's matchups/transactions are all independent
+    # of each other, so fetch them in one concurrent batch instead of one
+    # sequential round trip at a time -- this is what used to make assembling a
+    # 17-week season ~37 sequential Sleeper calls (tens of seconds) before any
+    # of a tab's content could render. Row order below is rebuilt by zipping
+    # against `range(1, lw + 1)` in ascending order regardless of which
+    # request actually completed first, so the resulting frames are identical
+    # to what the old sequential loops produced.
+    matchup_paths = [f"/league/{lid}/matchups/{wk}" for wk in range(1, lw + 1)]
+    tx_paths = [f"/league/{lid}/transactions/{wk}" for wk in range(1, lw + 1)]
+    users_raw, rosters_raw, *rest = sleeper_api_many(
+        [f"/league/{lid}/users", f"/league/{lid}/rosters", *matchup_paths, *tx_paths])
+    matchups_by_week = rest[:lw]
+    tx_by_week = rest[lw:]
     by_id = {u["user_id"]: _account(u) for u in users_raw}
     user_map = pd.DataFrame([
         {"roster_id": r["roster_id"], "user_id": r.get("owner_id"),
@@ -303,8 +315,8 @@ def assemble_season(link: dict) -> Season:
     ], columns=_ACCT_COLS)
 
     tw_rows, pl_rows = [], []
-    for wk in range(1, lw + 1):
-        for m in sleeper_api(f"/league/{lid}/matchups/{wk}"):
+    for wk, matchups in zip(range(1, lw + 1), matchups_by_week):
+        for m in matchups:
             tw_rows.append({"week": wk, "roster_id": m["roster_id"],
                             "matchup_id": m.get("matchup_id"),
                             "points": m.get("points") or 0.0})
@@ -317,8 +329,8 @@ def assemble_season(link: dict) -> Season:
                                 "is_starter": pid in starters})
 
     tx_rows = []
-    for wk in range(1, lw + 1):
-        for t in sleeper_api(f"/league/{lid}/transactions/{wk}"):
+    for wk, txs in zip(range(1, lw + 1), tx_by_week):
+        for t in txs:
             tid, typ, status = (t.get("transaction_id"), t.get("type"),
                                 t.get("status"))
             for kind, col in (("add", "adds"), ("drop", "drops")):

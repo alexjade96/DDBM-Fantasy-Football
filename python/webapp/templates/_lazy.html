@@ -1,0 +1,10 @@
+{# One shared placeholder for every deferred tab section (see app.py's
+   TAB_PARTS registry + tab_part() route). htmx's own hx-swap="outerHTML"
+   replaces this div with the real fragment once it arrives -- no JS needed
+   (contrast the chart <img> skeleton in index.html/style.css, which needs a
+   manual class toggle since <img> loading isn't an htmx concern). `height`
+   just keeps the page from jumping much when the real content swaps in. #}
+{% macro lazy(url, height='220px') %}
+<div class="lazysec skeleton" style="min-height: {{ height }}"
+     hx-get="{{ url }}" hx-trigger="load" hx-swap="outerHTML"></div>
+{% endmacro %}

@@ -1,0 +1,29 @@
+{# Career tab: the league across every season on record. Split out of the
+   generic tab_charts.html (still used, unmodified, by /load's overview-lite
+   shell) so this tab's three heavy cross-season sections can be deferred
+   behind their own lazy fetches without /load's response -- which never sets
+   `records`/`po_charts`/`managers` -- growing three placeholders of its own.
+   See app.py's TAB_PARTS. #}
+{% import "_chartmacro.html" as ch with context %}
+{% import "_lazy.html" as lz %}
+{% set part_qs = "?league=" ~ league|urlencode ~ "&season=" ~ season|urlencode ~ "&theme=" ~ theme %}
+{% if summary %}
+<section class="card prose">
+  {{ summary | md }}
+</section>
+{% endif %}
+
+{{ lz.lazy("/tab/career/part/records" ~ part_qs, height="140px") }}
+
+{# charts_intro is an author-written constant (see the career handler), never
+   user input, so rendering its markup is safe. #}
+{% if charts_intro %}<p class="hint">{{ charts_intro | safe }}</p>{% endif %}
+<section class="grid">
+  {% for c in charts %}{{ ch.chart(c) }}{% endfor %}
+</section>
+
+{% if has_playoffs %}
+{{ lz.lazy("/tab/career/part/postseason" ~ part_qs, height="260px") }}
+{% endif %}
+
+{{ lz.lazy("/tab/career/part/managers" ~ part_qs, height="220px") }}
