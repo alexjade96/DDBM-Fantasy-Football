@@ -1,8 +1,5 @@
 {# Transactions tab: the roster-building charts, then the deals themselves --
-   every trade kept intact as a deal, and the waiver wire by what it returned --
-   then what was left unclaimed (fa_season, actual-points framing: value left
-   on the wire). The OPTIMAL-lineup framing of that same computation lives on
-   Coaching instead (a lineup-decision question, not an acquisition one). #}
+   every trade kept intact as a deal, and the waiver wire by what it returned. #}
 {% import "_chartmacro.html" as ch with context %}
 {% import "_ident.html" as idm with context %}
 {% import "_lazy.html" as lz %}
@@ -24,20 +21,19 @@
 {% endif %}
 
 <p class="hint">Who shaped their roster, and whether it paid off &mdash; each chart&rsquo;s
-   takeaway is noted beneath it. For <strong>Traded Players</strong>, value counts points a
-   player returned <em>while on that roster</em>, so a star flipped early scores low and a
-   long-held pickup who started all year scores high &mdash; the same measure the waiver chart
-   below uses.</p>
+   takeaway is noted beneath it. Value throughout counts points a player returned
+   <em>while on that roster</em>, so a star flipped early scores low and a long-held pickup
+   who started all year scores high &mdash; the same measure the deal cards and waiver table
+   below use.</p>
 <section class="grid">
   {% for c in charts %}{{ ch.chart(c) }}{% endfor %}
 </section>
 
 <h2>Trades</h2>
 {% if deals %}
-{# The chart sits directly above its own table, same convention as
-   waiver_performance above the Waiver wire table below -- not up in the
-   general chart grid, where the relationship read as coincidental. #}
-{{ ch.chart("trade_performance") }}
+{# Sits directly above the deal cards -- not up in the general chart grid,
+   where the relationship read as coincidental. #}
+{{ ch.chart("trade_player_rates") }}
 <p class="hint">{{ n_deals }} trade{{ "" if n_deals == 1 else "s" }} in {{ season }}, one
    card per deal. Each side lists every player they <strong>received</strong> individually,
    with the points he's scored <em>for them</em> since the trade &mdash; so each player
@@ -91,5 +87,3 @@
 {% endif %}
 
 {{ lz.lazy("/tab/transactions/part/waivers" ~ part_qs, height="280px") }}
-
-{{ lz.lazy("/tab/transactions/part/fa" ~ part_qs, height="260px") }}

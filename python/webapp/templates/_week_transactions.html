@@ -78,7 +78,7 @@
     <tbody>
     {% for r in week_tx.waivers %}
       <tr>
-        <td>{{ idm.headshot(r.player_id) }}{{ r.player_name }}{% if r.times > 1 %}
+        <td data-sort="{{ r.player_name }}">{{ idm.headshot(r.player_id) }}{{ r.player_name }}{% if r.times > 1 %}
             <span class="q">&times;{{ r.times }}</span>{% endif %} {{ idm.posrank(r.player_id) }}</td>
         <td>{{ r.position }}</td>
         <td class="trend-col">

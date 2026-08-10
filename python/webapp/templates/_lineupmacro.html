@@ -19,12 +19,19 @@
    `bench_flag`/`bench_flag_title` name which boolean field on each bench row
    marks it (the wording and the field itself differ between an Actual panel's
    "would have outscored a starter" and an Optimized panel's "was benched to
-   make room for this pick", so both are passed in rather than hardcoded). #}
+   make room for this pick", so both are passed in rather than hardcoded).
+
+   `nosort`: this is a fixed-slot box score (QB, RB1, RB2, ...), not a
+   ranking, and its colspan title/total header (2 <th>s) doesn't line up
+   1:1 with the 3 <td>s each body row actually has -- #panel's generic
+   "make every table sortable" pass would otherwise wire a header click to
+   the WRONG column (e.g. the total-points header would sort the Player
+   column instead). #}
 {% import "_ident.html" as idm with context %}
 {% macro lineup_table(title_html, total_fmt, rows, bench=None, bench_flag=None,
                        bench_flag_title="", show_id=True,
                        empty_text="No lineup recorded.") %}
-<table class="dt-games">
+<table class="dt-games nosort">
   <thead><tr>
     <th colspan="2">{{ title_html }}</th>
     <th class="n">{{ total_fmt }}</th>

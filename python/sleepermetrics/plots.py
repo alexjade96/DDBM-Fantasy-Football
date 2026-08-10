@@ -11,7 +11,7 @@ from . import headshots, metrics  # noqa: E402
 from .season import Season  # noqa: E402
 
 
-def _identity_rows(ax, labels, images, zoom=0.30, gap_pt=6):
+def _identity_rows(ax, labels, images, zoom=0.30, gap_pt=13, ys=None):
     """Icon-then-name axis: every row reads [icon] name  |  bar.
 
     The names stay real tick labels (so nothing has to re-implement them) but are
@@ -19,6 +19,11 @@ def _identity_rows(ax, labels, images, zoom=0.30, gap_pt=6):
     their left. Finding where that column starts needs the *rendered* label
     width, so this draws once and measures rather than guessing from character
     counts.
+
+    `ys` overrides the default one-row-per-integer placement (`range(len(labels))`)
+    -- needed by any chart that spaces rows non-uniformly (e.g. a gap between
+    grouped rows); it must already match whatever y-coordinates the caller drew
+    its marks at, since this function doesn't touch the data series.
 
     Best-effort: a row with no image keeps its plain name, and if nothing loaded
     at all the axis is left exactly as it was.
@@ -28,7 +33,8 @@ def _identity_rows(ax, labels, images, zoom=0.30, gap_pt=6):
     if not any(im is not None for im in images):
         return
     fig = ax.figure
-    ax.set_yticks(range(len(labels)))
+    ys = list(ys) if ys is not None else list(range(len(labels)))
+    ax.set_yticks(ys)
     ax.set_yticklabels(labels)
     for t in ax.get_yticklabels():
         t.set_ha("left")
@@ -37,11 +43,11 @@ def _identity_rows(ax, labels, images, zoom=0.30, gap_pt=6):
     pad = maxw_px * 72.0 / fig.dpi + gap_pt   # px -> pt: where the name column starts
     ax.tick_params(axis="y", pad=pad)
     tr = blended_transform_factory(ax.transAxes, ax.transData)  # x=axes, y=data
-    for i, img in enumerate(images):
+    for y, img in zip(ys, images):
         if img is None:
             continue
         # 7.4pt clear of the name column -- matches the R side's 2.6mm.
-        ab = AnnotationBbox(OffsetImage(img, zoom=zoom), (0, i), xycoords=tr,
+        ab = AnnotationBbox(OffsetImage(img, zoom=zoom), (0, y), xycoords=tr,
                             xybox=(-(pad + 7.4), 0), boxcoords="offset points",
                             frameon=False, box_alignment=(1.0, 0.5),
                             pad=0, annotation_clip=False)
@@ -49,11 +55,11 @@ def _identity_rows(ax, labels, images, zoom=0.30, gap_pt=6):
         ax.add_artist(ab)
 
 
-def _portraits(ax, labels, ids, positions, zoom=0.30):
+def _portraits(ax, labels, ids, positions, zoom=0.30, ys=None):
     """Icon-then-name axis for a player chart (token = the player's headshot)."""
     _identity_rows(ax, list(labels),
                    [headshots.load(pid, pos, size=72) for pid, pos in zip(ids, positions)],
-                   zoom=zoom)
+                   zoom=zoom, ys=ys)
 
 # Validated against the project's categorical color checker (adjacent-pair CVD
 # deltaE >= 8, chroma floor, light+dark contrast) -- the old tab10 set failed
@@ -565,10 +571,10 @@ def plot_consistency(s: Season):
 
 def _plot_fa_season_bar(s: Season, r: dict, pts_key: str, weeks_key: str,
                         title: str, subtitle: str):
-    """Shared Cleveland dot plot for plot_fa_season/plot_fa_season_optimal:
-    each manager's total (either actual or their own optimal-lineup total)
-    against the season-long best-possible free-agent lineup total (dashed
-    line). A zero-based bar wasted most of its own axis here too (season
+    """Cleveland dot plot backing plot_fa_season_optimal: each manager's
+    own optimal-lineup total against the season-long best-possible
+    free-agent lineup total (dashed line). A zero-based bar wasted most of
+    its own axis here too (season
     totals cluster tightly relative to a from-zero scale) -- same fix as
     `plot_efficiency`, zoomed to the combined range of every manager's total
     AND the free-agent reference total, so the dashed line is never pushed
@@ -609,26 +615,11 @@ def _plot_fa_season_bar(s: Season, r: dict, pts_key: str, weeks_key: str,
     return _finish(fig, ax, title, subtitle, "Season Points", caption=_cap(s))
 
 
-def plot_fa_season(s: Season):
-    """Every manager's ACTUAL season points against the season-long best-
-    possible free-agent lineup total -- "what if you'd drafted the waiver
-    wire every week", summed. Reads as value left on the wire -- the
-    Transactions tab's complement to the Waiver wire table.
-    """
-    r = metrics.free_agent_best_team_season(s)
-    if not r or not r["teams"]:
-        return _no_data(f"No free-agent data for {s.season}.")
-    return _plot_fa_season_bar(
-        s, r, "points", "weeks_beaten",
-        f"{s.season} vs the Best Available Free-Agent Team",
-        "Season points per manager  ·  dashed line = a lineup built ENTIRELY from free agents, every week")
-
-
 def plot_fa_season_optimal(s: Season):
     """Every manager's OWN BEST POSSIBLE lineup (bench included), summed
     across the season, against the same free-agent total -- would even
     perfect coaching have beaten the wire. Coaching tab's complement to the
-    efficiency chart, not a restatement of `plot_fa_season`'s actual totals.
+    efficiency chart, not a restatement of managers' actual season totals.
     """
     r = metrics.free_agent_best_team_season(s)
     if not r or not r["teams"]:
@@ -1248,6 +1239,338 @@ def plot_waiver_performance(s: Season, top_n=15):
     return _plot_acq(d[d["player_name"].isin(keep)], s,
                      "Best Waiver & Free-Agent Pickups",
                      "Points managers got from players added off waivers / FA")
+
+
+def _trade_deal_groups(s: Season) -> list:
+    """Traded players (2+ stints) grouped by the trade `transaction_id` that
+    moved them, each group's own rows sorted by swing (`stints[-1].ppg -
+    stints[0].ppg`, biggest first), and the groups themselves ranked by their
+    largest member's swing (most dramatic deal first). Shared foundation for
+    every "trade performance, before vs after" chart variant -- the production
+    chart and the Testing tab's condensing prototypes -- so a change to what
+    counts as one trade only has to happen once.
+    """
+    rows = [r for r in metrics.trade_player_rates(s) if len(r["stints"]) >= 2]
+    for r in rows:
+        r["_swing"] = r["stints"][-1]["ppg"] - r["stints"][0]["ppg"]
+    groups: dict = {}
+    for r in rows:
+        key = r.get("transaction_id") or f"solo:{r['player_id']}"
+        groups.setdefault(key, []).append(r)
+    ranked = sorted(groups.values(),
+                    key=lambda g: max(abs(x["_swing"]) for x in g), reverse=True)
+    return [sorted(g, key=lambda x: x["_swing"], reverse=True) for g in ranked]
+
+
+def _render_trade_rate_chart(picked: list, s: Season, title: str, subtitle: str):
+    """Shared slope-chart renderer for every "before vs after" trade-rate
+    chart variant: bottom-to-top group layout (least important group at the
+    bottom, most important at top), a shaded band around any real
+    multi-player group, end-of-line PPG labels with span-scaled x-margin so
+    they never run off the plot, and a headshot+name axis. Callers own
+    SELECTING which rows go into `picked` (top-N deals, per-deal trimming, a
+    swing threshold, a collapsed "+N others" row...) -- this only knows how
+    to draw whatever it's handed. A row may set `_collapsed` (muted colour
+    regardless of sign) for a synthetic "rest of the trade" summary row.
+    """
+    flat = list(reversed(picked))
+    rows, ys, bounds = [], [], []
+    y = 0.0
+    for gi, g in enumerate(flat):
+        g_lo = y
+        for r in g:
+            rows.append(r)
+            ys.append(y)
+            y += 1
+        if len(g) > 1:
+            bounds.append((g_lo, y - 1))
+        if gi < len(flat) - 1 and (len(g) > 1 or len(flat[gi + 1]) > 1):
+            y += 0.55
+    fig, ax = plt.subplots(figsize=(10, max(4, (ys[-1] + 1) * 0.5)))
+    labels = [r["player_name"] for r in rows]
+    all_ppg = [st["ppg"] for r in rows for st in r["stints"]]
+    lo_ppg, hi_ppg = min(all_ppg), max(all_ppg)
+    span = (hi_ppg - lo_ppg) or 1
+    # Every row's end-of-line label is centered on its LAST stint's PPG, so a
+    # row sitting at (or near) the data's own min/max has nowhere to render
+    # into -- default matplotlib margins aren't sized for that text at all.
+    # Headroom scaled off the actual PPG span (not a fixed number) so it
+    # scales with the chart instead of being too tight on a blowout season
+    # and too loose on a quiet one.
+    ax.set_xlim(lo_ppg - span * 0.12, hi_ppg + span * 0.30)
+    # Shade only the groups that actually ARE a trade (2+ rows) -- a
+    # divider/band on every row would just be visual noise for the
+    # singletons, which don't need separating from anything.
+    for lo, hi in bounds:
+        ax.axhspan(lo - 0.45, hi + 0.45, color=T["grid"], zorder=0)
+    for i, r in zip(ys, rows):
+        ppgs = [st["ppg"] for st in r["stints"]]
+        if r.get("_collapsed"):
+            color = T["muted"]
+        else:
+            color = "#2ca02c" if r["_swing"] > 0 else "#d62728" if r["_swing"] < 0 else T["neutral"]
+        ax.plot(ppgs, [i] * len(ppgs), color=color, lw=2, alpha=0.55, zorder=1)
+        ax.scatter(ppgs[:-1], [i] * (len(ppgs) - 1), color=T["neutral"], s=55,
+                   zorder=2, edgecolors=T["edge"], linewidths=0.5)
+        ax.scatter([ppgs[0]], [i], s=85, zorder=3, marker="o",
+                   facecolors="none", edgecolors=T["ink2"], linewidths=1.6)
+        ax.scatter([ppgs[-1]], [i], color=color, s=85, zorder=3,
+                   edgecolors=T["edge"], linewidths=0.5)
+        # Above the dot, not beside it: a horizontal offset has to pick a
+        # side, and whichever side is "away from the line" flips between
+        # improved (last dot on the right) and declined (last dot on the
+        # left) rows -- for a declined player near x=0, offsetting further
+        # left ran the text straight into the y-axis tick labels. Vertical
+        # placement needs no such case-by-case direction logic.
+        ax.text(ppgs[-1], i + 0.32, f"{r['stints'][-1]['user_name']}: {ppgs[-1]:.1f} ppg",
+                va="bottom", ha="center", fontsize=7.5, color=color, fontweight="bold")
+    # Headroom above the top row only -- its label (at top_row + 0.32) was
+    # landing close enough to the axes edge to collide with _finish's
+    # subtitle, which sits fixed just above it regardless of ylim.
+    ax.set_ylim(-0.6, ys[-1] + 0.85)
+    ax.set_yticks(ys)
+    ax.set_yticklabels(labels, fontsize=8.5)
+    _portraits(ax, labels, [r["player_id"] for r in rows],
+               [r["position"] for r in rows], zoom=0.26, ys=ys)
+    return _finish(fig, ax, title, subtitle, "Points per Game", caption=_cap(s))
+
+
+def plot_trade_player_rates(s: Season, max_trades=15):
+    """Slope chart: each traded player's PPG on every roster that held him,
+    in the order he actually moved through them (`metrics.trade_player_rates`)
+    -- "did his production change after the trade", which
+    `plot_trade_performance`'s TOTAL-points bar can't show since it doesn't
+    normalize for how long each stint lasted.
+
+    Rows are grouped by `transaction_id` (`_trade_deal_groups`), so both
+    players in a swap land next to each other instead of being scattered by
+    their individual swing -- reading "who won this trade" off two adjacent
+    rows is the point. `max_trades` caps the number of DEALS shown, not the
+    number of rows -- capping by row count let one big multi-player
+    blockbuster eat the whole budget and crowd out every other trade of the
+    season (a real 3-team, 9-player deal left room for only one more trade at
+    `top_n=12` players). 15 comfortably covers every season on record (the
+    busiest so far is 11 deals), so in practice this shows the WHOLE season's
+    trades, only trimming an exceptionally active one.
+    """
+    groups = _trade_deal_groups(s)
+    if not groups:
+        return _no_data(f"No traded players with multiple stints in {s.season}.")
+    picked = groups[:max_trades]
+    return _render_trade_rate_chart(
+        picked, s, f"{s.season}: Trade Performance, Before vs After",
+        "PPG by stint  ·  hollow = first, filled = latest  ·  "
+        "green = up, red = down  ·  band = a trade")
+
+
+def plot_trade_rates_top_movers(s: Season, max_trades=15, per_trade=2):
+    """Testing-tab prototype: condensing `plot_trade_player_rates` by
+    trimming each trade to its `per_trade` biggest-swing players before
+    laying out rows, instead of showing every mover. A real multi-player
+    blockbuster still reads as one visible (shaded) trade, just a shorter
+    one -- every deal keeps at least one row, so no trade disappears, only
+    its quietest movers do.
+    """
+    groups = _trade_deal_groups(s)
+    if not groups:
+        return _no_data(f"No traded players with multiple stints in {s.season}.")
+    picked = [g[:per_trade] for g in groups[:max_trades]]
+    return _render_trade_rate_chart(
+        picked, s, f"{s.season}: Trade Performance — Top Movers per Deal",
+        f"Top {per_trade} PPG swings per trade  ·  hollow = first, filled = latest  ·  "
+        "green = up, red = down  ·  band = a trade")
+
+
+def plot_trade_rates_threshold(s: Season, min_swing=3.0):
+    """Testing-tab prototype: instead of capping row/trade COUNT, drops
+    individual movers whose swing is under `min_swing` PPG -- a "wash" that
+    didn't really change is noise regardless of which trade it came from. A
+    trade where every mover falls under the bar disappears entirely (there's
+    no story to tell); one with a mix keeps only its notable movers. Unlike
+    the other variants nothing here is capped by count, so the chart's size
+    tracks how eventful the season's trades actually were, not a fixed
+    budget -- a quiet season renders short on its own.
+    """
+    groups = _trade_deal_groups(s)
+    picked = [kept for g in groups
+              if (kept := [r for r in g if abs(r["_swing"]) >= min_swing])]
+    if not picked:
+        return _no_data(f"No trades moved the needle by {min_swing:.0f}+ PPG in {s.season}.")
+    return _render_trade_rate_chart(
+        picked, s, f"{s.season}: Trade Performance — Notable Swings Only",
+        f"Movers with a {min_swing:.0f}+ PPG swing  ·  hollow = first, filled = latest  ·  "
+        "green = up, red = down  ·  band = a trade")
+
+
+def plot_trade_rates_collapsed(s: Season, max_trades=15, keep=2):
+    """Testing-tab prototype: every trade stays visible, but a deal with more
+    than `keep` movers shows its `keep` biggest swings individually and folds
+    the rest into one muted "+N others" row (their average before/after PPG)
+    -- a middle ground between showing every player (too tall) and trimming
+    quiet movers away entirely (`plot_trade_rates_top_movers`, which loses
+    the sense of how big the trade actually was).
+    """
+    groups = _trade_deal_groups(s)
+    if not groups:
+        return _no_data(f"No traded players with multiple stints in {s.season}.")
+    picked = []
+    for g in groups[:max_trades]:
+        if len(g) <= keep:
+            picked.append(g)
+            continue
+        head, rest = g[:keep], g[keep:]
+        avg_first = sum(r["stints"][0]["ppg"] for r in rest) / len(rest)
+        avg_last = sum(r["stints"][-1]["ppg"] for r in rest) / len(rest)
+        collapsed = {
+            "player_id": None, "player_name": f"+{len(rest)} others",
+            "position": None, "_swing": avg_last - avg_first, "_collapsed": True,
+            "stints": [{"user_name": "avg", "ppg": avg_first},
+                      {"user_name": f"+{len(rest)} others avg", "ppg": avg_last}],
+        }
+        picked.append(head + [collapsed])
+    return _render_trade_rate_chart(
+        picked, s, f"{s.season}: Trade Performance — Top Movers + Rest",
+        f"Top {keep} swings per trade, rest folded into one row  ·  "
+        "hollow = first, filled = latest  ·  band = a trade")
+
+
+def plot_trade_rates_small_multiples(s: Season, max_trades=15, ncols=3):
+    """Testing-tab prototype: one small panel per trade instead of one long
+    list -- every trade and every player stays visible, but height is
+    bounded by rows of PANELS instead of rows of players. Deliberately plain
+    (no headshot/icon column) to see whether the grid layout alone reads
+    well before investing in matching the production chart's polish.
+    """
+    groups = _trade_deal_groups(s)[:max_trades]
+    if not groups:
+        return _no_data(f"No traded players with multiple stints in {s.season}.")
+    # Who was actually IN a given deal comes from the deal record itself, not
+    # from unioning every row's own stint history -- a player traded twice
+    # this season carries an earlier, unrelated trade's manager in his stint
+    # list, and that manager isn't part of THIS deal (shipped: a 3-team trade
+    # mislabelled with a 4th, uninvolved manager pulled in this way).
+    deals_by_txn = {d["transaction_id"]: d for d in metrics.trade_deals(s)}
+    nrows = -(-len(groups) // ncols)
+    fig, axes = plt.subplots(nrows, ncols, figsize=(4.2 * ncols, 2.4 * nrows), squeeze=False)
+    for idx, g in enumerate(groups):
+        ax = axes[idx // ncols][idx % ncols]
+        # Same "shaded band = a trade" language as the other three
+        # prototypes -- a panel boundary alone reads as a grid, not
+        # necessarily "these rows are one deal."
+        ax.set_facecolor(T["grid"])
+        all_ppg = [st["ppg"] for r in g for st in r["stints"]]
+        lo, hi = min(all_ppg), max(all_ppg)
+        span = (hi - lo) or 1
+        for i, r in enumerate(reversed(g)):
+            ppgs = [st["ppg"] for st in r["stints"]]
+            color = "#2ca02c" if r["_swing"] > 0 else "#d62728" if r["_swing"] < 0 else T["neutral"]
+            ax.plot(ppgs, [i] * len(ppgs), color=color, lw=2, alpha=0.6, zorder=1)
+            ax.scatter(ppgs[:-1], [i] * (len(ppgs) - 1), color=T["neutral"], s=28,
+                       zorder=2, edgecolors=T["edge"], linewidths=0.4)
+            ax.scatter([ppgs[0]], [i], s=42, marker="o", facecolors="none",
+                       edgecolors=T["ink2"], linewidths=1.2, zorder=3)
+            ax.scatter([ppgs[-1]], [i], color=color, s=42, zorder=3,
+                       edgecolors=T["edge"], linewidths=0.4)
+        ax.set_yticks(range(len(g)))
+        ax.set_yticklabels([r["player_name"] for r in reversed(g)], fontsize=7)
+        ax.set_xlim(lo - span * 0.15, hi + span * 0.3)
+        deal = deals_by_txn.get(g[0].get("transaction_id"))
+        if deal:
+            managers = sorted({sd["user_name"] for sd in deal["sides"]})
+        else:
+            managers = sorted({st["user_name"] for r in g for st in r["stints"]})
+        title = " ↔ ".join(managers)
+        # Every real manager now that the attribution bug is fixed -- but an
+        # unusually large multi-team deal could still run longer than a
+        # ~4.2in panel, so the font shrinks rather than reintroducing a fixed
+        # name cap (which is what dropped a real participant last time).
+        title_size = 8 if len(title) <= 28 else 6.5
+        ax.set_title(title, fontsize=title_size, fontweight="bold", color=T["ink"], loc="left")
+        ax.tick_params(colors=T["tick"], labelsize=7)
+        for sp in ("top", "right", "left"):
+            ax.spines[sp].set_visible(False)
+        ax.spines["bottom"].set_color(T["spine"])
+        # The panel's own facecolor is now T["grid"] (the shaded-band
+        # colour), so the gridlines need a DIFFERENT tone or they'd vanish
+        # into their own background.
+        ax.grid(axis="x", color=T["spine"], linewidth=0.5)
+        ax.set_axisbelow(True)
+    for idx in range(len(groups), nrows * ncols):
+        axes[idx // ncols][idx % ncols].set_visible(False)
+    fig.suptitle(f"{s.season}: Trade Performance — Small Multiples", x=0.01, ha="left",
+                fontsize=16, fontweight="bold", color=T["ink"])
+    fig.text(0.01, 0.005, f"Every trade, PPG before → after  ·  {_cap(s)}",
+             ha="left", fontsize=8, color=T["muted"])
+    fig.tight_layout(rect=(0, 0.02, 1, 0.95))
+    return fig
+
+
+def plot_waiver_position_churn(s: Season):
+    """Grouped bar: total waiver/FA moves vs. unique players involved, by
+    position -- a position streamed week to week (many moves, few unique
+    players -- K, DEF) reads differently from mostly one-and-done pickups
+    (moves close to unique players -- RB, WR).
+    """
+    d = metrics.waiver_position_churn(s)
+    if d.empty:
+        return _no_data(f"No waiver/FA activity in {s.season}.")
+    d = d.set_index("position").reindex(POSITIONS).fillna(0)
+    x = list(range(len(POSITIONS)))
+    w = 0.36
+    fig, ax = plt.subplots(figsize=(9, 6))
+    ax.bar([i - w / 2 for i in x], d["moves"], width=w,
+           color=[POS_COLORS[p] for p in POSITIONS], label="Total moves", zorder=2)
+    ax.bar([i + w / 2 for i in x], d["unique_players"], width=w, alpha=0.4,
+           color=[POS_COLORS[p] for p in POSITIONS], label="Unique players", zorder=2)
+    for i, p in enumerate(POSITIONS):
+        ax.text(i - w / 2, d.loc[p, "moves"] + 0.6, f"{int(d.loc[p, 'moves'])}",
+                ha="center", fontsize=8, color=T["ink2"])
+        ax.text(i + w / 2, d.loc[p, "unique_players"] + 0.6,
+                f"{int(d.loc[p, 'unique_players'])}", ha="center", fontsize=8, color=T["muted"])
+    ax.set_xticks(x)
+    ax.set_xticklabels(POSITIONS)
+    # Headroom + upper-left (not upper-right): whichever position gets
+    # streamed hardest varies by league/season, and a tall bar under a
+    # fixed upper-right legend collided with it (2025: DEF's "51" label
+    # rendered right through the legend box).
+    ax.set_ylim(0, max(d["moves"].max(), d["unique_players"].max()) * 1.22)
+    ax.legend(loc="upper left", frameon=False, fontsize=9)
+    return _finish(fig, ax, f"{s.season}: Waiver-Wire Streaming by Position",
+                   "Solid = total add moves, faded = unique players  ·  "
+                   "a big gap means that spot got streamed, not just filled once",
+                   "Position", "Count", caption=_cap(s), grid_axis="y")
+
+
+def plot_waiver_activity(s: Season):
+    """Line per manager: cumulative waiver/FA adds through each week
+    (`metrics.waiver_activity_over_time`) -- who's constantly working the
+    wire and WHEN, distinct from total value (`plot_waiver_value`) or which
+    positions get streamed (`plot_waiver_position_churn`).
+    """
+    d = metrics.waiver_activity_over_time(s)
+    if d.empty:
+        return _no_data(f"No waiver/FA activity in {s.season}.")
+    last_wk = int(d["week"].max())
+    final = d[d["week"] == last_wk].set_index("user_name")["moves"]
+    order = final.sort_values(ascending=False).index.tolist()
+    pal = palette(order)
+    fig, ax = plt.subplots(figsize=(10, 6.4))
+    weeks = sorted(d["week"].unique())
+    for nm in order:
+        g = d[d["user_name"] == nm].sort_values("week")
+        ax.plot(g["week"], g["moves"], color=pal[nm], lw=2, alpha=0.85, zorder=2)
+        ax.scatter(g["week"], g["moves"], color=pal[nm], s=24, zorder=3)
+    ax.set_xticks(weeks)
+    fig = _finish(fig, ax, f"{s.season}: Waiver-Wire Activity Over Time",
+                  "Cumulative waiver/FA adds through each week, by manager",
+                  "Week", "Cumulative Adds", caption=_cap(s), grid_axis="y")
+    # A fixed offset (as plot_table_position uses) prints one label straight
+    # through another whenever two managers end the season tied on adds --
+    # real here (2025: two pairs tied), so this needs the same collision
+    # solver the Weekly tab's scatter charts use, not a bespoke fix.
+    _place_labels(fig, ax, [last_wk] * len(order), [final[nm] for nm in order],
+                  [f"{nm} ({int(final[nm])})" for nm in order])
+    return fig
 
 
 def plot_loyalty(seasons: dict, top_n: int = 14, min_seasons: int = 2):

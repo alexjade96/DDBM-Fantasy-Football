@@ -39,7 +39,7 @@
       {% for r in gems %}
         <tr>
           <td>{{ r.pick }}</td>
-          <td>{{ idm.headshot(r.player_id) }}{{ r.player_name }}
+          <td data-sort="{{ r.player_name }}">{{ idm.headshot(r.player_id) }}{{ r.player_name }}
               {% if r.pos_rank %}<span class="q">{{ r.position }} #{{ r.pos_rank }}</span>{% else %}<span class="q">{{ r.position }}</span>{% endif %}
               {% if r.mixed %}<span class="tag mixed" title="What this team actually banked from him tells a different story -- see the draft board for both numbers.">mixed</span>{% endif %}</td>
           <td>{{ idm.who(r.user_name) }}</td>
@@ -66,7 +66,7 @@
       {% for r in busts %}
         <tr>
           <td>{{ r.pick }}</td>
-          <td>{{ idm.headshot(r.player_id) }}{{ r.player_name }}
+          <td data-sort="{{ r.player_name }}">{{ idm.headshot(r.player_id) }}{{ r.player_name }}
               {% if r.pos_rank %}<span class="q">{{ r.position }} #{{ r.pos_rank }}</span>{% else %}<span class="q">{{ r.position }}</span>{% endif %}
               {% if r.mixed %}<span class="tag mixed" title="What this team actually banked from him tells a different story -- see the draft board for both numbers.">mixed</span>{% endif %}</td>
           <td>{{ idm.who(r.user_name) }}</td>
@@ -92,7 +92,7 @@
         <tbody>
         {% for r in undrafted %}
           <tr>
-            <td>{{ idm.headshot(r.player_id) }}{{ r.player_name }}
+            <td data-sort="{{ r.player_name }}">{{ idm.headshot(r.player_id) }}{{ r.player_name }}
                 {% if r.pos_rank %}<span class="q">{{ r.position }} #{{ r.pos_rank }}</span>{% else %}<span class="q">{{ r.position or "—" }}</span>{% endif %}
                 {% if r.teams and r.teams > 1 %}<span class="q">&times;{{ r.teams }} teams</span>{% endif %}</td>
             <td>{{ idm.who(r.user_name) }}</td>

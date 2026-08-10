@@ -187,7 +187,7 @@ TABS = [
     ("overview", "Season overview"), ("weekly", "Weekly trends"),
     ("playoffs", "Playoffs"), ("roster", "Roster"), ("draft", "Draft"),
     ("transactions", "Transactions"), ("career", "Career"),
-    ("report", "Season report"),
+    ("report", "Season report"), ("testing", "Testing"),
 ]
 
 # --- cache ----------------------------------------------------------------
@@ -377,7 +377,7 @@ def png(fig) -> Response:
 SEASON_CHARTS = {
     "standings": plots.plot_standings, "luck": plots.plot_luck,
     "efficiency": plots.plot_efficiency, "consistency": plots.plot_consistency,
-    "fa_season": plots.plot_fa_season, "fa_season_optimal": plots.plot_fa_season_optimal,
+    "fa_season_optimal": plots.plot_fa_season_optimal,
     "pf_pa": plots.plot_pf_pa, "table_position": plots.plot_table_position,
     "team_points": plots.plot_team_points,
     "allplay": plots.plot_allplay, "power_rank": plots.plot_power_rank,
@@ -390,6 +390,13 @@ SEASON_CHARTS = {
     "roster_counts": plots.plot_roster_counts,
     "trade_performance": plots.plot_trade_performance,
     "waiver_performance": plots.plot_waiver_performance,
+    "trade_player_rates": plots.plot_trade_player_rates,
+    "trade_rates_top_movers": plots.plot_trade_rates_top_movers,
+    "trade_rates_threshold": plots.plot_trade_rates_threshold,
+    "trade_rates_collapsed": plots.plot_trade_rates_collapsed,
+    "trade_rates_small_multiples": plots.plot_trade_rates_small_multiples,
+    "waiver_position_churn": plots.plot_waiver_position_churn,
+    "waiver_activity": plots.plot_waiver_activity,
     "boom_bust": plots.plot_boom_bust, "sos": plots.plot_sos,
     "schedule_swap": plots.plot_schedule_swap,
     "draft_value": plots.plot_draft_value,
@@ -455,7 +462,13 @@ CHART_META = {
     "tx_volume": {"cap": "How busy the league was, and when — trades vs. waiver/FA moves by week."},
     "trade_performance": {"cap": "Every traded player by the points he returned while rostered."},
     "waiver_performance": {"cap": "Every waiver or free-agent pickup by points returned while rostered."},
-    "fa_season": {"cap": "What every manager's ACTUAL season points left on the table, against the best available free agents."},
+    "trade_player_rates": {"cap": "Traded players' PPG before vs. after the deal, in order."},
+    "trade_rates_top_movers": {"cap": "Prototype: only each trade's biggest movers, so one big trade can't crowd out the rest."},
+    "trade_rates_threshold": {"cap": "Prototype: only swings that actually moved the needle, whatever the trade."},
+    "trade_rates_collapsed": {"cap": "Prototype: every trade's top movers, with the rest folded into one row."},
+    "trade_rates_small_multiples": {"cap": "Prototype: one small panel per trade instead of one long list.", "wide": True},
+    "waiver_position_churn": {"cap": "Which positions get streamed on the wire vs. picked up once."},
+    "waiver_activity": {"cap": "Cumulative waiver/FA moves per manager, week by week."},
     # Draft
     "draft_value": {"cap": "Roster points each pick returned to the team that drafted him."},
     "draft_grades_value": {"cap": "Sorted by roster points actually kept — a long red line is value that got traded or dropped away before it counted."},
@@ -469,6 +482,20 @@ CHART_META = {
     "week_race": {"cap": "Table position after each week — where lines cross, the lead changed."},
 }
 tpl.env.globals["CHART_META"] = CHART_META
+
+# Testing tab: ad-hoc prototype charts under review, grouped by what existing
+# chart they're a proposed alternative/addition to -- a holding area for
+# "what if we tried..." requests so they're visible and clickable without
+# committing them to a real tab first. To add one: write the chart function
+# (SEASON_CHARTS + CHART_META entries, same as any other chart) and list its
+# key in a group here; nothing else needs touching. Remove the key (and the
+# chart function, if it's been rejected) once a prototype's fate is decided.
+TESTING_CHARTS = [
+    ("Trade Performance, Before vs After — condensing the elongated chart", [
+        "trade_rates_top_movers", "trade_rates_threshold",
+        "trade_rates_collapsed", "trade_rates_small_multiples",
+    ]),
+]
 
 
 @app.get("/chart/{name}")
@@ -1370,6 +1397,13 @@ def tab(name: str, request: Request, league: str = DEFAULT_LEAGUE,
             "n_rules": len(p.config.get("scoring_settings", {})),
         })
         return _pushed(tpl.TemplateResponse(request, "tab_playoffs.html", ctx), ctx, name)
+    elif name == "testing":
+        # Every chart in TESTING_CHARTS is cheap enough (bounded by move/deal
+        # count, not weeks) to render eagerly here -- no lazy @tab_part split
+        # needed, unlike the tabs above with a genuinely heavy section.
+        ctx["seasons"] = list(reversed(d["names"]))
+        ctx["testing_charts"] = TESTING_CHARTS
+        return _pushed(tpl.TemplateResponse(request, "tab_testing.html", ctx), ctx, name)
     else:
         return HTMLResponse("<p class='empty'>Unknown tab.</p>", status_code=404)
 
@@ -1564,21 +1598,12 @@ def _tx_part_waivers(request, s, d, key, ctx):
     # scrolls (same treatment as the weekly waiver table in
     # _week_transactions.html), so there's no need to pre-trim it.
     wl = metrics.waiver_ledger(s, top_n=None)
-    ctx["waivers"] = records(wl)
+    # Displayed chronologically -- waiver_ledger()'s own points-descending
+    # order is left alone since transaction_standouts() reads wl.iloc[0] for
+    # "Best pickup"; this is a display-only re-sort, not the ledger's default.
+    ctx["waivers"] = records(wl.sort_values("week", kind="stable"))
     ctx["n_adds"] = len(wl)
     return tpl.TemplateResponse(request, "_tx_waivers.html", ctx)
-
-
-@tab_part("transactions", "fa")
-def _tx_part_fa(request, s, d, key, ctx):
-    # Season-cumulative free-agent comparison, actual-points framing: "value
-    # left on the wire" -- the natural complement to the Waiver wire table
-    # (what people picked up vs. what they could have). The optimal-lineup
-    # framing of the SAME underlying computation lives on the Roster tab
-    # instead (ties to lineup decisions, not acquisitions); per-week detail
-    # lives only on the Weekly tab.
-    ctx["fa_season"] = metrics.free_agent_best_team_season(s)
-    return tpl.TemplateResponse(request, "_tx_fa.html", ctx)
 
 
 # --- draft tab: lazy sections ------------------------------------------

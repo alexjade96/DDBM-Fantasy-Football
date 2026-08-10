@@ -102,7 +102,7 @@
   <tbody>
   {% for fa in rows %}
     <tr class="fa-row{% if fa.best_fit %} fa-expandable{% endif %}">
-      <td>{{ idm.headshot(fa.player_id) }}<strong>{{ fa.player_name }}</strong> {{ idm.posrank(fa.player_id) }}</td>
+      <td data-sort="{{ fa.player_name }}">{{ idm.headshot(fa.player_id) }}<strong>{{ fa.player_name }}</strong> {{ idm.posrank(fa.player_id) }}</td>
       <td>{{ fa.position }}</td>
       <td class="trend-col">
         {{ "%.1f"|format(fa.trend_total) }}

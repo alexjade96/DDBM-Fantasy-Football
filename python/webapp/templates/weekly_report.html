@@ -139,6 +139,15 @@
     var m = t.match(/-?\d+(\.\d+)?/);
     return m ? parseFloat(m[0]) : null;
   }
+  // A cell can override BOTH the numeric-detection heuristic and the text used
+  // for it via data-sort -- e.g. a "Player" cell that also carries a
+  // position-rank badge ("Daniel Jones QB #15") would otherwise auto-detect as
+  // numeric (every row has a digit) and sort by the rank buried in the badge
+  // instead of the name. Mirrors index.html's copy.
+  function textValue(td) {
+    return (td.dataset && td.dataset.sort !== undefined) ? td.dataset.sort
+      : (td.textContent || '').trim();
+  }
   // Fantasy position order, not alphabetical (DEF/K/QB/RB/TE/WR reads nothing
   // like how anyone thinks about a roster). Any column literally headed "Pos"
   // sorts this way instead of by cell text. Mirrors index.html's copy.
@@ -178,7 +187,10 @@
         });
         th.dataset.dir = asc ? 'asc' : 'desc';
         th.classList.add(asc ? 'sort-asc' : 'sort-desc');
-        var numeric = !isPos && groups.every(function (g) {
+        var overridden = groups.some(function (g) {
+          return g[0].cells[i] && g[0].cells[i].dataset.sort !== undefined;
+        });
+        var numeric = !isPos && !overridden && groups.every(function (g) {
           return !g[0].cells[i] || sortValue(g[0].cells[i]) !== null;
         });
         groups.sort(function (a, b) {
@@ -186,7 +198,7 @@
           if (!x || !y) return 0;
           var d = isPos ? posValue(x) - posValue(y)
             : numeric ? sortValue(x) - sortValue(y)
-            : x.textContent.trim().localeCompare(y.textContent.trim());
+            : textValue(x).localeCompare(textValue(y));
           return asc ? d : -d;
         });
         groups.forEach(function (g) { g.forEach(function (r) { body.appendChild(r); }); });

@@ -6,32 +6,45 @@
    tab_transactions.html, which renders this fragment's placeholder. #}
 {% import "_chartmacro.html" as ch with context %}
 {% import "_ident.html" as idm with context %}
+{% import "_draft_macros.html" as dm %}
 <h2>Waiver wire</h2>
 {% if waivers %}
-{# The chart is the top 15 of the same ranked list the table below shows in
-   full -- kept here, directly above its own table, instead of up in the
-   general chart grid where the relationship read as coincidental. #}
-{{ ch.chart("waiver_performance") }}
-<p class="hint">All {{ n_adds }} waiver and free-agent pickups of {{ season }}, ranked by what
-   they returned while rostered. One row per manager per player &mdash; <strong>&times;n</strong>
-   marks someone picked up more than once. <strong>Starts</strong> against weeks rostered
-   separates a real contributor from a bench stash. Click a column header to sort.</p>
+{# waiver_position_churn/waiver_activity are a cut of the same wire the table
+   below lists in full -- which positions get streamed, and when managers
+   actually worked it -- so they sit here, directly above their own table,
+   instead of up in the season-wide chart grid where the relationship read
+   as coincidental. #}
+<section class="grid">
+  {{ ch.chart("waiver_position_churn") }}
+  {{ ch.chart("waiver_activity") }}
+</section>
+<p class="hint">All {{ n_adds }} waiver and free-agent pickups of {{ season }}, in chronological order.
+   One row per manager per player &mdash; <strong>&times;n</strong> marks someone picked up more
+   than once. <strong>Starts</strong> against weeks rostered separates a real contributor from a
+   bench stash. <strong>Perf</strong> is the player's real performance across his WHOLE season,
+   priced with the league's scoring chart regardless of who rostered him then, graded green/red
+   against his position's startable (replacement) level &mdash; same read as the Draft tab's
+   gems/busts trend. <strong>PPG</strong> is points per week rostered. Click a column header to
+   sort &mdash; e.g. by Pts to see who returned the most.</p>
 <div class="card tablewrap scrolltable">
   <table class="sortable">
     <thead><tr>
-      <th class="n">Wk</th><th>Manager</th><th>Player</th><th>Pos</th>
-      <th>Via</th><th class="n">Starts</th><th class="n">Pts</th>
+      <th class="n">Wk</th><th>Manager</th><th>Player</th>
+      <th>Via</th><th class="n">Starts</th><th class="trend-col">Perf</th>
+      <th class="n">PPG</th><th class="n">Pts</th>
     </tr></thead>
     <tbody>
     {% for r in waivers %}
       <tr>
         <td class="n">{{ r.week }}</td>
         <td>{{ idm.who(r.user_name) }}</td>
-        <td>{{ r.player_name }}{% if r.times > 1 %}
-            <span class="q">&times;{{ r.times }}</span>{% endif %}</td>
-        <td>{{ r.position }}</td>
+        <td data-sort="{{ r.player_name }}">{{ idm.headshot(r.player_id) }}{{ r.player_name }}{% if r.times > 1 %}
+            <span class="q">&times;{{ r.times }}</span>{% endif %}
+            {% if r.pos_rank %}<span class="q">{{ r.position }} #{{ r.pos_rank }}</span>{% else %}<span class="q">{{ r.position }}</span>{% endif %}</td>
         <td><span class="q">{{ r.via }}</span></td>
         <td class="n">{{ r.starts }}<span class="q"> of {{ r.weeks_rostered }}</span></td>
+        <td class="trend-col">{{ dm.spark(r.trend_svg) }}</td>
+        <td class="n">{{ "%.1f"|format(r.ppg) }}</td>
         <td class="n">{{ "%.0f"|format(r.points) }}</td>
       </tr>
     {% endfor %}

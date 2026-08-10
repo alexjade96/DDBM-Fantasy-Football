@@ -457,6 +457,64 @@ def waiver_performance(s: Season) -> pd.DataFrame:
                                    ascending=[False, True, True]).reset_index(drop=True)
 
 
+def trade_player_rates(s: Season) -> list[dict]:
+    """Every traded player's rate of production on each roster that held
+    him, in the CHRONOLOGICAL order he actually moved through them -- "did
+    his production actually change after the trade", which a total-points
+    read (`trade_performance`) can't answer since it doesn't normalize for
+    how long each stint was.
+
+    Stint order comes from `pl_wk` roster membership (the first week each
+    roster actually had him), not `trade_ledger`'s row order, which carries
+    no such ordering. A player traded more than once this season gets more
+    than two stints, in the order he actually passed through them.
+
+    `transaction_id` is the trade that most recently moved him -- for a
+    player traded once (the common case) that's the one deal responsible for
+    the whole before/after comparison, and it's what lets the chart sit both
+    sides of a swap next to each other. `None` if no trade could be matched
+    (shouldn't happen for a player with 2+ stints, but stays safe).
+
+    Returns [{player_id, player_name, position, transaction_id, stints:
+    [{user_name, ppg, weeks, points}, ...]}, ...] for players with 2+ stints
+    (i.e. actually traded), unordered (the chart picks its own top-N).
+    """
+    d = trade_performance(s)
+    if d.empty:
+        return []
+    pl = s.pl_wk
+    first_week = pl.groupby(["player_id", "roster_id"])["week"].min()
+    name_to_rid = dict(zip(s.user_map["user_name"], s.user_map["roster_id"]))
+    led = trade_ledger(s)
+    player_moves: dict[str, list[tuple]] = {}
+    if not led.empty:
+        for _, row in led.iterrows():
+            for p in row["received_players"]:
+                player_moves.setdefault(str(p["player_id"]), []).append(
+                    (row["week"], row["transaction_id"]))
+    out = []
+    for pid, g in d.groupby("player_id"):
+        stints = []
+        for _, r in g.iterrows():
+            rid = name_to_rid.get(r["user_name"])
+            stints.append({
+                "user_name": r["user_name"], "ppg": round(float(r["avg"]), 1),
+                "weeks": int(r["weeks"]), "points": round(float(r["points"]), 1),
+                "_first_wk": first_week.get((pid, rid), 9999),
+            })
+        stints.sort(key=lambda x: x["_first_wk"])
+        for st in stints:
+            st.pop("_first_wk")
+        moves = sorted(player_moves.get(str(pid), []))
+        out.append({"player_id": pid, "player_name": g["player_name"].iloc[0],
+                    "position": g["position"].iloc[0],
+                    "transaction_id": moves[-1][1] if moves else None,
+                    "stints": stints})
+    return out
+
+
+
+
 # --- Schedule, rivalry & records (webapp analytics) ----------------------
 
 def boom_bust(s: Season) -> pd.DataFrame:
@@ -628,8 +686,8 @@ def record_book(seasons: dict) -> list[dict]:
 _TRADE_COLS = ["week", "transaction_id", "user_name", "with", "received",
                "received_players", "gave", "got_pts", "gave_pts", "net"]
 _WAIVER_COLS = ["week", "user_name", "player_id", "player_name", "position",
-                "via", "times", "points", "starts", "weeks_rostered",
-                "trend", "trend_total", "trend_avg"]
+                "pos_rank", "via", "times", "points", "starts", "weeks_rostered",
+                "ppg", "trend", "trend_total", "trend_avg", "trend_svg"]
 
 
 def _pts_by_player_roster(s: Season, through_week: int | None = None) -> dict:
@@ -749,6 +807,18 @@ def waiver_ledger(s: Season, top_n: int | None = 30, through_week: int | None = 
     this week otherwise showed only a single bar (their one week on THIS
     roster), which reads as "no history" for a player who may well have been
     heating up on the wire before anyone grabbed him.
+
+    `pos_rank` is the player's FINAL season-long position rank
+    (`season_position_ranks`, his true NFL output regardless of who -- if
+    anyone -- rostered him), same convention `roster_detail`/the draft tab
+    already use next to a player's name -- not the single-week rank
+    `idm.posrank()` shows on the Weekly tab, which doesn't fit a ledger that
+    spans the whole season.
+
+    `ppg` is `points` per week ROSTERED (not per week started) -- same rate
+    convention as `roster_detail`'s/`draft.py`'s `ppg`, so a mid-season
+    pickup/drop doesn't read as unproductive next to one who sat on a roster
+    all season.
     """
     t = _live_tx(s, ["waiver", "free_agent"])
     if t.empty:
@@ -757,6 +827,7 @@ def waiver_ledger(s: Season, top_n: int | None = 30, through_week: int | None = 
     if adds.empty:
         return pd.DataFrame(columns=_WAIVER_COLS)
     pts = _pts_by_player_roster(s, through_week)
+    ranks = season_position_ranks(s)
     names = dict(zip(s.user_map["roster_id"], s.user_map["user_name"]))
     pl = s.pl_wk
     if through_week is not None:
@@ -774,13 +845,17 @@ def waiver_ledger(s: Season, top_n: int | None = 30, through_week: int | None = 
             w = pl[(pl["roster_id"] == rid) & (pl["player_id"].astype(str) == pid)]
             starts = int(w["is_starter"].sum())
             weeks = int(w["week"].nunique())
+        r = ranks.get(str(pid))
+        points_val = round(pts.get((pid, rid), 0.0), 1)
         rows.append({
             "week": int(g["week"].min()), "user_name": names.get(rid, str(rid)),
             "player_id": pid, "player_name": first["player_name"],
             "position": first.get("position"),
+            "pos_rank": r["rank"] if r else None,
             "via": "/".join(kinds), "times": len(g),
-            "points": round(pts.get((pid, rid), 0.0), 1),
+            "points": points_val,
             "starts": starts, "weeks_rostered": weeks,
+            "ppg": round(points_val / max(weeks, 1), 1),
         })
     if rows and anchor is not None:
         from . import scoring
@@ -788,9 +863,88 @@ def waiver_ledger(s: Season, top_n: int | None = 30, through_week: int | None = 
     else:
         for r in rows:
             r["trend"], r["trend_total"], r["trend_avg"] = [], 0.0, 0.0
+    _attach_trend_sparklines(s, rows, ranks)
     d = (pd.DataFrame(rows).sort_values("points", ascending=False)
          .reset_index(drop=True))
     return d.head(top_n) if top_n else d
+
+
+def _attach_trend_sparklines(s: Season, rows: list[dict], ranks: dict) -> None:
+    """Adds `trend_svg` to each row: the connected-line sparkline the Draft
+    tab's gems/busts/undrafted Trend column uses (`draft._sparkline`/
+    `dm.spark()`). Spans the player's WHOLE season (`draft._season_trend`,
+    every real NFL stat line regardless of roster status), not the
+    trailing-window `trend` field `_fa_trend` computes for the bar
+    sparkline -- this is a "how did his whole season actually go" shape,
+    not "is he hot right now". Graded against the position's
+    replacement-level PPG (`draft._replacement_level`) -- the same baseline
+    the draft tab grades against, not this player's own average (see
+    `draft._sparkline`'s docstring for why that reads a scoreless stretch
+    as "above average").
+    """
+    from . import draft
+
+    if not rows:
+        return
+    repl = draft._replacement_level(s, ranks)
+    span = max(s.last_week_all, 1)
+    weekly_by_id = draft._season_trend(s, [r["player_id"] for r in rows])
+    for r in rows:
+        ref = repl.get(r["position"], 0.0) / span
+        weekly = weekly_by_id.get(str(r["player_id"]), [])
+        r["trend_svg"] = draft._sparkline(weekly, ref)
+
+
+def waiver_position_churn(s: Season) -> pd.DataFrame:
+    """How much each position gets worked over the wire: total add moves
+    (`times` summed -- a player cut and re-added counts each time) against
+    how many UNIQUE players were actually involved, by position. A position
+    with many moves but few unique players (K, DEF) is being streamed
+    week to week; one where moves roughly equal unique players (RB, WR) is
+    mostly one-and-done pickups, not a rotation.
+
+    Returns {position, moves, unique_players}, in `POSITIONS` order.
+    """
+    wl = waiver_ledger(s, top_n=None)
+    if wl.empty:
+        return pd.DataFrame(columns=["position", "moves", "unique_players"])
+    g = wl.groupby("position", as_index=False).agg(
+        moves=("times", "sum"), unique_players=("player_id", "nunique"))
+    order = {p: i for i, p in enumerate(POSITIONS)}
+    g["_o"] = g["position"].astype(str).map(order).fillna(99)
+    return (g.sort_values("_o").drop(columns="_o").reset_index(drop=True))
+
+
+def waiver_activity_over_time(s: Season) -> pd.DataFrame:
+    """Cumulative waiver/FA add count per manager through each week -- who's
+    constantly working the wire vs. set-and-forget, and WHEN (a manager
+    dormant until a bye-week crunch tells a different story than one active
+    from week 1). Distinct from `waiver_value_by_manager` (how much it was
+    worth) and `waiver_position_churn` (which positions) -- this is pure
+    activity, over time.
+
+    Returns one row per (user_name, week) through `s.last_week`, columns
+    {user_name, week, moves} where `moves` is the RUNNING total through that
+    week (0 for a manager with no adds yet, not a missing row, so a line
+    chart can draw every manager from week 1).
+    """
+    t = _live_tx(s, ["waiver", "free_agent"])
+    last_wk = int(s.last_week)
+    names = dict(zip(s.user_map["roster_id"], s.user_map["user_name"]))
+    out = []
+    if t.empty:
+        weekly = pd.DataFrame(columns=["user_name", "week"])
+    else:
+        adds = t[t["transaction"] == "add"].copy()
+        adds["user_name"] = adds["roster_id"].map(names)
+        weekly = adds.groupby(["user_name", "week"]).size().rename("n").reset_index()
+    for nm in s.user_map["user_name"]:
+        g = weekly[weekly["user_name"] == nm].set_index("week")["n"] if len(weekly) else pd.Series(dtype=float)
+        g = g.reindex(range(1, last_wk + 1), fill_value=0)
+        cum = g.cumsum()
+        for wk, v in cum.items():
+            out.append({"user_name": nm, "week": int(wk), "moves": int(v)})
+    return pd.DataFrame(out)
 
 
 def trade_deals(s: Season) -> list[dict]:

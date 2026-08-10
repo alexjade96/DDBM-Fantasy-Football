@@ -4,9 +4,13 @@
    that week", one Team of the Week pick per slot leaguewide. Expects `totw`
    ({week, total, lineup}) in context; `idm` imported by the includer. Shared
    by the Roster tab's week-by-week drilldown and the Weekly tab's matchup
-   section, so the two can't drift. #}
+   section, so the two can't drift.
+
+   `nosort`: fixed slot order, not a ranking, and the colspan title/total
+   header (2 <th>s) doesn't line up 1:1 with the 4 <td>s each body row has --
+   see `_lineupmacro.html`'s identical note. #}
 {% if totw %}
-<table class="dt-games">
+<table class="dt-games nosort">
   <thead><tr>
     <th colspan="3">Team of the Week</th>
     <th class="n">{{ "%.2f"|format(totw.total) }}</th>
