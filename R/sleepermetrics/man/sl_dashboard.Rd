@@ -4,15 +4,17 @@
 \alias{sl_dashboard}
 \title{Launch the interactive dashboard}
 \usage{
-sl_dashboard(league_id = NULL, playoffs = "playoffs", ...)
+sl_dashboard(league_id = NULL, playoffs = "season", ...)
 }
 \arguments{
 \item{league_id}{Optional league id to pre-load (defaults to the app's
 built-in example league).}
 
-\item{playoffs}{Directory of playoff bracket configs to expose in the
-Playoffs tab. Defaults to \verb{playoffs/} under the current working directory
-if it exists. Resolved to an absolute path \emph{before} the app starts, because
+\item{playoffs}{Root directory of season data (playoff bracket configs
+under \verb{<playoffs>/<league_id>/}, plus the Python ADP cache under
+\verb{<playoffs>/adp/}) to expose in the Playoffs tab. Defaults to \verb{season/}
+under the current working directory if it exists. Resolved to an absolute
+path \emph{before} the app starts, because
 \code{\link[shiny:runApp]{shiny::runApp()}} moves the working directory to the app folder.}
 
 \item{...}{Passed to \code{\link[shiny:runApp]{shiny::runApp()}} (e.g. \code{port}, \code{launch.browser}).}

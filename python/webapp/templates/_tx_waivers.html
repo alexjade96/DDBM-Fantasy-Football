@@ -30,8 +30,8 @@
   <table class="sortable">
     <thead><tr>
       <th class="n">Wk</th><th>Manager</th><th>Player</th>
-      <th>Via</th><th class="n">Starts</th><th class="trend-col">Perf</th>
-      <th class="n">PPG</th><th class="n">Pts</th>
+      <th>Via</th><th class="trend-col">Perf</th>
+      <th class="n">PPG</th><th class="n">Starts</th><th class="n">Pts</th>
     </tr></thead>
     <tbody>
     {% for r in waivers %}
@@ -42,9 +42,9 @@
             <span class="q">&times;{{ r.times }}</span>{% endif %}
             {% if r.pos_rank %}<span class="q">{{ r.position }} #{{ r.pos_rank }}</span>{% else %}<span class="q">{{ r.position }}</span>{% endif %}</td>
         <td><span class="q">{{ r.via }}</span></td>
-        <td class="n">{{ r.starts }}<span class="q"> of {{ r.weeks_rostered }}</span></td>
         <td class="trend-col">{{ dm.spark(r.trend_svg) }}</td>
         <td class="n">{{ "%.1f"|format(r.ppg) }}</td>
+        <td class="n">{{ r.starts }}<span class="q"> of {{ r.weeks_rostered }}</span></td>
         <td class="n">{{ "%.0f"|format(r.points) }}</td>
       </tr>
     {% endfor %}

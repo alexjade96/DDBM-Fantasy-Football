@@ -3,7 +3,7 @@
 
     python/venv/Scripts/python tools/render_examples.py [league_id]
 
-Champions come from the stored playoff brackets (see playoffs/README.md), not
+Champions come from the stored playoff brackets (see season/README.md), not
 Sleeper's winners_bracket -- so crowns, titles and champion stars are correct.
 Output: results/examples/py/ (gitignored build artifacts).
 """
@@ -31,9 +31,9 @@ def main():
     OUT.mkdir(parents=True, exist_ok=True)
 
     print("Loading league...")
-    ss = sm.apply_playoffs(sm.seasons(league), "playoffs")
+    ss = sm.apply_playoffs(sm.seasons(league), "season")
     latest = list(ss.values())[-1]
-    pos = sm.load_playoffs("playoffs")
+    pos = sm.load_playoffs("season")
 
     print(f"Season charts ({latest.season})")
     for nm, fn in [

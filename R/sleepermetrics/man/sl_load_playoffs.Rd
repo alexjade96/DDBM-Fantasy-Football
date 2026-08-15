@@ -4,7 +4,7 @@
 \alias{sl_load_playoffs}
 \title{Score every stored bracket}
 \usage{
-sl_load_playoffs(playoff_dir = "playoffs")
+sl_load_playoffs(playoff_dir = "season")
 }
 \arguments{
 \item{playoff_dir}{Directory of bracket configs.}

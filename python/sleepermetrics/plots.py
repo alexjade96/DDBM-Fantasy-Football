@@ -1241,268 +1241,119 @@ def plot_waiver_performance(s: Season, top_n=15):
                      "Points managers got from players added off waivers / FA")
 
 
-def _trade_deal_groups(s: Season) -> list:
-    """Traded players (2+ stints) grouped by the trade `transaction_id` that
-    moved them, each group's own rows sorted by swing (`stints[-1].ppg -
-    stints[0].ppg`, biggest first), and the groups themselves ranked by their
-    largest member's swing (most dramatic deal first). Shared foundation for
-    every "trade performance, before vs after" chart variant -- the production
-    chart and the Testing tab's condensing prototypes -- so a change to what
-    counts as one trade only has to happen once.
+def plot_trade_single_contribution(s: Season, transaction_id: str):
+    """Live in the Transactions tab, inline with that deal's own card: a
+    stacked bar per side, segmented by what each RECEIVED player
+    individually contributed (gross, not netted against what that side
+    gave up) -- so a side that got several role players reads differently
+    from one that got a single stud for the same total.
     """
-    rows = [r for r in metrics.trade_player_rates(s) if len(r["stints"]) >= 2]
-    for r in rows:
-        r["_swing"] = r["stints"][-1]["ppg"] - r["stints"][0]["ppg"]
-    groups: dict = {}
-    for r in rows:
-        key = r.get("transaction_id") or f"solo:{r['player_id']}"
-        groups.setdefault(key, []).append(r)
-    ranked = sorted(groups.values(),
-                    key=lambda g: max(abs(x["_swing"]) for x in g), reverse=True)
-    return [sorted(g, key=lambda x: x["_swing"], reverse=True) for g in ranked]
+    deal = next((d for d in metrics.trade_deals(s)
+                if d["transaction_id"] == transaction_id), None)
+    if deal is None:
+        return _no_data("No data for this trade.")
+    sides = sorted(deal["sides"], key=lambda sd: sd["got_pts"], reverse=True)
+    fig, ax = plt.subplots(figsize=(6.5, max(1.8, 0.6 * len(sides) + 0.6)))
+    y = list(range(len(sides)))
+    max_total = max((sd["got_pts"] for sd in sides), default=0) or 1
+    for yi, sd in zip(y, sides):
+        left = 0.0
+        for j, p in enumerate(sd.get("received_players") or []):
+            color = _MANAGER_HUES[j % len(_MANAGER_HUES)]
+            ax.barh([yi], [p["points"]], left=left, color=color,
+                    edgecolor=T["edge"], linewidth=0.4, height=0.55)
+            if p["points"] >= max_total * 0.08:
+                ax.text(left + p["points"] / 2, yi, p["player_name"].split()[-1],
+                        ha="center", va="center", fontsize=7, color="#1a1a1a")
+            left += p["points"]
+        # round()-then-format, not "+d" on the raw float directly -- a
+        # genuinely tiny net (e.g. -0.2) must not format as the confusing "-0".
+        net_r = round(sd["net"])
+        net_lbl = f"{net_r:+d}" if net_r != 0 else "0"
+        ax.text(left + max_total * 0.02, yi,
+                f"{sd['got_pts']:.0f} pts  (net {net_lbl})",
+                va="center", fontsize=8, fontweight="bold", color=T["ink2"])
+    ax.set_yticks(y)
+    ax.set_yticklabels([sd["user_name"] for sd in sides], fontsize=8.5)
+    ax.set_xlim(0, max_total * 1.4)
+    title = " ↔ ".join(sd["user_name"] for sd in sides)
+    return _finish(fig, ax, title,
+                   "Points received, by player  ·  net alongside each bar",
+                   "Points", caption=_cap(s))
 
 
-def _render_trade_rate_chart(picked: list, s: Season, title: str, subtitle: str):
-    """Shared slope-chart renderer for every "before vs after" trade-rate
-    chart variant: bottom-to-top group layout (least important group at the
-    bottom, most important at top), a shaded band around any real
-    multi-player group, end-of-line PPG labels with span-scaled x-margin so
-    they never run off the plot, and a headshot+name axis. Callers own
-    SELECTING which rows go into `picked` (top-N deals, per-deal trimming, a
-    swing threshold, a collapsed "+N others" row...) -- this only knows how
-    to draw whatever it's handed. A row may set `_collapsed` (muted colour
-    regardless of sign) for a synthetic "rest of the trade" summary row.
+def plot_trade_single_cumulative(s: Season, transaction_id: str):
+    """Live in the Transactions tab, inline with that deal's own card: a
+    "race" view for one deal -- each SIDE's cumulative points from its
+    received players, running since the trade, one line per side.
+    Complements the deal card's own net-points summary (a single snapshot)
+    by showing the TRAJECTORY behind that final number -- a side that
+    jumped ahead in the first two weeks and coasted reads differently from
+    one that only pulled ahead at the very end.
+
+    Deliberately per-SIDE, not per-player -- summing each side's players
+    keeps this a 2-4 line chart regardless
+    of a blockbuster's player count, and "who's ahead" is fundamentally a
+    question about the two (or three) sides of the deal, not any one
+    player. Cumulative points are read straight off `pl_wk`, filtered to
+    that side's received player ids on that side's own roster -- the same
+    "points while rostered" convention every other trade metric uses, so a
+    week a player sat on the OTHER team (pre-trade) never counts here.
     """
-    flat = list(reversed(picked))
-    rows, ys, bounds = [], [], []
-    y = 0.0
-    for gi, g in enumerate(flat):
-        g_lo = y
-        for r in g:
-            rows.append(r)
-            ys.append(y)
-            y += 1
-        if len(g) > 1:
-            bounds.append((g_lo, y - 1))
-        if gi < len(flat) - 1 and (len(g) > 1 or len(flat[gi + 1]) > 1):
-            y += 0.55
-    fig, ax = plt.subplots(figsize=(10, max(4, (ys[-1] + 1) * 0.5)))
-    labels = [r["player_name"] for r in rows]
-    all_ppg = [st["ppg"] for r in rows for st in r["stints"]]
-    lo_ppg, hi_ppg = min(all_ppg), max(all_ppg)
-    span = (hi_ppg - lo_ppg) or 1
-    # Every row's end-of-line label is centered on its LAST stint's PPG, so a
-    # row sitting at (or near) the data's own min/max has nowhere to render
-    # into -- default matplotlib margins aren't sized for that text at all.
-    # Headroom scaled off the actual PPG span (not a fixed number) so it
-    # scales with the chart instead of being too tight on a blowout season
-    # and too loose on a quiet one.
-    ax.set_xlim(lo_ppg - span * 0.12, hi_ppg + span * 0.30)
-    # Shade only the groups that actually ARE a trade (2+ rows) -- a
-    # divider/band on every row would just be visual noise for the
-    # singletons, which don't need separating from anything.
-    for lo, hi in bounds:
-        ax.axhspan(lo - 0.45, hi + 0.45, color=T["grid"], zorder=0)
-    for i, r in zip(ys, rows):
-        ppgs = [st["ppg"] for st in r["stints"]]
-        if r.get("_collapsed"):
-            color = T["muted"]
-        else:
-            color = "#2ca02c" if r["_swing"] > 0 else "#d62728" if r["_swing"] < 0 else T["neutral"]
-        ax.plot(ppgs, [i] * len(ppgs), color=color, lw=2, alpha=0.55, zorder=1)
-        ax.scatter(ppgs[:-1], [i] * (len(ppgs) - 1), color=T["neutral"], s=55,
-                   zorder=2, edgecolors=T["edge"], linewidths=0.5)
-        ax.scatter([ppgs[0]], [i], s=85, zorder=3, marker="o",
-                   facecolors="none", edgecolors=T["ink2"], linewidths=1.6)
-        ax.scatter([ppgs[-1]], [i], color=color, s=85, zorder=3,
-                   edgecolors=T["edge"], linewidths=0.5)
-        # Above the dot, not beside it: a horizontal offset has to pick a
-        # side, and whichever side is "away from the line" flips between
-        # improved (last dot on the right) and declined (last dot on the
-        # left) rows -- for a declined player near x=0, offsetting further
-        # left ran the text straight into the y-axis tick labels. Vertical
-        # placement needs no such case-by-case direction logic.
-        ax.text(ppgs[-1], i + 0.32, f"{r['stints'][-1]['user_name']}: {ppgs[-1]:.1f} ppg",
-                va="bottom", ha="center", fontsize=7.5, color=color, fontweight="bold")
-    # Headroom above the top row only -- its label (at top_row + 0.32) was
-    # landing close enough to the axes edge to collide with _finish's
-    # subtitle, which sits fixed just above it regardless of ylim.
-    ax.set_ylim(-0.6, ys[-1] + 0.85)
-    ax.set_yticks(ys)
-    ax.set_yticklabels(labels, fontsize=8.5)
-    _portraits(ax, labels, [r["player_id"] for r in rows],
-               [r["position"] for r in rows], zoom=0.26, ys=ys)
-    return _finish(fig, ax, title, subtitle, "Points per Game", caption=_cap(s))
-
-
-def plot_trade_player_rates(s: Season, max_trades=15):
-    """Slope chart: each traded player's PPG on every roster that held him,
-    in the order he actually moved through them (`metrics.trade_player_rates`)
-    -- "did his production change after the trade", which
-    `plot_trade_performance`'s TOTAL-points bar can't show since it doesn't
-    normalize for how long each stint lasted.
-
-    Rows are grouped by `transaction_id` (`_trade_deal_groups`), so both
-    players in a swap land next to each other instead of being scattered by
-    their individual swing -- reading "who won this trade" off two adjacent
-    rows is the point. `max_trades` caps the number of DEALS shown, not the
-    number of rows -- capping by row count let one big multi-player
-    blockbuster eat the whole budget and crowd out every other trade of the
-    season (a real 3-team, 9-player deal left room for only one more trade at
-    `top_n=12` players). 15 comfortably covers every season on record (the
-    busiest so far is 11 deals), so in practice this shows the WHOLE season's
-    trades, only trimming an exceptionally active one.
-    """
-    groups = _trade_deal_groups(s)
-    if not groups:
-        return _no_data(f"No traded players with multiple stints in {s.season}.")
-    picked = groups[:max_trades]
-    return _render_trade_rate_chart(
-        picked, s, f"{s.season}: Trade Performance, Before vs After",
-        "PPG by stint  ·  hollow = first, filled = latest  ·  "
-        "green = up, red = down  ·  band = a trade")
-
-
-def plot_trade_rates_top_movers(s: Season, max_trades=15, per_trade=2):
-    """Testing-tab prototype: condensing `plot_trade_player_rates` by
-    trimming each trade to its `per_trade` biggest-swing players before
-    laying out rows, instead of showing every mover. A real multi-player
-    blockbuster still reads as one visible (shaded) trade, just a shorter
-    one -- every deal keeps at least one row, so no trade disappears, only
-    its quietest movers do.
-    """
-    groups = _trade_deal_groups(s)
-    if not groups:
-        return _no_data(f"No traded players with multiple stints in {s.season}.")
-    picked = [g[:per_trade] for g in groups[:max_trades]]
-    return _render_trade_rate_chart(
-        picked, s, f"{s.season}: Trade Performance — Top Movers per Deal",
-        f"Top {per_trade} PPG swings per trade  ·  hollow = first, filled = latest  ·  "
-        "green = up, red = down  ·  band = a trade")
-
-
-def plot_trade_rates_threshold(s: Season, min_swing=3.0):
-    """Testing-tab prototype: instead of capping row/trade COUNT, drops
-    individual movers whose swing is under `min_swing` PPG -- a "wash" that
-    didn't really change is noise regardless of which trade it came from. A
-    trade where every mover falls under the bar disappears entirely (there's
-    no story to tell); one with a mix keeps only its notable movers. Unlike
-    the other variants nothing here is capped by count, so the chart's size
-    tracks how eventful the season's trades actually were, not a fixed
-    budget -- a quiet season renders short on its own.
-    """
-    groups = _trade_deal_groups(s)
-    picked = [kept for g in groups
-              if (kept := [r for r in g if abs(r["_swing"]) >= min_swing])]
-    if not picked:
-        return _no_data(f"No trades moved the needle by {min_swing:.0f}+ PPG in {s.season}.")
-    return _render_trade_rate_chart(
-        picked, s, f"{s.season}: Trade Performance — Notable Swings Only",
-        f"Movers with a {min_swing:.0f}+ PPG swing  ·  hollow = first, filled = latest  ·  "
-        "green = up, red = down  ·  band = a trade")
-
-
-def plot_trade_rates_collapsed(s: Season, max_trades=15, keep=2):
-    """Testing-tab prototype: every trade stays visible, but a deal with more
-    than `keep` movers shows its `keep` biggest swings individually and folds
-    the rest into one muted "+N others" row (their average before/after PPG)
-    -- a middle ground between showing every player (too tall) and trimming
-    quiet movers away entirely (`plot_trade_rates_top_movers`, which loses
-    the sense of how big the trade actually was).
-    """
-    groups = _trade_deal_groups(s)
-    if not groups:
-        return _no_data(f"No traded players with multiple stints in {s.season}.")
-    picked = []
-    for g in groups[:max_trades]:
-        if len(g) <= keep:
-            picked.append(g)
+    deal = next((d for d in metrics.trade_deals(s)
+                if d["transaction_id"] == transaction_id), None)
+    if deal is None:
+        return _no_data("No data for this trade.")
+    name_to_rid = dict(zip(s.user_map["user_name"], s.user_map["roster_id"]))
+    pl = s.pl_wk
+    pal = palette(sd["user_name"] for sd in deal["sides"])
+    fig, ax = plt.subplots(figsize=(7, 4))
+    lines, x_start, x_end = [], None, None
+    for sd in deal["sides"]:
+        rid = name_to_rid.get(sd["user_name"])
+        ids = [str(p["player_id"]) for p in (sd.get("received_players") or [])]
+        if not ids:
             continue
-        head, rest = g[:keep], g[keep:]
-        avg_first = sum(r["stints"][0]["ppg"] for r in rest) / len(rest)
-        avg_last = sum(r["stints"][-1]["ppg"] for r in rest) / len(rest)
-        collapsed = {
-            "player_id": None, "player_name": f"+{len(rest)} others",
-            "position": None, "_swing": avg_last - avg_first, "_collapsed": True,
-            "stints": [{"user_name": "avg", "ppg": avg_first},
-                      {"user_name": f"+{len(rest)} others avg", "ppg": avg_last}],
-        }
-        picked.append(head + [collapsed])
-    return _render_trade_rate_chart(
-        picked, s, f"{s.season}: Trade Performance — Top Movers + Rest",
-        f"Top {keep} swings per trade, rest folded into one row  ·  "
-        "hollow = first, filled = latest  ·  band = a trade")
-
-
-def plot_trade_rates_small_multiples(s: Season, max_trades=15, ncols=3):
-    """Testing-tab prototype: one small panel per trade instead of one long
-    list -- every trade and every player stays visible, but height is
-    bounded by rows of PANELS instead of rows of players. Deliberately plain
-    (no headshot/icon column) to see whether the grid layout alone reads
-    well before investing in matching the production chart's polish.
-    """
-    groups = _trade_deal_groups(s)[:max_trades]
-    if not groups:
-        return _no_data(f"No traded players with multiple stints in {s.season}.")
-    # Who was actually IN a given deal comes from the deal record itself, not
-    # from unioning every row's own stint history -- a player traded twice
-    # this season carries an earlier, unrelated trade's manager in his stint
-    # list, and that manager isn't part of THIS deal (shipped: a 3-team trade
-    # mislabelled with a 4th, uninvolved manager pulled in this way).
-    deals_by_txn = {d["transaction_id"]: d for d in metrics.trade_deals(s)}
-    nrows = -(-len(groups) // ncols)
-    fig, axes = plt.subplots(nrows, ncols, figsize=(4.2 * ncols, 2.4 * nrows), squeeze=False)
-    for idx, g in enumerate(groups):
-        ax = axes[idx // ncols][idx % ncols]
-        # Same "shaded band = a trade" language as the other three
-        # prototypes -- a panel boundary alone reads as a grid, not
-        # necessarily "these rows are one deal."
-        ax.set_facecolor(T["grid"])
-        all_ppg = [st["ppg"] for r in g for st in r["stints"]]
-        lo, hi = min(all_ppg), max(all_ppg)
-        span = (hi - lo) or 1
-        for i, r in enumerate(reversed(g)):
-            ppgs = [st["ppg"] for st in r["stints"]]
-            color = "#2ca02c" if r["_swing"] > 0 else "#d62728" if r["_swing"] < 0 else T["neutral"]
-            ax.plot(ppgs, [i] * len(ppgs), color=color, lw=2, alpha=0.6, zorder=1)
-            ax.scatter(ppgs[:-1], [i] * (len(ppgs) - 1), color=T["neutral"], s=28,
-                       zorder=2, edgecolors=T["edge"], linewidths=0.4)
-            ax.scatter([ppgs[0]], [i], s=42, marker="o", facecolors="none",
-                       edgecolors=T["ink2"], linewidths=1.2, zorder=3)
-            ax.scatter([ppgs[-1]], [i], color=color, s=42, zorder=3,
-                       edgecolors=T["edge"], linewidths=0.4)
-        ax.set_yticks(range(len(g)))
-        ax.set_yticklabels([r["player_name"] for r in reversed(g)], fontsize=7)
-        ax.set_xlim(lo - span * 0.15, hi + span * 0.3)
-        deal = deals_by_txn.get(g[0].get("transaction_id"))
-        if deal:
-            managers = sorted({sd["user_name"] for sd in deal["sides"]})
-        else:
-            managers = sorted({st["user_name"] for r in g for st in r["stints"]})
-        title = " ↔ ".join(managers)
-        # Every real manager now that the attribution bug is fixed -- but an
-        # unusually large multi-team deal could still run longer than a
-        # ~4.2in panel, so the font shrinks rather than reintroducing a fixed
-        # name cap (which is what dropped a real participant last time).
-        title_size = 8 if len(title) <= 28 else 6.5
-        ax.set_title(title, fontsize=title_size, fontweight="bold", color=T["ink"], loc="left")
-        ax.tick_params(colors=T["tick"], labelsize=7)
-        for sp in ("top", "right", "left"):
-            ax.spines[sp].set_visible(False)
-        ax.spines["bottom"].set_color(T["spine"])
-        # The panel's own facecolor is now T["grid"] (the shaded-band
-        # colour), so the gridlines need a DIFFERENT tone or they'd vanish
-        # into their own background.
-        ax.grid(axis="x", color=T["spine"], linewidth=0.5)
-        ax.set_axisbelow(True)
-    for idx in range(len(groups), nrows * ncols):
-        axes[idx // ncols][idx % ncols].set_visible(False)
-    fig.suptitle(f"{s.season}: Trade Performance — Small Multiples", x=0.01, ha="left",
-                fontsize=16, fontweight="bold", color=T["ink"])
-    fig.text(0.01, 0.005, f"Every trade, PPG before → after  ·  {_cap(s)}",
-             ha="left", fontsize=8, color=T["muted"])
-    fig.tight_layout(rect=(0, 0.02, 1, 0.95))
-    return fig
+        w = pl[(pl["roster_id"] == rid) & (pl["player_id"].astype(str).isin(ids))]
+        wk = w.groupby("week")["points"].sum().sort_index()
+        if wk.empty:
+            continue
+        cum = wk.cumsum()
+        color = pal[sd["user_name"]]
+        ax.plot(cum.index, cum.values, color=color, lw=2.2, marker="o",
+               markersize=4, zorder=2)
+        lines.append({"user_name": sd["user_name"], "color": color,
+                      "y": float(cum.values[-1])})
+        x_start = cum.index[0] if x_start is None else min(x_start, cum.index[0])
+        x_end = cum.index[-1] if x_end is None else max(x_end, cum.index[-1])
+    if not lines:
+        plt.close(fig)
+        return _no_data("No post-trade points data for this deal.")
+    # Explicit integer, one-tick-per-week ticks -- matplotlib's default
+    # locator subdivides a short 2-3 week span into fractional ticks
+    # (12.00, 12.25, 12.50, ...), which reads as a real time axis with
+    # sub-week granularity that doesn't exist in the underlying data.
+    ax.set_xticks(range(int(x_start), int(x_end) + 1))
+    # End-of-line labels, separated so two sides that finished close together
+    # (e.g. 116 vs 113) don't render on top of each other -- a plain
+    # va="center" text at each line's true y-value collided for at least one
+    # real 2025 deal. Walking sorted-ascending and pushing each label up past
+    # the previous one keeps the label near its real value except where two
+    # are genuinely too close, matching the same "measure, then nudge only
+    # what collides" approach used for the scatter-label solver elsewhere.
+    lines.sort(key=lambda r: r["y"])
+    span = max((r["y"] for r in lines), default=1) or 1
+    min_gap = span * 0.09
+    lines[0]["label_y"] = lines[0]["y"]
+    for i in range(1, len(lines)):
+        lines[i]["label_y"] = max(lines[i]["y"], lines[i - 1]["label_y"] + min_gap)
+    for r in lines:
+        ax.text(x_end + 0.15, r["label_y"], f"{r['user_name']}: {r['y']:.0f}",
+                va="center", ha="left", fontsize=8.5, fontweight="bold", color=r["color"])
+    title = " ↔ ".join(sd["user_name"] for sd in deal["sides"])
+    return _finish(fig, ax, title,
+                   "Cumulative points from each side's received players, since the trade",
+                   "Week", "Cumulative Points", caption=_cap(s))
 
 
 def plot_waiver_position_churn(s: Season):
@@ -1861,6 +1712,184 @@ def plot_draft_grades_value(s: Season):
     return _finish(fig, ax, f"{s.season} Draft Grades vs. True Value",
                    "Grey dot = roster points kept, green dot = the players' TRUE season "
                    "total  ·  a red line is value traded or dropped away before it counted",
+                   "Points", caption=_cap(s))
+
+
+def plot_redraft_standings(s: Season, basis: str = "value"):
+    """Dumbbell: each manager's REAL win total against what they'd have won
+    with a redraft (`draft.redraft_standings`) -- the expected outcome of
+    altering the draft, replaying the same schedule with both sides'
+    redrafted, optimally-started rosters (same idiom as
+    `plot_mgr_sos`/`plot_draft_grades_value`). Sorted by simulated finish so
+    the chart reads top-to-bottom the same way the simulation table does.
+
+    `basis` -- `"value"` (true season value, the default) or `"adp"`
+    (Sleeper's own ADP) -- picks which of `draft.redraft_standings()`'s two
+    bases this draws, and is reflected in the chart's own title so a viewer
+    can't mistake one basis' chart for the other's.
+    """
+    from matplotlib.ticker import MaxNLocator
+
+    from . import draft as _draft
+    d = _draft.redraft_standings(s, basis)
+    if d.empty:
+        return _no_data(f"No draft data to simulate against in {s.season}.")
+    d = d.sort_values("sim_position", ascending=False).reset_index(drop=True)
+    fig, ax = plt.subplots(figsize=(9, max(4, len(d) * 0.55)))
+    line_cols = ["#2ca02c" if wd > 0 else "#d62728" if wd < 0 else T["rule"]
+                for wd in d["win_delta"]]
+    for i, r in d.iterrows():
+        ax.plot([r["real_wins"], r["wins"]], [i, i], color=line_cols[i],
+                lw=2.4, alpha=0.75, zorder=2)
+    # No ax.legend() -- the subtitle already spells out grey/green, and
+    # (unlike plot_draft_grades_value, sorted by points ascending so its
+    # bottom-right corner stays clear) this chart is sorted by SIMULATED
+    # position, so the worst-simulated team can still have a high REAL win
+    # total and land right where a fixed-corner legend would sit -- shipped
+    # for 2025, where SimonSmith's real 10 wins collided with a lower-right
+    # legend.
+    ax.scatter(d["real_wins"], range(len(d)), color=T["neutral"], s=60, zorder=3,
+               edgecolors=T["edge"], linewidths=0.6)
+    ax.scatter(d["wins"], range(len(d)), color="#2ca02c", s=75, zorder=4,
+               edgecolors=T["edge"], linewidths=0.6)
+    hi = float(max(d["real_wins"].max(), d["wins"].max()))
+    for i, r in d.iterrows():
+        note = f"{r['win_delta']:+.0f}" if r["win_delta"] != 0 else "even"
+        ax.text(max(r["real_wins"], r["wins"]) + hi * 0.02, i, note,
+                va="center", fontsize=7.5, fontweight="bold",
+                color=line_cols[i] if r["win_delta"] != 0 else T["muted"])
+    ax.set_yticks(range(len(d)))
+    ax.set_yticklabels(d["user_name"], fontsize=8.5)
+    _row_avatars(ax, d["user_name"], s)
+    ax.set_xlim(0, hi * 1.2)
+    ax.xaxis.set_major_locator(MaxNLocator(integer=True))
+    basis_label = "ADP" if basis == "adp" else "True Value"
+    return _finish(fig, ax, f"{s.season}: Redraft Simulation — Wins, Real vs. {basis_label}",
+                   "Grey = real wins, green = simulated  ·  green line = gained wins, red = lost",
+                   "Wins", caption=_cap(s))
+
+
+def plot_redraft_points(s: Season):
+    """Testing-tab prototype: a companion to `plot_redraft_standings` --
+    same dumbbell idiom, real points against simulated points instead of
+    wins. Wins are lumpy (a blowout and a nail-biter both count as one), so
+    this is the chart that actually explains WHY a team's win total moved --
+    real production against what the redrafted roster would have scored,
+    not just the won/lost verdict that fell out of it.
+    """
+    from . import draft as _draft
+    d = _draft.redraft_standings(s)
+    if d.empty:
+        return _no_data(f"No draft data to simulate against in {s.season}.")
+    d = d.sort_values("sim_position", ascending=False).reset_index(drop=True)
+    fig, ax = plt.subplots(figsize=(9, max(4, len(d) * 0.55)))
+    line_cols = ["#2ca02c" if p > r else "#d62728" if p < r else T["rule"]
+                for p, r in zip(d["points"], d["real_points"])]
+    for i, r in d.iterrows():
+        ax.plot([r["real_points"], r["points"]], [i, i], color=line_cols[i],
+                lw=2.4, alpha=0.75, zorder=2)
+    ax.scatter(d["real_points"], range(len(d)), color=T["neutral"], s=60, zorder=3,
+               edgecolors=T["edge"], linewidths=0.6)
+    ax.scatter(d["points"], range(len(d)), color="#2ca02c", s=75, zorder=4,
+               edgecolors=T["edge"], linewidths=0.6)
+    hi = float(max(d["real_points"].max(), d["points"].max()))
+    lo = float(min(d["real_points"].min(), d["points"].min()))
+    span = (hi - lo) or 1
+    for i, r in d.iterrows():
+        delta = r["points"] - r["real_points"]
+        note = f"{delta:+.0f}" if round(delta) != 0 else "even"
+        ax.text(max(r["real_points"], r["points"]) + span * 0.02, i, note,
+                va="center", fontsize=7.5, fontweight="bold",
+                color=line_cols[i] if round(delta) != 0 else T["muted"])
+    ax.set_yticks(range(len(d)))
+    ax.set_yticklabels(d["user_name"], fontsize=8.5)
+    _row_avatars(ax, d["user_name"], s)
+    ax.set_xlim(lo - span * 0.05, hi + span * 0.18)
+    return _finish(fig, ax, f"{s.season}: Redraft Simulation — Points, Real vs. True Value",
+                   "Grey = real points, green = simulated  ·  line colour = gained or lost points",
+                   "Points", caption=_cap(s))
+
+
+def plot_redraft_finish_slope(s: Season, basis: str = "value"):
+    """Live in the redraft simulation section, beside `plot_redraft_standings`
+    -- the standings RESHUFFLE itself, which the wins dumbbell doesn't show
+    (only the table's own Delta Finish column did before this). A two-point
+    slope per manager, real finish on the left against simulated finish on
+    the right, y inverted so 1st sits at the top like a real standings
+    board.
+
+    `basis` -- see `plot_redraft_standings`'s docstring; same two options,
+    same reflection in the chart's own title.
+
+    Same figsize (width AND the height formula) as `plot_redraft_standings`
+    deliberately -- the two sit side by side in a shared grid, whose columns
+    are scaled to equal WIDTH, not equal aspect ratio; a narrower figsize
+    here rendered visibly taller once scaled to match that column width
+    (same height in native pixels, but a much more square aspect than the
+    wide dumbbell), throwing the row's bottom edge off. Matching both
+    dimensions keeps the two frames scaling identically.
+    """
+    from . import draft as _draft
+    d = _draft.redraft_standings(s, basis)
+    if d.empty:
+        return _no_data(f"No draft data to simulate against in {s.season}.")
+    d = d.sort_values("real_position").reset_index(drop=True)
+    n = len(d)
+    fig, ax = plt.subplots(figsize=(9, max(4, n * 0.55)))
+    pal = palette(d["user_name"])
+    for _, r in d.iterrows():
+        moved = r["real_position"] - r["sim_position"]
+        color = "#2ca02c" if moved > 0 else "#d62728" if moved < 0 else T["rule"]
+        ax.plot([0, 1], [r["real_position"], r["sim_position"]], color=color,
+                lw=2.2, alpha=0.8, zorder=2, marker="o", markersize=6,
+                markerfacecolor=pal[r["user_name"]], markeredgecolor=T["edge"])
+        ax.text(-0.04, r["real_position"], r["user_name"], ha="right", va="center",
+                fontsize=8.5, color=T["ink"])
+        ax.text(1.04, r["sim_position"], f"#{int(r['sim_position'])}", ha="left",
+                va="center", fontsize=8.5, fontweight="bold", color=color)
+    ax.set_xlim(-0.55, 1.3)
+    ax.set_xticks([0, 1])
+    ax.set_xticklabels(["Real finish", "Simulated finish"], fontsize=9.5)
+    ax.set_ylim(n + 0.6, 0.4)
+    ax.set_yticks(range(1, n + 1))
+    ax.tick_params(left=False, labelleft=False)
+    basis_label = " (by ADP)" if basis == "adp" else ""
+    return _finish(fig, ax, f"{s.season}: Redraft Simulation — Standings Reshuffle{basis_label}",
+                   "Green = redraft finishes higher, red = lower  ·  1st place at top",
+                   caption=_cap(s), grid_axis="y")
+
+
+def plot_redraft_points_delta(s: Season):
+    """Testing-tab prototype: a companion to `plot_redraft_standings` --
+    the simplest possible read, one signed net-points bar per manager
+    (simulated points minus real points). No real/sim comparison needed to
+    read this one at a glance, unlike the two dumbbell variants.
+    """
+    from . import draft as _draft
+    d = _draft.redraft_standings(s)
+    if d.empty:
+        return _no_data(f"No draft data to simulate against in {s.season}.")
+    d = d.assign(delta=d["points"] - d["real_points"]).sort_values("delta")
+    names = d["user_name"].tolist()
+    deltas = d["delta"].tolist()
+    colors = ["#2ca02c" if x > 0 else "#d62728" if x < 0 else T["neutral"] for x in deltas]
+    fig, ax = plt.subplots(figsize=(7, max(4, len(d) * 0.5)))
+    y = list(range(len(d)))
+    ax.barh(y, deltas, color=colors, edgecolor=T["edge"], linewidth=0.5, height=0.6)
+    ax.axvline(0, color=T["spine"], linewidth=0.8)
+    ax.set_yticks(y)
+    ax.set_yticklabels(names, fontsize=8.5)
+    span = max(max(deltas, default=0), abs(min(deltas, default=0)), 1)
+    ax.set_xlim(-span * 1.25, span * 1.25)
+    for yi, x in zip(y, deltas):
+        # round()-then-format, not "+.0f" on the raw float directly -- a
+        # genuinely tiny delta must not format as the confusing "-0".
+        lbl = f"{round(x):+d}" if round(x) != 0 else "0"
+        ax.text(x + (span * 0.03 if x >= 0 else -span * 0.03), yi, lbl,
+                va="center", ha="left" if x >= 0 else "right", fontsize=8,
+                color=T["ink"], fontweight="bold")
+    return _finish(fig, ax, f"{s.season}: Redraft Simulation — Points Gained or Lost",
+                   "Simulated points minus real points, per manager",
                    "Points", caption=_cap(s))
 
 

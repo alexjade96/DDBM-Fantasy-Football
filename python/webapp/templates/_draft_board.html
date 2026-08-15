@@ -1,12 +1,16 @@
-{# "Draft board" section: round x slot grid, actual + redraft. Deferred behind
-   /tab/draft/part/board (see app.py's TAB_PARTS) since draft.draft_board()/
-   redraft_board() materialize the whole board -- see tab_draft.html, which
-   renders this same fragment's placeholder. #}
+{# "Draft board" section: the actual round x slot grid. Deferred behind
+   /tab/draft/part/board (see app.py's TAB_PARTS) since draft.draft_board()
+   materializes the whole board -- see tab_draft.html, which renders this
+   same fragment's placeholder. Used to also hold a Redraft-by-true-value
+   toggle (a second copy of the grid, filled by TRUE season value instead of
+   actual order) -- removed in favour of just this board plus a link into
+   the full redraft simulation report, which covers the same "what if"
+   question with actual standings/playoffs behind it rather than just a
+   reordered grid. #}
 {% import "_ident.html" as idm with context %}
 <div class="rowhead"><h2>{{ season }} draft board</h2></div>
 <p class="hint">Each column is a manager's draft slot, each row is a round &mdash; colour
-   marks the position. Switch to <strong>Redraft</strong> to see the same grid filled by
-   TRUE season value instead of actual order.</p>
+   marks the position.</p>
 <dl class="glossary">
   <div><dt>Points</dt><dd>Scored on the drafting team's roster, started or benched; the
     number in parens (when it differs) is his TRUE full-season output, regardless of who
@@ -18,82 +22,39 @@
     <span class="pts dv-neg">red</span> when it would have gone a round or more LATER.</dd></div>
 </dl>
 
-<div class="viewswitch db-vs-mode">
-  <input type="radio" name="dbmode" id="db-actual" class="vs-radio" checked>
-  <input type="radio" name="dbmode" id="db-redraft" class="vs-radio">
-  <div class="rail vs-tabs">
-    <label class="year" for="db-actual">Actual</label>
-    <label class="year" for="db-redraft">Redraft by true value</label>
-  </div>
+<p class="hint">See how the season might have gone with a different draft &mdash; the
+   report replays the whole season and postseason with every roster redrafted by true
+   season value or Sleeper's own ADP.</p>
+<a class="dl" target="_blank" rel="noopener"
+   href="/report/redraft?league={{ league|urlencode }}&season={{ season|urlencode }}&theme={{ theme }}"
+   title="Open the redraft simulation report">View Simulated Draft &nearr;</a>
 
-  <div class="vs-panel vs-p-actual">
-    {# nosort: the board is a round x slot grid, so re-ordering rows is meaningless #}
-    <div class="tablewrap nosort">
-      <table class="draftboard">
-        <thead>
-          <tr>
-            <th class="rnd">R</th>
-            {% for u in slot_user %}<th>{{ u or "—" }}</th>{% endfor %}
-          </tr>
-        </thead>
-        <tbody>
-          {% for rnd in rounds %}
-          <tr>
-            <td class="rnd">{{ rnd.round }}</td>
-            {% for c in rnd.cells %}
-            <td class="pick">
-              {% if c %}
-              <span class="pk">#{{ c.pick_no }}</span>
-              <span class="pl pos-{{ c.pos }}">{{ idm.headshot(c.player_id) }}{{ c.player }}</span>
-              {% if c.pos_rank %}<span class="q">{{ c.pos }} #{{ c.pos_rank }}</span>{% endif %}
-              <span class="pts{% if c.dv %} dv-{{ c.dv }}{% endif %}">{{ "%.0f"|format(c.points) }} pts{% if c.total and (c.total - c.points) >= 1 %}
-                (Total {{ "%.0f"|format(c.total) }}){% endif %}</span>
-              {% else %}<span class="pk">—</span>{% endif %}
-            </td>
-            {% endfor %}
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
-  </div>
-
-  <div class="vs-panel vs-p-redraft">
-    {% if redraft_rounds %}
-    <p class="hint">Same grid, same team ownership &mdash; each slot filled by whoever
-       actually deserved it by TRUE season value instead of who was actually taken. The
-       small note under each pick says where that player really went.</p>
-    {# nosort: the board is a round x slot grid, so re-ordering rows is meaningless #}
-    <div class="tablewrap nosort">
-      <table class="draftboard">
-        <thead>
-          <tr>
-            <th class="rnd">R</th>
-            {% for u in slot_user %}<th>{{ u or "—" }}</th>{% endfor %}
-          </tr>
-        </thead>
-        <tbody>
-          {% for rnd in redraft_rounds %}
-          <tr>
-            <td class="rnd">{{ rnd.round }}</td>
-            {% for c in rnd.cells %}
-            <td class="pick">
-              {% if c %}
-              <span class="pk">#{{ c.pick_no }}</span>
-              <span class="pl pos-{{ c.pos }}">{{ idm.headshot(c.player_id) }}{{ c.player }}</span>
-              {% if c.pos_rank %}<span class="q">{{ c.pos }} #{{ c.pos_rank }}</span>{% endif %}
-              <span class="pts">{{ "%.0f"|format(c.total) }} pts</span>
-              <span class="q">{{ ("originally " ~ c.orig_pick) if c.orig_pick else "undrafted" }}</span>
-              {% else %}<span class="pk">—</span>{% endif %}
-            </td>
-            {% endfor %}
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
-    {% else %}
-    <p class="empty">Not enough season data to build a redraft comparison.</p>
-    {% endif %}
-  </div>
+{# nosort: the board is a round x slot grid, so re-ordering rows is meaningless #}
+<div class="tablewrap nosort">
+  <table class="draftboard">
+    <thead>
+      <tr>
+        <th class="rnd">R</th>
+        {% for u in slot_user %}<th>{{ u or "—" }}</th>{% endfor %}
+      </tr>
+    </thead>
+    <tbody>
+      {% for rnd in rounds %}
+      <tr>
+        <td class="rnd">{{ rnd.round }}</td>
+        {% for c in rnd.cells %}
+        <td class="pick">
+          {% if c %}
+          <span class="pk">#{{ c.pick_no }}</span>
+          <span class="pl pos-{{ c.pos }}">{{ idm.headshot(c.player_id) }}{{ c.player }}</span>
+          {% if c.pos_rank %}<span class="q">{{ c.pos }} #{{ c.pos_rank }}</span>{% endif %}
+          <span class="pts{% if c.dv %} dv-{{ c.dv }}{% endif %}">{{ "%.0f"|format(c.points) }} pts{% if c.total and (c.total - c.points) >= 1 %}
+            (Total {{ "%.0f"|format(c.total) }}){% endif %}</span>
+          {% else %}<span class="pk">—</span>{% endif %}
+        </td>
+        {% endfor %}
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
 </div>

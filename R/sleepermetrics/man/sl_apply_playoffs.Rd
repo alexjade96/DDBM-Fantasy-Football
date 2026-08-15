@@ -4,7 +4,7 @@
 \alias{sl_apply_playoffs}
 \title{Let each season's playoff bracket decide that season's champion}
 \usage{
-sl_apply_playoffs(seasons, playoff_dir = "playoffs", recompute = FALSE)
+sl_apply_playoffs(seasons, playoff_dir = "season", recompute = FALSE)
 }
 \arguments{
 \item{seasons}{A list of \link{sleeper_season} objects.}

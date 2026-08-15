@@ -1,0 +1,48 @@
+{# The redrafted round x slot grid ordered by Sleeper's own ADP for the
+   season instead of TRUE season value -- see draft.redraft_board_adp()'s
+   docstring. Same team ownership per seat as the true-value board
+   (`slot_user`, from _redraft_board_ctx -- shared, not recomputed), only the
+   cells (`redraft_rounds_adp`, from app.py's _redraft_board_adp_ctx) differ.
+   A separate partial from _redraft_board_table.html (near-identical markup,
+   deliberately not shared via a generalized variable name) rather than
+   generalizing that one, since it's also used by the Draft tab's own board
+   part (_draft_board.html) -- keeping this one separate means the ADP board
+   (a live/cached network fetch) can never accidentally get pulled into that
+   already-working, network-free path. Report-only: no Draft tab caller. #}
+{% if redraft_rounds_adp %}
+<p class="hint">Same grid, same team ownership &mdash; each slot filled by whoever
+   the field at large was drafting around that round, per Sleeper's own ADP for
+   {{ season }}. The small note under each pick says where that player really went.</p>
+{# nosort: the board is a round x slot grid, so re-ordering rows is meaningless #}
+<div class="tablewrap nosort">
+  <table class="draftboard">
+    <thead>
+      <tr>
+        <th class="rnd">R</th>
+        {% for u in slot_user %}<th>{{ u or "—" }}</th>{% endfor %}
+      </tr>
+    </thead>
+    <tbody>
+      {% for rnd in redraft_rounds_adp %}
+      <tr>
+        <td class="rnd">{{ rnd.round }}</td>
+        {% for c in rnd.cells %}
+        <td class="pick">
+          {% if c %}
+          <span class="pk">#{{ c.pick_no }}</span>
+          <span class="pl pos-{{ c.pos }}">{{ idm.headshot(c.player_id) }}{{ c.player }}</span>
+          {% if c.pos_rank %}<span class="q">{{ c.pos }} #{{ c.pos_rank }}</span>{% endif %}
+          <span class="pts">{{ "%.0f"|format(c.total) }} pts</span>
+          <span class="q">{{ ("originally " ~ c.orig_pick) if c.orig_pick else "undrafted" }}</span>
+          {% else %}<span class="pk">—</span>{% endif %}
+        </td>
+        {% endfor %}
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<p class="empty">No ADP data available for {{ season }} &mdash; Sleeper's
+   undocumented ADP endpoint may be unreachable, or has nothing for this season.</p>
+{% endif %}

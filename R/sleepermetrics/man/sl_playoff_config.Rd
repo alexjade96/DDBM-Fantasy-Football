@@ -7,7 +7,7 @@
 sl_playoff_config(path)
 }
 \arguments{
-\item{path}{Path to a playoff JSON config (see \verb{playoffs/} in the repo).}
+\item{path}{Path to a playoff JSON config (see \verb{season/<league_id>/} in the repo).}
 }
 \value{
 The parsed config as a list.

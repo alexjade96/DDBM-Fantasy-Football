@@ -283,10 +283,31 @@ th { font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: v
   position: absolute; right: 6px; font-size: 9px; color: var(--turf); }
 #panel thead th.sort-asc::after { content: '\25B2'; }
 #panel thead th.sort-desc::after { content: '\25BC'; }
+/* Same sortable-header treatment for a .drilltable (div/span grid, no real
+   <thead>/<th> to hang the rule above off of) -- opt-in via class="sortable"
+   on the .drilltable itself, not a .nosort opt-out, since most drilltables
+   nest ANOTHER one inside a row's own drilldown and reordering the outer
+   rows mid-expand isn't something to turn on by default everywhere. JS
+   lives with each page that uses it (redraft_report.html currently). */
+.drilltable.sortable > .dt-head > [role="button"] { cursor: pointer; user-select: none;
+  position: relative; padding-right: 14px; }
+.drilltable.sortable > .dt-head > [role="button"]:hover { color: var(--ink); }
+.drilltable.sortable > .dt-head > .sort-asc::after,
+.drilltable.sortable > .dt-head > .sort-desc::after {
+  position: absolute; right: 0; top: 50%; transform: translateY(-50%);
+  font-size: 9px; color: var(--turf); }
+.drilltable.sortable > .dt-head > .sort-asc::after { content: '\25B2'; }
+.drilltable.sortable > .dt-head > .sort-desc::after { content: '\25BC'; }
 tbody tr:last-child td { border-bottom: 0; }
 .chip { background: color-mix(in srgb, var(--gold) 22%, transparent); border-radius: 20px;
         padding: 1px 8px; font-weight: 600; }
 .chip.toilet { background: color-mix(in srgb, #a8743a 22%, transparent); }   /* basement's answer to gold */
+/* Redraft simulation: marks a game/round whose simulated result differs from
+   what actually happened (draft.redraft_week_matchups/redraft_playoff's
+   `flipped`) -- a distinct hue from .chip's gold (which already means
+   "postseason/toilet bowl" elsewhere) so it doesn't read as one of those. */
+.chip.flip { background: color-mix(in srgb, #4263eb 20%, transparent);
+             font-size: 11px; margin-left: 4px; }
 
 details.card { margin-top: 18px; }
 details summary { cursor: pointer; font-weight: 600; }
@@ -386,12 +407,20 @@ details summary { cursor: pointer; font-weight: 600; }
 .rule .n { font-variant-numeric: tabular-nums; font-weight: 600; white-space: nowrap;
            min-width: 8.5em; text-align: right; }
 
-/* Season-report tab. The report's section HTML is built by sleepermetrics
-   (report.py) and dropped in as-is, so its class names are styled here against
-   the dashboard's own tokens -- scoped to .reportpanel so nothing leaks out. */
-.rail .dl { margin-left: auto; text-decoration: none; font-size: 12px; font-weight: 600;
-  padding: 4px 12px; border-radius: 20px; border: 1px solid var(--line); color: var(--muted); }
-.rail .dl:hover { border-color: var(--turf); color: var(--turf); }
+/* General-purpose pill link/button: the season report's Download link
+   (inside its .rail) and the Draft tab's "View Simulated Draft" CTA (a bare
+   sibling, no .rail). `inline-block` (not the default inline an <a> would
+   otherwise render as) so a plain vertical margin between it and a sibling
+   like p.hint is respected -- vertical margins on a non-replaced inline
+   element are silently ignored by the CSS box model, which only stopped
+   mattering here because .rail's own flex context used to promote it. The
+   `.rail .dl` position still right-justifies it via margin-left:auto in a
+   flex row; outside one, auto margins on an inline-block are a no-op and it
+   just sits wherever placed in markup. */
+.dl { display: inline-block; margin-left: auto; text-decoration: none; font-size: 12px;
+  font-weight: 600; padding: 4px 12px; border-radius: 20px; border: 1px solid var(--line);
+  color: var(--muted); }
+.dl:hover { border-color: var(--turf); color: var(--turf); }
 /* Vertical rhythm inside the report tab -- same convention as `#panel > * + *`
    (see below), but scoped one level deeper: every block in tab_report.html
    (eyebrow, narrative card, each section's heading/hint/table/chart-grid) is a
@@ -900,13 +929,25 @@ footer code { font-family: ui-monospace, Consolas, monospace; }
 .gb-vs-mode:has(#gb-undrafted:checked) .vs-tabs label[for="gb-undrafted"] {
   background: var(--ink); color: var(--surface); border-color: var(--ink); }
 
-/* Draft tab: draft board Actual vs Redraft-by-true-value toggle -- same
-   fixed-id viewswitch idiom as gb-vs-mode above (one instance per page). */
-.db-vs-mode #db-actual:checked ~ .vs-p-actual,
-.db-vs-mode #db-redraft:checked ~ .vs-p-redraft { display: block; }
-.db-vs-mode:has(#db-actual:checked) .vs-tabs label[for="db-actual"],
-.db-vs-mode:has(#db-redraft:checked) .vs-tabs label[for="db-redraft"] {
+/* Redraft report: the redrafted board's own By-final-season-results / By-ADP
+   toggle -- same fixed-id viewswitch idiom as gb-vs-mode above. Standalone
+   page only (redraft_report.html); the Draft tab's board (a plain table, no
+   toggle -- see _draft_board.html) just links into this report instead. */
+.rb-vs-mode #rb-results:checked ~ .vs-p-results,
+.rb-vs-mode #rb-adp:checked ~ .vs-p-adp { display: block; }
+.rb-vs-mode:has(#rb-results:checked) .vs-tabs label[for="rb-results"],
+.rb-vs-mode:has(#rb-adp:checked) .vs-tabs label[for="rb-adp"] {
   background: var(--ink); color: var(--surface); border-color: var(--ink); }
+/* The redrafted-board table and the simulation section below it are each
+   .vs-p-results/.vs-p-adp's direct children, not #panel's -- so neither
+   `#panel > * + *`'s sibling rhythm nor `#panel > .rowhead h2`'s margin
+   reset (below) ever reaches them, same trap as .finalplace above and fixed
+   the same way. Without this, the board's own heading picked up a stray
+   ~30px gap from h2's own unreset base margin, while the gap between the
+   board and the simulation section collapsed to 0. */
+.rb-vs-mode .vs-panel > * + * { margin-top: 22px; }
+.rb-vs-mode .vs-panel > h2 + *, .rb-vs-mode .vs-panel > p.hint + * { margin-top: 10px; }
+.rb-vs-mode .vs-panel > .rowhead h2 { margin-top: 0; }
 
 /* Roster tab: Roster honors By manager / By position toggle -- same
    fixed-id viewswitch idiom as gb-vs-mode above (one instance per page). */
@@ -931,6 +972,46 @@ footer code { font-family: ui-monospace, Consolas, monospace; }
 .dt-lineup-mode:has(.vs-radio:nth-of-type(2):checked) .vs-tabs label:nth-of-type(2) {
   background: var(--ink); color: var(--surface); border-color: var(--ink); }
 .dt-lineup-mode { margin-top: 4px; }
+/* Redraft weekly/playoffs callers (_week_scoreboard.html's opt_default=true)
+   skip this toggle entirely and render the simulated lineup directly -- see
+   _week_scoreboard.html's header comment. Only the plain Weekly/Overview
+   tabs' real Actual/Optimized toggle uses .dt-lineup-mode now. */
+
+/* Draft tab: redraft simulation's Season/Playoffs/Roster/Weekly toggle -- all
+   four are genuinely DIFFERENT tables (season totals, postseason rounds, one
+   row per manager, one row per week), not different ways of looking at the
+   same row, so this is the simple top-level N-panel idiom (.db-vs-mode/
+   .fa-vs-mode) rather than .roster-view-mode's shared-table-with-nested-
+   panels one: .vs-p-sim-* are direct siblings of the radios, each holding
+   its own complete section/.tablewrap. The toggle supersedes the table (sits
+   above it, swaps which whole table renders) instead of being buried inside
+   a drilldown. Season's two charts sit inside their OWN .vs-p-sim-season
+   wrapper rather than being tagged directly with the toggle's own
+   display:block rule -- that rule setting display:block on an element that
+   already carries its OWN display:grid (.grid) silently overrides it (a
+   more specific selector wins), collapsing the chart pair into a gapless
+   block stack -- this shipped once already; see _draft_simulation.html's
+   comment on the same trap.
+
+   POSITIONAL (:nth-of-type), not id-keyed -- same structural idiom as
+   .dt-lineup-mode above -- because the report includes this template TWICE
+   (By final season results / By ADP, each its own basis' data), and an
+   id-keyed rule only ever matches ONE literal id, so it can't cover a
+   second instance whose ids are uniquified with a prefix. Position within
+   the radio group is stable regardless of how many times the template is
+   instantiated; only the ids themselves (for <label for> to focus the
+   right radio) need to be unique, which _draft_simulation.html's own
+   `sim_prefix` already handles. */
+.sim-view-mode .vs-radio:nth-of-type(1):checked ~ .vs-p-sim-season,
+.sim-view-mode .vs-radio:nth-of-type(2):checked ~ .vs-p-sim-playoffs,
+.sim-view-mode .vs-radio:nth-of-type(3):checked ~ .vs-p-sim-roster,
+.sim-view-mode .vs-radio:nth-of-type(4):checked ~ .vs-p-sim-weeks { display: block; }
+.sim-view-mode:has(.vs-radio:nth-of-type(1):checked) .vs-tabs label:nth-of-type(1),
+.sim-view-mode:has(.vs-radio:nth-of-type(2):checked) .vs-tabs label:nth-of-type(2),
+.sim-view-mode:has(.vs-radio:nth-of-type(3):checked) .vs-tabs label:nth-of-type(3),
+.sim-view-mode:has(.vs-radio:nth-of-type(4):checked) .vs-tabs label:nth-of-type(4) {
+  background: var(--ink); color: var(--surface); border-color: var(--ink); }
+.sim-view-mode > .vs-panel { margin-top: 10px; }
 
 /* Roster tab: "Rosters by manager" drilldown's Roster breakdown / Roster /
    Efficiency toggle -- ONE instance for the whole section (not per row), so

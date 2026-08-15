@@ -76,8 +76,8 @@ def check_lineup(player_ids, roster_positions, pinfo: pd.DataFrame) -> list:
 # --- Bracket generators + validation -------------------------------------
 # The webapp lets a user roll back to Sleeper's own bracket or scaffold a custom
 # one; both produce a config the engine runs unchanged. These were previously in
-# playoffs/scaffold.py (a CLI); promoted here so the webapp can call them without
-# shelling out. scaffold.py now imports these.
+# scaffold.py (a CLI, now at season/scaffold.py); promoted here so the webapp
+# can call them without shelling out. scaffold.py now imports these.
 _gen_cache: dict = {}
 
 
@@ -441,8 +441,17 @@ def scope_frame(d: pd.DataFrame, scope: str = "title") -> pd.DataFrame:
     return d[d["bracket"] == scope]
 
 
-def config_paths(playoff_dir: str = "playoffs", league_ids=None) -> dict:
+def config_paths(playoff_dir: str = "season", league_ids=None) -> dict:
     """{season: config path} for every stored season bracket.
+
+    Configs live one level down, under `<playoff_dir>/<league_id>/<season>.json`
+    -- Sleeper gives each season its own league id (see `league_ids` below), so
+    a bracket is keyed by BOTH, not by season number alone. Only numeric-named
+    subfolders are treated as league folders (a Sleeper league_id is always a
+    numeric string); `<playoff_dir>/adp/` and `<playoff_dir>/fixtures/` are
+    siblings holding unrelated data (the ADP cache, a manually-referenced
+    ground-truth bracket) and are skipped by that same rule -- no denylist to
+    keep in sync as new siblings are added.
 
     `league_ids` restricts the result to brackets belonging to those leagues.
     A bracket is keyed by season, but a season number is not unique across
@@ -454,7 +463,9 @@ def config_paths(playoff_dir: str = "playoffs", league_ids=None) -> dict:
     import os
     ids = {str(i) for i in league_ids} if league_ids is not None else None
     out = {}
-    for f in sorted(glob.glob(os.path.join(playoff_dir, "*.json"))):
+    for f in sorted(glob.glob(os.path.join(playoff_dir, "*", "*.json"))):
+        if not os.path.basename(os.path.dirname(f)).isdigit():
+            continue
         try:
             cfg = playoff_config(f)
         except Exception:
@@ -481,7 +492,7 @@ def champion_of(config, recompute: bool = False):
     return playoff(config, validate=False).champion
 
 
-def apply_playoffs(seasons: dict, playoff_dir: str = "playoffs",
+def apply_playoffs(seasons: dict, playoff_dir: str = "season",
                    recompute: bool = False) -> dict:
     """Let each season's playoff bracket decide that season's champion.
 
@@ -505,7 +516,7 @@ def apply_playoffs(seasons: dict, playoff_dir: str = "playoffs",
     return seasons
 
 
-def load_playoffs(playoff_dir: str = "playoffs", league_ids=None) -> dict:
+def load_playoffs(playoff_dir: str = "season", league_ids=None) -> dict:
     """{season: Playoff} -- every stored bracket, scored.
 
     Pass `league_ids` (the league's season chain) to load only that league's

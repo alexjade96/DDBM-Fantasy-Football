@@ -1,5 +1,5 @@
 # Python web dashboard (FastAPI + HTMX). Builds from the repo root, because the
-# app reads the bracket configs in playoffs/.
+# app reads the bracket configs and ADP cache in season/.
 #
 #   docker build -t sleepermetrics .
 #   docker run -p 8000:8000 sleepermetrics
@@ -18,12 +18,13 @@ WORKDIR /app
 COPY python/requirements.txt ./requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt
 
-# The package, the web layer, and the bracket configs the Playoffs tab reads.
+# The package, the web layer, and the season data (bracket configs the
+# Playoffs tab reads, plus the ADP cache the Draft tab's redraft report reads).
 COPY python/sleepermetrics ./sleepermetrics
 COPY python/webapp ./webapp
-COPY playoffs ./playoffs
+COPY season ./season
 
-ENV SLEEPERMETRICS_PLAYOFFS=/app/playoffs
+ENV SLEEPERMETRICS_SEASON_DIR=/app/season
 
 EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s \

@@ -6,7 +6,7 @@
     python launch.py report <league_id> --out my_report.html
     python launch.py report <league_id> --all   # one file per season
 
-Run via launch.py (which sets the venv + playoffs dir), or directly from python/.
+Run via launch.py (which sets the venv + season dir), or directly from python/.
 """
 from __future__ import annotations
 
@@ -17,7 +17,7 @@ import sys
 import sleepermetrics as sm
 
 DEFAULT_LEAGUE = os.environ.get("SLEEPERMETRICS_LEAGUE", "1252770181306929152")
-PLAYOFF_DIR = os.environ.get("SLEEPERMETRICS_PLAYOFFS", "playoffs")
+SEASON_DIR = os.environ.get("SLEEPERMETRICS_SEASON_DIR", "season")
 
 
 def main(argv=None) -> int:
@@ -28,8 +28,8 @@ def main(argv=None) -> int:
     ap.add_argument("--all", action="store_true", help="one report per season")
     a = ap.parse_args(argv)
 
-    ss = sm.apply_playoffs(sm.seasons(a.league), PLAYOFF_DIR)
-    pos = sm.load_playoffs(PLAYOFF_DIR, league_ids=[s.league_id for s in ss.values()])
+    ss = sm.apply_playoffs(sm.seasons(a.league), SEASON_DIR)
+    pos = sm.load_playoffs(SEASON_DIR, league_ids=[s.league_id for s in ss.values()])
     if not ss:
         sys.exit(f"No scored seasons found for league {a.league}.")
 

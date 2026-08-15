@@ -93,7 +93,7 @@ python/venv/Scripts/pip install -r python/requirements.txt   # Windows
 | `R/sleepermetrics/` | the R package — metrics, plots, summaries, Shiny app, Discord bot |
 | `python/sleepermetrics/` | the Python port — same modules, `pandas` + `matplotlib` |
 | `python/webapp/` | the Python web dashboard (FastAPI + HTMX) |
-| `playoffs/` | custom playoff engine configs, one bracket per season |
+| `season/` | custom playoff engine configs (one bracket per league+season) and the Python Draft tab's ADP cache |
 | `parity/` + `verify.py` | the cross-language harness that keeps R and Python identical |
 | `tools/` | launchers and chart regeneration |
 | `ddbmFF.R` | the **origin script** — historical basis, left untouched |
@@ -113,7 +113,7 @@ matchup; winners advance automatically.
 This is verified exact — it reproduces Sleeper's own player points (175/175 in
 wk15) and, replaying Sleeper's own bracket, all 12 matchup winners with zero
 mismatches. Season champions come from these brackets, not Sleeper's
-`winners_bracket`. See [`playoffs/README.md`](playoffs/README.md).
+`winners_bracket`. See [`season/README.md`](season/README.md).
 
 ### Free hosting
 

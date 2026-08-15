@@ -2,7 +2,7 @@
 #
 #   Rscript tools/render_examples.R [league_id]
 #
-# Champions come from the stored playoff brackets (see playoffs/README.md), not
+# Champions come from the stored playoff brackets (see season/README.md), not
 # Sleeper's winners_bracket -- so crowns, titles and champion stars are correct.
 # Output: results/examples/r/ (gitignored build artifacts).
 
@@ -23,9 +23,9 @@ save_plot <- function(name, p, w = 10, h = 6.2) {
 }
 
 cat("Loading league...\n")
-ss <- sl_apply_playoffs(sl_seasons(league), "playoffs")
+ss <- sl_apply_playoffs(sl_seasons(league), "season")
 latest <- ss[[length(ss)]]
-pos <- sl_load_playoffs("playoffs")
+pos <- sl_load_playoffs("season")
 
 cat("Season charts (", latest$season, ")\n", sep = "")
 save_plot("standings",          sl_plot_standings(latest))

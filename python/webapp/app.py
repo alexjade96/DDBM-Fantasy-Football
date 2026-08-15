@@ -33,7 +33,10 @@ from sleepermetrics import report as sm_report  # noqa: E402
 
 BASE = Path(__file__).resolve().parent
 ROOT = BASE.parent.parent                       # repo root
-PLAYOFF_DIR = os.environ.get("SLEEPERMETRICS_PLAYOFFS", str(ROOT / "playoffs"))
+# The custom playoff bracket configs (season/<league_id>/<season>.json) and
+# the ADP cache (season/adp/<season>.json -- see draft.py) share this one
+# root, both durable JSON checked into the repo.
+SEASON_DIR = os.environ.get("SLEEPERMETRICS_SEASON_DIR", str(ROOT / "season"))
 DEFAULT_LEAGUE = os.environ.get("SLEEPERMETRICS_LEAGUE", "1252770181306929152")
 TTL = int(os.environ.get("SLEEPERMETRICS_TTL", "900"))   # cache seasons 15 min
 
@@ -236,11 +239,11 @@ def league_data(league_id: str, fresh: bool = False) -> dict:
     hit = _cache.get(league_id)
     if hit and not fresh and time.time() - hit["at"] < TTL:
         return hit
-    seasons = sm.apply_playoffs(sm.seasons(league_id), PLAYOFF_DIR)
+    seasons = sm.apply_playoffs(sm.seasons(league_id), SEASON_DIR)
     # Only this league's brackets -- a stored 2025.json belongs to a league, not
     # to the number 2025, so another league must not inherit DDBM's playoffs.
     playoffs = sm.load_playoffs(
-        PLAYOFF_DIR, league_ids=[s.league_id for s in seasons.values()])
+        SEASON_DIR, league_ids=[s.league_id for s in seasons.values()])
     d = {"at": time.time(), "seasons": seasons, "playoffs": playoffs,
          "names": list(seasons)}
     _cache[league_id] = d
@@ -390,17 +393,16 @@ SEASON_CHARTS = {
     "roster_counts": plots.plot_roster_counts,
     "trade_performance": plots.plot_trade_performance,
     "waiver_performance": plots.plot_waiver_performance,
-    "trade_player_rates": plots.plot_trade_player_rates,
-    "trade_rates_top_movers": plots.plot_trade_rates_top_movers,
-    "trade_rates_threshold": plots.plot_trade_rates_threshold,
-    "trade_rates_collapsed": plots.plot_trade_rates_collapsed,
-    "trade_rates_small_multiples": plots.plot_trade_rates_small_multiples,
     "waiver_position_churn": plots.plot_waiver_position_churn,
     "waiver_activity": plots.plot_waiver_activity,
     "boom_bust": plots.plot_boom_bust, "sos": plots.plot_sos,
     "schedule_swap": plots.plot_schedule_swap,
     "draft_value": plots.plot_draft_value,
     "draft_grades_value": plots.plot_draft_grades_value,
+    "redraft_standings": plots.plot_redraft_standings,
+    "redraft_points": plots.plot_redraft_points,
+    "redraft_finish_slope": plots.plot_redraft_finish_slope,
+    "redraft_points_delta": plots.plot_redraft_points_delta,
 }
 
 
@@ -414,6 +416,15 @@ WEEK_CHARTS = {
     "week_luck": plots.plot_week_luck,           # PF vs PA, split by the tie line
     "week_race": plots.plot_week_race,           # table position, weeks 1..N
     "week_power": plots.plot_week_power,         # power rankings, weeks 1..N
+}
+
+# Trade-scoped charts take (season, transaction_id) instead of just a season --
+# one deal's own graphic, meant to render inline next to that deal's card
+# rather than as one aggregate chart above a whole season's trades. They need
+# the `transaction_id` query param, same reasoning as WEEK_CHARTS needing `week`.
+TRADE_CHARTS = {
+    "trade_single_contribution": plots.plot_trade_single_contribution,
+    "trade_single_cumulative": plots.plot_trade_single_cumulative,
 }
 
 MANAGER_CHARTS = {
@@ -462,16 +473,17 @@ CHART_META = {
     "tx_volume": {"cap": "How busy the league was, and when — trades vs. waiver/FA moves by week."},
     "trade_performance": {"cap": "Every traded player by the points he returned while rostered."},
     "waiver_performance": {"cap": "Every waiver or free-agent pickup by points returned while rostered."},
-    "trade_player_rates": {"cap": "Traded players' PPG before vs. after the deal, in order."},
-    "trade_rates_top_movers": {"cap": "Prototype: only each trade's biggest movers, so one big trade can't crowd out the rest."},
-    "trade_rates_threshold": {"cap": "Prototype: only swings that actually moved the needle, whatever the trade."},
-    "trade_rates_collapsed": {"cap": "Prototype: every trade's top movers, with the rest folded into one row."},
-    "trade_rates_small_multiples": {"cap": "Prototype: one small panel per trade instead of one long list.", "wide": True},
+    "trade_single_contribution": {"cap": "Points received in this deal, by player — net alongside each side's total."},
+    "trade_single_cumulative": {"cap": "Each side's cumulative points since the trade, as a race."},
     "waiver_position_churn": {"cap": "Which positions get streamed on the wire vs. picked up once."},
     "waiver_activity": {"cap": "Cumulative waiver/FA moves per manager, week by week."},
     # Draft
     "draft_value": {"cap": "Roster points each pick returned to the team that drafted him."},
     "draft_grades_value": {"cap": "Sorted by roster points actually kept — a long red line is value that got traded or dropped away before it counted."},
+    "redraft_standings": {"cap": "Real wins vs. simulated wins if every team had redrafted by true season value, same schedule replayed."},
+    "redraft_points": {"cap": "Prototype: same idea, real points vs. simulated points — explains WHY the win totals moved."},
+    "redraft_finish_slope": {"cap": "The standings reshuffle itself — real finish vs. simulated finish, per manager."},
+    "redraft_points_delta": {"cap": "Prototype: simulated minus real points, one signed bar per manager."},
     # Career
     "career": {"cap": "Cumulative record and points across every season on record."},
     "trajectory": {"cap": "Where each manager finished, season by season."},
@@ -491,9 +503,8 @@ tpl.env.globals["CHART_META"] = CHART_META
 # key in a group here; nothing else needs touching. Remove the key (and the
 # chart function, if it's been rejected) once a prototype's fate is decided.
 TESTING_CHARTS = [
-    ("Trade Performance, Before vs After — condensing the elongated chart", [
-        "trade_rates_top_movers", "trade_rates_threshold",
-        "trade_rates_collapsed", "trade_rates_small_multiples",
+    ("Redraft Simulation — a companion to the wins dumbbell", [
+        "redraft_points", "redraft_points_delta",
     ]),
 ]
 
@@ -503,6 +514,7 @@ def chart(name: str, league: str = DEFAULT_LEAGUE, season: str | None = None,
           matchup: str | None = None, scope: str = "title",
           theme: str = "light", manager: str | None = None,
           week: str | None = None, bracket: str | None = None,
+          transaction_id: str | None = None, basis: str = "value",
           _: str | None = None):
     d, s, key = pick(league, season)
     # A custom / rolled-back bracket (token) overrides this season's committed
@@ -514,6 +526,12 @@ def chart(name: str, league: str = DEFAULT_LEAGUE, season: str | None = None,
     with _render_lock:
         plots.set_chart_theme(theme)
         if name in SEASON_CHARTS:
+            # `basis` (value/adp) only means something to the two redraft-
+            # simulation charts -- everything else in this registry takes
+            # just `s`, so it's threaded through selectively rather than
+            # widening every chart function's signature for two callers.
+            if name in ("redraft_standings", "redraft_finish_slope"):
+                return png(SEASON_CHARTS[name](s, basis=basis))
             return png(SEASON_CHARTS[name](s))
         if name in WEEK_CHARTS:
             # Default to the latest scored week, matching the tab's own default.
@@ -522,6 +540,12 @@ def chart(name: str, league: str = DEFAULT_LEAGUE, season: str | None = None,
             except ValueError:
                 wk = s.last_week
             return png(WEEK_CHARTS[name](s, wk))
+        if name in TRADE_CHARTS:
+            # No transaction_id means the caller forgot to scope it -- degrade
+            # rather than draw a chart for an arbitrary deal.
+            if not transaction_id:
+                return Response(status_code=404)
+            return png(TRADE_CHARTS[name](s, transaction_id))
         if name in MANAGER_CHARTS:
             # The chart draws its own "no data" panel for a manager this season
             # doesn't have, so an unknown scope degrades instead of 500ing.
@@ -1216,7 +1240,7 @@ def tab(name: str, request: Request, league: str = DEFAULT_LEAGUE,
         # optimal-lineup solve Roster's league view pays for separately) are
         # each their own lazy part; see the two @tab_part("transactions", ...)
         # handlers below.
-        ctx["charts"] = ["manager_profile", "tx_volume"]
+        ctx["charts"] = ["tx_volume", "manager_profile"]
         # One card per deal, not one row per team: the ledger's mirror-image
         # rows read as duplicates and print every player's name twice.
         ctx["standouts"] = metrics.transaction_standouts(s)
@@ -1398,9 +1422,10 @@ def tab(name: str, request: Request, league: str = DEFAULT_LEAGUE,
         })
         return _pushed(tpl.TemplateResponse(request, "tab_playoffs.html", ctx), ctx, name)
     elif name == "testing":
-        # Every chart in TESTING_CHARTS is cheap enough (bounded by move/deal
-        # count, not weeks) to render eagerly here -- no lazy @tab_part split
-        # needed, unlike the tabs above with a genuinely heavy section.
+        # Rendered eagerly here, no lazy @tab_part split -- the current
+        # group (redraft_standings() companions) is memoized per league:season
+        # (draft._sim_cache), so only the first chart on the page pays the
+        # real per-team-week solve; the rest reuse it.
         ctx["seasons"] = list(reversed(d["names"]))
         ctx["testing_charts"] = TESTING_CHARTS
         return _pushed(tpl.TemplateResponse(request, "tab_testing.html", ctx), ctx, name)
@@ -1627,6 +1652,68 @@ def _draft_part_finds(request, s, d, key, ctx):
     return tpl.TemplateResponse(request, "_draft_finds.html", ctx)
 
 
+def _redraft_board_ctx(s) -> dict:
+    """{"slot_user", "redraft_rounds"} for the redraft round x slot grid --
+    used by the redraft report (report_redraft), alongside the rest of the
+    simulation. The Draft tab's own board part no longer shows this (see
+    _draft_board.html); it just links into the report instead.
+    """
+    rdb = draft.redraft_board(s)
+    if rdb.empty:
+        return {"slot_user": [], "redraft_rounds": []}
+    rdb = rdb[rdb["draft_slot"].notna()].copy()
+    rdb["draft_slot"] = rdb["draft_slot"].astype(int)
+    slots = sorted(rdb["draft_slot"].unique())
+    slot_user_map = (rdb.drop_duplicates("draft_slot")
+                     .set_index("draft_slot")["user_name"].to_dict())
+    redraft_rounds = []
+    for rnd, g in rdb.groupby("round"):
+        cells = {int(r["draft_slot"]): {
+            "pick_no": int(r["pick_no"]) if pd_notna(r["pick_no"]) else None,
+            "player": r["player_name"] or "—",
+            "player_id": r["player_id"] if pd_notna(r["player_id"]) else None,
+            "pos": (r["position"] or "").upper(),
+            "pos_rank": int(r["pos_rank"]) if pd_notna(r["pos_rank"]) else None,
+            "total": round(float(r["total"]), 1),
+            "orig_pick": r["orig_pick"] if pd_notna(r["orig_pick"]) else None,
+        } for _, r in g.iterrows()}
+        redraft_rounds.append({"round": int(rnd),
+                               "cells": [cells.get(sl) for sl in slots]})
+    return {"slot_user": [slot_user_map.get(sl) for sl in slots],
+            "redraft_rounds": redraft_rounds}
+
+
+def _redraft_board_adp_ctx(s) -> dict:
+    """{"redraft_rounds_adp"} -- same shape as _redraft_board_ctx()'s own
+    "redraft_rounds", but for draft.redraft_board_adp() (ADP-ordered instead
+    of true-value-ordered). Shares "slot_user" with the true-value board
+    (same team ownership per seat), so only this key is new. Report-only
+    (report_redraft) -- unlike _redraft_board_ctx, never called from the
+    Draft tab's own board part, since redraft_board_adp() does a live/cached
+    network fetch that the plain board render shouldn't pay for.
+    """
+    rdb = draft.redraft_board_adp(s)
+    if rdb.empty:
+        return {"redraft_rounds_adp": []}
+    rdb = rdb[rdb["draft_slot"].notna()].copy()
+    rdb["draft_slot"] = rdb["draft_slot"].astype(int)
+    slots = sorted(rdb["draft_slot"].unique())
+    redraft_rounds_adp = []
+    for rnd, g in rdb.groupby("round"):
+        cells = {int(r["draft_slot"]): {
+            "pick_no": int(r["pick_no"]) if pd_notna(r["pick_no"]) else None,
+            "player": r["player_name"] or "—",
+            "player_id": r["player_id"] if pd_notna(r["player_id"]) else None,
+            "pos": (r["position"] or "").upper(),
+            "pos_rank": int(r["pos_rank"]) if pd_notna(r["pos_rank"]) else None,
+            "total": round(float(r["total"]), 1),
+            "orig_pick": r["orig_pick"] if pd_notna(r["orig_pick"]) else None,
+        } for _, r in g.iterrows()}
+        redraft_rounds_adp.append({"round": int(rnd),
+                                   "cells": [cells.get(sl) for sl in slots]})
+    return {"redraft_rounds_adp": redraft_rounds_adp}
+
+
 @tab_part("draft", "board")
 def _draft_part_board(request, s, d, key, ctx):
     db = draft.draft_board(s)
@@ -1675,25 +1762,117 @@ def _draft_part_board(request, s, d, key, ctx):
     ctx.update({"slots": slots,
                 "slot_user": [slot_user.get(sl) for sl in slots],
                 "rounds": rounds})
-    # Redraft toggle: the same round x slot grid, but filled by TRUE
-    # season value instead of actual order -- see
-    # `draft.redraft_board`'s docstring for what it compares.
-    rdb = draft.redraft_board(s)
-    redraft_rounds = []
-    for rnd, g in rdb.groupby("round"):
-        cells = {int(r["draft_slot"]): {
-            "pick_no": int(r["pick_no"]) if pd_notna(r["pick_no"]) else None,
-            "player": r["player_name"] or "—",
-            "player_id": r["player_id"] if pd_notna(r["player_id"]) else None,
-            "pos": (r["position"] or "").upper(),
-            "pos_rank": int(r["pos_rank"]) if pd_notna(r["pos_rank"]) else None,
-            "total": round(float(r["total"]), 1),
-            "orig_pick": r["orig_pick"] if pd_notna(r["orig_pick"]) else None,
-        } for _, r in g.iterrows()}
-        redraft_rounds.append({"round": int(rnd),
-                               "cells": [cells.get(sl) for sl in slots]})
-    ctx["redraft_rounds"] = redraft_rounds
+    # No redraft-board toggle here anymore (see _draft_board.html) -- the
+    # board just links into the full redraft report instead, so this route
+    # no longer pays for _redraft_board_ctx's own draft.redraft_board() call.
     return tpl.TemplateResponse(request, "_draft_board.html", ctx)
+
+
+# Builds the redraft-simulation context -- shared by the standalone report
+# route below, the ONLY place this now renders (see _draft_simulation.html's
+# own comment: it used to be an inline lazy section under the Draft tab's
+# board, gated behind the Redraft toggle, but redraft_standings() re-
+# simulating every regular-season team-week made that toggle-then-wait
+# experience heavy enough to warrant its own page instead, opened via the
+# board's "Open redraft report" button).
+#
+# `basis`/`suffix` let this run TWICE against the same ctx -- once per the
+# report's own By-final-season-results / By-ADP toggle (see report_redraft),
+# "value" writing the plain `sim`/`sim_rosters`/`sim_weeks`/`sim_playoffs`
+# keys (unchanged, so nothing else that reads them needs to know this
+# exists) and "adp" writing the same names with an `_adp` suffix -- so the
+# WHOLE simulation (not just the board) chains downstream to whichever basis
+# is selected, not just the true-value one.
+def _draft_sim_ctx(s, d, key, ctx: dict, basis: str = "value", suffix: str = "") -> dict:
+    sim = draft.redraft_standings(s, basis)
+    if sim.empty:
+        # All four keys, even on this early return -- _draft_simulation.html's
+        # Weekly panel calls `sim_weeks.items()` unguarded (safe today only
+        # because it's never reached with `sim` empty -- the report's own
+        # {% if not sim %} gate short-circuits first for the VALUE basis, but
+        # the ADP basis has no such outer gate of its own, e.g. when this
+        # season's true-value board is fine but its ADP data is unavailable).
+        # Leaving sim_weeks unset there would surface as Jinja's UndefinedError
+        # on `.items()`, not a graceful empty panel.
+        ctx["sim" + suffix] = []
+        ctx["sim_rosters" + suffix] = {}
+        ctx["sim_weeks" + suffix] = {}
+        ctx["sim_playoffs" + suffix] = {}
+        return ctx
+    ctx["sim" + suffix] = records(sim)
+    # Per-team redrafted roster for the drilldown -- the same board the
+    # "board" part's Redraft toggle shows, just grouped by team (round order)
+    # instead of by round x slot, so a manager's expanded row can show WHO
+    # they'd have had rather than just the resulting win/points deltas.
+    # "kept" flags a redrafted pick this SAME manager also ORIGINALLY
+    # DRAFTED (draft day, not real end-of-season roster membership) -- a
+    # value-consistent pick the redraft agrees they were right to take.
+    # Deliberately NOT "still on their real roster at the last scored week":
+    # a manager can draft a stud, trade him away mid-season, and still have
+    # drafted him correctly -- that pick isn't wrong just because a LATER
+    # decision moved him elsewhere, and checking final-week rostering read
+    # such picks as "not kept" even when the redraft assigns them right back
+    # to the same manager (confirmed: 2025 LuckyHarm drafted Bijan Robinson
+    # and Brian Thomas Jr, both traded away mid-season, and the redraft
+    # returns both to LuckyHarm -- real ground truth for "was this pick
+    # right", unlike final-roster membership here).
+    orig_board = draft.draft_board(s)
+    orig_drafter = dict(zip(orig_board["player_id"].astype(str), orig_board["roster_id"]))
+    rdb = draft.redraft_board_adp(s) if basis == "adp" else draft.redraft_board(s)
+    rosters: dict[int, list[dict]] = {}
+    for r in rdb.sort_values(["roster_id", "round"]).itertuples(index=False):
+        rosters.setdefault(int(r.roster_id), []).append({
+            "player_id": r.player_id if pd_notna(r.player_id) else None,
+            "player_name": r.player_name or "—",
+            "position": r.position or "—",
+            # Simulated season position finish (the SAME true-value ranking
+            # the board itself is built from) shown beside each player, next
+            # to the plain position tag.
+            "pos_rank": int(r.pos_rank) if pd_notna(r.pos_rank) else None,
+            "total": round(float(r.total), 1),
+            "orig_pick": r.orig_pick if pd_notna(r.orig_pick) else None,
+            "kept": pd_notna(r.player_id) and orig_drafter.get(str(r.player_id)) == int(r.roster_id),
+        })
+    ctx["sim_rosters" + suffix] = rosters
+    ctx["sim_weeks" + suffix] = draft.redraft_week_matchups(s, basis)
+    # Postseason companion -- reuses the SAME committed Playoff object the
+    # Playoffs tab renders from (d["playoffs"]), not a re-derived one, so the
+    # two tabs never disagree about which bracket is current.
+    ctx["sim_playoffs" + suffix] = draft.redraft_playoff(s, d["playoffs"].get(key), basis)
+    return ctx
+
+
+@app.get("/report/redraft", response_class=HTMLResponse)
+def report_redraft(request: Request, league: str = DEFAULT_LEAGUE, season: str | None = None,
+                   theme: str = "light"):
+    """The redraft simulation as its own page, opened via the Draft board's
+    "Open redraft report" button (revealed only under its Redraft toggle --
+    see _draft_board.html/style.css). A real page rather than an inline tab
+    section: redraft_standings()/redraft_playoff() each re-simulate a whole
+    season or bracket (a real optimal-lineup solve per team-week/round), so
+    this is drawn on demand rather than paid for on every Draft tab load.
+    """
+    try:
+        d, s, key = pick(league, season)
+    except Exception:
+        return HTMLResponse("<p class='empty'>Couldn&rsquo;t load this report.</p>")
+    ctx = _base_ctx(league, key, s, theme, bracket=None)
+    ctx["asset_v"] = asset_v()
+    ctx["league_name"] = s.name
+    # Both bases computed eagerly (see _draft_sim_ctx) -- the report's By-
+    # final-season-results / By-ADP toggle is a single outer toggle wrapping
+    # BOTH the board and the whole Season/Playoffs/Roster/Weekly simulation
+    # (redraft_report.html), so switching it must switch every downstream
+    # number, not just the board grid.
+    ctx = _draft_sim_ctx(s, d, key, ctx, basis="value", suffix="")
+    ctx = _draft_sim_ctx(s, d, key, ctx, basis="adp", suffix="_adp")
+    # A copy of the redrafted round x slot grid itself -- same data + markup
+    # the Draft board's own Redraft toggle shows (see _redraft_board_ctx).
+    ctx.update(_redraft_board_ctx(s))
+    # The report's own ADP board (see _redraft_board_adp_ctx) only ever
+    # renders here, not on the Draft tab.
+    ctx.update(_redraft_board_adp_ctx(s))
+    return tpl.TemplateResponse(request, "redraft_report.html", ctx)
 
 
 def _report_html(d, s, key, manager: str | None = None) -> str:

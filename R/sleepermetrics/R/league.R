@@ -44,6 +44,25 @@ sl_league_chain <- function(league_id) {
   chain[order(as.integer(names(chain)))]
 }
 
+#' The origin (oldest) league_id in a league's season chain
+#'
+#' Stable forever, since a chain only ever extends FORWARD as new seasons are
+#' created (the oldest link's own `previous_league_id` is null by
+#' definition, and Sleeper never rewrites history). This is the folder key
+#' `season/<league_id>/` bracket configs should use (see
+#' [sl_playoff_configs()]), NOT any individual season's own, season-specific
+#' id -- Sleeper gives every season of a league a DIFFERENT league_id, so
+#' keying by a single season's id would scatter one real league's brackets
+#' across as many folders as it has seasons.
+#'
+#' @param league_id Any league id in the chain (usually the current/head one).
+#' @return The chain's oldest league_id.
+#' @export
+sl_root_league_id <- function(league_id) {
+  chain <- sl_league_chain(league_id)
+  chain[[1]]$league_id
+}
+
 # Starter-slot counts from roster_positions (drops bench/IR/taxi). Internal.
 sl_starter_slots <- function(roster_positions) {
   rp <- roster_positions[!roster_positions %in% c("BN", "IR", "TAXI")]

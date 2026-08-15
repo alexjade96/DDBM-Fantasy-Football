@@ -31,15 +31,14 @@
 
 <h2>Trades</h2>
 {% if deals %}
-{# Sits directly above the deal cards -- not up in the general chart grid,
-   where the relationship read as coincidental. #}
-{{ ch.chart("trade_player_rates") }}
 <p class="hint">{{ n_deals }} trade{{ "" if n_deals == 1 else "s" }} in {{ season }}, one
-   card per deal. Each side lists every player they <strong>received</strong> individually,
-   with the points he's scored <em>for them</em> since the trade &mdash; so each player
-   appears once, under whoever got him. <strong>Net</strong> is that total minus what they
-   gave up scored for whoever took it &mdash; a deal's nets always sum to zero, which is
-   what makes a three-way trade add up.</p>
+   card per deal, followed by each side's cumulative points since the deal as
+   a race and points received by player alongside each side's net. The card
+   lists every player a side <strong>received</strong> individually, with the
+   points he's scored <em>for them</em> since the trade &mdash; so each
+   player appears once, under whoever got him. <strong>Net</strong> is that
+   total minus what they gave up scored for whoever took it &mdash; a deal's
+   nets always sum to zero, which is what makes a three-way trade add up.</p>
 <div class="deals">
   {% for d in deals %}
   <div class="deal-group">
@@ -79,6 +78,10 @@
         {% endfor %}
       </div>
     </article>
+    <section class="grid">
+      {{ ch.chart("trade_single_cumulative", transaction_id=d.transaction_id) }}
+      {{ ch.chart("trade_single_contribution", transaction_id=d.transaction_id) }}
+    </section>
   </div>
   {% endfor %}
 </div>

@@ -19,7 +19,7 @@ league <- if (length(positional)) positional[[1]] else
 season_arg <- get_opt("--season")
 out_arg <- get_opt("--out")
 all_seasons <- "--all" %in% args
-playoff_dir <- Sys.getenv("SLEEPERMETRICS_PLAYOFFS", "playoffs")
+playoff_dir <- Sys.getenv("SLEEPERMETRICS_SEASON_DIR", "season")
 
 ss <- sl_apply_playoffs(sl_seasons(league), playoff_dir)
 if (!length(ss)) stop("No scored seasons found for league ", league)

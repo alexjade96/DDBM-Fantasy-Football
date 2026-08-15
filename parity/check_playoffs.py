@@ -5,7 +5,7 @@ value is only trustworthy if it still falls out of the bracket, so this re-runs
 each bracket from its stored lineups and asserts the two agree. It also checks
 no bracket has left-over PENDING games.
 
-    python parity/check_playoffs.py [playoffs_dir]
+    python parity/check_playoffs.py [season_dir]
 
 Exit 0 only if every stored champion is reproducible.
 """
@@ -19,7 +19,7 @@ from sleepermetrics import playoffs as po  # noqa: E402
 
 
 def main() -> int:
-    d = sys.argv[1] if len(sys.argv) > 1 else "playoffs"
+    d = sys.argv[1] if len(sys.argv) > 1 else "season"
     paths = po.config_paths(d)
     if not paths:
         print(f"    no bracket configs in {d}/")

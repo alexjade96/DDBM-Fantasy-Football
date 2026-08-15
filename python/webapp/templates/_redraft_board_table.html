@@ -1,0 +1,43 @@
+{# The redrafted round x slot grid: same shape as the Actual board, same team
+   ownership per seat, but filled by TRUE season value instead of actual pick
+   order -- see draft.redraft_board()'s docstring. Used by the redraft
+   report (redraft_report.html), fed by app.py's _redraft_board_ctx(). The
+   Draft tab's own board (_draft_board.html) no longer shows this inline --
+   it just links into the report instead. Expects `redraft_rounds`/
+   `slot_user` in context and `idm` imported as `idm` by the includer. #}
+{% if redraft_rounds %}
+<p class="hint">Same grid, same team ownership &mdash; each slot filled by whoever
+   actually deserved it by TRUE season value instead of who was actually taken. The
+   small note under each pick says where that player really went.</p>
+{# nosort: the board is a round x slot grid, so re-ordering rows is meaningless #}
+<div class="tablewrap nosort">
+  <table class="draftboard">
+    <thead>
+      <tr>
+        <th class="rnd">R</th>
+        {% for u in slot_user %}<th>{{ u or "—" }}</th>{% endfor %}
+      </tr>
+    </thead>
+    <tbody>
+      {% for rnd in redraft_rounds %}
+      <tr>
+        <td class="rnd">{{ rnd.round }}</td>
+        {% for c in rnd.cells %}
+        <td class="pick">
+          {% if c %}
+          <span class="pk">#{{ c.pick_no }}</span>
+          <span class="pl pos-{{ c.pos }}">{{ idm.headshot(c.player_id) }}{{ c.player }}</span>
+          {% if c.pos_rank %}<span class="q">{{ c.pos }} #{{ c.pos_rank }}</span>{% endif %}
+          <span class="pts">{{ "%.0f"|format(c.total) }} pts</span>
+          <span class="q">{{ ("originally " ~ c.orig_pick) if c.orig_pick else "undrafted" }}</span>
+          {% else %}<span class="pk">—</span>{% endif %}
+        </td>
+        {% endfor %}
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<p class="empty">Not enough season data to build a redraft comparison.</p>
+{% endif %}

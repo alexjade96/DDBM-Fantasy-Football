@@ -196,9 +196,13 @@ def test_toilet_bowl_po_fields_are_none_without_a_toilet_game():
 
 # --- brackets belong to a league, not to a season number --------------------
 def _write_cfg(tmp, league_id):
-    """The standard test bracket (Dee wins), stored as league `league_id`'s 2025."""
+    """The standard test bracket (Dee wins), stored as league `league_id`'s
+    2025 -- under <tmp>/<league_id>/2025.json, the same league-id-subfolder
+    layout config_paths() reads for real (see season/<league_id>/*.json)."""
     import json
-    p = tmp / "2025.json"
+    sub = tmp / str(league_id)
+    sub.mkdir(parents=True, exist_ok=True)
+    p = sub / "2025.json"
     p.write_text(json.dumps(_cfg(league_id=league_id, roster_positions=["QB"])))
     return p
 
@@ -211,6 +215,18 @@ def test_config_paths_filters_by_league(tmp_path):
     # Another league's 2025 is NOT this bracket: it must not be handed over.
     assert playoffs.config_paths(d, ["222"]) == {}
     assert playoffs.load_playoffs(d, league_ids=["222"]) == {}
+
+
+def test_config_paths_skips_non_league_subfolders(tmp_path):
+    """adp/ and fixtures/ are siblings of the league subfolders under
+    season/, not league folders themselves -- a non-numeric-named subfolder
+    (and anything malformed inside it) must never surface as a bracket."""
+    _write_cfg(tmp_path, "111")
+    (tmp_path / "adp").mkdir()
+    (tmp_path / "adp" / "2025.json").write_text('{"not": "a bracket"}')
+    (tmp_path / "fixtures").mkdir()
+    (tmp_path / "fixtures" / "2025-sleeper-bracket.json").write_text("{}")
+    assert list(playoffs.config_paths(str(tmp_path))) == ["2025"]
 
 
 def test_apply_playoffs_does_not_stamp_another_leagues_champion(tmp_path):

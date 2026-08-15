@@ -8,6 +8,39 @@
    `records` (from _week_context, cumulative W-L THROUGH this week) is optional
    -- `records.get()` degrades to nothing if a caller doesn't pass it.
 
+   `wk_prefix` and `opt_label` are optional overrides for a caller that
+   includes this template more than once on the same page (e.g. the redraft
+   simulation's one-drilldown-per-week table) -- `wk_prefix` keeps each
+   inclusion's radio ids/names distinct (bare `loop.index0` collided across
+   weeks the first time this was nested inside an outer per-week loop: every
+   week's game 0 shared one radio group and un-toggled each other's panel),
+   and `opt_label` relabels the "Optimized" tab for a caller repurposing
+   opt_lineup/opt_points to mean something other than "same roster, played
+   perfectly" (the redraft table points it at the redrafted roster instead).
+   `opt_default` (bool) points every fact at that relabelled/simulated world
+   instead of the real one, AND switches the SUMMARY row (Winner/Score/Margin,
+   sorted side order) to read `opt_points`/`sim_result`/`g.sim_margin` instead
+   of the real `points`/`result`/`g.margin` -- the summary has to describe the
+   same world as the detail below it. Shipped once without this: a team could
+   be labelled "Winner" (real result, `g.sides` still in real-points order)
+   while the SIMULATED cumulative record sitting right next to its own name
+   (from `records`, which IS sim-based for this caller) showed a loss for
+   that very week -- individually correct numbers that read as contradictory
+   side by side. `g.sides` itself is already re-sorted by whichever world is
+   showing (see draft.redraft_week_matchups), so `a`/`b` below are just
+   "first/second side", not "winner/loser" independent of opt_default.
+
+   When `opt_default` is set, the REAL roster isn't shown at all: the
+   redraft simulation's Playoffs/Weekly callers are the only ones that pass
+   it, and the real lineup a team actually started has nothing to do with
+   the redrafted roster the simulated score is drawn from, so there is no
+   Actual/Optimized choice to offer -- the drilldown renders the simulated
+   lineup directly, with no toggle. The `dt-facts` line (a REAL-lineup-vs-
+   REAL-optimal efficiency read, with no redrafted-roster equivalent
+   computed) is dropped for the same reason. Callers that leave `opt_default`
+   unset (the plain Weekly/Overview tabs) keep the full Actual/Optimized
+   toggle, unchanged.
+
    The summary row is deliberately just 3 symmetric columns -- Winner / Score /
    Opponent, names flanking inward toward the score -- with the margin folded
    into the score cell rather than a column of its own, and no separate "Note"
@@ -25,23 +58,30 @@
   {% for g in wk_games %}
   {% set a = g.sides[0] %}
   {% set b = g.sides[1] if g.played else none %}
+  {% set a_pts = (a.opt_points if opt_default else a.points) %}
+  {% set a_res = (a.sim_result if opt_default else a.result) %}
+  {% set b_pts = (b.opt_points if opt_default else b.points) if b else none %}
+  {% set b_res = (b.sim_result if opt_default else b.result) if b else none %}
+  {% set disp_margin = (g.sim_margin if opt_default else g.margin) %}
   <details class="dt-row" {% if manager and (a.user_name == manager or (b and b.user_name == manager)) %}open{% endif %}>
     <summary>
       <span class="dt-name-r">
         {{ idm.who(a.user_name) }}
         {%- if records and records.get(a.user_name) %} <span class="q">({{ records[a.user_name] }})</span>{% endif %}</span>
       <span class="dt-score-col">
-        {%- if b %}<span class="score {{ 'score-w' if a.result == 'W' else 'score-l' if a.result == 'L' else '' }}">{{ "%.1f"|format(a.points) }}</span>
+        {%- if b %}<span class="score {{ 'score-w' if a_res == 'W' else 'score-l' if a_res == 'L' else '' }}">{{ "%.1f"|format(a_pts) if a_pts is not none else "—" }}</span>
           <span class="q">&ndash;</span>
-          <span class="score {{ 'score-w' if b.result == 'W' else 'score-l' if b.result == 'L' else '' }}">{{ "%.1f"|format(b.points) }}</span>
-          {%- if g.margin is not none %} <span class="q">({{ "%.1f"|format(g.margin) }})</span>{% endif %}
-        {%- else %}<span class="score">{{ "%.1f"|format(a.points) }}</span>{% endif %}</span>
+          <span class="score {{ 'score-w' if b_res == 'W' else 'score-l' if b_res == 'L' else '' }}">{{ "%.1f"|format(b_pts) if b_pts is not none else "—" }}</span>
+          {%- if disp_margin is not none %} <span class="q">({{ "%.1f"|format(disp_margin) }})</span>{% endif %}
+          {%- if g.flipped %} <span class="chip flip" title="The simulated result differs from what actually happened">flipped</span>{% endif %}
+        {%- else %}<span class="score">{{ "%.1f"|format(a_pts) if a_pts is not none else "—" }}</span>{% endif %}</span>
       <span class="dt-name-l">
         {%- if b %}{{ idm.who(b.user_name) }}
         {%- if records and records.get(b.user_name) %} <span class="q">({{ records[b.user_name] }})</span>{% endif %}
             {%- else %}<span class="q">bye or eliminated</span>{% endif %}</span>
     </summary>
     <div class="dt-detail">
+      {% if not opt_default %}
       <div class="dt-facts">
         {% for sd in g.sides %}
         <div class="fact"><span class="fl">{{ sd.user_name }}</span>
@@ -50,22 +90,38 @@
             ({{ sd.eff }}% efficient){% endif %}</span></div>
         {% endfor %}
       </div>
+      {% endif %}
+      {% if opt_default %}
+      <div class="dt-tables">
+        {% for sd in g.sides %}
+        {{ lu.lineup_table(
+             idm.who(sd.user_name) ~ " — " ~ (opt_label or "Optimized")|lower,
+             ("%.2f"|format(sd.opt_points) if sd.opt_points is not none else "—"),
+             sd.opt_lineup, bench=sd.opt_bench,
+             bench_flag="was_started",
+             bench_flag_title="Started in the actual lineup, swapped out here",
+             empty_text="No roster data.") }}
+        {% endfor %}
+      </div>
+      {% else %}
+      {% set gm_id = (wk_prefix ~ '-' ~ loop.index0) if wk_prefix is defined else loop.index0 %}
       <div class="viewswitch dt-lineup-mode">
-        <input type="radio" name="gmmode{{ loop.index0 }}" id="gm{{ loop.index0 }}-actual" class="vs-radio" checked>
-        <input type="radio" name="gmmode{{ loop.index0 }}" id="gm{{ loop.index0 }}-opt" class="vs-radio">
+        <input type="radio" name="gmmode{{ gm_id }}" id="gm{{ gm_id }}-actual" class="vs-radio" checked>
+        <input type="radio" name="gmmode{{ gm_id }}" id="gm{{ gm_id }}-opt" class="vs-radio">
         <div class="rail vs-tabs">
           <span class="k">Lineup</span>
-          <label class="year" for="gm{{ loop.index0 }}-actual">Actual</label>
-          <label class="year" for="gm{{ loop.index0 }}-opt">Optimized</label>
+          <label class="year" for="gm{{ gm_id }}-actual">Actual</label>
+          <label class="year" for="gm{{ gm_id }}-opt">{{ opt_label or "Optimized" }}</label>
         </div>
         <div class="vs-panel vs-p-actual">
           <div class="dt-tables">
             {% for sd in g.sides %}
             {{ lu.lineup_table(
                  idm.who(sd.user_name) ~ (" — won" if sd.result == 'W' else " — lost" if sd.result == 'L' else ""),
-                 "%.2f"|format(sd.points), sd.lineup, bench=sd.bench,
+                 ("%.2f"|format(sd.points) if sd.points is not none else "—"), sd.lineup, bench=sd.bench,
                  bench_flag="would_start",
-                 bench_flag_title="Would have outscored a same-position starter") }}
+                 bench_flag_title="Would have outscored a same-position starter",
+                 empty_text="No roster data.") }}
             {% endfor %}
           </div>
         </div>
@@ -73,7 +129,7 @@
           <div class="dt-tables">
             {% for sd in g.sides %}
             {{ lu.lineup_table(
-                 idm.who(sd.user_name) ~ " — optimized",
+                 idm.who(sd.user_name) ~ " — " ~ (opt_label or "Optimized")|lower,
                  ("%.2f"|format(sd.opt_points) if sd.opt_points is not none else "—"),
                  sd.opt_lineup, bench=sd.opt_bench,
                  bench_flag="was_started",
@@ -83,6 +139,7 @@
           </div>
         </div>
       </div>
+      {% endif %}
     </div>
   </details>
   {% endfor %}

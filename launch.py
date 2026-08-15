@@ -71,7 +71,7 @@ def _run_python(mode: str, extra: list[str]) -> int:
                  "python/venv/Scripts/pip install -r python/requirements.txt")
     if mode == "dashboard":
         port, rest = _parse_port(extra, 8000)
-        env = dict(os.environ, SLEEPERMETRICS_PLAYOFFS=str(BASE / "playoffs"))
+        env = dict(os.environ, SLEEPERMETRICS_SEASON_DIR=str(BASE / "season"))
         # Jinja reloads templates on its own, so WITHOUT --reload a long-running
         # server picks up template edits while still holding the old app.py --
         # the two drift apart and blow up on the mismatch. Reload both together.
@@ -83,7 +83,7 @@ def _run_python(mode: str, extra: list[str]) -> int:
              "--host", "127.0.0.1", "--port", str(port), *reload],
             cwd=str(PY_DIR), env=env).returncode
     if mode == "report":
-        env = dict(os.environ, SLEEPERMETRICS_PLAYOFFS=str(BASE / "playoffs"))
+        env = dict(os.environ, SLEEPERMETRICS_SEASON_DIR=str(BASE / "season"))
         # Reports land in the repo root, not python/, so run from BASE with the
         # package importable via the venv's site-packages editable install.
         return subprocess.run([str(venv_py), str(PY_DIR / "make_report.py"), *extra],
@@ -99,7 +99,7 @@ def _run_r(mode: str, extra: list[str]) -> int:
         return subprocess.run([rscript, "tools/run_dashboard.R", str(port)],
                               cwd=str(BASE)).returncode
     if mode == "report":
-        env = dict(os.environ, SLEEPERMETRICS_PLAYOFFS=str(BASE / "playoffs"))
+        env = dict(os.environ, SLEEPERMETRICS_SEASON_DIR=str(BASE / "season"))
         return subprocess.run([rscript, "R/make_report.R", *extra],
                               cwd=str(BASE), env=env).returncode
     return subprocess.run([rscript, "R/run_bot.R", mode, *extra], cwd=str(BASE)).returncode

@@ -8,11 +8,21 @@ sm <- asNamespace("sleepermetrics")  # package must be loaded/installed
 
 DEFAULT_LEAGUE <- Sys.getenv("SLEEPERMETRICS_LEAGUE", "1252770181306929152")
 
-# Playoff bracket configs (see sl_dashboard(playoffs = ...)).
-PLAYOFF_DIR <- Sys.getenv("SLEEPERMETRICS_PLAYOFFS", "")
+# Playoff bracket configs (see sl_dashboard(playoffs = ...)). Configs live one
+# level down, under <PLAYOFF_DIR>/<league_id>/*.json (see sl_playoff_configs's
+# docs) -- only numeric-named subfolders are league folders, so this walks
+# those and skips siblings like <PLAYOFF_DIR>/adp/ or .../fixtures/. Kept as
+# its own flat basename-keyed list (not sl_playoff_configs(), which picks ONE
+# file per season) so a season can offer MULTIPLE candidate files in this
+# dropdown -- e.g. "2025.json" alongside a "2025-sleeper.json" rollback copy.
+PLAYOFF_DIR <- Sys.getenv("SLEEPERMETRICS_SEASON_DIR", "")
 playoff_cfgs <- if (nzchar(PLAYOFF_DIR) && dir.exists(PLAYOFF_DIR)) {
-  stats::setNames(list.files(PLAYOFF_DIR, "\\.json$", full.names = TRUE),
-                  basename(list.files(PLAYOFF_DIR, "\\.json$")))
+  subs <- list.dirs(PLAYOFF_DIR, full.names = FALSE, recursive = FALSE)
+  subs <- subs[grepl("^[0-9]+$", subs)]
+  fs <- unlist(lapply(subs, function(sub) {
+    list.files(file.path(PLAYOFF_DIR, sub), "\\.json$", full.names = TRUE)
+  }))
+  stats::setNames(fs, basename(fs))
 } else character(0)
 
 ui <- page_sidebar(
@@ -146,7 +156,7 @@ server <- function(input, output, session) {
       seasons <- seasons[!vapply(seasons, is.null, logical(1))]
       if (!length(seasons)) { showNotification("No scored seasons found.", type = "error"); return() }
       # A season's playoff bracket, where one is stored, decides its champion --
-      # Sleeper's own bracket is not reliable (see playoffs/README.md). This is
+      # Sleeper's own bracket is not reliable (see season/README.md). This is
       # what makes career titles correct.
       if (nzchar(PLAYOFF_DIR)) {
         seasons <- tryCatch(sm$sl_apply_playoffs(seasons, PLAYOFF_DIR),

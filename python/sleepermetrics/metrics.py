@@ -1621,11 +1621,6 @@ def transaction_standouts(s: Season) -> list[dict]:
         r = wl.iloc[0]
         tile("Best pickup", f"{r['points']:.0f}", r["user_name"],
              f"{r['player_name']} · {r['via']} in wk {int(r['week'])}")
-        # A pickup that was actually used, not just stashed.
-        used = wl[wl["starts"] > 0]
-        if len(used):
-            tile("Waiver hits", str(int((wl["points"] >= 100).sum())), "league-wide",
-                 "pickups that returned 100+ points")
     if not tx.empty:
         adds = tx[tx["transaction"] == "add"]
         if len(adds):

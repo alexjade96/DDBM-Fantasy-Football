@@ -38,15 +38,18 @@ Tabs: `overview`, `weekly`, `coaching`, `roster`, `transactions`, `playoffs`,
 - **Live playoffs.** `/tab/playoffs?refresh=1` clears the weekly stat-line cache
   before re-scoring, so a week still in progress is never served stale points.
   It also cache-busts the chart URLs.
-- **Champions** come from the stored brackets in `playoffs/` (via
-  `apply_playoffs`), not Sleeper's `winners_bracket` — see `playoffs/README.md`.
+- **Champions** come from the stored brackets in `season/<league_id>/` (via
+  `apply_playoffs`), not Sleeper's `winners_bracket` — see `season/README.md`.
+- **ADP cache.** The Draft tab's redraft-by-ADP simulation reads/writes
+  `season/adp/<season>.json`, a fallback snapshot of Sleeper's undocumented
+  ADP endpoint — see `season/README.md`.
 
 ## Environment
 
 | Var | Default |
 |---|---|
 | `SLEEPERMETRICS_LEAGUE` | the DDBM league id |
-| `SLEEPERMETRICS_PLAYOFFS` | `<repo>/playoffs` |
+| `SLEEPERMETRICS_SEASON_DIR` | `<repo>/season` |
 | `SLEEPERMETRICS_TTL` | `900` (seconds) |
 | `PORT` | `8000` (hosts inject this) |
 

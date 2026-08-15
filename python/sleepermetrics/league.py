@@ -37,6 +37,21 @@ def league_chain(league_id) -> dict:
     return dict(sorted(chain.items(), key=lambda kv: int(kv[0])))
 
 
+def root_league_id(league_id) -> str:
+    """The origin (oldest) league_id in this league's season chain -- stable
+    forever, since a chain only ever extends FORWARD as new seasons are
+    created (the oldest link's own `previous_league_id` is null by
+    definition, and Sleeper never rewrites history). This is the folder key
+    `season/<league_id>/` bracket configs should use (see playoffs.py's
+    `config_paths`), NOT any individual season's own, season-specific id --
+    Sleeper gives every season of a league a DIFFERENT league_id, so keying
+    by a single season's id would scatter one real league's brackets across
+    as many folders as it has seasons.
+    """
+    chain = league_chain(league_id)
+    return next(iter(chain.values()))["league_id"]
+
+
 def starter_slots(roster_positions) -> dict:
     """Starter-slot counts from roster_positions (drops bench/IR/taxi)."""
     slots: dict = {}

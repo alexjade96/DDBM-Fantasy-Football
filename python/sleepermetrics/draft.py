@@ -11,10 +11,14 @@ lets a pick be called a steal or a bust relative to where it was taken.
 """
 from __future__ import annotations
 
+import json
+import os
+from pathlib import Path
+
 import pandas as pd
 
 from . import metrics
-from .api import sleeper_api
+from .api import sleeper_api, sleeper_adp
 from .players import players
 from .season import Season, POSITIONS, _FLEX_ELIG
 
@@ -476,6 +480,826 @@ def redraft_board(s: Season) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
+_ADP_FIELDS = ("adp_std", "adp_half_ppr", "adp_ppr", "adp_2qb")
+# season/adp/ -- a sibling of season/<league_id>/ (the custom playoff bracket
+# configs -- see playoffs.py's config_paths()), under the SAME repo-root
+# `season/` directory and the SAME SLEEPERMETRICS_SEASON_DIR override, so
+# both kinds of durable season data live in one place instead of two
+# separate directories. ADP itself stays season-scoped, not league-scoped
+# (Sleeper publishes one ADP set per season for the whole platform, unlike a
+# playoff bracket, which genuinely differs per league) -- hence its own
+# subfolder rather than living inside any one league's own files. Checked
+# into the repo, not gitignored: its whole purpose is to be the fallback a
+# later offline run (or a future run after Sleeper changes/removes the
+# endpoint) can still read.
+_SEASON_DIR = Path(os.environ.get(
+    "SLEEPERMETRICS_SEASON_DIR", str(Path(__file__).resolve().parents[2] / "season")))
+_ADP_CACHE_DIR = _SEASON_DIR / "adp"
+_adp_cache: dict = {}   # {season: {player_id: {...}}} -- see _fetch_adp_raw
+
+
+def _adp_snapshot_path(season) -> Path:
+    return _ADP_CACHE_DIR / f"{season}.json"
+
+
+def _fetch_adp_raw(season) -> dict:
+    """{player_id: {"player_name", "position", "adp_std", "adp_half_ppr",
+    "adp_ppr", "adp_2qb"}} for a season, from Sleeper's undocumented
+    per-season ADP endpoint (see api.sleeper_adp) -- the same data its own
+    draft lobby reads from. Season-scoped, not league-scoped (Sleeper
+    publishes one ADP set per season across the whole platform).
+
+    Live-fetched first; on success the trimmed result is written to a
+    per-season on-disk snapshot (`season/adp/<season>.json`) so a later run
+    with no network -- or after Sleeper ever changes/removes this
+    undocumented endpoint -- still has the latest successfully-captured
+    data to fall back to, the same durable-JSON-file idea `season/<league_id>/
+    <season>.json` uses for hand-submitted brackets (this snapshot is instead
+    auto-refreshed, not hand-edited). Only players with a real ADP in AT
+    LEAST ONE format are kept (Sleeper's sentinel for "no ADP here" is a
+    literal 999.0, not a missing key) -- the rest are draft/mock-only depth
+    that would just bloat the snapshot for no benefit.
+
+    Falls back to the on-disk snapshot if the live fetch fails for any
+    reason (network, non-2xx, malformed body); returns {} only if BOTH the
+    live fetch and the snapshot are unavailable -- same "degrade, don't
+    error" contract as draft_board(). Memoized per season for the life of
+    the process.
+    """
+    season = str(season)
+    if season in _adp_cache:
+        return _adp_cache[season]
+    path = _adp_snapshot_path(season)
+    try:
+        raw = sleeper_adp(season)
+        out = {}
+        for row in raw:
+            pid = row.get("player_id")
+            if not pid:
+                continue
+            stats = row.get("stats") or {}
+            vals = {f: stats.get(f) for f in _ADP_FIELDS}
+            if not any(v is not None and v < 999 for v in vals.values()):
+                continue
+            p = row.get("player") or {}
+            out[str(pid)] = {
+                "player_name": (" ".join(x for x in (p.get("first_name"), p.get("last_name"))
+                                         if x).strip() or None),
+                "position": p.get("position"),
+                **vals,
+            }
+        _ADP_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(out, indent=2, sort_keys=True), encoding="utf-8")
+        return _adp_cache.setdefault(season, out)
+    except Exception:
+        pass
+    try:
+        out = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        out = {}
+    return _adp_cache.setdefault(season, out)
+
+
+def _adp_field_for(s: Season) -> str:
+    """Which of Sleeper's four ADP variants matches this league's own
+    format -- from its actual roster slots and scoring, not assumed. A
+    league starting 2+ QB-eligible players (a fixed 2-QB slot, or a
+    SUPER_FLEX/QB-eligible flex) uses `adp_2qb` (Sleeper doesn't cross that
+    with a PPR axis -- one field covers it); otherwise picked by the
+    league's own `rec` (reception) scoring weight: >=0.75 full PPR, <=0.25
+    standard, else half-PPR.
+    """
+    from . import scoring
+
+    slots = getattr(s, "slots", {}) or {}
+    qb_slots = slots.get("QB", 0) + sum(
+        slots.get(lab, 0) for lab, elig in _FLEX_ELIG.items() if "QB" in elig)
+    if qb_slots >= 2:
+        return "adp_2qb"
+    rec = scoring.rules_from(s.league_id).get("rec") or 0.0
+    if rec >= 0.75:
+        return "adp_ppr"
+    if rec <= 0.25:
+        return "adp_std"
+    return "adp_half_ppr"
+
+
+def redraft_board_adp(s: Season) -> pd.DataFrame:
+    """Same round x slot grid as redraft_board(), but the draft order comes
+    from Sleeper's own published ADP for the season (see _fetch_adp_raw)
+    instead of TRUE season value -- "what a draft following the field's
+    actual pre-season consensus would have looked like", as opposed to
+    redraft_board()'s "what a draft knowing the results would have looked
+    like". Same real pick sequence/team ownership and the same per-team
+    position caps (`_position_share`, doubled -- see redraft_board's
+    docstring) as redraft_board(); only the pool order differs, and
+    POSITION for the walk comes from Sleeper's own player record on each
+    ADP row (covers rookies/players who never recorded a real stat line
+    this season, unlike `ranks`, which only has players who did) rather
+    than `metrics.season_position_ranks`. The outcome columns
+    (`total`/`pos_rank`/`pos_adj`, and `orig_round`/`orig_pick`) are still
+    the player's TRUE season result, same as redraft_board()'s, so an ADP
+    pick can still be judged against how the position actually played out.
+
+    A player with no real ADP in this league's format (or not covered by
+    the endpoint at all) sorts after every player who has one -- same
+    "worse than the last real entry" fallback `_value_ranks()` uses for a
+    player with no true-season stat line.
+
+    Returns the same empty-frame shape as draft_board() when there's no
+    real draft, or no ADP data at all (live fetch AND on-disk snapshot both
+    unavailable), to build the grid against.
+    """
+    board = draft_board(s)
+    if board.empty:
+        return board
+    adp_raw = _fetch_adp_raw(s.season)
+    if not adp_raw:
+        return _empty()
+    field = _adp_field_for(s)
+
+    ranks = metrics.season_position_ranks(s)
+    repl = _replacement_level(s, ranks)
+    share = _position_share(s)
+    pos_cap = {p: max(1, round(2 * share.get(p, 0))) for p in POSITIONS}
+
+    pinfo = players()
+    names = (pinfo.dropna(subset=["player_id"]).drop_duplicates("player_id")
+             .assign(player_id=lambda x: x["player_id"].astype(str))
+             .set_index("player_id")["player_name"])
+    orig = board.set_index(board["player_id"].astype(str))
+
+    seats = board.sort_values("pick_no")[
+        ["pick_no", "round", "pick_in_round", "draft_slot", "roster_id", "user_name"]
+    ].reset_index(drop=True)
+
+    pos_of = {pid: row.get("position") for pid, row in adp_raw.items()
+             if row.get("position") in POSITIONS}
+
+    def adp_of(pid):
+        v = adp_raw.get(pid, {}).get(field)
+        return v if v is not None and v < 999 else None
+
+    remaining = sorted((pid for pid in pos_of if adp_of(pid) is not None), key=adp_of)
+    remaining += sorted(pid for pid in pos_of if adp_of(pid) is None)
+
+    team_counts: dict = {}
+    rows = []
+    for _, seat_row in seats.iterrows():
+        seat = seat_row.to_dict()
+        counts = team_counts.setdefault(int(seat["draft_slot"]), {})
+        pick_idx = next(
+            (i for i, pid in enumerate(remaining)
+             if counts.get(pos_of.get(pid), 0) < pos_cap.get(pos_of.get(pid), 1)),
+            0 if remaining else None)
+        if pick_idx is None:
+            break
+        pid = remaining.pop(pick_idx)
+        pos = pos_of.get(pid)
+        counts[pos] = counts.get(pos, 0) + 1
+        o = orig.loc[pid] if pid in orig.index else None
+        r = ranks.get(pid)
+        pts = r["points"] if r else 0.0
+        rows.append({
+            **seat,
+            "player_id": pid,
+            "player_name": names.get(pid, adp_raw.get(pid, {}).get("player_name", pid)),
+            "position": pos,
+            "total": round(pts, 1),
+            "pos_rank": r["rank"] if r else None,
+            "pos_adj": round(pts - repl.get(pos, 0.0), 1),
+            "orig_round": int(o["round"]) if o is not None and pd.notna(o["round"]) else None,
+            "orig_pick": (f"{int(o['round'])}.{int(o['pick_in_round']):02d}"
+                          if o is not None and pd.notna(o["round"]) else None),
+        })
+    return pd.DataFrame(rows)
+
+
+_SIM_COLS = ["roster_id", "user_name", "draft_slot", "wins", "losses", "points",
+             "sim_position", "real_wins", "real_losses", "real_points", "real_position",
+             "win_delta", "position_delta", "weeks"]
+
+# Keyed like draft_board()'s own cache (league:season) -- redraft_standings()
+# does a real optimal_lineup solve per team-week (~1.5s/season), so without
+# this every chart/table that calls it separately (the live dumbbell plus
+# three Testing-tab companions, all on the same page load) redoes the whole
+# simulation from scratch each time. clear_draft_cache() clears both.
+_sim_cache: dict = {}
+
+
+def redraft_standings(s: Season, basis: str = "value") -> pd.DataFrame:
+    """The season's real standings, replayed with every team's roster
+    swapped for its `redraft_board()` roster -- the "expected outcome" of
+    altering the draft to true season value.
+
+    `basis` picks which redrafted board to replay: `"value"` (default) uses
+    `redraft_board()` (drafted by TRUE season value, "knowing the results");
+    `"adp"` uses `redraft_board_adp()` (drafted by Sleeper's own ADP, "what
+    the field at large would have done"). Both bases share this one function
+    -- only which board feeds the walk differs -- so the two report tabs
+    (By final season results / By ADP) can never drift out of sync with each
+    other's simulation logic.
+
+    Replays the SAME regular-season schedule (same weekly matchups, from
+    `Season.team_wk`), but each team-week's score is the best legal lineup
+    (`optimal_lineup`) its REDRAFTED roster could field that week, priced
+    from the players' real weekly stat lines (`scoring.score_lineup` -- true
+    production regardless of who, if anyone, actually rostered them that
+    week, the same pricing `draft_board`/`redraft_board` already use, not
+    `pl_wk`, which reflects the real roster history this simulation
+    deliberately overrides). BOTH sides of every game are simulated, so a
+    team's simulated win/loss is against its opponent's simulated score too
+    -- a self-consistent alternate season, not one real team dropped into an
+    otherwise-real schedule. Regular season only, matching every other
+    standings-shaped metric in this codebase.
+
+    Returns one row per team: `draft_slot` is the team's real draft seat
+    (1-indexed, from `redraft_board()` -- a team owns the same seat for the
+    whole draft, so it's a fixed identity column, not a simulated result).
+    `wins`/`losses`/`points`/`sim_position` are the simulated outcome;
+    `real_wins`/`real_losses`/`real_points`/`real_position` are what
+    actually happened (from `Season.standings`). `win_delta` = simulated
+    wins minus real wins. `position_delta` = real position minus simulated
+    position, so POSITIVE means the redraft would have finished them HIGHER
+    (a smaller position number) than they really did. `weeks` is that team's
+    simulated game log -- one dict per regular-season week with `week`,
+    `points`/`opp_points`/`result` (the simulated matchup) alongside
+    `real_points`/`real_opp_points`/`real_result` (what actually happened
+    that week), for a week-by-week sim-vs-real drilldown. Sorted by
+    simulated finish. Empty (all-columns) frame when there's no real draft
+    to simulate against. Memoized per league:season:basis -- see
+    `_sim_cache`.
+    """
+    key = f"{s.league_id}:{s.season}:{basis}"
+    if key in _sim_cache:
+        return _sim_cache[key]
+    board = redraft_board_adp(s) if basis == "adp" else redraft_board(s)
+    if board.empty:
+        return pd.DataFrame(columns=_SIM_COLS)
+    from . import scoring
+    from .season import optimal_points, _result
+
+    board = board.copy()
+    board["player_id"] = board["player_id"].astype(str)
+    rules = scoring.rules_from(s.league_id)
+    ids = board["player_id"].unique().tolist()
+    weekly = scoring.score_lineup(ids, s.season, range(1, s.last_week + 1), rules)
+    pts_by_pw = weekly.set_index(["player_id", "week"])["points"]
+
+    roster_players: dict = {}
+    for r in board.itertuples(index=False):
+        roster_players.setdefault(r.roster_id, []).append((r.player_id, r.position))
+
+    # Every redrafted team's best legal lineup, every regular-season week --
+    # keyed once so both a team's own score AND its opponent's (looked up via
+    # `opp`, below) come from this same simulated world.
+    sim_pts: dict = {}
+    for rid, plist in roster_players.items():
+        for wk in range(1, s.last_week + 1):
+            rows = [{"player_id": pid, "position": pos,
+                     "points": pts_by_pw.get((pid, wk), 0.0)} for pid, pos in plist]
+            sim_pts[(rid, wk)] = optimal_points(pd.DataFrame(rows), s.slots)
+
+    tw = s.team_wk[["week", "roster_id", "opp", "user_name", "points", "pa", "result"]].copy()
+    tw = tw.rename(columns={"points": "real_points", "pa": "real_pa", "result": "real_result"})
+    tw["sim_points"] = [sim_pts.get((rid, wk), 0.0)
+                        for rid, wk in zip(tw["roster_id"], tw["week"])]
+    tw["sim_pa"] = [sim_pts.get((opp, wk)) if pd.notna(opp) else None
+                    for opp, wk in zip(tw["opp"], tw["week"])]
+    tw["sim_result"] = [_result(p, a) for p, a in zip(tw["sim_points"], tw["sim_pa"])]
+    # Opponent's own name for each row -- so a team-week can print WHO the
+    # simulated matchup was against, not just the score.
+    rid_name = dict(zip(tw["roster_id"], tw["user_name"]))
+    tw["opp_user_name"] = tw["opp"].map(rid_name)
+
+    rows = []
+    for rid, g in tw.sort_values("week").groupby("roster_id"):
+        weeks = [{
+            "week": int(r.week),
+            "points": round(float(r.sim_points), 1),
+            "opp_points": round(float(r.sim_pa), 1) if pd.notna(r.sim_pa) else None,
+            "opp_user_name": r.opp_user_name if pd.notna(r.opp_user_name) else None,
+            "result": r.sim_result,
+            "real_points": round(float(r.real_points), 1) if pd.notna(r.real_points) else None,
+            "real_opp_points": round(float(r.real_pa), 1) if pd.notna(r.real_pa) else None,
+            "real_result": r.real_result if pd.notna(r.real_result) else None,
+        } for r in g.itertuples(index=False)]
+        rows.append({
+            "roster_id": rid, "user_name": g["user_name"].iloc[0],
+            "wins": int((g["sim_result"] == "W").sum()),
+            "losses": int((g["sim_result"] == "L").sum()),
+            "points": round(float(g["sim_points"].sum()), 1),
+            "weeks": weeks,
+        })
+    sim = (pd.DataFrame(rows)
+           .sort_values(["wins", "points"], ascending=False).reset_index(drop=True))
+    sim["sim_position"] = range(1, len(sim) + 1)
+
+    real = s.standings[["user_name", "wins", "losses", "points", "final_position"]].rename(
+        columns={"wins": "real_wins", "losses": "real_losses",
+                 "points": "real_points", "final_position": "real_position"})
+    out = sim.merge(real, on="user_name", how="left")
+    out["win_delta"] = out["wins"] - out["real_wins"]
+    out["position_delta"] = out["real_position"] - out["sim_position"]
+    # A team owns the same seat all draft, so this is one lookup per roster,
+    # not a per-round value -- same board redraft_board() itself grouped by.
+    slot_by_rid = board.drop_duplicates("roster_id").set_index("roster_id")["draft_slot"]
+    out["draft_slot"] = out["roster_id"].map(slot_by_rid).astype(int)
+    out = out.sort_values("sim_position").reset_index(drop=True)
+    return _sim_cache.setdefault(key, out)
+
+
+# Keyed like _sim_cache -- redraft_week_matchups() is even more expensive
+# than redraft_standings() (it does everything week_matchups() itself does,
+# PER SIDE, plus a second optimal_lineup solve for the redrafted roster), so
+# it gets its own cache rather than sharing _sim_cache's key (different
+# return shape -- a dict, not a DataFrame).
+_week_cache: dict = {}
+
+
+def redraft_week_matchups(s: Season, basis: str = "value") -> dict:
+    """Every regular-season week's games, real and simulated together --
+    the per-week/per-matchup drilldown behind the redraft simulation's
+    Weekly view.
+
+    `basis` -- `"value"` (redraft_board(), the default) or `"adp"`
+    (redraft_board_adp()) -- picks which redrafted board the "simulated"
+    side of every game draws from; see redraft_standings()'s docstring for
+    the fuller rationale (shared by all three redraft_* simulators).
+
+    Reuses `metrics.week_matchups()` wholesale for each week's real side
+    (both lineups, bench, the costliest swap -- already correct and tested)
+    and overwrites each side's `opt_lineup`/`opt_points` with what the
+    REDRAFTED roster would have scored that week instead of what the same
+    real roster's own bench could have done -- so the shared per-game
+    drilldown's existing Actual/Optimized toggle becomes Actual/Simulated
+    almost for free. `opt_bench` is the redrafted roster's own leftover
+    players that week (top 6 by points), carrying `was_started` -- reusing
+    the SAME flag/label the real Optimized panel already has ("started in
+    the actual lineup, swapped out here"), which turns out to mean exactly
+    the right thing here too: this bench player DID start on the manager's
+    REAL roster that week. Each side also gets `sim_result` (W/L from the
+    simulated score alone) alongside its real `result`.
+
+    For a played game, `sides` is re-sorted by SIMULATED points (descending)
+    rather than left in `week_matchups()`'s real-points order, and `margin`
+    on a played game becomes the SIMULATED one -- this whole table defaults
+    its lineup toggle to Simulated (see the template's `opt_default`), so
+    the summary row's Winner/Score/Margin needs to describe the SAME world
+    as the drilldown beneath it. Leaving the real sort/margin in place while
+    only the drilldown flipped to sim produced a real, confusing bug: a team
+    could be labelled "Winner" (real result) while its own cumulative
+    SIMULATED record (right next to its name) showed a loss for that exact
+    week, because the record was sim-based but the summary/sort was still
+    real-based.
+
+    Returns {week: {"games": [...], "flips": n, "records": {...}, "high":
+    {...}, "low": {...}}} -- `flips` is how many MATCHUPS that week had a
+    different winner in the simulated world (one flipped 2-team game is 1,
+    not 2, even though both of its sides individually changed result).
+    `records` is each manager's cumulative SIMULATED win-loss record
+    THROUGH that week (same shape/idiom as the real Weekly tab's own
+    `records`, from `metrics.table_position`, just accumulated from
+    `sim_result` instead). `high`/`low` are that week's top/bottom simulated
+    scorer ({"user_name", "points"}), for the week-summary row. Empty dict
+    when there's no real draft to simulate against. Memoized per
+    league:season:basis.
+    """
+    key = f"{s.league_id}:{s.season}:{basis}"
+    if key in _week_cache:
+        return _week_cache[key]
+    board = redraft_board_adp(s) if basis == "adp" else redraft_board(s)
+    if board.empty:
+        return {}
+    from . import metrics, scoring
+    from .season import assign_slots, optimal_lineup
+
+    board = board.copy()
+    board["player_id"] = board["player_id"].astype(str)
+    names = dict(zip(board["player_id"], board["player_name"]))
+    rules = scoring.rules_from(s.league_id)
+    ids = board["player_id"].unique().tolist()
+    weekly = scoring.score_lineup(ids, s.season, range(1, s.last_week + 1), rules)
+    pts_by_pw = weekly.set_index(["player_id", "week"])["points"]
+
+    roster_players: dict = {}
+    for r in board.itertuples(index=False):
+        roster_players.setdefault(r.roster_id, []).append((r.player_id, r.position))
+    rid_by_name = dict(zip(s.user_map["user_name"], s.user_map["roster_id"]))
+
+    out: dict = {}
+    cum: dict = {}
+    for wk in range(1, s.last_week + 1):
+        games = metrics.week_matchups(s, wk)
+        for g in games:
+            sides = g["sides"]
+            for sd in sides:
+                plist = roster_players.get(rid_by_name.get(sd["user_name"]), [])
+                rows = pd.DataFrame([{"player_id": pid, "position": pos,
+                                      "points": pts_by_pw.get((pid, wk), 0.0)}
+                                     for pid, pos in plist])
+                picks = optimal_lineup(rows, s.slots) if len(rows) else rows
+                if len(picks):
+                    picks = assign_slots(picks, s.slots)
+                    sd["opt_lineup"] = [
+                        {"slot": x.slot, "player_id": x.player_id,
+                         "player_name": names.get(x.player_id, x.player_id),
+                         "position": x.position, "points": round(float(x.points), 1)}
+                        for x in picks.itertuples(index=False)]
+                    sd["opt_points"] = round(float(picks["points"].sum()), 2)
+                    # The redrafted roster's own bench -- everyone not picked,
+                    # top 6 by points. No "started in the real lineup" flag
+                    # here (there used to be one): the simulated lineup IS
+                    # already the optimal one by construction, so there is no
+                    # "would have been optimal" question left to mark on it --
+                    # a bench player here is simply worse than the picks made,
+                    # full stop.
+                    used_ids = set(picks["player_id"])
+                    bn = (rows[~rows["player_id"].isin(used_ids)]
+                          .sort_values("points", ascending=False).head(6))
+                    sd["opt_bench"] = [
+                        {"player_id": x.player_id,
+                         "player_name": names.get(x.player_id, x.player_id),
+                         "position": x.position, "points": round(float(x.points), 1)}
+                        for x in bn.itertuples(index=False)]
+                else:
+                    sd["opt_lineup"], sd["opt_points"], sd["opt_bench"] = [], None, []
+            if g["played"]:
+                a, b = sides
+                if a["opt_points"] is not None and b["opt_points"] is not None:
+                    a["sim_result"] = ("W" if a["opt_points"] > b["opt_points"] else
+                                       "L" if a["opt_points"] < b["opt_points"] else "T")
+                    b["sim_result"] = ("W" if b["opt_points"] > a["opt_points"] else
+                                       "L" if b["opt_points"] < a["opt_points"] else "T")
+                else:
+                    a["sim_result"] = b["sim_result"] = None
+                # Per-slot who-won-that-slot, same as week_matchups() does for
+                # its own opt_lineup -- matched by slot, not index.
+                opt_opp_pts = [{p["slot"]: p["points"] for p in sd["opt_lineup"]} for sd in sides]
+                for i, sd in enumerate(sides):
+                    other = opt_opp_pts[1 - i]
+                    for p in sd["opt_lineup"]:
+                        opp = other.get(p["slot"])
+                        p["cmp"] = (None if opp is None else
+                                   "up" if p["points"] > opp else
+                                   "down" if p["points"] < opp else "even")
+                # Re-sort by SIM points (was real-points order from
+                # week_matchups()) and derive a SIM margin -- see docstring:
+                # the summary row must describe the same world as the
+                # drilldown it opens on, not real results with a sim record
+                # bolted on next to the name.
+                sides.sort(key=lambda sd: -(sd["opt_points"]
+                                            if sd["opt_points"] is not None else float("-inf")))
+                g["sim_margin"] = (round(abs(sides[0]["opt_points"] - sides[1]["opt_points"]), 2)
+                                   if sides[0]["opt_points"] is not None
+                                   and sides[1]["opt_points"] is not None else None)
+            else:
+                sides[0]["sim_result"] = None
+                g["sim_margin"] = None
+            for sd in sides:
+                if sd.get("sim_result") in ("W", "L"):
+                    w, l = cum.setdefault(sd["user_name"], [0, 0])
+                    cum[sd["user_name"]][0 if sd["sim_result"] == "W" else 1] += 1
+        # One flipped MATCHUP, not one flipped side -- a 2-team game's sides
+        # flip together (zero-sum), so checking just side 0 already counts
+        # the game exactly once; checking every side would double-count it.
+        # Stashed on the game itself (not just summed into `flips` below) so
+        # the per-game template can mark WHICH game flipped, not just how
+        # many did that week.
+        for g in games:
+            g["flipped"] = bool(g["played"]
+                                and g["sides"][0]["sim_result"] != g["sides"][0]["result"])
+        flips = sum(1 for g in games if g["flipped"])
+        all_sides = [sd for g in games for sd in g["sides"] if sd["opt_points"] is not None]
+        hi = max(all_sides, key=lambda sd: sd["opt_points"]) if all_sides else None
+        lo = min(all_sides, key=lambda sd: sd["opt_points"]) if all_sides else None
+        out[wk] = {
+            "games": games, "flips": flips,
+            "records": {nm: f"{w}-{l}" for nm, (w, l) in cum.items()},
+            "high": {"user_name": hi["user_name"], "points": hi["opt_points"]} if hi else None,
+            "low": {"user_name": lo["user_name"], "points": lo["opt_points"]} if lo else None,
+        }
+    return _week_cache.setdefault(key, out)
+
+
+_playoff_cache: dict = {}
+
+
+def _redraft_side_score(plist, weeks, pts_by_pw, names, slots):
+    """Best legal lineup + leftover bench, from a redrafted roster's `plist`
+    ([(player_id, position), ...]), for one or more `weeks` (summed when a
+    playoff round spans more than one -- none of this league's stored
+    brackets do, but a round's `weeks` field is allowed to). Returns
+    (opt_lineup, opt_points, bench_rows) where `bench_rows` are the raw
+    leftover-player records (top 6 by points); the caller attaches
+    `was_started` since only it knows which lineup to compare against.
+
+    A multi-week round's own per-slot breakdown isn't tracked, only its
+    total -- same "degrade rather than error" precedent as the rest of this
+    module (e.g. `redraft_board`'s empty-frame fallback).
+    """
+    from .season import assign_slots, optimal_lineup, optimal_points
+
+    if not plist:
+        return [], None, []
+    if len(weeks) == 1:
+        wk = weeks[0]
+        rows = pd.DataFrame([{"player_id": pid, "position": pos,
+                              "points": pts_by_pw.get((pid, wk), 0.0)} for pid, pos in plist])
+        picks = optimal_lineup(rows, slots)
+        if not len(picks):
+            return [], None, []
+        picks = assign_slots(picks, slots)
+        opt_lineup = [{"slot": x.slot, "player_id": x.player_id,
+                       "player_name": names.get(x.player_id, x.player_id),
+                       "position": x.position, "points": round(float(x.points), 1)}
+                      for x in picks.itertuples(index=False)]
+        opt_points = round(float(picks["points"].sum()), 2)
+        used_ids = set(picks["player_id"])
+        bn = (rows[~rows["player_id"].isin(used_ids)]
+              .sort_values("points", ascending=False).head(6))
+        return opt_lineup, opt_points, list(bn.itertuples(index=False))
+    total = 0.0
+    for wk in weeks:
+        rows = pd.DataFrame([{"player_id": pid, "position": pos,
+                              "points": pts_by_pw.get((pid, wk), 0.0)} for pid, pos in plist])
+        total += optimal_points(rows, slots)
+    return [], round(total, 2), []
+
+
+def _pl_lineup_by_week(players_df, team, week, slots) -> list[dict]:
+    """A team's real submitted playoff lineup for ONE week, looked up by
+    (team, week) rather than by matchup id -- see `redraft_playoff`'s
+    docstring for why: a reseeded matchup can pair two teams who never
+    actually played each other, but each side still has its OWN real week
+    to show (if it made the real bracket that week at all). Keeps
+    `player_id` (unlike `playoffs._lineup_from_players`, which drops it) so
+    the shared `_lineupmacro.html` can still key headshots/posrank off it.
+    `players_df` is `Playoff.players`, already priced.
+    """
+    from .season import assign_slots
+
+    if players_df is None or not len(players_df):
+        return []
+    d = players_df[(players_df["team"] == team) & (players_df["week"] == week)]
+    if not len(d):
+        return []
+    d = d.sort_values("points", ascending=False)
+    try:
+        d = assign_slots(d, slots or {})
+    except Exception:
+        d = d.assign(slot=d["position"])
+    return [{"slot": x.slot, "player_id": str(x.player_id), "player_name": x.player_name,
+             "position": x.position, "points": round(float(x.points), 1)}
+            for x in d.itertuples(index=False)]
+
+
+def redraft_playoff(s: Season, p, basis: str = "value") -> dict:
+    """The playoff bracket, RESEEDED by simulated regular-season standings
+    and walked round by round with each side's REDRAFTED roster -- the
+    postseason counterpart to `redraft_week_matchups`.
+
+    `basis` -- `"value"` (redraft_board()/redraft_standings(), the default)
+    or `"adp"` (their redraft_board_adp()/redraft_standings(s, "adp")
+    counterparts) -- picks which redrafted board AND which simulated
+    standings (for reseeding) this walk uses; both must agree, or a team
+    could be reseeded by one basis' standings while playing with the OTHER
+    basis' roster. See redraft_standings()'s docstring for the fuller
+    rationale (shared by all three redraft_* simulators).
+
+    `redraft_standings()`'s `sim_position` is already computed over the same
+    regular-season-only window `playoffs.seeds()` uses for the REAL seeds
+    (see both docstrings), so "seed N" means the same thing on both sides.
+    Every literal team name the real config assigns to a bracket slot is
+    swapped for whichever team holds that SAME seed number under the
+    simulation; a `W:`/`L:<matchup_id>` reference (a later round's winner)
+    is left alone structurally and resolved from the SIMULATED result of
+    that earlier matchup instead of the real one. This preserves the real
+    bracket's SHAPE -- including a human "pick" like 2025's choose-your-
+    opponent format, which becomes a fixed ROUTING decision ("this slot
+    plays the winner of that earlier matchup") once identity is factored
+    out -- while letting seeding and every round's outcome genuinely follow
+    the simulation, which is what makes advancement (not just the score)
+    something that can actually change.
+
+    Because a reseeded matchup can pair two teams that never really played
+    each other, "real" per-side facts are sourced two different ways:
+    `flipped` compares the simulated winner against the REAL winner
+    recorded AT THAT SAME BRACKET POSITION (matchup id) -- well-defined
+    regardless of who's actually playing there now, since it is answering
+    "did the outcome at this spot in the bracket change". The Actual lineup
+    tab, on the other hand, looks each side's own real lineup/points/result
+    up by (team, week) -- what that manager really did, independent of who
+    the bracket says they're facing under simulation; a team that missed
+    the real bracket entirely that week simply shows no roster data there,
+    same as the shared lineup table already degrades for any missing side.
+
+    Returns {"rounds": {round_id: {"label", "games": [...], "byes": [...],
+    "flips": n, "high": {...}, "low": {...}}, ...}, "sim_champion",
+    "real_champion", "champion_flipped"}, rounds in bracket order (dict
+    insertion order, same idiom `redraft_week_matchups` already relies on).
+    A round with nothing decided yet is omitted (same convention as
+    `playoffs.game_log`). Empty dict when there's no playoff, no bracket
+    config/rounds to walk, or no draft to simulate against. Memoized per
+    league:season:basis.
+    """
+    key = f"{s.league_id}:{s.season}:{basis}"
+    if key in _playoff_cache:
+        return _playoff_cache[key]
+    if p is None or not len(getattr(p, "results", [])):
+        return {}
+    cfg = p.config if isinstance(p.config, dict) else {}
+    rounds_cfg = cfg.get("rounds") or []
+    if not rounds_cfg:
+        return {}
+    board = redraft_board_adp(s) if basis == "adp" else redraft_board(s)
+    if board.empty:
+        return {}
+    from . import playoffs as _playoffs
+    from . import scoring
+
+    sim_standings = redraft_standings(s, basis)
+    if sim_standings.empty:
+        return {}
+    real_seeds = _playoffs.seeds(s, playoff=p)
+    real_seed_of = dict(zip(real_seeds["user_name"], real_seeds["seed"]))
+    sim_team_of_seed = dict(zip(sim_standings["sim_position"].astype(int),
+                               sim_standings["user_name"]))
+
+    def reseed(team_name):
+        seed = real_seed_of.get(team_name)
+        return sim_team_of_seed.get(seed, team_name) if seed is not None else team_name
+
+    board = board.copy()
+    board["player_id"] = board["player_id"].astype(str)
+    names = dict(zip(board["player_id"], board["player_name"]))
+    roster_players: dict = {}
+    for r in board.itertuples(index=False):
+        roster_players.setdefault(r.roster_id, []).append((r.player_id, r.position))
+    rid_by_name = dict(zip(s.user_map["user_name"], s.user_map["roster_id"]))
+    slots = getattr(s, "slots", {}) or {}
+
+    rules = scoring.rules_from(s.league_id)
+    ids = board["player_id"].unique().tolist()
+    all_weeks = sorted({int(w) for rd in rounds_cfg for w in rd.get("weeks", [])})
+    if not all_weeks:
+        return {}
+    weekly = scoring.score_lineup(ids, s.season, all_weeks, rules)
+    pts_by_pw = weekly.set_index(["player_id", "week"])["points"]
+
+    # Real per-(team, round-weeks-label) result/points -- keyed by TEAM
+    # alone, not matchup id, for the Actual tab (see docstring).
+    real_by_team_wk: dict = {}
+    for r in p.results.itertuples(index=False):
+        real_by_team_wk[(r.team, r.weeks)] = {
+            "points": round(float(r.points), 2) if pd.notna(r.points) else None,
+            "result": r.result if r.result in ("W", "L", "T") else None,
+        }
+    real_winner_of_mid = {
+        mid: g.loc[g["result"] == "W", "team"].iloc[0]
+        for mid, g in p.results.groupby("matchup_id") if (g["result"] == "W").any()
+    }
+
+    def side_score(team, weeks):
+        rid = rid_by_name.get(team)
+        plist = roster_players.get(rid, [])
+        return _redraft_side_score(plist, weeks, pts_by_pw, names, slots)
+
+    winners: dict = {}
+    losers: dict = {}
+    # A literal team name that ALSO recorded a REAL win in some STRICTLY
+    # EARLIER round (built up round-by-round below, never looking ahead) is
+    # really an implicit advancement reference -- a human "pick" written as
+    # a name instead of "W:<matchup_id>" (2025's config does exactly this:
+    # R2M1's away side is the literal string "xPsyD", not "W:R1M1", because
+    # seed 3 picked xPsyD after they won R1M1). Routing it through `reseed()`
+    # directly would substitute whoever now holds xPsyD's ORIGINAL SEED,
+    # regardless of whether that team actually won ITS reseeded R1 game --
+    # letting a team eliminated under simulation advance anyway. Resolving
+    # through the matchup they really won instead keeps advancement tied to
+    # the SIMULATED result, which is the whole point of reseeding. A byed
+    # team is never in here (never recorded as winning an actual game), so
+    # its own literal references still fall through to `reseed()` -- correct,
+    # since a bye is a genuine fresh seed entry, not an advancement.
+    implicit_winner_of: dict = {}
+
+    def resolve(v):
+        v = str(v)
+        if v.startswith("W:"):
+            return winners.get(v[2:])
+        if v.startswith("L:"):
+            return losers.get(v[2:])
+        implicit_mid = implicit_winner_of.get(v)
+        if implicit_mid is not None:
+            return winners.get(implicit_mid)
+        return reseed(v)
+
+    rounds: dict = {}
+    for rd in rounds_cfg:
+        rid = rd["id"]
+        weeks = [int(w) for w in rd.get("weeks", [])]
+        wk_lbl = "+".join(str(w) for w in weeks)
+        info = rounds.setdefault(rid, {"label": rd.get("name", rid), "games": [],
+                                       "byes": [], "flips": 0})
+        if not weeks:
+            continue
+        for mu in rd.get("matchups", []):
+            mid = mu["id"]
+            if mu.get("bye"):
+                team = resolve(mu["bye"])
+                if team is None:
+                    continue
+                winners[mid] = team
+                _, opt_points, _ = side_score(team, weeks)
+                if opt_points is not None:
+                    info["byes"].append({"user_name": team, "points": opt_points})
+                continue
+            nms = [resolve(mu["home"]["team"]), resolve(mu["away"]["team"])]
+            if any(n is None for n in nms):
+                continue   # an upstream game hasn't resolved yet
+            sides = []
+            for team in nms:
+                opt_lineup, opt_points, bench_rows = side_score(team, weeks)
+                opt_bench = [{"player_id": x.player_id,
+                             "player_name": names.get(x.player_id, x.player_id),
+                             "position": x.position, "points": round(float(x.points), 1)}
+                            for x in bench_rows]
+                real = real_by_team_wk.get((team, wk_lbl), {})
+                sides.append({
+                    "user_name": team,
+                    "points": real.get("points"),
+                    "result": real.get("result"),
+                    "lineup": (_pl_lineup_by_week(p.players, team, weeks[0], slots)
+                              if len(weeks) == 1 else []),
+                    "bench": [],
+                    "opt_lineup": opt_lineup, "opt_points": opt_points, "opt_bench": opt_bench,
+                })
+            if any(sd["opt_points"] is None for sd in sides):
+                continue
+            a, b = sides
+            a["sim_result"] = "W" if a["opt_points"] > b["opt_points"] else (
+                "L" if a["opt_points"] < b["opt_points"] else "T")
+            b["sim_result"] = "W" if b["opt_points"] > a["opt_points"] else (
+                "L" if b["opt_points"] < a["opt_points"] else "T")
+            if a["sim_result"] == "T":
+                continue   # no winner to advance -- same rule the real engine follows
+            winners[mid] = a["user_name"] if a["sim_result"] == "W" else b["user_name"]
+            losers[mid] = b["user_name"] if a["sim_result"] == "W" else a["user_name"]
+            opt_opp_pts = [{p_["slot"]: p_["points"] for p_ in sd["opt_lineup"]} for sd in sides]
+            for i, sd in enumerate(sides):
+                other = opt_opp_pts[1 - i]
+                for p_ in sd["opt_lineup"]:
+                    opp = other.get(p_["slot"])
+                    p_["cmp"] = (None if opp is None else
+                                "up" if p_["points"] > opp else
+                                "down" if p_["points"] < opp else "even")
+            sides.sort(key=lambda sd: -sd["opt_points"])
+            real_winner = real_winner_of_mid.get(mid)
+            sim_winner = winners[mid]
+            flipped = bool(real_winner and sim_winner != real_winner)
+            sim_margin = round(abs(sides[0]["opt_points"] - sides[1]["opt_points"]), 2)
+            info["games"].append({
+                "matchup_id": mid, "sides": sides, "played": True,
+                "margin": None, "sim_margin": sim_margin,
+                "flipped": flipped, "winner": real_winner, "sim_winner": sim_winner,
+            })
+            if flipped:
+                info["flips"] += 1
+        # Record THIS round's real winners for later rounds' literal-name
+        # references to route through -- done only now, after the whole
+        # round is processed, so a name is never treated as an implicit
+        # advancement before the round it actually won has been walked (a
+        # bye recipient's own later bye/game still resolves as a fresh seed
+        # entry, not an advancement, exactly because it never appears here).
+        for mu in rd.get("matchups", []):
+            if mu.get("bye"):
+                continue
+            w = real_winner_of_mid.get(mu["id"])
+            if w:
+                implicit_winner_of[w] = mu["id"]
+
+    rounds = {rid: info for rid, info in rounds.items() if info["games"] or info["byes"]}
+    for info in rounds.values():
+        all_sides = [sd for g in info["games"] for sd in g["sides"]]
+        info["high"] = ({"user_name": max(all_sides, key=lambda sd: sd["opt_points"])["user_name"],
+                         "points": max(sd["opt_points"] for sd in all_sides)}
+                        if all_sides else None)
+        info["low"] = ({"user_name": min(all_sides, key=lambda sd: sd["opt_points"])["user_name"],
+                        "points": min(sd["opt_points"] for sd in all_sides)}
+                       if all_sides else None)
+
+    final_id = cfg.get("final")
+    sim_champion = winners.get(final_id) if final_id else None
+    real_champion = p.champion
+    champion_flipped = (bool(sim_champion and real_champion and sim_champion != real_champion)
+                        if final_id else None)
+
+    return _playoff_cache.setdefault(key, {
+        "rounds": rounds, "sim_champion": sim_champion,
+        "real_champion": real_champion, "champion_flipped": champion_flipped,
+    })
+
+
 def draft_extremes(s: Season, n: int | None = None) -> dict:
     """The draft's biggest gems and busts, by TRUE value against draft
     position AT THAT PLAYER'S OWN POSITION.
@@ -754,3 +1578,7 @@ def draft_standouts(s: Season) -> list[dict]:
 
 def clear_draft_cache() -> None:
     _cache.clear()
+    _sim_cache.clear()
+    _week_cache.clear()
+    _playoff_cache.clear()
+    _adp_cache.clear()

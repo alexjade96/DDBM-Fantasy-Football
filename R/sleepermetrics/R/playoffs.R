@@ -30,7 +30,7 @@
 
 #' Read a playoff bracket config
 #'
-#' @param path Path to a playoff JSON config (see `playoffs/` in the repo).
+#' @param path Path to a playoff JSON config (see `season/<league_id>/` in the repo).
 #' @return The parsed config as a list.
 #' @export
 sl_playoff_config <- function(path) {
@@ -269,18 +269,30 @@ print.sleeper_playoff <- function(x, ...) {
 
 #' Stored season brackets
 #'
+#' Configs live one level down, under `<playoff_dir>/<league_id>/<season>.json`
+#' -- Sleeper gives each season its own league id (see `league_ids` below), so a
+#' bracket is keyed by BOTH, not by season number alone. Only numeric-named
+#' subfolders are treated as league folders (a Sleeper league_id is always a
+#' numeric string); `<playoff_dir>/adp/` and `<playoff_dir>/fixtures/` are
+#' siblings holding unrelated data (the Python ADP cache, a manually-referenced
+#' ground-truth bracket) and are skipped by that same rule.
+#'
 #' `league_ids` restricts the result to brackets belonging to those leagues. A
 #' bracket is keyed by season, but a season number is not unique across leagues
 #' -- without this filter, loading some *other* league into the dashboard would
 #' silently hand it DDBM's brackets and DDBM's champions. Sleeper gives each
 #' season its own league id, so pass the whole chain.
 #'
-#' @param playoff_dir Directory of bracket configs.
+#' @param playoff_dir Root directory of bracket configs (default `"season"`).
 #' @param league_ids Optional character vector of league ids to keep.
 #' @return Named character vector: `season -> config path`.
 #' @export
-sl_playoff_configs <- function(playoff_dir = "playoffs", league_ids = NULL) {
-  fs <- list.files(playoff_dir, "\\.json$", full.names = TRUE)
+sl_playoff_configs <- function(playoff_dir = "season", league_ids = NULL) {
+  subs <- list.dirs(playoff_dir, full.names = FALSE, recursive = FALSE)
+  subs <- subs[grepl("^[0-9]+$", subs)]
+  fs <- unlist(lapply(subs, function(sub) {
+    list.files(file.path(playoff_dir, sub), "\\.json$", full.names = TRUE)
+  }))
   ids <- if (is.null(league_ids)) NULL else as.character(league_ids)
   out <- character(0)
   for (f in fs) {
@@ -320,7 +332,7 @@ sl_playoff_champion <- function(config, recompute = FALSE) {
 #' @param recompute Re-run each bracket rather than reading its stored champion.
 #' @return The seasons, with `standings$champion` corrected where a bracket exists.
 #' @export
-sl_apply_playoffs <- function(seasons, playoff_dir = "playoffs", recompute = FALSE) {
+sl_apply_playoffs <- function(seasons, playoff_dir = "season", recompute = FALSE) {
   # Only this league's brackets: pointing the dashboard at another league must
   # not stamp this league's champions onto it.
   paths <- sl_playoff_configs(
@@ -347,7 +359,7 @@ sl_apply_playoffs <- function(seasons, playoff_dir = "playoffs", recompute = FAL
 #'   (see [sl_playoff_configs()]).
 #' @return Named list of `sleeper_playoff` objects (names = seasons).
 #' @export
-sl_load_playoffs <- function(playoff_dir = "playoffs", league_ids = NULL) {
+sl_load_playoffs <- function(playoff_dir = "season", league_ids = NULL) {
   paths <- sl_playoff_configs(playoff_dir, league_ids)
   stats::setNames(lapply(paths, function(p) sl_playoff(p, validate = FALSE)),
                   names(paths))

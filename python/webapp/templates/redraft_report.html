@@ -1,0 +1,196 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ season }} redraft simulation — {{ league_name }}</title>
+  <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+  {# ?v=<mtime> so a CSS edit is never served from a stale browser cache --
+     same convention index.html uses. This page has no htmx / X-Asset-V
+     handler (it never swaps content in place), so the query param is its
+     whole staleness defence. #}
+  <link rel="stylesheet" href="/static/style.css?v={{ asset_v }}">
+</head>
+<body>
+  {% import "_ident.html" as idm with context %}
+  <main id="panel">
+    <p class="hint"><a class="ghost" href="/dashboard?league={{ league|urlencode }}&season={{ season|urlencode }}&tab=draft">&larr; Back to the Draft tab</a></p>
+    <div class="rowhead"><h1>{{ league_name }} — {{ season }} redraft simulation report</h1></div>
+    {% if not sim %}
+    <p class="empty">No draft data for {{ season }} to simulate against.</p>
+    {% else %}
+    {# Two different bases for "who should have been drafted": true season
+       value (redraft_board(), what the board grid otherwise defaults to)
+       vs. ADP (average draft position -- how the field at large actually
+       valued each player, independent of how this league's season played
+       out). ADP comes from Sleeper's own undocumented per-season endpoint
+       (draft.redraft_board_adp() / _fetch_adp_raw() -- reverse-engineered,
+       not the documented v1 API), with an on-disk snapshot fallback
+       (season/adp/) for when that endpoint is unreachable.
+
+       This is the SINGLE outer toggle for the WHOLE report, not just the
+       board: each panel holds its own board grid AND its own complete
+       Season/Playoffs/Roster/Weekly simulation (_draft_simulation.html,
+       included once per panel with that basis' own pre-computed context --
+       see app.py's _draft_sim_ctx/report_redraft), so picking a basis here
+       chains all the way downstream. Wrapping the WHOLE section (not just
+       the board) is what makes that true -- an earlier version of this only
+       swapped the board grid while every table/chart below it silently kept
+       showing the true-value simulation regardless of which tab was picked. #}
+    <div class="viewswitch rb-vs-mode">
+      <input type="radio" name="rbmode" id="rb-results" class="vs-radio" checked>
+      <input type="radio" name="rbmode" id="rb-adp" class="vs-radio">
+      <div class="rail vs-tabs">
+        <label class="year" for="rb-results">By final season results</label>
+        <label class="year" for="rb-adp">By ADP</label>
+      </div>
+
+      <div class="vs-panel vs-p-results">
+        <div class="rowhead"><h2>{{ season }} redrafted board</h2></div>
+        {% include "_redraft_board_table.html" %}
+        {# sim/sim_playoffs/sim_rosters/sim_weeks are already the value-basis
+           data under their plain (unsuffixed) context keys -- only the
+           prefix/basis markers need setting for this panel. #}
+        {% set sim_basis = "value" %}
+        {% set sim_prefix = "results" %}
+        {% include "_draft_simulation.html" %}
+      </div>
+
+      <div class="vs-panel vs-p-adp">
+        <div class="rowhead"><h2>{{ season }} redrafted board</h2></div>
+        {% include "_redraft_board_adp_table.html" %}
+        {% set sim = sim_adp %}
+        {% set sim_playoffs = sim_playoffs_adp %}
+        {% set sim_rosters = sim_rosters_adp %}
+        {% set sim_weeks = sim_weeks_adp %}
+        {% set sim_basis = "adp" %}
+        {% set sim_prefix = "adp" %}
+        {% include "_draft_simulation.html" %}
+      </div>
+    </div>
+    {% endif %}
+  </main>
+
+  <script>
+    // The page's own colours follow the OS via style.css's prefers-color-scheme
+    // variables already -- only the server-rendered chart PNGs need a nudge,
+    // since matplotlib can't read a media query. Ported from weekly_report.html
+    // (the same stand-alone-page situation): if this report was opened without
+    // the SPA's current theme riding along (a bookmark, a shared link), swap
+    // chart <img> src to match the OS instead of whatever the URL said.
+    if (matchMedia('(prefers-color-scheme: dark)').matches) {
+      document.querySelectorAll('img[src*="/chart/"][src*="theme=light"]').forEach(function (img) {
+        img.src = img.src.replace('theme=light', 'theme=dark');
+      });
+    }
+    // .card.chart img starts at opacity:0 (style.css) and normally fades in via
+    // the dashboard shell's prepCharts(), which this stand-alone page doesn't
+    // load -- without this, every chart here loads fine but stays invisible.
+    document.querySelectorAll('.card.chart img').forEach(function (img) {
+      var done = function () { img.classList.add('loaded'); };
+      if (img.complete && img.naturalWidth) { done(); return; }
+      img.addEventListener('load', done);
+      img.addEventListener('error', done);
+    });
+
+    // The By-final-season-results / By-ADP toggle above wraps TWO independent
+    // copies of _draft_simulation.html's own Season/Playoffs/Roster/Weekly
+    // radio group (one per basis -- see that template's sim_prefix comment),
+    // so switching basis used to silently reset whichever downstream tab you
+    // were looking at back to Season. Mirror each tab's checked state across
+    // both copies (by matching id suffix, e.g. "results-sim-playoffs" <->
+    // "adp-sim-playoffs") so the downstream selection survives a basis switch
+    // instead of only ever reflecting the copy you last clicked directly.
+    ['season', 'playoffs', 'roster', 'weeks'].forEach(function (tab) {
+      var radios = ['results', 'adp']
+        .map(function (prefix) { return document.getElementById(prefix + '-sim-' + tab); })
+        .filter(Boolean);
+      radios.forEach(function (r) {
+        r.addEventListener('change', function () {
+          if (!r.checked) return;
+          radios.forEach(function (o) { if (o !== r) o.checked = true; });
+        });
+      });
+    });
+
+    // Click a column header to sort -- same value-ranking heuristics as
+    // index.html's makeSortable (first embedded number, else plain text,
+    // data-sort override), ported here because this stand-alone page has no
+    // shell to reach (same precedent as weekly_report.html's copy).
+    function sortValue(td) {
+      var t = (td.textContent || '').trim().replace(/,/g, '');
+      var m = t.match(/-?\d+(\.\d+)?/);
+      return m ? parseFloat(m[0]) : null;
+    }
+    function textValue(td) {
+      return (td.dataset && td.dataset.sort !== undefined) ? td.dataset.sort
+        : (td.textContent || '').trim();
+    }
+    var POS_ORDER = { QB: 0, RB: 1, WR: 2, TE: 3, K: 4, DEF: 5 };
+    function posValue(td) {
+      var t = (td.textContent || '').trim().toUpperCase();
+      return Object.prototype.hasOwnProperty.call(POS_ORDER, t) ? POS_ORDER[t] : 99;
+    }
+    // The Roster tab's table is a .drilltable (a div/span grid of dt-head +
+    // dt-row <details>), not a real <table> -- index.html's makeSortable
+    // assumes tHead/tBodies, so this is its .drilltable equivalent: the
+    // "header row" is .dt-head's own children, a "row" is a direct-child
+    // .dt-row, and a "cell" is that row's <summary>'s child at the same
+    // position. Opt-in via class="sortable" on the .drilltable (unlike
+    // <table>'s opt-out "nosort") since most drilltables elsewhere nest
+    // ANOTHER one inside a row's own drilldown, and reordering the outer
+    // rows out from under a mid-expand inner one isn't something to enable
+    // by default -- this only touches tables explicitly marked for it.
+    function makeDrillSortable(el) {
+      if (el.dataset.sortable) return;
+      el.dataset.sortable = '1';
+      var head = null, rows = [];
+      Array.prototype.forEach.call(el.children, function (c) {
+        if (c.classList.contains('dt-head')) head = c;
+        else if (c.classList.contains('dt-row')) rows.push(c);
+      });
+      if (!head || rows.length < 2) return;
+      var cellOf = function (row, i) {
+        var s = row.querySelector(':scope > summary');
+        return s ? s.children[i] : null;
+      };
+      Array.prototype.forEach.call(head.children, function (th, i) {
+        th.tabIndex = 0;
+        th.setAttribute('role', 'button');
+        var isPos = th.textContent.trim().toLowerCase() === 'pos';
+        var run = function () {
+          var cur = Array.prototype.filter.call(el.children, function (c) {
+            return c.classList.contains('dt-row');
+          });
+          var asc = th.dataset.dir !== 'asc';
+          Array.prototype.forEach.call(head.children, function (o) {
+            delete o.dataset.dir; o.classList.remove('sort-asc', 'sort-desc');
+          });
+          th.dataset.dir = asc ? 'asc' : 'desc';
+          th.classList.add(asc ? 'sort-asc' : 'sort-desc');
+          var overridden = cur.some(function (r) {
+            var c = cellOf(r, i); return c && c.dataset.sort !== undefined;
+          });
+          var numeric = !isPos && !overridden && cur.every(function (r) {
+            var c = cellOf(r, i); return !c || sortValue(c) !== null;
+          });
+          cur.sort(function (a, b) {
+            var x = cellOf(a, i), y = cellOf(b, i);
+            if (!x || !y) return 0;
+            var d = isPos ? posValue(x) - posValue(y)
+              : numeric ? sortValue(x) - sortValue(y)
+              : textValue(x).localeCompare(textValue(y));
+            return asc ? d : -d;
+          });
+          cur.forEach(function (r) { el.appendChild(r); });
+        };
+        th.addEventListener('click', run);
+        th.addEventListener('keydown', function (e) {
+          if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); run(); }
+        });
+      });
+    }
+    document.querySelectorAll('.drilltable.sortable').forEach(makeDrillSortable);
+  </script>
+</body>
+</html>
