@@ -29,14 +29,15 @@
        (season/adp/) for when that endpoint is unreachable.
 
        This is the SINGLE outer toggle for the WHOLE report, not just the
-       board: each panel holds its own board grid AND its own complete
-       Season/Playoffs/Roster/Weekly simulation (_draft_simulation.html,
-       included once per panel with that basis' own pre-computed context --
-       see app.py's _draft_sim_ctx/report_redraft), so picking a basis here
-       chains all the way downstream. Wrapping the WHOLE section (not just
-       the board) is what makes that true -- an earlier version of this only
-       swapped the board grid while every table/chart below it silently kept
-       showing the true-value simulation regardless of which tab was picked. #}
+       board: each panel holds its own complete Season/Playoffs/Roster/
+       Weekly simulation (_draft_simulation.html, included once per panel
+       with that basis' own pre-computed context -- see app.py's
+       _draft_sim_ctx/report_redraft) followed by its own board grid, so
+       picking a basis here chains all the way downstream. Wrapping the
+       WHOLE section (not just the board) is what makes that true -- an
+       earlier version of this only swapped the board grid while every
+       table/chart below it silently kept showing the true-value simulation
+       regardless of which tab was picked. #}
     <div class="viewswitch rb-vs-mode">
       <input type="radio" name="rbmode" id="rb-results" class="vs-radio" checked>
       <input type="radio" name="rbmode" id="rb-adp" class="vs-radio">
@@ -46,19 +47,20 @@
       </div>
 
       <div class="vs-panel vs-p-results">
-        <div class="rowhead"><h2>{{ season }} redrafted board</h2></div>
-        {% include "_redraft_board_table.html" %}
         {# sim/sim_playoffs/sim_rosters/sim_weeks are already the value-basis
            data under their plain (unsuffixed) context keys -- only the
-           prefix/basis markers need setting for this panel. #}
+           prefix/basis markers need setting for this panel. The simulation
+           section (and its own Season/Playoffs/Roster/Weekly view tabs)
+           comes BEFORE the board grid -- it's the headline "what would have
+           happened" read; the board is supporting detail underneath it. #}
         {% set sim_basis = "value" %}
         {% set sim_prefix = "results" %}
         {% include "_draft_simulation.html" %}
+        <div class="rowhead"><h2>{{ season }} redrafted board</h2></div>
+        {% include "_redraft_board_table.html" %}
       </div>
 
       <div class="vs-panel vs-p-adp">
-        <div class="rowhead"><h2>{{ season }} redrafted board</h2></div>
-        {% include "_redraft_board_adp_table.html" %}
         {% set sim = sim_adp %}
         {% set sim_playoffs = sim_playoffs_adp %}
         {% set sim_rosters = sim_rosters_adp %}
@@ -66,6 +68,8 @@
         {% set sim_basis = "adp" %}
         {% set sim_prefix = "adp" %}
         {% include "_draft_simulation.html" %}
+        <div class="rowhead"><h2>{{ season }} redrafted board</h2></div>
+        {% include "_redraft_board_adp_table.html" %}
       </div>
     </div>
     {% endif %}

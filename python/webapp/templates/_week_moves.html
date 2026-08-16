@@ -1,9 +1,11 @@
-{# Trades/waivers + free-agent analytics, kept together behind ONE lazy fetch
-   (/tab/weekly/part/moves, see app.py's TAB_PARTS) since both are already
-   computed by the same _week_extras() call and were already wrapped in one
-   .reportpanel -- splitting them into two round trips would just double the
-   (cheap) recap recomputation for no visual benefit. #}
+{# Trades/waivers + free-agents-not-picked-up, kept together behind ONE lazy
+   fetch (/tab/weekly/part/moves, see app.py's TAB_PARTS) since both are
+   already computed by the same _week_extras() call and were already wrapped
+   in one .reportpanel -- splitting them into two round trips would just
+   double the (cheap) recap recomputation for no visual benefit. The
+   free-agent LINEUP comparison lives up in its own "Best of the Week"
+   section instead (see _week_best.html), not down here. #}
 <div class="reportpanel">
   {% include "_week_transactions.html" %}
-  {% include "_week_fa.html" %}
+  {% include "_fa_standouts.html" %}
 </div>

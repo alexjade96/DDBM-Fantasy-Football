@@ -3,21 +3,26 @@
    "if you could draft an all-star team from the league's actual rosters
    that week", one Team of the Week pick per slot leaguewide. Expects `totw`
    ({week, total, lineup}) in context; `idm` imported by the includer. Shared
-   by the Roster tab's week-by-week drilldown and the Weekly tab's matchup
-   section, so the two can't drift.
+   by the Roster tab's week-by-week drilldown and the Weekly tab's "Best of
+   the Week" section (_week_best.html), so the two can't drift. A row may
+   also carry `cmp` ('up'/'down'/'even', that slot's win/loss against
+   whatever it's being compared to -- only "Best of the Week" stamps this;
+   the Roster tab's own rows simply lack the key and render unhighlighted),
+   same convention `_lineupmacro.html`'s own rows use.
 
    `nosort`: fixed slot order, not a ranking, and the colspan title/total
-   header (2 <th>s) doesn't line up 1:1 with the 4 <td>s each body row has --
+   header (3 <th>s) doesn't line up 1:1 with the 4 <td>s each body row has --
    see `_lineupmacro.html`'s identical note. #}
 {% if totw %}
 <table class="dt-games nosort">
   <thead><tr>
-    <th colspan="3">Team of the Week</th>
+    <th colspan="2">Team of the Week</th>
+    <th>Manager</th>
     <th class="n">{{ "%.2f"|format(totw.total) }}</th>
   </tr></thead>
   <tbody>
   {% for p in totw.lineup %}
-    <tr>
+    <tr {% if p.cmp == 'up' %}class="cmp-up"{% elif p.cmp == 'down' %}class="cmp-down"{% endif %}>
       <td><span class="q">{{ p.slot }}</span></td>
       <td>{{ idm.headshot(p.player_id) }}<strong>{{ p.player_name }}</strong>
           {% if not p.was_starter %} <span class="q star" title="Was benched on their actual roster this week">*</span>{% endif %}

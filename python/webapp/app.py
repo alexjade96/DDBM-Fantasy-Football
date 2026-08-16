@@ -1046,6 +1046,34 @@ def _week_recap(s, week: int, ws) -> dict:
     return {"lead": " ".join(lead), "chips": chips[:3]}
 
 
+def _totw_vs_fa(totw: dict | None, fa_best_team: dict | None) -> dict | None:
+    """Team of the Week vs. the best available free-agent lineup, slot-
+    matched with the same win/loss `cmp` every other lineup comparison in
+    this app uses -- the fixed pairing "Best of the Week" shows (see
+    _week_best.html). TotW keeps its own `lineup` (rendered via
+    _team_of_week.html so its per-player Manager column survives -- a TotW
+    lineup mixes players from many different real rosters, unlike a normal
+    lineup_table's single side) alongside the FA lineup and both totals, so
+    the template needs nothing else from `fa_best_team`.
+    """
+    if not totw or not totw.get("lineup") or not fa_best_team or not fa_best_team.get("lineup"):
+        return None
+    totw_pts = {p["slot"]: p["points"] for p in totw["lineup"]}
+    fa_pts = {p["slot"]: p["points"] for p in fa_best_team["lineup"]}
+
+    def _cmp(points, opp):
+        return None if opp is None else ("up" if points > opp else "down" if points < opp else "even")
+
+    totw_lineup = [dict(p, cmp=_cmp(p["points"], fa_pts.get(p["slot"]))) for p in totw["lineup"]]
+    fa_lineup = [dict(p, cmp=_cmp(p["points"], totw_pts.get(p["slot"]))) for p in fa_best_team["lineup"]]
+    return {
+        "totw": dict(totw, lineup=totw_lineup),
+        "fa_lineup": fa_lineup, "fa_total": fa_best_team["total"],
+        # Positive = free agents outscored Team of the Week that week.
+        "gain": round(fa_best_team["total"] - totw["total"], 1),
+    }
+
+
 def _week_extras(s, week: int, manager: str | None = None) -> dict:
     """The recap, trades/waivers, and free-agent sections shared by the weekly
     report and the Weekly tab (`_week_narrative.html` / `_week_transactions.html`
@@ -1460,12 +1488,24 @@ def _week_part_scoreboard(request, s, d, key, ctx):
     return tpl.TemplateResponse(request, "_week_scoreboard.html", ctx)
 
 
-@tab_part("weekly", "totw")
-def _weekly_part_totw(request, s, d, key, ctx):
+@tab_part("weekly", "best")
+def _weekly_part_best(request, s, d, key, ctx):
+    """"Best of the Week": Team of the Week vs. the best-available
+    free-agent lineup, a single fixed comparison (no other-team picker --
+    that fuller version stays on the standalone report, see _week_fa.html).
+    Its own tab part (not folded into "moves"): unlike transactions/
+    free-agents-not-picked-up, this belongs right under the scoreboard, not
+    down with the week's moves.
+    """
     wk = _resolve_week(s, ctx.get("week"))
     ctx["week"] = wk
-    ctx["totw"] = metrics.week_team_of_week(s, wk)
-    return tpl.TemplateResponse(request, "_week_totw_section.html", ctx)
+    if ctx.get("manager"):
+        ctx["totw_vs_fa"] = None
+    else:
+        totw = metrics.week_team_of_week(s, wk)
+        fa_best_team = metrics.free_agent_best_team(s, wk)
+        ctx["totw_vs_fa"] = _totw_vs_fa(totw, fa_best_team)
+    return tpl.TemplateResponse(request, "_week_best.html", ctx)
 
 
 @tab_part("weekly", "moves")
@@ -1714,11 +1754,14 @@ def _redraft_board_adp_ctx(s) -> dict:
     return {"redraft_rounds_adp": redraft_rounds_adp}
 
 
-@tab_part("draft", "board")
-def _draft_part_board(request, s, d, key, ctx):
+def _draft_board_ctx(s) -> dict:
+    """{"slots", "slot_user", "rounds"} for the actual round x slot grid --
+    used by the Draft tab's board part (_draft_board.html, via
+    _draft_board_fit.html).
+    """
     db = draft.draft_board(s)
     if db.empty:
-        return HTMLResponse("")
+        return {"slots": [], "slot_user": [], "rounds": []}
     db = db[db["draft_slot"].notna()].copy()
     db["draft_slot"] = db["draft_slot"].astype(int)
     slots = sorted(db["draft_slot"].unique())
@@ -1759,9 +1802,17 @@ def _draft_part_board(request, s, d, key, ctx):
         } for _, r in g.iterrows()}
         rounds.append({"round": int(rnd),
                        "cells": [cells.get(sl) for sl in slots]})
-    ctx.update({"slots": slots,
-                "slot_user": [slot_user.get(sl) for sl in slots],
-                "rounds": rounds})
+    return {"slots": slots,
+            "slot_user": [slot_user.get(sl) for sl in slots],
+            "rounds": rounds}
+
+
+@tab_part("draft", "board")
+def _draft_part_board(request, s, d, key, ctx):
+    bctx = _draft_board_ctx(s)
+    if not bctx["rounds"]:
+        return HTMLResponse("")
+    ctx.update(bctx)
     # No redraft-board toggle here anymore (see _draft_board.html) -- the
     # board just links into the full redraft report instead, so this route
     # no longer pays for _redraft_board_ctx's own draft.redraft_board() call.

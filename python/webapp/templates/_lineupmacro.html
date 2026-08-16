@@ -10,16 +10,24 @@
 
    `rows` carries `slot`/`player_id`/`player_name`/`points`, optionally `cmp`
    ('up'/'down', the slot-vs-slot matchup highlight -- absent rows just don't
-   highlight). `show_id` drops the headshot+posrank for callers with no
-   `player_id` to key off of (the playoff engine's submitted lineups, which
-   only ever carry a name). `points` may be None (a submitted lineup with no
-   score yet) and renders as an em dash rather than a bogus "0.00".
+   highlight) and `pos_rank` (his FINAL season-long position finish -- "RB
+   #4" -- shown next to his name whenever a row carries it, regardless of
+   `show_id`: the playoff engine's submitted lineups have no headshot to
+   show but DO carry `player_id`/`pos_rank` now, same idiom the redraft
+   simulation's own roster table already uses). `show_id` drops the
+   headshot+THIS-WEEK-posrank for callers with no `player_id` to key off of.
+   `points` may be None (a submitted lineup with no score yet) and renders
+   as an em dash rather than a bogus "0.00".
 
    `bench`, when given, adds the "Bench" divider + rows below the main table --
    `bench_flag`/`bench_flag_title` name which boolean field on each bench row
    marks it (the wording and the field itself differ between an Actual panel's
    "would have outscored a starter" and an Optimized panel's "was benched to
    make room for this pick", so both are passed in rather than hardcoded).
+   `show_id` gates the bench rows' headshot+THIS-WEEK-posrank the same way it
+   gates the main rows' -- a caller with no headshot-worthy player_id (the
+   playoff engine) shouldn't gain one just because its bench happens to be
+   populated.
 
    `nosort`: this is a fixed-slot box score (QB, RB1, RB2, ...), not a
    ranking, and its colspan title/total header (2 <th>s) doesn't line up
@@ -40,7 +48,7 @@
   {% for pl in rows %}
     <tr {% if pl.cmp == 'up' %}class="cmp-up"{% elif pl.cmp == 'down' %}class="cmp-down"{% endif %}>
       <td><span class="q">{{ pl.slot }}</span></td>
-      <td>{% if show_id %}{{ idm.headshot(pl.player_id) }}{% endif %}<strong>{{ pl.player_name }}</strong>{% if show_id %} {{ idm.posrank(pl.player_id) }}{% endif %}</td>
+      <td>{% if show_id %}{{ idm.headshot(pl.player_id) }}{% endif %}<strong>{{ pl.player_name }}</strong>{% if show_id %} {{ idm.posrank(pl.player_id) }}{% endif %}{% if pl.pos_rank %} <span class="q posrank">{{ pl.position }} #{{ pl.pos_rank }}</span>{% endif %}</td>
       <td class="n">{% if pl.points is not none %}{{ "%.2f"|format(pl.points) }}{% else %}&mdash;{% endif %}</td>
     </tr>
   {% else %}
@@ -52,7 +60,8 @@
     {% set flagged = pl[bench_flag] if bench_flag else false %}
     <tr {% if flagged %}class="bench-impact"{% endif %}>
       <td><span class="q">{{ pl.position }}</span></td>
-      <td>{{ idm.headshot(pl.player_id) }}{{ pl.player_name }} {{ idm.posrank(pl.player_id) }}
+      <td>{% if show_id %}{{ idm.headshot(pl.player_id) }}{% endif %}{{ pl.player_name }}{% if show_id %} {{ idm.posrank(pl.player_id) }}{% endif %}
+        {%- if pl.pos_rank %} <span class="q posrank">{{ pl.position }} #{{ pl.pos_rank }}</span>{% endif %}
         {%- if flagged %} <span class="q star" title="{{ bench_flag_title }}">*</span>{% endif %}</td>
       <td class="n"><span class="q">{{ "%.2f"|format(pl.points) }}</span></td>
     </tr>

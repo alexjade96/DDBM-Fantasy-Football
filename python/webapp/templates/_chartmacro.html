@@ -16,12 +16,19 @@
    NB: no nested Jinja comment markers here -- Jinja comments don't nest, so an
    inner one would close this block early. The chart PNG already carries its own
    title/subtitle, so the caption frames why the chart is here, not how to read
-   its axes. `wide` (from CHART_META) spans the full grid row for wide-aspect
-   charts. Unknown keys degrade to a plain, caption-less figure. #}
-{% macro chart(key, week=None, manager=None, bracket=None, scope=None, transaction_id=None, basis=None, alt=None, caption=None) -%}
+   its axes. `wide` spans the full grid row for wide-aspect charts, defaulting
+   to CHART_META's own registered value for the key -- pass `wide=false` at a
+   call site that wants the SAME chart to sit in a two-up grid instead (e.g.
+   week_matchups is wide when shown alone above the scoreboard, but paired
+   with week_race in "Week N in context" it needs to fit a `.grid.two` column
+   like everything else there, or the wide class forces it across the whole
+   row regardless of how much space is actually free). Unknown keys degrade
+   to a plain, caption-less figure. #}
+{% macro chart(key, week=None, manager=None, bracket=None, scope=None, transaction_id=None, basis=None, alt=None, caption=None, wide=None) -%}
 {%- set m = CHART_META.get(key, {}) -%}
 {%- set cap = caption if caption is not none else m.cap -%}
-<figure class="card chart{% if m.wide %} wide{% endif %}">
+{%- set is_wide = wide if wide is not none else m.wide -%}
+<figure class="card chart{% if is_wide %} wide{% endif %}">
   <img src="/chart/{{ key }}?league={{ league }}&season={{ season }}{% if week is not none %}&week={{ week }}{% endif %}{% if manager is not none %}&manager={{ manager|urlencode }}{% endif %}{% if bracket %}&bracket={{ bracket }}{% endif %}{% if scope %}&scope={{ scope }}{% endif %}{% if transaction_id %}&transaction_id={{ transaction_id|urlencode }}{% endif %}{% if basis %}&basis={{ basis }}{% endif %}&theme={{ theme }}&_={{ bust }}"
        alt="{{ alt or cap or key }}" loading="lazy">
   {%- if cap %}<figcaption>{{ cap }}</figcaption>{%- endif %}

@@ -1704,10 +1704,12 @@ def week_matchups(s: Season, week: int) -> list[dict]:
         # so the Optimized panel has its own bench to compare against the
         # Actual panel's, rather than just showing the starters in isolation.
         # `was_started` flags anyone who WAS an actual starter but got swapped
-        # out here -- the mirror of the Actual panel's `would_start` -- and
-        # every such player is guaranteed a row (not just whichever make the
-        # top 6 by points), since a swapped-out starter can easily be a low
-        # scorer and that's exactly the swap worth seeing.
+        # out here -- the mirror of the Actual panel's `would_start`. No cap:
+        # `g` is already this one team's own roster for the week (bounded,
+        # not the league-wide pool), and a cap here silently dropped whoever
+        # scored least -- exactly backwards on a bye/IR/injury week, which is
+        # precisely when a manager wants to see why a player is missing, not
+        # have them disappear entirely.
         row["opt_bench"] = []
         if len(g) and row["opt_lineup"]:
             opt_ids = {p["player_id"] for p in row["opt_lineup"]}
@@ -1716,13 +1718,13 @@ def week_matchups(s: Season, week: int) -> list[dict]:
             non_opt["was_started"] = non_opt["player_id"].isin(started_ids)
             swapped = non_opt[non_opt["was_started"]].sort_values("points", ascending=False)
             rest = non_opt[~non_opt["was_started"]].sort_values("points", ascending=False)
-            ob = pd.concat([swapped, rest]).head(max(6, len(swapped)))
+            ob = pd.concat([swapped, rest])
             row["opt_bench"] = [{"player_id": x.player_id, "player_name": x.player_name,
                                  "position": x.position, "points": float(x.points),
                                  "was_started": bool(x.was_started)}
                                 for x in ob.itertuples(index=False)]
         if len(bn):
-            b = bn.sort_values("points", ascending=False).head(6)
+            b = bn.sort_values("points", ascending=False)
             # `would_start`: this bench player alone outscored the worst starter
             # at their own position -- i.e. a legal swap that upgrades the
             # lineup. Marked per-player (not just the single costliest one, see
@@ -2262,9 +2264,18 @@ def free_agent_best_team(s: Season, week: int) -> dict | None:
             if float(r.points) < total]
     beats.sort(key=lambda x: -x["gain"])
 
+    # `pos_rank` -- season TO DATE, through this week (not the final
+    # season-end rank, which wouldn't have been knowable "at the time") --
+    # same rank type Team of the Week's own lineup already carries, so the
+    # two sides of the comparison card read on equal footing rather than
+    # mixing a this-week rank on one side with a season-to-date one on the
+    # other. `_lineupmacro.html`'s row already renders `pos_rank` when
+    # present; no template change needed, just this data.
+    pos_ranks = _position_ranks_through(s, wk)
     fa_lineup = [{"slot": r.slot, "player_id": r.player_id,
                   "player_name": r.player_name, "position": r.position,
-                  "points": round(float(r.points), 1)}
+                  "points": round(float(r.points), 1),
+                  "pos_rank": pos_ranks.get(str(r.player_id), {}).get("rank")}
                  for r in picks.itertuples(index=False)]
 
     # Per-team comparison, slot-matched against the FA lineup and coloured the

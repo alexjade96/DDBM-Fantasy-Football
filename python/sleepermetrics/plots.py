@@ -1710,8 +1710,8 @@ def plot_draft_grades_value(s: Season):
     ax.legend(loc="lower right", frameon=False, fontsize=8)
     ax.set_xlim(0, hi * 1.25)
     return _finish(fig, ax, f"{s.season} Draft Grades vs. True Value",
-                   "Grey dot = roster points kept, green dot = the players' TRUE season "
-                   "total  ·  a red line is value traded or dropped away before it counted",
+                   "Grey = points kept  ·  green = players' true value  ·  "
+                   "red line = value given away",
                    "Points", caption=_cap(s))
 
 

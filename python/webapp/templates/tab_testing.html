@@ -3,14 +3,18 @@
    chart each prototype is an alternative/addition to (see app.py's
    TESTING_CHARTS); add a chart function + registry entries there and list
    its key in a group to make it show up here, nothing in this template
-   needs touching. No in-tab season rail -- one season control for the whole
-   page, same as the Draft tab. #}
+   needs touching. (A non-chart layout prototype -- the draft board's
+   fixed-width no-scroll grid -- lived here too for a while; it graduated to
+   the real Draft tab board and both redraft-report boards once judged, so
+   it's gone from here, same as any adopted/rejected chart prototype would
+   be.) No in-tab season rail -- one season control for the whole page, same
+   as the Draft tab. #}
 {% import "_chartmacro.html" as ch with context %}
 {% with oob = true %}{% include "_seasons.html" %}{% endwith %}
 {% include "_liveband.html" %}
 <h2>Testing</h2>
-<p class="hint"><strong>Prototype charts under review, not a finished feature.</strong> Everything
-   below is here to be looked at and judged, not relied on &mdash; expect charts to be added,
+<p class="hint"><strong>Prototypes under review, not a finished feature.</strong> Everything
+   below is here to be looked at and judged, not relied on &mdash; expect things to be added,
    reworked, or removed as ideas get tried and dropped.</p>
 {% if testing_charts %}
 {% for group_name, keys in testing_charts %}

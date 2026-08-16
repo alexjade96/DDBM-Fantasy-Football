@@ -6,7 +6,12 @@
    in context (the weekly report's scoped view) opens that manager's own game
    by default, so they aren't left hunting a sorted-by-total list for it.
    `records` (from _week_context, cumulative W-L THROUGH this week) is optional
-   -- `records.get()` degrades to nothing if a caller doesn't pass it.
+   -- `records.get()` degrades to nothing if a caller doesn't pass it. Each
+   side (`a`/`b`) may also carry its own `season_rank` (a MANAGER's final
+   regular-season standing, "#3") -- only `redraft_playoff`'s sides set this
+   today, so it's rendered data-driven off the field's presence rather than
+   gated by a caller flag; every other caller's sides simply lack the key
+   and nothing shows.
 
    `wk_prefix` and `opt_label` are optional overrides for a caller that
    includes this template more than once on the same page (e.g. the redraft
@@ -67,6 +72,7 @@
     <summary>
       <span class="dt-name-r">
         {{ idm.who(a.user_name) }}
+        {%- if a.season_rank %} <span class="q">#{{ a.season_rank }}</span>{% endif %}
         {%- if records and records.get(a.user_name) %} <span class="q">({{ records[a.user_name] }})</span>{% endif %}</span>
       <span class="dt-score-col">
         {%- if b %}<span class="score {{ 'score-w' if a_res == 'W' else 'score-l' if a_res == 'L' else '' }}">{{ "%.1f"|format(a_pts) if a_pts is not none else "—" }}</span>
@@ -77,6 +83,7 @@
         {%- else %}<span class="score">{{ "%.1f"|format(a_pts) if a_pts is not none else "—" }}</span>{% endif %}</span>
       <span class="dt-name-l">
         {%- if b %}{{ idm.who(b.user_name) }}
+        {%- if b.season_rank %} <span class="q">#{{ b.season_rank }}</span>{% endif %}
         {%- if records and records.get(b.user_name) %} <span class="q">({{ records[b.user_name] }})</span>{% endif %}
             {%- else %}<span class="q">bye or eliminated</span>{% endif %}</span>
     </summary>

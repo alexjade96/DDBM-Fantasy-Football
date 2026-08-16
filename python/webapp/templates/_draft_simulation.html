@@ -83,34 +83,32 @@
       {{ idm.who(sim_playoffs.sim_champion) if sim_playoffs.sim_champion else "—" }}
       {%- if sim_playoffs.champion_flipped %} <span class="chip flip" title="Different from the actual champion">flipped</span>{% endif %}</span></div>
   </div>
-  <div class="tablewrap">
-  <div class="drilltable" style="--cols: minmax(150px,1.3fr) minmax(150px,1.3fr) minmax(150px,1.3fr) minmax(130px,1fr)">
-    <div class="dt-head">
-      <span>Round</span><span>High scorer</span><span>Low scorer</span><span>Vs. real</span>
+  {# Each round is its own .loground block -- same idiom _playoff_round.html
+     uses for the real Playoffs tab -- games listed directly under the round
+     heading rather than behind an extra round-level collapse. Each game's
+     own row is _week_scoreboard.html's own opt_default rendering (Winner/
+     Score/Opponent, season_rank, per-slot cmp highlight, bench, the
+     "flipped" chip already folded into the score cell), so a simulated
+     round reads exactly like a real one. The old round-level High/Low
+     scorer summary is dropped for the same reason: the real Playoffs tab
+     never had one either, and each game's own "flipped" chip already
+     carries that signal per-matchup instead of aggregated per-round. #}
+  {% for rid, info in sim_playoffs.rounds.items() %}
+  <div class="loground">
+    <div class="loground-head">
+      <span class="lr-name">{{ info.label }}</span>
     </div>
-    {% for rid, info in sim_playoffs.rounds.items() %}
-    <details class="dt-row">
-      <summary>
-        <span>{{ info.label }}</span>
-        <span>{% if info.high %}{{ idm.who(info.high.user_name) }} <span class="q">{{ "%.1f"|format(info.high.points) }}</span>{% else %}&mdash;{% endif %}</span>
-        <span>{% if info.low %}{{ idm.who(info.low.user_name) }} <span class="q">{{ "%.1f"|format(info.low.points) }}</span>{% else %}&mdash;{% endif %}</span>
-        <span>{% if info.flips %}{{ info.flips }} matchup{{ "s" if info.flips != 1 }} flipped{% else %}no flips{% endif %}</span>
-      </summary>
-      <div class="dt-detail">
-        {% if info.byes %}
-        <p class="hint">{% for by in info.byes %}{{ idm.who(by.user_name) }} advanced on a bye
-          (would have scored {{ "%.1f"|format(by.points) }} simulated pts){% if not loop.last %}; {% endif %}{% endfor %}</p>
-        {% endif %}
-        {% set wk_games = info.games %}
-        {% set wk_prefix = sim_prefix ~ '-' ~ rid %}
-        {% set opt_label = "Simulated" %}
-        {% set opt_default = true %}
-        {% include "_week_scoreboard.html" %}
-      </div>
-    </details>
-    {% endfor %}
+    {% if info.byes %}
+    <p class="hint">{% for by in info.byes %}{{ idm.who(by.user_name) }}{% if by.season_rank %} <span class="q">#{{ by.season_rank }}</span>{% endif %} advanced on a bye
+      (would have scored {{ "%.1f"|format(by.points) }} simulated pts){% if not loop.last %}; {% endif %}{% endfor %}</p>
+    {% endif %}
+    {% set wk_games = info.games %}
+    {% set wk_prefix = sim_prefix ~ '-' ~ rid %}
+    {% set opt_label = "Simulated" %}
+    {% set opt_default = true %}
+    {% include "_week_scoreboard.html" %}
   </div>
-  </div>
+  {% endfor %}
   {% else %}
   <p class="hint">No playoff bracket to simulate against for {{ season }}.</p>
   {% endif %}

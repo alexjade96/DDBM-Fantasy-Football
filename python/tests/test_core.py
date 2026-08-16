@@ -97,7 +97,7 @@ def test_undrafted_standouts_excludes_drafted_and_ranks_by_started_points(monkey
     draft._cache.clear()
 
 
-def test_value_ranks_and_redraft_board_are_cross_position_normalized(monkeypatch):
+def test_value_ranks_are_cross_position_normalized(monkeypatch):
     """`_value_ranks` -- the primitive behind the Draft tab's round-based
     highlight and its Actual/Redraft toggle -- ranks by points ABOVE
     POSITION REPLACEMENT (pos_adj), not raw points, so a lower-scoring
@@ -107,13 +107,10 @@ def test_value_ranks_and_redraft_board_are_cross_position_normalized(monkeypatch
     points would reintroduce the Cam Ward bug -- see draft.py). With
     s.slots == {} (make_season's fixture), _replacement_level's pool size
     is 1 at every position, so replacement = that position's own top
-    scorer.
-
-    redraft_board() then places the top-N (N = the real draft's pick count)
-    players by that ranking into the real grid's own pick sequence and team
-    ownership, noting where (if anywhere) each one actually went.
+    scorer. `redraft_board()` no longer uses this ranking itself (see the
+    points-first/reach-trigger tests below) -- this only covers
+    `draft_board()`'s own dv-highlight, which still does.
     """
-    import pandas as pd
     from sleepermetrics import draft, metrics as _metrics
 
     s = make_season()
@@ -132,31 +129,148 @@ def test_value_ranks_and_redraft_board_are_cross_position_normalized(monkeypatch
     assert vranks["pQB2"] > vranks["pTE2"]
     assert {vranks["pQB"], vranks["pTE"]} == {1, 2}   # both AT their own replacement level
 
-    # A tiny real 3-pick draft (one per user/slot): pQB2 went 1.01, pTE2
-    # went 1.02, pTE went 1.03. pQB was never drafted.
-    board = pd.DataFrame([{c: None for c in draft._COLS} for _ in range(3)])
+
+def test_redraft_board_defaults_to_points_when_no_position_is_in_crunch(monkeypatch):
+    """`redraft_board()`'s DEFAULT pick (no unmet dedicated requirement in
+    play) is the single highest raw-points remaining player, full stop --
+    NOT `_value_ranks`'/pos_adj's points-above-replacement. This is exactly
+    the case the old pos_adj-based ranking got backwards: a Kicker with a
+    huge pos_adj gap off modest raw points (a compressed-scoring position)
+    used to outrank a bigger raw-points player at a deeper position purely
+    on that math artifact, not because taking a K early is a plausible
+    strategy -- see the function's own docstring.
+
+    `s.slots == {}` here (make_season's fixture, one team) means no
+    position has a dedicated requirement, so the reach trigger never fires
+    and every pick is pure highest-points-remaining -- see the sibling test
+    below for what happens once a requirement IS in play.
+    """
+    from sleepermetrics import draft, metrics as _metrics
+
+    s = make_season()
+    ranks = {
+        "pK": {"position": "K", "rank": 1, "points": 189.0},    # huge pos_adj gap (compressed
+                                                                  # K scoring), but fewer raw pts
+        "pTE": {"position": "TE", "rank": 6, "points": 200.1},  # more raw points, modest pos_adj
+    }
+    monkeypatch.setattr(_metrics, "season_position_ranks", lambda s: ranks)
+
+    board = pd.DataFrame([{c: None for c in draft._COLS} for _ in range(2)])
     board.loc[:, ["player_id", "pick_no", "round", "pick_in_round",
                   "draft_slot", "roster_id", "user_name"]] = [
-        ["pQB2", 1, 1, 1, 1, 1, "Al"],
-        ["pTE2", 2, 1, 2, 2, 2, "Bo"],
-        ["pTE", 3, 1, 3, 3, 3, "Cy"],
+        ["pK", 1, 1, 1, 1, 1, "Al"],
+        ["pTE", 2, 1, 1, 1, 1, "Al"],
     ]
     draft._cache[f"{s.league_id}:{s.season}"] = board
     monkeypatch.setattr(draft, "players", lambda: pd.DataFrame({
-        "player_id": ["pQB", "pQB2", "pTE", "pTE2"],
-        "player_name": ["QB One", "QB Two", "TE One", "TE Two"],
-        "position": ["QB", "QB", "TE", "TE"],
+        "player_id": ["pK", "pTE"], "player_name": ["Kicker Guy", "TE Guy"],
+        "position": ["K", "TE"],
     }))
 
     rdb = draft.redraft_board(s)
-    # Only the top 3 by value fit the 3-pick grid: pQB, pTE, pTE2 -- pQB2
-    # (worst by value) is bumped out entirely, even though he was drafted.
-    assert set(rdb["player_id"]) == {"pQB", "pTE", "pTE2"}
-    pqb_row = rdb[rdb["player_id"] == "pQB"].iloc[0]
-    assert pd.isna(pqb_row["orig_round"]) and pd.isna(pqb_row["orig_pick"])  # never drafted
-    pte_row = rdb[rdb["player_id"] == "pTE"].iloc[0]
-    assert pte_row["orig_pick"] == "1.03"          # notes where he really went
+    # Points-first: the TE (more raw points) goes at pick 1, not the K --
+    # the opposite of what pos_adj-based ranking would have done.
+    assert rdb.sort_values("pick_no")["player_id"].tolist() == ["pTE", "pK"]
     draft._cache.clear()
+
+
+def test_redraft_board_reach_trigger_fills_an_unmet_requirement_before_running_out(monkeypatch):
+    """Once a team is down to its LAST chance to fill a dedicated (non-FLEX)
+    roster requirement, the reach trigger overrides the points-first default
+    even for a much bigger points gap -- otherwise a team could spend every
+    pick on skill positions and simply never field a legal K, which the
+    original pos_adj system never had to guard against (it always drafted
+    every position's own best-ranked player somewhere in the grid).
+    """
+    import dataclasses
+
+    from sleepermetrics import draft, metrics as _metrics
+
+    s = make_season()
+    s = dataclasses.replace(
+        s, slots={"K": 1},   # one required, dedicated K slot per team
+        user_map=pd.DataFrame({"roster_id": [1], "user_id": ["1"], "user_name": ["Al"]}))
+    ranks = {
+        "pWR": {"position": "WR", "rank": 1, "points": 150.0},
+        "pRB": {"position": "RB", "rank": 1, "points": 120.0},
+        "pK": {"position": "K", "rank": 1, "points": 50.0},
+    }
+    monkeypatch.setattr(_metrics, "season_position_ranks", lambda s: ranks)
+
+    # Al's whole draft: exactly 2 picks, only 1 of which can be spent on
+    # anything other than the mandatory K without leaving it unfilled.
+    board = pd.DataFrame([{c: None for c in draft._COLS} for _ in range(2)])
+    board.loc[:, ["player_id", "pick_no", "round", "pick_in_round",
+                  "draft_slot", "roster_id", "user_name"]] = [
+        ["pWR", 1, 1, 1, 1, 1, "Al"],
+        ["pRB", 2, 2, 1, 1, 1, "Al"],
+    ]
+    draft._cache[f"{s.league_id}:{s.season}"] = board
+    monkeypatch.setattr(draft, "players", lambda: pd.DataFrame({
+        "player_id": ["pWR", "pRB", "pK"],
+        "player_name": ["WR Guy", "RB Guy", "K Guy"],
+        "position": ["WR", "RB", "K"],
+    }))
+
+    rdb = draft.redraft_board(s)
+    picks = rdb.sort_values("pick_no")["player_id"].tolist()
+    # Pick 1: no urgency yet (2 picks left, 1 unmet requirement) -- pure
+    # points-first, the WR (150) over the RB (120) or K (50).
+    assert picks[0] == "pWR"
+    # Pick 2 (Al's LAST pick): the reach trigger forces the K even though
+    # the RB (120 pts) scores far more -- the only way Al ends up with a
+    # legal roster at all.
+    assert picks[1] == "pK"
+    draft._cache.clear()
+
+
+def test_redraft_side_score_bench_is_not_capped():
+    """A leftover redrafted roster used to be capped at the top 6 by points
+    -- silently dropping the bottom of the bench off the drilldown entirely
+    on any week with more than 6 unpicked players. That's exactly backwards
+    on a bye/IR/injury week: a 0-point (or merely low) scorer sorts to the
+    BOTTOM, so a cap hid precisely the players a manager would want an
+    explanation for (shipped: DDBM 2025 LuckyHarm's Drake London vanished
+    from Round 3's bench entirely on an 8-unpicked week). `plist` here is
+    scoped to one team's own redrafted roster (roster-sized, not the
+    league-wide pool), so there's no risk of an unbounded list -- the fix
+    is simply to stop truncating it."""
+    from sleepermetrics.draft import _redraft_side_score
+
+    plist = [(str(i), "WR") for i in range(1, 9)]      # 8 same-position players
+    pts_by_pw = {(str(i), 1): float(10 - i) for i in range(1, 9)}  # 9.0 .. 2.0
+    names = {str(i): f"Player{i}" for i in range(1, 9)}
+    opt_lineup, opt_points, bench_rows = _redraft_side_score(
+        plist, [1], pts_by_pw, names, {"WR": 1})
+    assert [x.player_id for x in bench_rows] == [str(i) for i in range(2, 9)]
+
+
+def test_week_matchups_bench_is_not_capped():
+    """The Weekly tab's own matchup drilldown -- a REAL team's actual and
+    optimal bench that week -- had the identical bug (see
+    test_redraft_side_score_bench_is_not_capped): both `bench` and
+    `opt_bench` were capped at the top 6 by points, so a roster with more
+    than 6 non-starters that week silently lost whoever scored least --
+    exactly the bye/IR/injury player a manager would want explained, not
+    hidden."""
+    import dataclasses
+
+    s = make_season()
+    pl_wk = pd.DataFrame({
+        "week": [1] * 9,
+        "roster_id": [1] * 9,
+        "player_id": [str(i) for i in range(1, 10)],
+        "player_name": [f"Player{i}" for i in range(1, 10)],
+        "position": ["WR"] * 9,
+        "points": [50.0] + [float(9 - i) for i in range(1, 9)],
+        "is_starter": [True] + [False] * 8,
+    })
+    s = dataclasses.replace(s, pl_wk=pl_wk, slots={"WR": 1})
+    games = metrics.week_matchups(s, 1)
+    g = next(g for g in games if any(sd["user_name"] == "Al" for sd in g["sides"]))
+    al = next(sd for sd in g["sides"] if sd["user_name"] == "Al")
+    assert len(al["bench"]) == 8
+    assert len(al["opt_bench"]) == 8
 
 
 def test_validate_config_catches_structural_errors():

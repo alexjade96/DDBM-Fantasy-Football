@@ -30,7 +30,7 @@ body {
 
 .top {
   display: flex; flex-wrap: wrap; gap: 18px; align-items: center; justify-content: space-between;
-  padding: 22px clamp(16px, 4vw, 40px) 16px; max-width: 1260px; margin: 0 auto;
+  padding: 22px clamp(16px, 4vw, 40px) 16px; max-width: 1440px; margin: 0 auto;
 }
 .brand { display: flex; gap: 12px; align-items: center; }
 .mark { width: 10px; height: 34px; border-radius: 3px; background: var(--turf); display: block; }
@@ -76,7 +76,7 @@ a.ghost:hover { filter: brightness(1.06); }
 
 .tabs {
   display: flex; gap: 4px; overflow-x: auto; padding: 0 clamp(16px, 4vw, 40px);
-  max-width: 1260px; margin: 0 auto; border-bottom: 1px solid var(--line);
+  max-width: 1440px; margin: 0 auto; border-bottom: 1px solid var(--line);
 }
 .tabs button {
   background: none; border: none; border-bottom: 2px solid transparent; border-radius: 0;
@@ -85,7 +85,7 @@ a.ghost:hover { filter: brightness(1.06); }
 .tabs button:hover { color: var(--ink); filter: none; }
 .tabs button.active { color: var(--ink); border-bottom-color: var(--turf); font-weight: 600; }
 
-main { max-width: 1260px; margin: 0 auto; padding: 24px clamp(16px, 4vw, 40px) 60px; }
+main { max-width: 1440px; margin: 0 auto; padding: 24px clamp(16px, 4vw, 40px) 60px; }
 h2 { font-size: 13px; letter-spacing: .07em; text-transform: uppercase; color: var(--muted);
      font-weight: 600; margin: 30px 0 12px; }
 h3 { font-size: 15px; margin: 0 0 2px; }
@@ -688,6 +688,61 @@ table.dt-games tr.cmp-down td { background: color-mix(in srgb, #e03131 8%, trans
   background: color-mix(in srgb, #2f9e44 14%, transparent); border-radius: 4px; padding: 0 3px; }
 .dv-neg { color: #e03131;
   background: color-mix(in srgb, #e03131 14%, transparent); border-radius: 4px; padding: 0 3px; }
+
+/* Fixed-width, no-scroll variant of .draftboard -- the Draft tab's live
+   board and both redraft-report boards (_draft_board_fit.html,
+   _redraft_board_table.html, _redraft_board_adp_table.html). Started as a
+   Testing-tab layout prototype; adopted everywhere .draftboard shows a
+   round x slot grid, since a plain `table-layout: auto` board (each column
+   auto-sizing to its widest cell) overflows .tablewrap's own
+   `overflow-x: auto` into a scrollbar once a league has enough teams (10,
+   currently). `fixed` + `width: 100%` instead force every column to share
+   the panel's actual width: the round column gets a small explicit width,
+   and every team column (no explicit width) auto-splits the remainder
+   evenly. Per-pick detail is condensed onto fewer lines than an
+   auto-layout board would use, each pair sharing one flex row
+   (.pkrow: pick # + pos-rank/orig-pick; .ptsrow: points + TRUE-total,
+   Draft tab board only) -- left/right-justified via
+   `justify-content: space-between` instead of `.q`'s usual left-padding,
+   which assumed it trailed inline after a sibling, not sat in a row of its
+   own. The player name truncates to one line via the standard ellipsis
+   trio (nowrap + hidden overflow + text-overflow), full name still
+   reachable on hover via the template's own `title` -- the right-hand `.q`
+   in each row gets the same treatment (plus `min-width: 0`, required for a
+   flex item to actually shrink below its own content size) since a long
+   "(orig 1.08)" tag is exactly as capable of overflowing a narrow fixed
+   column as a long name is; the left-hand label (`.pk`/`.pts`) stays
+   `flex: none` so pick # and points are never the side sacrificed.
+
+   "Always fits the panel, never scrolls" only holds while there's enough
+   room to stay readable -- `width: 100%` alone has no floor, so a narrow
+   viewport or a big league (more team columns splitting the same space)
+   would shrink every column arbitrarily far, past the point the truncation/
+   ellipsis machinery above can save it (a 3-char-wide column just prints
+   garbage). `min-width`, computed from the per-instance `--team-count`
+   custom property each template sets on its own `<table>` (same
+   inline-custom-property idiom as `.drilltable`'s `--cols` elsewhere), puts
+   a floor under that. 108px/column is sized to the Draft tab board's own
+   `.ptsrow` -- its densest row, TWO numbers ("213 pts" + "(Total 253)"),
+   not the pick-row's single "Orig. 1.08" (a first pass at 92px undersized
+   this and still clipped the total figure; 116px had room to spare). Once
+   the container is narrower than `--team-count` columns' worth of that,
+   the table overflows ITS OWN container instead of shrinking further --
+   which is exactly what `.tablewrap`'s existing `overflow-x: auto` is for,
+   so the fallback is a scrollbar, not illegible/clipped text. */
+.draftboard-fit { table-layout: fixed; width: 100%; font-size: 10.5px;
+  min-width: calc(30px + var(--team-count, 6) * 108px); }
+.draftboard-fit th, .draftboard-fit td { padding: 4px 6px; }
+.draftboard-fit th.rnd, .draftboard-fit td.rnd { width: 30px; }
+.draftboard-fit td.pick { min-width: 0; }
+.draftboard-fit .pkrow, .draftboard-fit .ptsrow { display: flex;
+  justify-content: space-between; align-items: baseline; gap: 4px; }
+.draftboard-fit .pkrow > .pk, .draftboard-fit .ptsrow > .pts { flex: none; }
+.draftboard-fit .pkrow .q, .draftboard-fit .ptsrow .q { padding-left: 0; white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.draftboard-fit .pl { max-width: 100%; overflow: hidden; text-overflow: ellipsis;
+  padding-left: 4px; border-left-width: 2px; }
+.draftboard-fit .pl .pface { width: 12px; height: 12px; margin-right: 3px; }
 /* Position accents (match the charts' POS_COLORS). */
 .pos-QB { border-left-color: #d62728 !important; }
 .pos-RB { border-left-color: #2ca02c !important; }
@@ -696,7 +751,7 @@ table.dt-games tr.cmp-down td { background: color-mix(in srgb, #e03131 8%, trans
 .pos-K  { border-left-color: #9467bd !important; }
 .pos-DEF { border-left-color: #8c564b !important; }
 
-footer { max-width: 1260px; margin: 0 auto; padding: 18px clamp(16px, 4vw, 40px) 40px;
+footer { max-width: 1440px; margin: 0 auto; padding: 18px clamp(16px, 4vw, 40px) 40px;
          border-top: 1px solid var(--line); color: var(--faint); font-size: 12.5px; }
 footer code { font-family: ui-monospace, Consolas, monospace; }
 

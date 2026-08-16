@@ -65,29 +65,30 @@
   {% include "_week_narrative.html" %}
 </div>
 
-{# Order: tiles -> THE GAMES (the dumbbell and the scoreboard it depicts,
-   kept together — they are the same content at two resolutions) -> the
-   analysis charts that put the week in context. Splitting the chart from its
-   own table left the scoreboard stranded below three graphics. #}
+{# Order: tiles -> the CONTEXT charts (the race through this week, and the
+   games as a picture), a quick read that frames the week -> THE GAMES in
+   full (the same games the dumbbell just depicted, now as a table) ->
+   Best of the Week (Team of the Week vs the best free-agent lineup),
+   directly under the matchup detail it riffs on -> the week's moves
+   further below. `.grid.two` auto-fits two 380px+ panels side by side at
+   a wide viewport (same responsive pairing every other two-chart section
+   in this app uses) and stacks them below 720px. #}
+<h2>Week {{ week }} in context</h2>
+<p class="hint">The league&rsquo;s bump through week {{ week }} so far. On the right, the
+   week&rsquo;s games, one dumbbell per matchup &mdash; green side won, orange lost, and the
+   gap between them is the margin.</p>
+<div class="grid two">
+  {{ ch.chart("week_race", week=week) }}
+  {{ ch.chart("week_matchups", week=week, alt="Week " ~ week ~ " matchups", wide=false) }}
+</div>
+
 <h2>Week {{ week }} scoreboard</h2>
-<p class="hint">The games, first as a picture and then in full &mdash; green won, orange lost,
-   and the line between them is the margin. Rows below run biggest shoot-out first; expand
-   one for both lineups in scoreboard order, what each manager left on their bench, and the
+<p class="hint">The week&rsquo;s games in full. Rows run biggest shoot-out first; expand one
+   for both lineups in scoreboard order, what each manager left on their bench, and the
    single legal same-position swap that cost them most. A <span class="tag">could have won</span>
    tag means that one swap alone would have turned that manager&rsquo;s loss into a win.</p>
-{{ ch.chart("week_matchups", week=week, alt="Week " ~ week ~ " matchups") }}
 {{ lz.lazy("/tab/weekly/part/scoreboard" ~ part_qs, height="200px") }}
 
-{{ lz.lazy("/tab/weekly/part/totw" ~ part_qs, height="220px") }}
-
-<h2>Week {{ week }} in context</h2>
-<p class="hint">Was the result deserved? On the left a team <strong>below</strong> the diagonal
-   won and <strong>above</strong> it lost, with colour showing how many teams they outscored
-   &mdash; so a green dot in the red zone is the week&rsquo;s unlucky team and an orange one in
-   the green got away with it. The chart on the right carries its own caption below it.</p>
-<div class="grid two">
-  {{ ch.chart("week_luck", week=week, alt="Week " ~ week ~ " luck") }}
-  {{ ch.chart("week_race", week=week) }}
-</div>
+{{ lz.lazy("/tab/weekly/part/best" ~ part_qs, height="220px") }}
 
 {{ lz.lazy("/tab/weekly/part/moves" ~ part_qs, height="320px") }}

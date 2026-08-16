@@ -4,7 +4,27 @@
    Playoffs tab (one per round, in bracket order) and the Season Overview's
    playoffs-phase lead (just the current/most-advanced round) -- so a round
    looks and behaves identically wherever it's shown. Expects `grp` (a single
-   game_log() group dict) and `idm` (imported by the includer) in context. #}
+   game_log() group dict) and `idm` (imported by the includer) in context.
+   Each side and bye may carry `season_rank` (a manager's final regular-
+   season standing, "#3") -- shown next to their name whenever present.
+
+   Summary row mirrors _week_scoreboard.html's own Winner/Score/Opponent
+   layout exactly (same 3-column widths, same dt-name-r/dt-score-col/
+   dt-name-l + score/score-w/score-l classes) -- winner's name and score
+   flank inward toward the middle, with the margin folded into the score
+   cell rather than its own column, so a round here reads like a week
+   there. `g.sides` is already winner-first (`_sort_sides` in game_log), so
+   `a`/`b` below are just "first/second side" the same way weekly's are.
+   The drilldown itself already matched weekly's own opt_default shape (a
+   bare dt-tables of lineup_table calls, no Actual/Optimized toggle) since
+   a submitted playoff lineup has no computed "optimal" to toggle to. Each
+   lineup row's own `cmp` (that slot's win/loss against the other side's
+   same slot) highlights automatically, same as any other lineup_table
+   caller. `sd.bench`, when present, adds a Bench section below the main
+   table -- only the toilet bowl's sides carry one (real `pl_wk` roster
+   data); a bracket game's commissioner-submitted lineup has no bench
+   concept at all, so `bench=sd.bench` there resolves to nothing and the
+   section is simply absent. #}
 {% import "_lineupmacro.html" as lu with context %}
 <div class="loground">
   <div class="loground-head">
@@ -15,18 +35,29 @@
   </div>
   <div class="tablewrap">
   <div class="drilltable"
-       style="--cols: minmax(150px,1.6fr) minmax(150px,1.6fr) minmax(84px,.7fr)">
+       style="--cols: minmax(150px,1.6fr) minmax(150px,1.3fr) minmax(150px,1.6fr)">
     <div class="dt-head">
-      <span>Winner</span><span>Runner-up</span><span class="dt-num">Margin</span>
+      <span class="dt-name-r">Winner</span><span class="dt-score-col">Score</span><span class="dt-name-l">Opponent</span>
     </div>
     {% for g in grp.games %}
     {% set a = g.sides[0] %}
     {% set b = g.sides[1] if g.sides | length > 1 else none %}
     <details class="dt-row">
       <summary>
-        <span>{{ idm.who(a.team) }}{% if a.points is not none %} <span class="q">{{ "%.1f"|format(a.points) }}</span>{% endif %}</span>
-        <span>{% if b %}{{ idm.who(b.team) }}{% if b.points is not none %} <span class="q">{{ "%.1f"|format(b.points) }}</span>{% endif %}{% else %}<span class="q">&mdash;</span>{% endif %}</span>
-        <span class="dt-num">{% if g.pending %}<span class="q">pending</span>{% elif g.margin is not none %}+{{ "%.1f"|format(g.margin) }}{% else %}&mdash;{% endif %}</span>
+        <span class="dt-name-r">
+          {{ idm.who(a.team) }}
+          {%- if a.season_rank %} <span class="q">#{{ a.season_rank }}</span>{% endif %}</span>
+        <span class="dt-score-col">
+          {%- if b %}<span class="score {{ 'score-w' if a.result == 'W' else 'score-l' if a.result == 'L' else '' }}">{{ "%.1f"|format(a.points) if a.points is not none else "—" }}</span>
+            <span class="q">&ndash;</span>
+            <span class="score {{ 'score-w' if b.result == 'W' else 'score-l' if b.result == 'L' else '' }}">{{ "%.1f"|format(b.points) if b.points is not none else "—" }}</span>
+            {%- if g.margin is not none %} <span class="q">({{ "%.1f"|format(g.margin) }})</span>{% endif %}
+            {%- if g.pending %} <span class="q">pending</span>{% endif %}
+          {%- else %}<span class="score">{{ "%.1f"|format(a.points) if a.points is not none else "—" }}</span>{% endif %}</span>
+        <span class="dt-name-l">
+          {%- if b %}{{ idm.who(b.team) }}
+          {%- if b.season_rank %} <span class="q">#{{ b.season_rank }}</span>{% endif %}
+              {%- else %}<span class="q">bye or eliminated</span>{% endif %}</span>
       </summary>
       <div class="dt-detail">
         <div class="dt-tables">
@@ -34,7 +65,7 @@
           {{ lu.lineup_table(
                sd.team ~ (" — won" if sd.result == 'W' else " — lost" if sd.result == 'L' else ""),
                ("%.2f"|format(sd.points) if sd.points is not none else "—"),
-               sd.lineup, show_id=false, empty_text="No lineup submitted yet.") }}
+               sd.lineup, bench=sd.bench, show_id=false, empty_text="No lineup submitted yet.") }}
           {% endfor %}
         </div>
       </div>
@@ -42,7 +73,7 @@
     {% endfor %}
     {% if grp.byes %}
     <div class="dt-byes"><span class="q">Bye &mdash; advanced without playing:</span>
-      {% for bye in grp.byes %}{{ idm.who(bye.team) if bye.team else "TBD" }}{% if bye.points is not none %} <span class="q">({{ "%.1f"|format(bye.points) }})</span>{% endif %}{% if not loop.last %}, {% endif %}{% endfor %}
+      {% for bye in grp.byes %}{{ idm.who(bye.team) if bye.team else "TBD" }}{% if bye.season_rank %} <span class="q">#{{ bye.season_rank }}</span>{% endif %}{% if bye.points is not none %} <span class="q">({{ "%.1f"|format(bye.points) }})</span>{% endif %}{% if not loop.last %}, {% endif %}{% endfor %}
     </div>
     {% endif %}
   </div>

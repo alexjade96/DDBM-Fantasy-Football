@@ -120,6 +120,43 @@ class _S:
     team_wk_all = None
 
 
+def test_stamp_slot_cmp_marks_up_down_even_by_matching_slot():
+    sides = [
+        {"lineup": [{"slot": "QB", "points": 12.0}, {"slot": "RB", "points": 5.0}]},
+        {"lineup": [{"slot": "QB", "points": 7.0}, {"slot": "RB", "points": 5.0}]},
+    ]
+    playoffs._stamp_slot_cmp(sides)
+    assert sides[0]["lineup"][0]["cmp"] == "up"
+    assert sides[1]["lineup"][0]["cmp"] == "down"
+    assert sides[0]["lineup"][1]["cmp"] == "even"
+    assert sides[1]["lineup"][1]["cmp"] == "even"
+
+
+def test_stamp_slot_cmp_leaves_rows_unstamped_without_two_sides():
+    """A bye or a game missing its opponent has no "other side" to compare
+    against -- rows must stay unmarked rather than crash or fabricate up/down."""
+    sides = [{"lineup": [{"slot": "QB", "points": 12.0}]}]
+    playoffs._stamp_slot_cmp(sides)
+    assert "cmp" not in sides[0]["lineup"][0]
+
+
+def test_game_log_bracket_lineups_get_slot_cmp_highlight():
+    """Two starters at the SAME slot (same idiom draft.redraft_playoff already
+    highlights) must be marked up/down against each other, mirroring the
+    weekly tab's own per-slot highlight in a bracket game's drilldown."""
+    cfg = _cfg()
+    cfg["rounds"][0]["matchups"][0] = {
+        "id": "R1M1",
+        "home": {"team": "Al", "starters": ["1"]},    # QB, 12.0 in wk14
+        "away": {"team": "Bo", "starters": ["3"]}}     # QB, 6.0 in wk14 -- same slot
+    p = playoffs.playoff(cfg, validate=False)
+    log = playoffs.game_log(_S(), p, toilet={"games": []})
+    g = next(gm for gm in log[0]["games"] if gm["id"] == "R1M1")
+    row_by_team = {sd["team"]: sd["lineup"][0] for sd in g["sides"]}
+    assert row_by_team["Al"]["cmp"] == "up"
+    assert row_by_team["Bo"]["cmp"] == "down"
+
+
 def test_game_log_groups_by_round_winner_first_with_lineups():
     p = playoffs.playoff(_cfg(), validate=False)
     log = playoffs.game_log(_S(), p, toilet={"games": []})
@@ -132,6 +169,78 @@ def test_game_log_groups_by_round_winner_first_with_lineups():
     assert all(sd["lineup"] for sd in g["sides"])             # both lineups carried
     assert g["margin"] == round(abs(g["sides"][0]["points"]
                                     - g["sides"][1]["points"]), 2)
+    # `player_id` rides along on every lineup row now (not just the name),
+    # and `pos_rank` degrades to None rather than crashing the whole log --
+    # `_S` has none of the league_id/season/last_week_all season_position_ranks
+    # needs to actually price a season, same best-effort contract headshots/
+    # avatars already use elsewhere in this app.
+    assert all(r["player_id"] and r["pos_rank"] is None
+               for sd in g["sides"] for r in sd["lineup"])
+    # `season_rank` (the MANAGER's own final standing, distinct from a
+    # player's `pos_rank`) degrades the same way -- `_S` has no `standings`.
+    assert all(sd["season_rank"] is None for sd in g["sides"])
+
+
+def test_game_log_sides_carry_manager_season_rank_when_available():
+    """Each side's `season_rank` is the manager's OWN final regular-season
+    standing (s.standings.final_position) -- shown next to the team name in
+    the matchup summary the same way a weekly game shows a W-L record."""
+    class S(_S):
+        standings = pd.DataFrame({"user_name": ["Al", "Bo", "Cy", "Dee"],
+                                  "final_position": [1, 4, 2, 3]})
+    p = playoffs.playoff(_cfg(), validate=False)
+    log = playoffs.game_log(S(), p, toilet={"games": []})
+    semi = log[0]
+    rank_by_team = {sd["team"]: sd["season_rank"]
+                    for g in semi["games"] for sd in g["sides"]}
+    assert rank_by_team == {"Al": 1, "Bo": 4, "Cy": 2, "Dee": 3}
+
+
+def test_game_log_bye_carries_manager_season_rank():
+    class S(_S):
+        standings = pd.DataFrame({"user_name": ["Al", "Bo", "Cy", "Dee"],
+                                  "final_position": [1, 4, 2, 3]})
+    cfg = _cfg()
+    cfg["rounds"][0]["matchups"][1] = {"id": "R1M2", "bye": "Dee"}
+    p = playoffs.playoff(cfg, validate=False)
+    log = playoffs.game_log(S(), p, toilet={"games": []})
+    semi = next(g for g in log if g["label"] == "Semi")
+    assert semi["byes"][0]["team"] == "Dee" and semi["byes"][0]["season_rank"] == 3
+
+
+def test_game_log_toilet_sides_pass_through_season_rank_and_bench():
+    """Toilet-bowl games are handed to game_log already-built (by
+    toilet_bowl()); game_log's own transcoding of them must carry
+    `season_rank` and `bench` through rather than dropping them, same as
+    `lineup`."""
+    p = playoffs.playoff(_cfg(), validate=False)
+    toilet = {"games": [{"week": 15, "sides": [
+        {"team": "X", "points": 100.0, "result": "W", "season_rank": 5, "lineup": [],
+         "bench": [{"player_id": "9", "player_name": "Ike", "position": "TE", "points": 3.0}]},
+        {"team": "Y", "points": 90.0, "result": "L", "season_rank": 2, "lineup": []}]}]}
+    log = playoffs.game_log(_S(), p, toilet=toilet)
+    tb = log[-1]
+    sides = {sd["team"]: sd for sd in tb["games"][0]["sides"]}
+    assert sides["X"]["season_rank"] == 5 and sides["Y"]["season_rank"] == 2
+    assert sides["X"]["bench"][0]["player_id"] == "9"
+    assert sides["Y"]["bench"] == []
+
+
+def test_game_log_lineups_carry_season_pos_rank_when_available(monkeypatch):
+    """When `metrics.season_position_ranks` CAN be priced (a real Season),
+    each side's lineup rows show the player's FINAL season-long position
+    finish -- the decoration that lets the Playoffs tab show "RB #4" next to
+    a name the same way the weekly report shows a this-week rank."""
+    from sleepermetrics import metrics as _metrics
+    ranks = {"1": {"position": "QB", "rank": 2, "points": 300.0},
+             "2": {"position": "WR", "rank": 5, "points": 150.0}}
+    monkeypatch.setattr(_metrics, "season_position_ranks", lambda s: ranks)
+    p = playoffs.playoff(_cfg(), validate=False)
+    log = playoffs.game_log(_S(), p, toilet={"games": []})
+    g = log[0]["games"][0]
+    row_by_pid = {r["player_id"]: r for sd in g["sides"] for r in sd["lineup"]}
+    assert row_by_pid["1"]["pos_rank"] == 2
+    assert row_by_pid["2"]["pos_rank"] == 5
 
 
 def test_game_log_folds_in_byes_and_the_toilet_bowl():
@@ -177,6 +286,80 @@ def test_toilet_bowl_carries_each_missed_teams_own_postseason_record():
     assert (bo["po_games"], bo["po_wins"], bo["po_losses"]) == (1, 0, 1)
     assert bo["po_avg_margin"] == -10.0
     assert t["last"] == "Bo" and t["basis"] == "game"
+
+
+def test_toilet_bowl_lineups_and_sides_carry_player_and_manager_ranks(monkeypatch):
+    """The toilet bowl is a plain Sleeper matchup, so its lineups come from
+    `pl_wk` (via `_lineup_of`), not the bracket engine's `players` frame --
+    a separate code path from game_log's own bracket lineups, so it needs
+    its own check that player_id/pos_rank ride along here too. Its own
+    `sides` must also carry the MANAGER's `season_rank` (from `standings`),
+    the same decoration game_log's bracket sides get."""
+    from sleepermetrics import metrics as _metrics
+    ranks = {"5": {"position": "RB", "rank": 3, "points": 220.0}}
+    monkeypatch.setattr(_metrics, "season_position_ranks", lambda s: ranks)
+
+    class S:
+        standings = pd.DataFrame({
+            "user_name": ["Al", "Bo"], "final_position": [3, 4],
+            "wins": [5, 4], "losses": [7, 8], "points": [1400.0, 1300.0]})
+        team_wk_all = pd.DataFrame({
+            "week": [15, 15], "roster_id": [1, 2], "matchup_id": [9, 9],
+            "points": [100.0, 90.0], "result": ["W", "L"],
+            "user_name": ["Al", "Bo"]})
+        pl_wk_all = pd.DataFrame({
+            "week": [15, 15], "roster_id": [1, 2], "player_id": ["5", "6"],
+            "player_name": ["Ed", "Fay"], "position": ["RB", "WR"],
+            "points": [100.0, 90.0], "is_starter": [True, True]})
+        slots: dict = {}
+
+    class P:
+        results = pd.DataFrame({"team": ["Cy"], "weeks": ["15"]})
+
+    t = playoffs.toilet_bowl(S(), p=P())
+    game = next(g for g in t["games"] if g["week"] == 15)
+    al_side = next(sd for sd in game["sides"] if sd["team"] == "Al")
+    assert al_side["lineup"][0]["player_id"] == "5"
+    assert al_side["lineup"][0]["pos_rank"] == 3
+    assert al_side["season_rank"] == 3
+
+
+def test_toilet_bowl_sides_carry_bench_and_slot_cmp():
+    """Unlike a bracket game (commissioner-submitted starters only), the
+    toilet bowl reads a real `pl_wk` roster -- so its own `bench` (everyone
+    NOT started that week) is genuinely knowable, and its starters get the
+    same per-slot win/loss `cmp` highlight as a bracket game's."""
+    class S:
+        standings = pd.DataFrame({
+            "user_name": ["Al", "Bo"], "final_position": [3, 4],
+            "wins": [5, 4], "losses": [7, 8], "points": [1400.0, 1300.0]})
+        team_wk_all = pd.DataFrame({
+            "week": [15, 15], "roster_id": [1, 2], "matchup_id": [9, 9],
+            "points": [100.0, 90.0], "result": ["W", "L"],
+            "user_name": ["Al", "Bo"]})
+        pl_wk_all = pd.DataFrame({
+            "week": [15, 15, 15, 15],
+            "roster_id": [1, 1, 2, 2],
+            "player_id": ["5", "6", "7", "8"],
+            "player_name": ["Ed", "Fitz", "Gio", "Hank"],
+            "position": ["RB", "WR", "RB", "TE"],
+            "points": [100.0, 30.0, 90.0, 20.0],
+            "is_starter": [True, False, True, False]})
+        slots: dict = {}
+
+    class P:
+        results = pd.DataFrame({"team": ["Cy"], "weeks": ["15"]})
+
+    t = playoffs.toilet_bowl(S(), p=P())
+    game = next(g for g in t["games"] if g["week"] == 15)
+    al = next(sd for sd in game["sides"] if sd["team"] == "Al")
+    bo = next(sd for sd in game["sides"] if sd["team"] == "Bo")
+    assert al["bench"][0]["player_id"] == "6" and al["bench"][0]["points"] == 30.0
+    assert bo["bench"][0]["player_id"] == "8" and bo["bench"][0]["points"] == 20.0
+    # Both starters are RB -- the same fallback slot (slots={}) -- so they're
+    # directly comparable: Al's 100 beats Bo's 90.
+    assert al["lineup"][0]["cmp"] == "up"
+    assert bo["lineup"][0]["cmp"] == "down"
 
 
 def test_toilet_bowl_po_fields_are_none_without_a_toilet_game():

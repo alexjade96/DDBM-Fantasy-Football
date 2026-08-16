@@ -397,25 +397,92 @@ def draft_board(s: Season) -> pd.DataFrame:
 
 
 def redraft_board(s: Season) -> pd.DataFrame:
-    """The Draft tab's round x slot grid, but filled by a SIMULATED
-    value-based draft instead of the order picks were actually made: walking
-    the real draft's own pick sequence and team ownership in order, each
-    team takes the best remaining player BY TRUE VALUE (see `_value_ranks`)
-    at a position it hasn't already filled -- so a team still ends up with a
-    real, playable roster, not just the globally best-ranked names crammed
-    into its slots regardless of position. `orig_round`/`orig_pick` record
-    where (if anywhere) that player really went -- both `None` when he
-    actually went undrafted -- so a cell can be annotated "(originally R3)"
-    or "(undrafted)" for direct comparison against the real board.
+    """The Draft tab's round x slot grid, but filled by a SIMULATED draft
+    instead of the order picks were actually made: walking the real draft's
+    own pick sequence and team ownership in order, each team takes the
+    single highest-scoring remaining player BY RAW SEASON POINTS -- matching
+    how real drafts actually play out, skill positions dominate -- UNLESS a
+    position it still needs to fill (a real, DEDICATED roster requirement,
+    not a FLEX-shared one) is running out leaguewide, or this team is
+    running out of picks to keep deferring it, in which case it reaches for
+    the most urgently needed position instead (see the two-condition
+    "reach trigger" below).
+    `orig_round`/`orig_pick` record where (if anywhere) that player really
+    went -- both `None` when he actually went undrafted -- so a cell can be
+    annotated "(originally R3)" or "(undrafted)" for direct comparison
+    against the real board.
 
-    Per-team position caps come from the SAME starter-slot share
-    `_replacement_level` already computes (fixed slots plus a FLEX-eligible
-    share), doubled as a bench allowance: a position with 1 real starter
-    slot (K, DEF) caps at 2 per team, a RB/WR-type slot with FLEX sharing
-    caps around 4-5. Without a cap, an earlier version of this just laid the
-    globally-ranked list straight into the real pick sequence regardless of
-    which team owned each slot, which could easily stack one team with, say,
-    4 defenses -- there is only ever 1 DEF START.
+    Points-first, not `_value_ranks`' points-above-replacement (`pos_adj`):
+    a position with a naturally compressed scoring range (Kicker) can
+    produce a huge pos_adj gap for its single best player off modest raw
+    points, so ranking by pos_adj alone drafted that player early purely on
+    a positional-scarcity math artifact, not because taking a kicker in
+    round 3 is a plausible strategy -- confirmed on real 2025 data: a K with
+    189 points (but the #1 K at his position) outranked a TE with 200
+    points who was only the #6 TE. Raw points as the default instead reads
+    the way real drafts read; the reach trigger below is what still gets
+    every team a legal, full roster without pos_adj's blanket
+    cross-position normalization.
+
+    The reach trigger is two real conditions, not a vague "this position is
+    thin" guess -- EITHER one fires it for a position `p` this team's
+    DEDICATED slot count (`s.slots[p]`, deliberately excluding FLEX-shared
+    depth -- a FLEX need is satisfied by whichever eligible position scores
+    best, so it doesn't need forcing) is still unmet:
+
+    1. **Leaguewide scarcity** (an early warning, can fire well before it's
+       actually urgent for THIS team): how many of that position's VIABLE
+       pool (the top `team_count * position_share` players by points -- the
+       same "startable tier" `_replacement_level` already defines) remain
+       undrafted, strictly LESS THAN how many teams leaguewide still have
+       that same unmet requirement right now. Strict, not <=: at the start
+       of a draft, supply exactly equals demand for any evenly-required
+       position (pool_size is defined as team_count * share, matching
+       exactly enough for everyone) -- treating an exact tie as already
+       urgent made EVERY 1-per-team position (QB, K, DEF, ...) crunch from
+       pick one, before any of the "real drafts read this way" behavior
+       above could ever apply. Only once normal points-driven drafting
+       lets a position's remaining pool fall BEHIND how many teams still
+       need it does this fire -- realistically, well into the draft.
+    2. **This team's own deadline** (a hard guarantee, not a heuristic):
+       this team's remaining picks (including the current one) <= its own
+       total remaining unmet dedicated slots, summed across every
+       position. Once true, EVERY remaining pick for this team must go
+       toward an unmet requirement or it mathematically cannot finish with
+       a legal roster -- this is what stops a team from spending every
+       pick on skill positions and simply running out of picks before ever
+       satisfying its K/DEF slot, which the leaguewide signal alone can
+       miss (it only ever compares LEAGUEWIDE supply/demand, not this
+       team's own remaining pick count). Deliberately NOT scoped to the
+       VIABLE pool the leaguewide check uses: a hard guarantee has to
+       reach into the full remaining candidate list regardless of tier, or
+       it can fail outright once other teams' own deadlines have already
+       drafted every top-tier option -- shipped once already, stranding
+       two DDBM teams at zero DEF for the season because the viable pool
+       for a 1-per-team position was exactly team-count-sized and got
+       drained by everyone else's deadline before theirs arrived.
+
+    Whichever position(s) qualify (by either condition) get drafted next --
+    the most urgent first if more than one applies (a team-2 hit outranks
+    a leaguewide-only warning), points still breaking the tie for which
+    player at that position. Real drafts show exactly this pattern -- K/DEF
+    go in a cluster near the end, once managers realize they need to grab
+    theirs before the pool dries up, or simply run out of bench rounds to
+    delay it any further -- rather than an early reach for a
+    positional-math artifact.
+
+    Per-team position CAPS (separate from the reach trigger above) come
+    from the SAME starter-slot share `_replacement_level` already computes
+    (fixed slots plus a FLEX-eligible share), doubled as a bench allowance:
+    a position with 1 real starter slot (K, DEF) caps at 2 per team, a
+    RB/WR-type slot with FLEX sharing caps around 4-5. Without a cap, an
+    earlier version of this just laid the globally-ranked list straight
+    into the real pick sequence regardless of which team owned each slot,
+    which could easily stack one team with, say, 4 defenses -- there is
+    only ever 1 DEF START. (`required[p] <= pos_cap[p]` always, since
+    `pos_cap` doubles the SAME share `required` is a subset of -- so a
+    position still short of its dedicated requirement is, by construction,
+    never already capped for that team.)
 
     Answers "if this draft happened again knowing the results, who would
     each team actually draft, playing to win" -- e.g. a player taken in
@@ -429,15 +496,29 @@ def redraft_board(s: Season) -> pd.DataFrame:
         return board
     ranks = metrics.season_position_ranks(s)
     repl = _replacement_level(s, ranks)
-    vranks = _value_ranks(s, ranks)
     pos_of = {pid: r["position"] for pid, r in ranks.items()}
+    points_of = {pid: r["points"] for pid, r in ranks.items()}
 
+    team_count = max(len(s.user_map), 1)
     # Per-team, per-position cap: 2x the position's own starter share (see
     # `_position_share`) -- a real bench allowance for a skill position,
     # effectively "starter + one backup" for a single-slot position like
     # K/DEF where a second one has no value.
     share = _position_share(s)
     pos_cap = {p: max(1, round(2 * share.get(p, 0))) for p in POSITIONS}
+    # DEDICATED starter requirement per team -- the plain fixed slot count,
+    # no FLEX splitting -- what drives the reach trigger below.
+    required = {p: int(s.slots.get(p, 0)) for p in POSITIONS}
+    # This position's VIABLE pool: the same startable-tier size
+    # `_replacement_level` uses, computed once (not per pick).
+    by_pos: dict = {}
+    for pid, r in ranks.items():
+        by_pos.setdefault(r["position"], []).append(pid)
+    viable: dict = {}
+    for p in POSITIONS:
+        pool_size = max(1, round(team_count * share.get(p, 0)))
+        ranked = sorted(by_pos.get(p, []), key=lambda pid: points_of[pid], reverse=True)
+        viable[p] = set(ranked[:pool_size])
 
     pinfo = players()
     names = (pinfo.dropna(subset=["player_id"]).drop_duplicates("player_id")
@@ -448,20 +529,97 @@ def redraft_board(s: Season) -> pd.DataFrame:
     seats = board.sort_values("pick_no")[
         ["pick_no", "round", "pick_in_round", "draft_slot", "roster_id", "user_name"]
     ].reset_index(drop=True)
+    # Team identity for need/cap tracking below is `roster_id`, NOT
+    # `draft_slot` -- a traded future pick keeps its ORIGINAL owner's
+    # `draft_slot` (it's a grid-COLUMN concept, what the board displays
+    # under), while `roster_id` is who actually made the pick and is
+    # building the roster. Keying on `draft_slot` bucketed a traded pick
+    # into a fresh, unrelated tracking slot, silently losing that team's
+    # already-drafted state for it -- shipped once already, the exact
+    # cause of the DDBM team stranded at zero DEF (see the docstring):
+    # their real 17th-round pick was a traded one, `draft_slot` jumped to
+    # a slot they'd never picked from before, and the reach trigger
+    # evaluated an empty (wrong) team state instead of their real roster.
+    all_rosters = seats["roster_id"].dropna().astype(int).unique().tolist()
+    # Each team's TOTAL picks across the whole draft -- used below to know
+    # when a team is down to its last chances to fill an unmet requirement.
+    total_picks = seats["roster_id"].dropna().astype(int).value_counts().to_dict()
 
-    remaining = [pid for pid, _ in sorted(vranks.items(), key=lambda kv: kv[1])]
+    # Sorted once by points descending (ties on player_id, for a
+    # deterministic pick order every run) -- every scan below over
+    # `remaining` sees the highest-points candidate first.
+    remaining = sorted(points_of.keys(), key=lambda pid: (-points_of[pid], pid))
+    remaining_set = set(remaining)
     team_counts: dict = {}
     rows = []
     for _, seat_row in seats.iterrows():
         seat = seat_row.to_dict()
-        counts = team_counts.setdefault(int(seat["draft_slot"]), {})
-        pick_idx = next(
-            (i for i, pid in enumerate(remaining)
-             if counts.get(pos_of.get(pid), 0) < pos_cap.get(pos_of.get(pid), 1)),
-            0 if remaining else None)  # fall back to best-remaining if every
-        if pick_idx is None:            # candidate is capped for this team
+        rid = int(seat["roster_id"])
+        counts = team_counts.setdefault(rid, {})
+        if not remaining:
             break
-        pid = remaining.pop(pick_idx)
+
+        avail = [pid for pid in remaining
+                 if counts.get(pos_of.get(pid), 0) < pos_cap.get(pos_of.get(pid), 1)]
+        pid = avail[0] if avail else remaining[0]  # fall back to best-remaining
+                                                     # if every candidate is capped
+
+        # Reach trigger: an unmet, dedicated need at some position facing a
+        # real supply crunch right now overrides the default points pick --
+        # see the docstring for why this is TWO conditions (a strict
+        # leaguewide early-warning check, and a hard team-local deadline),
+        # not one.
+        picks_made = sum(counts.values())
+        rounds_left = total_picks.get(rid, picks_made) - picks_made
+        unmet_total = sum(max(0, required.get(p, 0) - counts.get(p, 0)) for p in POSITIONS)
+        must_fill_now = rounds_left <= unmet_total
+
+        crunch = []
+        for p in POSITIONS:
+            need_p = required.get(p, 0)
+            if need_p <= 0 or counts.get(p, 0) >= need_p:
+                continue
+            if must_fill_now:
+                # Hard guarantee: force this position regardless of whether
+                # a top-tier ("viable") candidate remains -- a mediocre
+                # option beats leaving the mandatory slot empty. Scoping
+                # this to `viable` too (like the leaguewide check below)
+                # shipped once already: the top-tier pool for a 1-per-team
+                # position can be fully drafted by OTHER teams' own
+                # deadlines before this team's turn, at which point
+                # `viable & remaining` reads empty even though real,
+                # merely-not-top-tier players are still sitting in
+                # `remaining` -- that stranded two DDBM teams with zero
+                # DEF. Only skip if NOTHING is left at this position at all.
+                if any(pos_of.get(pid) == p for pid in remaining):
+                    crunch.append(((1, 0), p))
+                continue
+            # Leaguewide early-warning: scoped to the top-tier ("viable")
+            # pool -- this is about relative QUALITY-tier scarcity, not
+            # mere existence, so it stays narrower than the hard guarantee
+            # above.
+            pool_p = len(viable[p] & remaining_set)
+            if pool_p <= 0:
+                continue
+            teams_needing_p = sum(
+                1 for r in all_rosters
+                if team_counts.get(r, {}).get(p, 0) < need_p)
+            if pool_p < teams_needing_p:
+                crunch.append(((0, teams_needing_p - pool_p), p))
+        if crunch:
+            crunch.sort(key=lambda t: t[0], reverse=True)  # most urgent first
+            top_urgency = crunch[0][0]
+            urgent = [p for urgency, p in crunch if urgency == top_urgency]
+            picks_by_pos = {}
+            for p in urgent:
+                cand = next((c for c in avail if pos_of.get(c) == p), None)
+                if cand is not None:
+                    picks_by_pos[p] = cand
+            if picks_by_pos:
+                pid = max(picks_by_pos.values(), key=lambda x: points_of.get(x, 0.0))
+
+        remaining.remove(pid)
+        remaining_set.discard(pid)
         pos = pos_of.get(pid)
         counts[pos] = counts.get(pos, 0) + 1
         o = orig.loc[pid] if pid in orig.index else None
@@ -908,15 +1066,24 @@ def redraft_week_matchups(s: Season, basis: str = "value") -> dict:
                         for x in picks.itertuples(index=False)]
                     sd["opt_points"] = round(float(picks["points"].sum()), 2)
                     # The redrafted roster's own bench -- everyone not picked,
-                    # top 6 by points. No "started in the real lineup" flag
-                    # here (there used to be one): the simulated lineup IS
-                    # already the optimal one by construction, so there is no
-                    # "would have been optimal" question left to mark on it --
-                    # a bench player here is simply worse than the picks made,
-                    # full stop.
+                    # in points order. No cap: `rows` is already scoped to
+                    # THIS team's own redrafted roster (not the league-wide
+                    # pool), so it's roster-sized (~15-20), not hundreds --
+                    # a top-N cap here silently dropped a real bench player
+                    # off the bottom whenever more than N sat unpicked, which
+                    # is exactly backwards for a bye/IR/injury week: a 0-point
+                    # scorer sorts LAST, so it was the players most likely to
+                    # need explaining that a cap made disappear entirely
+                    # (shipped once with head(6); a 17-man roster with 8
+                    # unpicked silently lost the bottom 2 every week). No
+                    # "started in the real lineup" flag here (there used to be
+                    # one): the simulated lineup IS already the optimal one by
+                    # construction, so there is no "would have been optimal"
+                    # question left to mark on it -- a bench player here is
+                    # simply worse than the picks made, full stop.
                     used_ids = set(picks["player_id"])
-                    bn = (rows[~rows["player_id"].isin(used_ids)]
-                          .sort_values("points", ascending=False).head(6))
+                    bn = rows[~rows["player_id"].isin(used_ids)].sort_values(
+                        "points", ascending=False)
                     sd["opt_bench"] = [
                         {"player_id": x.player_id,
                          "player_name": names.get(x.player_id, x.player_id),
@@ -985,14 +1152,23 @@ def redraft_week_matchups(s: Season, basis: str = "value") -> dict:
 _playoff_cache: dict = {}
 
 
-def _redraft_side_score(plist, weeks, pts_by_pw, names, slots):
+def _redraft_side_score(plist, weeks, pts_by_pw, names, slots, pos_ranks=None):
     """Best legal lineup + leftover bench, from a redrafted roster's `plist`
     ([(player_id, position), ...]), for one or more `weeks` (summed when a
     playoff round spans more than one -- none of this league's stored
     brackets do, but a round's `weeks` field is allowed to). Returns
     (opt_lineup, opt_points, bench_rows) where `bench_rows` are the raw
-    leftover-player records (top 6 by points); the caller attaches
+    leftover-player records, in points order (uncapped -- `plist` is
+    already scoped to this team's own redrafted roster, roster-sized, not
+    the league-wide pool, so there's no risk of an unbounded list; a cap
+    here would silently drop whichever bench player scored least that week,
+    which is exactly backwards on a bye/IR/injury week); the caller attaches
     `was_started` since only it knows which lineup to compare against.
+
+    `pos_ranks` ({player_id: rank}) is optional and stamped onto each
+    `opt_lineup` row as `pos_rank` -- the caller's already-priced season-long
+    position finish, shown beside the player's name the same way the weekly
+    report shows a THIS-WEEK rank.
 
     A multi-week round's own per-slot breakdown isn't tracked, only its
     total -- same "degrade rather than error" precedent as the rest of this
@@ -1000,6 +1176,7 @@ def _redraft_side_score(plist, weeks, pts_by_pw, names, slots):
     """
     from .season import assign_slots, optimal_lineup, optimal_points
 
+    pos_ranks = pos_ranks or {}
     if not plist:
         return [], None, []
     if len(weeks) == 1:
@@ -1012,12 +1189,13 @@ def _redraft_side_score(plist, weeks, pts_by_pw, names, slots):
         picks = assign_slots(picks, slots)
         opt_lineup = [{"slot": x.slot, "player_id": x.player_id,
                        "player_name": names.get(x.player_id, x.player_id),
-                       "position": x.position, "points": round(float(x.points), 1)}
+                       "position": x.position, "points": round(float(x.points), 1),
+                       "pos_rank": pos_ranks.get(x.player_id)}
                       for x in picks.itertuples(index=False)]
         opt_points = round(float(picks["points"].sum()), 2)
         used_ids = set(picks["player_id"])
-        bn = (rows[~rows["player_id"].isin(used_ids)]
-              .sort_values("points", ascending=False).head(6))
+        bn = rows[~rows["player_id"].isin(used_ids)].sort_values(
+            "points", ascending=False)
         return opt_lineup, opt_points, list(bn.itertuples(index=False))
     total = 0.0
     for wk in weeks:
@@ -1027,18 +1205,20 @@ def _redraft_side_score(plist, weeks, pts_by_pw, names, slots):
     return [], round(total, 2), []
 
 
-def _pl_lineup_by_week(players_df, team, week, slots) -> list[dict]:
+def _pl_lineup_by_week(players_df, team, week, slots, pos_ranks=None) -> list[dict]:
     """A team's real submitted playoff lineup for ONE week, looked up by
     (team, week) rather than by matchup id -- see `redraft_playoff`'s
     docstring for why: a reseeded matchup can pair two teams who never
     actually played each other, but each side still has its OWN real week
     to show (if it made the real bracket that week at all). Keeps
-    `player_id` (unlike `playoffs._lineup_from_players`, which drops it) so
-    the shared `_lineupmacro.html` can still key headshots/posrank off it.
-    `players_df` is `Playoff.players`, already priced.
+    `player_id` so the shared `_lineupmacro.html` can still key
+    headshots/posrank off it. `players_df` is `Playoff.players`, already
+    priced. `pos_ranks` ({player_id: rank}) is optional and stamped onto
+    each row as `pos_rank`, same as `_redraft_side_score`.
     """
     from .season import assign_slots
 
+    pos_ranks = pos_ranks or {}
     if players_df is None or not len(players_df):
         return []
     d = players_df[(players_df["team"] == team) & (players_df["week"] == week)]
@@ -1050,7 +1230,8 @@ def _pl_lineup_by_week(players_df, team, week, slots) -> list[dict]:
     except Exception:
         d = d.assign(slot=d["position"])
     return [{"slot": x.slot, "player_id": str(x.player_id), "player_name": x.player_name,
-             "position": x.position, "points": round(float(x.points), 1)}
+             "position": x.position, "points": round(float(x.points), 1),
+             "pos_rank": pos_ranks.get(str(x.player_id))}
             for x in d.itertuples(index=False)]
 
 
@@ -1133,6 +1314,24 @@ def redraft_playoff(s: Season, p, basis: str = "value") -> dict:
     board = board.copy()
     board["player_id"] = board["player_id"].astype(str)
     names = dict(zip(board["player_id"], board["player_name"]))
+    # `pos_rank` (his FINAL season-long position finish, "RB #4") -- board
+    # already carries this from redraft_board()/redraft_board_adp(), so it's
+    # read off there rather than re-priced via a second
+    # metrics.season_position_ranks() pass. Shown next to a player's name in
+    # every lineup this function builds below, the postseason counterpart to
+    # the weekly report's THIS-WEEK posrank.
+    pos_ranks = {pid: (int(pr) if pd.notna(pr) else None)
+                for pid, pr in zip(board["player_id"], board["pos_rank"])}
+    # `season_rank` -- the MANAGER's own SIMULATED regular-season standing
+    # (`sim_standings.sim_position`, already computed above for reseeding),
+    # not his real one and not the bracket `seed` above (which is only
+    # defined for teams that made the real bracket) -- everything else on
+    # this page describes the redrafted world, so the rank shown next to a
+    # manager's name has to match it too, the same way `pos_rank` next to a
+    # player's name is that player's own true-season finish.
+    season_ranks = {row.user_name: int(row.sim_position)
+                    for row in sim_standings.itertuples(index=False)
+                    if pd.notna(row.sim_position)}
     roster_players: dict = {}
     for r in board.itertuples(index=False):
         roster_players.setdefault(r.roster_id, []).append((r.player_id, r.position))
@@ -1163,7 +1362,7 @@ def redraft_playoff(s: Season, p, basis: str = "value") -> dict:
     def side_score(team, weeks):
         rid = rid_by_name.get(team)
         plist = roster_players.get(rid, [])
-        return _redraft_side_score(plist, weeks, pts_by_pw, names, slots)
+        return _redraft_side_score(plist, weeks, pts_by_pw, names, slots, pos_ranks)
 
     winners: dict = {}
     losers: dict = {}
@@ -1212,7 +1411,8 @@ def redraft_playoff(s: Season, p, basis: str = "value") -> dict:
                 winners[mid] = team
                 _, opt_points, _ = side_score(team, weeks)
                 if opt_points is not None:
-                    info["byes"].append({"user_name": team, "points": opt_points})
+                    info["byes"].append({"user_name": team, "points": opt_points,
+                                         "season_rank": season_ranks.get(team)})
                 continue
             nms = [resolve(mu["home"]["team"]), resolve(mu["away"]["team"])]
             if any(n is None for n in nms):
@@ -1222,17 +1422,19 @@ def redraft_playoff(s: Season, p, basis: str = "value") -> dict:
                 opt_lineup, opt_points, bench_rows = side_score(team, weeks)
                 opt_bench = [{"player_id": x.player_id,
                              "player_name": names.get(x.player_id, x.player_id),
-                             "position": x.position, "points": round(float(x.points), 1)}
+                             "position": x.position, "points": round(float(x.points), 1),
+                             "pos_rank": pos_ranks.get(x.player_id)}
                             for x in bench_rows]
                 real = real_by_team_wk.get((team, wk_lbl), {})
                 sides.append({
                     "user_name": team,
                     "points": real.get("points"),
                     "result": real.get("result"),
-                    "lineup": (_pl_lineup_by_week(p.players, team, weeks[0], slots)
+                    "lineup": (_pl_lineup_by_week(p.players, team, weeks[0], slots, pos_ranks)
                               if len(weeks) == 1 else []),
                     "bench": [],
                     "opt_lineup": opt_lineup, "opt_points": opt_points, "opt_bench": opt_bench,
+                    "season_rank": season_ranks.get(team),
                 })
             if any(sd["opt_points"] is None for sd in sides):
                 continue

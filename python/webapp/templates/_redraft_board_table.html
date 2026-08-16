@@ -4,18 +4,30 @@
    report (redraft_report.html), fed by app.py's _redraft_board_ctx(). The
    Draft tab's own board (_draft_board.html) no longer shows this inline --
    it just links into the report instead. Expects `redraft_rounds`/
-   `slot_user` in context and `idm` imported as `idm` by the includer. #}
+   `slot_user` in context and `idm` imported as `idm` by the includer.
+
+   Fixed layout (.draftboard-fit, see style.css and _draft_board_fit.html --
+   the Draft tab board's own real-life copy of the same idiom) so a 10-team
+   league doesn't overflow into a horizontal scrollbar. Two left/right rows
+   per pick instead of the auto-layout board's separate lines: pick # and
+   where the player actually went ("Orig. 1.08" / "Undrafted") share the
+   top row, position rank and TRUE season points share the bottom. Header
+   cells use `idm.who()` (portrait beside name, same idiom as everywhere
+   else in the app) instead of bare text. `--team-count` (read by
+   .draftboard-fit's own min-width, style.css) is how many team columns
+   THIS instance has -- inline custom property, same idiom as
+   `.drilltable`'s `--cols` elsewhere. #}
 {% if redraft_rounds %}
 <p class="hint">Same grid, same team ownership &mdash; each slot filled by whoever
-   actually deserved it by TRUE season value instead of who was actually taken. The
-   small note under each pick says where that player really went.</p>
+   actually deserved it by TRUE season value instead of who was actually taken. Each
+   pick's top-right corner says where that player really went.</p>
 {# nosort: the board is a round x slot grid, so re-ordering rows is meaningless #}
 <div class="tablewrap nosort">
-  <table class="draftboard">
+  <table class="draftboard draftboard-fit" style="--team-count: {{ slot_user|length }}">
     <thead>
       <tr>
         <th class="rnd">R</th>
-        {% for u in slot_user %}<th>{{ u or "—" }}</th>{% endfor %}
+        {% for u in slot_user %}<th title="{{ u or '' }}">{{ idm.who(u) }}</th>{% endfor %}
       </tr>
     </thead>
     <tbody>
@@ -25,11 +37,15 @@
         {% for c in rnd.cells %}
         <td class="pick">
           {% if c %}
-          <span class="pk">#{{ c.pick_no }}</span>
-          <span class="pl pos-{{ c.pos }}">{{ idm.headshot(c.player_id) }}{{ c.player }}</span>
-          {% if c.pos_rank %}<span class="q">{{ c.pos }} #{{ c.pos_rank }}</span>{% endif %}
-          <span class="pts">{{ "%.0f"|format(c.total) }} pts</span>
-          <span class="q">{{ ("originally " ~ c.orig_pick) if c.orig_pick else "undrafted" }}</span>
+          <div class="pkrow">
+            <span class="pk">#{{ c.pick_no }}</span>
+            <span class="q">{{ ("Orig. " ~ c.orig_pick) if c.orig_pick else "Undrafted" }}</span>
+          </div>
+          <span class="pl pos-{{ c.pos }}" title="{{ c.player }}">{{ idm.headshot(c.player_id) }}{{ c.player }}</span>
+          <div class="ptsrow">
+            <span class="q posrank">{% if c.pos_rank %}{{ c.pos }} #{{ c.pos_rank }}{% endif %}</span>
+            <span class="pts">{{ "%.0f"|format(c.total) }} pts</span>
+          </div>
           {% else %}<span class="pk">—</span>{% endif %}
         </td>
         {% endfor %}

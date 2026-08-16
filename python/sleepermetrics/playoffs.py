@@ -19,6 +19,7 @@ import warnings
 
 import pandas as pd
 
+from . import metrics
 from .api import sleeper_api
 from .league import starter_slots
 from .players import players as _players
@@ -942,17 +943,22 @@ def _week_nums(v) -> list[int]:
     return out
 
 
-def _lineup_of(s, roster_id, week: int) -> list[dict]:
+def _lineup_of(s, roster_id, week: int, ranks=None) -> list[dict]:
     """The starters a roster fielded that week, in scoreboard slot order.
 
     The toilet bowl is a plain Sleeper matchup, so its lineups live in `pl_wk`,
     not in the bracket engine's `players`. Ordering goes through `assign_slots`
     so the drill reads QB, RB1, RB2, WR1, WR2, TE, FLEX, K, DEF like every other
     roster table, rather than in whatever order the frame happens to hold.
+
+    `ranks` is optional, same shape/purpose as `_lineup_from_players`' own --
+    stamped onto each row as `pos_rank` so the toilet bowl's own matchup
+    drilldown carries the same season-rank decoration as the bracket's.
     """
     import pandas as pd
 
     from .season import assign_slots
+    ranks = ranks or {}
     pw = getattr(s, "pl_wk_all", None)
     if pw is None or not len(pw):
         return []
@@ -965,8 +971,37 @@ def _lineup_of(s, roster_id, week: int) -> list[dict]:
         d = assign_slots(d, getattr(s, "slots", {}) or {})
     except Exception:
         d = d.assign(slot=d["position"])
-    return [{"slot": r.slot, "player_name": r.player_name, "position": r.position,
-             "points": float(r.points) if pd.notna(r.points) else 0.0}
+    return [{"slot": r.slot, "player_id": str(r.player_id), "player_name": r.player_name,
+             "position": r.position,
+             "points": float(r.points) if pd.notna(r.points) else 0.0,
+             "pos_rank": ranks.get(str(r.player_id), {}).get("rank")}
+            for r in d.itertuples(index=False)]
+
+
+def _bench_of(s, roster_id, week: int, ranks=None) -> list[dict]:
+    """The bench a roster carried that week -- the counterpart to
+    `_lineup_of`'s starters, everyone else on the roster that week.
+    Unlike a bracket game (commissioner-submitted starters only, no bench
+    concept exists), the toilet bowl is a plain Sleeper matchup with real
+    `pl_wk` roster data, so its own bench is genuinely knowable. No slot
+    (bench isn't scoreboard-ordered), same shape `_redraft_side_score`'s
+    own bench rows use.
+    """
+    import pandas as pd
+
+    ranks = ranks or {}
+    pw = getattr(s, "pl_wk_all", None)
+    if pw is None or not len(pw):
+        return []
+    d = pw[(pw["roster_id"] == roster_id) & (pw["week"] == week)
+           & ~pw["is_starter"].fillna(False)]
+    if not len(d):
+        return []
+    d = d.sort_values("points", ascending=False)
+    return [{"player_id": str(r.player_id), "player_name": r.player_name,
+             "position": r.position,
+             "points": float(r.points) if pd.notna(r.points) else 0.0,
+             "pos_rank": ranks.get(str(r.player_id), {}).get("rank")}
             for r in d.itertuples(index=False)]
 
 
@@ -989,6 +1024,14 @@ def toilet_bowl(s, p=None) -> dict:
     to decide it, the worst regular-season finish stands in -- and that fallback
     is labelled as such rather than presented as a result. A season where every
     team reached the bracket has no toilet bowl, and says so.
+
+    Each game's `lineup` rows carry `pos_rank` (each starter's FINAL
+    season-long position finish), best-effort -- same "never blocks
+    rendering" contract as `game_log`'s own ranks. Each side also carries
+    `bench` (everyone else that roster carried that week -- unlike a
+    bracket game, a plain Sleeper matchup's full roster is genuinely
+    knowable) and each `lineup` row gets `cmp` ('up'/'down'/'even', that
+    slot's own win/loss against the other side's same slot).
     """
     import pandas as pd
 
@@ -996,6 +1039,15 @@ def toilet_bowl(s, p=None) -> dict:
     # Postseason weeks: the toilet bowl lives outside the regular season.
     tw = getattr(s, "team_wk_all", None)
     in_bracket, po_start, games = set(), None, []
+    # `season_rank` -- a MANAGER's own final regular-season standing, shown
+    # next to their name in the toilet bowl's own matchup rows, same as the
+    # bracket's (see `game_log`).
+    rank_by_team: dict = {}
+    if st is not None and len(st):
+        for r in st.itertuples(index=False):
+            fp = getattr(r, "final_position", None)
+            if pd.notna(fp):
+                rank_by_team[r.user_name] = int(fp)
 
     if p is not None and len(getattr(p, "results", [])):
         in_bracket = {t for t in p.results["team"].dropna()}
@@ -1008,6 +1060,10 @@ def toilet_bowl(s, p=None) -> dict:
     if st is not None and len(st):
         missed = [n for n in st["user_name"] if n not in in_bracket]
     if missed and tw is not None and len(tw) and po_start:
+        try:
+            ranks = metrics.season_position_ranks(s)
+        except Exception:
+            ranks = {}
         d = tw[(tw["week"] >= po_start) & tw["user_name"].isin(missed)
                & tw["matchup_id"].notna()]
         for (wk, mid), g in d.groupby(["week", "matchup_id"], sort=True):
@@ -1015,8 +1071,11 @@ def toilet_bowl(s, p=None) -> dict:
                 continue
             sides = [{"team": r["user_name"], "points": float(r["points"]),
                       "roster_id": r["roster_id"],
-                      "lineup": _lineup_of(s, r["roster_id"], int(wk)),
+                      "lineup": _lineup_of(s, r["roster_id"], int(wk), ranks),
+                      "bench": _bench_of(s, r["roster_id"], int(wk), ranks),
+                      "season_rank": rank_by_team.get(r["user_name"]),
                       "result": r["result"]} for _, r in g.iterrows()]
+            _stamp_slot_cmp(sides)
             games.append({
                 "week": int(wk), "round": f"Week {int(wk)}", "source": "missed",
                 "sides": sides,
@@ -1201,16 +1260,46 @@ def postseason_weeks(s, p=None) -> list[dict]:
     return out
 
 
-def _lineup_from_players(players, s, mid, team) -> list[dict]:
+def _stamp_slot_cmp(sides) -> None:
+    """Per-slot win/loss highlight -- mutates each side's `lineup` rows in
+    place with `cmp` ('up'/'down'/'even'), matching a slot against the
+    OTHER side's same slot. Same idiom `draft.redraft_playoff` already uses
+    for its own opt_lineup rows, so a matchup drilldown reads the same way
+    whether it's a real bracket game, the toilet bowl, or the redraft sim.
+
+    Only meaningful for exactly two sides -- a bye or a game missing its
+    opponent leaves rows unstamped (`cmp` stays absent, same as
+    `_lineupmacro.html`'s own "absent rows just don't highlight" contract).
+    """
+    if len(sides) != 2:
+        return
+    opp_pts = [{p["slot"]: p["points"] for p in sd.get("lineup") or []} for sd in sides]
+    for i, sd in enumerate(sides):
+        other = opp_pts[1 - i]
+        for p in sd.get("lineup") or []:
+            opp = other.get(p["slot"])
+            p["cmp"] = (None if opp is None else
+                       "up" if p["points"] > opp else
+                       "down" if p["points"] < opp else "even")
+
+
+def _lineup_from_players(players, s, mid, team, ranks=None) -> list[dict]:
     """One side of a bracket matchup as a scoreboard-ordered lineup.
 
     The engine's per-player frame (`Playoff.players`) already holds each submitted
     starter's points for a matchup; order it through `assign_slots` so the drill
     reads QB, RB1, RB2, ... like every other roster table in the app.
+
+    `ranks` ({player_id: {"rank", ...}}, from `metrics.season_position_ranks`)
+    is optional and stamped onto each row as `pos_rank` -- the player's FINAL
+    season-long position finish, shown beside his name the same way the
+    weekly report shows a THIS-WEEK rank. `player_id` rides along so the
+    shared `_lineupmacro.html` can key headshots/season-rank off it.
     """
     import pandas as pd
 
     from .season import assign_slots
+    ranks = ranks or {}
     if players is None or not len(players):
         return []
     d = players[(players["matchup_id"] == mid) & (players["team"] == team)]
@@ -1221,8 +1310,10 @@ def _lineup_from_players(players, s, mid, team) -> list[dict]:
         d = assign_slots(d, getattr(s, "slots", {}) or {})
     except Exception:
         d = d.assign(slot=d["position"])
-    return [{"slot": r.slot, "player_name": r.player_name, "position": r.position,
-             "points": float(r.points) if pd.notna(r.points) else 0.0}
+    return [{"slot": r.slot, "player_id": str(r.player_id), "player_name": r.player_name,
+             "position": r.position,
+             "points": float(r.points) if pd.notna(r.points) else 0.0,
+             "pos_rank": ranks.get(str(r.player_id), {}).get("rank")}
             for r in d.itertuples(index=False)]
 
 
@@ -1239,10 +1330,20 @@ def game_log(s, p, toilet=None) -> list[dict]:
     Returns a list of round groups in bracket order:
       {key, label, weeks, kind, games:[{id, bracket, weeks, sides, winner, margin,
        pending}], byes:[{team, points, pending}]}
-    where each side is {team, points, result, lineup:[{slot, player_name,
-    position, points}]}. The toilet-bowl / outside-bracket games are appended as a
-    final `kind == "toilet"` group so a league whose playoff runs outside Sleeper
-    is bracketed here too, not stranded in a separate section.
+    where each side is {team, points, result, season_rank, lineup:[{slot,
+    player_id, player_name, position, points, pos_rank, cmp}]}. `pos_rank`
+    is each starter's FINAL season-long position finish (best-effort -- a
+    season this Season stand-in can't fully price degrades to no ranks
+    rather than failing the whole log, same "never blocks rendering"
+    contract as the headshot/avatar lookups elsewhere in this app). `cmp`
+    ('up'/'down'/'even') is that slot's own win/loss against the OTHER
+    side's same slot (see `_stamp_slot_cmp`); a bracket game's lineup has
+    no `bench` (the commissioner's config only ever records starters), but
+    a toilet-bowl game's does (real `pl_wk` roster data). The toilet-bowl /
+    outside-bracket games are appended as a final `kind == "toilet"` group
+    so a league whose playoff runs outside Sleeper is bracketed here too,
+    not stranded in a
+    separate section.
     """
     import pandas as pd
 
@@ -1251,6 +1352,22 @@ def game_log(s, p, toilet=None) -> list[dict]:
     results = getattr(p, "results", None)
     players = getattr(p, "players", None)
     ref = reference_scores(s)
+    try:
+        ranks = metrics.season_position_ranks(s)
+    except Exception:
+        ranks = {}
+    # `season_rank` -- a MANAGER's own final regular-season standing, shown
+    # next to their name in a matchup row the same way `pos_rank` (above)
+    # is shown next to a player's. Plain attribute lookup (no stat pricing),
+    # so no best-effort wrapping needed -- just degrades to no ranks for a
+    # Season stand-in with no `standings`.
+    st = getattr(s, "standings", None)
+    rank_by_team: dict = {}
+    if st is not None and len(st):
+        for r in st.itertuples(index=False):
+            fp = getattr(r, "final_position", None)
+            if pd.notna(fp):
+                rank_by_team[r.user_name] = int(fp)
 
     def _sort_sides(sides):
         # Winner first, then by points -- so a decided game reads "winner def. loser".
@@ -1284,7 +1401,8 @@ def game_log(s, p, toilet=None) -> list[dict]:
                         vals = [ref.get((team, w)) for w in weeks]
                         vals = [v for v in vals if v is not None]
                         pts = round(sum(vals), 2) if vals else None
-                    byes.append({"team": team, "points": pts, "pending": team is None})
+                    byes.append({"team": team, "points": pts, "pending": team is None,
+                                 "season_rank": rank_by_team.get(team)})
                     continue
                 if g is None or not len(g):
                     continue
@@ -1299,12 +1417,14 @@ def game_log(s, p, toilet=None) -> list[dict]:
                         "team": r["team"],
                         "points": float(r["points"]) if pd.notna(r["points"]) else None,
                         "result": res if res in ("W", "L", "T") else None,
-                        "lineup": _lineup_from_players(players, s, mid, r["team"])})
+                        "season_rank": rank_by_team.get(r["team"]),
+                        "lineup": _lineup_from_players(players, s, mid, r["team"], ranks)})
                 if not sides:
                     continue
                 winner = next((x["team"] for x in sides if x["result"] == "W"), None)
                 margin = _margin(sides)
                 _sort_sides(sides)
+                _stamp_slot_cmp(sides)
                 games.append({
                     "id": mid,
                     "bracket": (g.iloc[0].get("bracket") if "bracket" in g else None),
@@ -1328,7 +1448,9 @@ def game_log(s, p, toilet=None) -> list[dict]:
                 "team": sd.get("team"),
                 "points": float(sd["points"]) if sd.get("points") is not None else None,
                 "result": sd.get("result") if sd.get("result") in ("W", "L", "T") else None,
-                "lineup": sd.get("lineup") or []} for sd in gm.get("sides", [])]
+                "season_rank": sd.get("season_rank"),
+                "lineup": sd.get("lineup") or [],
+                "bench": sd.get("bench") or []} for sd in gm.get("sides", [])]
             winner = next((x["team"] for x in sides if x["result"] == "W"), None)
             margin = _margin(sides)
             _sort_sides(sides)

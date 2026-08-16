@@ -1,0 +1,37 @@
+{# "Best of the Week" section. Deferred behind /tab/weekly/part/best (see
+   app.py's TAB_PARTS) -- a single fixed comparison, Team of the Week
+   against the best-available free-agent lineup: "the best real lineup
+   anyone could have started this week" vs "the best lineup nobody bothered
+   to start". No other-team picker here (that fuller version, comparing the
+   FA lineup against any real manager's actual/optimized roster, stays on
+   the standalone weekly report -- see _week_fa.html); this section is
+   deliberately just the two. Expects `totw_vs_fa`
+   ({totw, fa_lineup, fa_total, gain}, see app.py's `_totw_vs_fa`) in
+   context -- `None` for a manager scope or a week with no usable roster
+   data. `fa_lineup`/`totw.lineup` rows already carry the same win/loss
+   `cmp` every other lineup comparison in this app uses. #}
+{% import "_ident.html" as idm with context %}
+{% import "_lineupmacro.html" as lu with context %}
+<h2>Best of the Week</h2>
+<p class="hint"><strong>Team of the Week</strong> &mdash; the best legal lineup buildable
+   from every player rostered anywhere in the league this week, bench included, any team
+   (a star marks anyone who was actually benched by their real team) &mdash; against the
+   <strong>best lineup buildable entirely from this week&rsquo;s free agents</strong>.</p>
+{% if totw_vs_fa %}
+{% set fa_won = totw_vs_fa.gain > 0 %}
+{% set tied = totw_vs_fa.gain == 0 %}
+<div class="card fa-best tablewrap">
+  <p class="hint">
+    <span class="score {{ 'score-w' if not fa_won and not tied else 'score-l' if fa_won else '' }}">{{ "%.2f"|format(totw_vs_fa.totw.total) }}</span>
+    <span class="q">&ndash;</span>
+    <span class="score {{ 'score-w' if fa_won else 'score-l' if not tied else '' }}">{{ "%.2f"|format(totw_vs_fa.fa_total) }}</span>
+    <span class="q">({{ "%+.1f"|format(totw_vs_fa.gain) }})</span></p>
+  <div class="dt-tables">
+    {% set totw = totw_vs_fa.totw %}
+    {% include "_team_of_week.html" %}
+    {{ lu.lineup_table("Best available free agents", "%.2f"|format(totw_vs_fa.fa_total), totw_vs_fa.fa_lineup) }}
+  </div>
+</div>
+{% else %}
+<p class="empty">No usable roster data to compare this week.</p>
+{% endif %}

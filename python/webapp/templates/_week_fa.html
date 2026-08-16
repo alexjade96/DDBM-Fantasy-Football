@@ -1,11 +1,12 @@
-{# Free-agent analytics: the best legal lineup buildable entirely from this
-   week's free agents (compared against real teams' actual/optimized rosters)
-   and the free-agents-not-picked-up standouts listing. Shared by the weekly
-   report and the Weekly tab. League-wide only -- both sections are a "what if
-   against the whole field" read, not a per-manager stat, so the whole thing
-   is gated on `not manager` the same way `fa_best_team` is already `None` for
-   a manager scope server-side. Needs `fa_best_team`, `free_agents`,
-   `fa_positions`, `week` in context. #}
+{# Free-agent analytics for the STANDALONE weekly report: the best legal
+   lineup buildable entirely from this week's free agents (compared against
+   real teams' actual/optimized rosters) and the free-agents-not-picked-up
+   listing (the latter shared with the Weekly tab's Transactions/moves
+   section via _fa_standouts.html; this comparison card is report-only --
+   the Weekly tab's own "Best of the Week" section, _week_best.html, shows a
+   fixed Team-of-the-Week-vs-best-FA-lineup pairing instead of this
+   any-real-team picker). Needs `fa_best_team`, `free_agents`, `fa_positions`,
+   `week`, `manager` in context. #}
 {% import "_ident.html" as idm with context %}
 {% import "_lineupmacro.html" as lu with context %}
 {% if not manager %}
@@ -83,91 +84,5 @@
 </div>
 {% endif %}
 
-<h3>Free agents not picked up</h3>
-<p class="hint">The best performers at each position among players on <strong>nobody&rsquo;s
-  roster</strong>, priced with the league&rsquo;s own scoring chart. Sort by <strong>This
-  week</strong> for the single-week explosion or <strong>Last {{ [week, 4]|min }} wks</strong>
-  for who&rsquo;s actually been hot &mdash; the bars are the same span, tallest = that
-  player&rsquo;s own best week in it. Click a row to expand the full list of teams it would
-  have upgraded, its position rank among free agents that week, and whether someone already
-  cut them. Use the position tabs or click a column header to sort.</p>
-{% if free_agents %}
-{% macro fa_table(rows) %}
-<table class="sortable">
-  <thead><tr>
-    <th>Player</th><th>Pos</th>
-    <th class="trend-col">Last {{ [week, 4]|min }} wks</th><th class="n">This week</th>
-    <th class="n">Fits</th>
-  </tr></thead>
-  <tbody>
-  {% for fa in rows %}
-    <tr class="fa-row{% if fa.best_fit %} fa-expandable{% endif %}">
-      <td data-sort="{{ fa.player_name }}">{{ idm.headshot(fa.player_id) }}<strong>{{ fa.player_name }}</strong> {{ idm.posrank(fa.player_id) }}</td>
-      <td>{{ fa.position }}</td>
-      <td class="trend-col">
-        {{ "%.1f"|format(fa.trend_total) }}
-        {% if fa.trend %}
-        <div class="spark">
-          {% for t in fa.trend %}
-          <div class="spark-bar" style="height: {{ t.pct }}%"
-               title="Week {{ t.week }}: {{ '%.1f'|format(t.points) }}"></div>
-          {% endfor %}
-        </div>
-        {% endif %}
-      </td>
-      <td class="n">{{ "%.1f"|format(fa.points) }}</td>
-      <td class="n">{{ fa.best_fit|length }}</td>
-    </tr>
-    {% if fa.best_fit %}
-    <tr class="detail-row" hidden>
-      <td colspan="5" class="fa-fit-cell">
-        <div class="fa-fit-detail">
-          {% if fa.pos_rank %}<p class="q">The #{{ fa.pos_rank }} {{ fa.position }} free agent this week.</p>{% endif %}
-          <table class="fa-fit-table">
-            <thead><tr>
-              <th>Team</th><th>Player</th><th class="n">Points</th><th class="n">Diff</th>
-            </tr></thead>
-            <tbody>
-            {% for bf in fa.best_fit %}
-            <tr>
-              <td>{{ idm.who(bf.user_name) }}</td>
-              <td>{{ bf.started_player }}</td>
-              <td class="n">{{ "%.1f"|format(bf.started_pts) }}</td>
-              <td class="n">+{{ "%.1f"|format(bf.gain) }}</td>
-            </tr>
-            {% endfor %}
-            </tbody>
-          </table>
-        </div>
-      </td>
-    </tr>
-    {% endif %}
-  {% endfor %}
-  </tbody>
-</table>
-{% endmacro %}
-<div class="viewswitch">
-  <input type="radio" name="fapos" id="fa-all" class="vs-radio" checked>
-  {% for pos in fa_positions %}
-  <input type="radio" name="fapos" id="fa-{{ pos }}" class="vs-radio">
-  {% endfor %}
-  <div class="rail vs-tabs">
-    <span class="k">Position</span>
-    <label class="year" for="fa-all">All</label>
-    {% for pos in fa_positions %}
-    <label class="year" for="fa-{{ pos }}">{{ pos }}</label>
-    {% endfor %}
-  </div>
-  <div class="vs-panel vs-p-all card tablewrap scrolltable">
-    {{ fa_table(free_agents) }}
-  </div>
-  {% for pos in fa_positions %}
-  <div class="vs-panel vs-p-{{ pos }} card tablewrap scrolltable">
-    {{ fa_table(free_agents|selectattr("position", "equalto", pos)|list) }}
-  </div>
-  {% endfor %}
-</div>
-{% else %}
-<p class="empty">No standout free-agent performances this week.</p>
-{% endif %}
+{% include "_fa_standouts.html" %}
 {% endif %}
