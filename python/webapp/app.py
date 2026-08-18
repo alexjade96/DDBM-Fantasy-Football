@@ -1689,6 +1689,7 @@ def _draft_part_finds(request, s, d, key, ctx):
     # records() scrubs NaN so `{{ r.user_name or "—" }}` fires (NaN is
     # truthy in Jinja); a churned pickup can have a null primary manager.
     ctx["undrafted"] = records(draft.undrafted_standouts(s))
+    ctx["all_players"] = records(draft.all_players_impact(s))
     return tpl.TemplateResponse(request, "_draft_finds.html", ctx)
 
 

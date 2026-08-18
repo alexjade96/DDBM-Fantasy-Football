@@ -67,6 +67,10 @@ def test_undrafted_standouts_excludes_drafted_and_ranks_by_started_points(monkey
     # network call this fixture's fake league_id can't serve. Not what this
     # test is checking, so stub both out rather than pull in the whole
     # scoring/players mocking chain test_playoffs.py uses for that.
+    # (_attach_team_splits' per-team pos_steal/pos_adj -- a multi-team player
+    # here, Waiver Ace -- is priced purely off season_position_ranks()'s own
+    # output now, no separate network-backed primitive, so no extra stub
+    # is needed for it.)
     monkeypatch.setattr(_metrics, "season_position_ranks", lambda s: {})
     monkeypatch.setattr(draft, "_season_trend", lambda s, ids: {})
     s = make_season()
@@ -81,7 +85,13 @@ def test_undrafted_standouts_excludes_drafted_and_ranks_by_started_points(monkey
                         "Waiver Ace", "Deep Stash", "Deep Stash"],
         "position":   ["RB", "WR", "RB", "WR", "TE", "TE"],
     })
-    s = dataclasses.replace(s, pl_wk=pl)
+    # pl_wk_all defaults to whatever pl_wk WAS at construction time
+    # (Season.__post_init__ only fires once, in make_season()'s own call) --
+    # dataclasses.replace() doesn't re-run that default, so it must be passed
+    # explicitly here too, or draft.py's pl_wk_all-based reads (weeks/teams/
+    # activity, now postseason-inclusive) see the ORIGINAL empty frame
+    # instead of this fixture's real one.
+    s = dataclasses.replace(s, pl_wk=pl, pl_wk_all=pl)
     # Seed the draft cache so pDraft is the only drafted player.
     board = pd.DataFrame([{c: None for c in draft._COLS}])
     board.loc[0, ["player_id", "pick_no", "round"]] = ["pDraft", 1, 1]
@@ -94,6 +104,177 @@ def test_undrafted_standouts_excludes_drafted_and_ranks_by_started_points(monkey
     ace = out.iloc[0]
     assert ace["points"] == 65.0 and ace["teams"] == 2   # started for rosters 2 and 3
     assert ace["user_name"] == "Cy"              # roster 3 got 40 > roster 2's 25
+    draft._cache.clear()
+
+
+def test_all_players_impact_gates_on_activity_or_true_total(monkeypatch):
+    """The merged draft-and-wire view: every drafted pick survives regardless
+    of output (a zero-point pick is still a real, notable pick -- often the
+    whole point of looking at it). An undrafted add survives if EITHER his
+    true season total is nonzero OR he had any nonzero roster-accumulated
+    week here -- catching a real season cut short by one scoreless stint on
+    this roster (total alone would keep him, activity alone would wrongly
+    drop him) as well as a boom/bust week that happens to cancel to a net
+    zero (activity alone catches him, a bare total>0 check would wrongly
+    drop him) -- while still excluding a churn add who never did anything,
+    anywhere. Default order is by draft pick, undrafted appended at the
+    end."""
+    import dataclasses
+
+    import pandas as pd
+    from sleepermetrics import draft, metrics as _metrics
+    # Only pElsewhere gets a real true-season total (a big season that
+    # happened almost entirely off this league's rosters); everyone else
+    # falls back to undrafted_standouts()'s own roster-accumulated total.
+    monkeypatch.setattr(_metrics, "season_position_ranks",
+                         lambda s: {"pElsewhere": {"points": 88.0, "rank": 5, "position": "WR"}})
+    monkeypatch.setattr(draft, "_season_trend", lambda s, ids: {})
+    s = make_season()
+    pl = pd.DataFrame({
+        "week":       [1, 1, 1, 1, 1, 2, 2, 2],
+        "roster_id":  [1, 2, 3, 4, 5, 2, 3, 4],
+        "player_id":  ["pDraft", "pFA", "pFAZero", "pSwing", "pElsewhere",
+                        "pFA", "pFAZero", "pSwing"],
+        "points":     [0.0, 25.0, 0.0, 10.0, 0.0, 40.0, 0.0, -10.0],
+        "is_starter": [True, True, True, True, True, True, True, True],
+        "player_name": ["Drafted Bust", "Waiver Ace", "Never Scored", "Swing DEF",
+                        "Big Season Elsewhere", "Waiver Ace", "Never Scored", "Swing DEF"],
+        "position":   ["RB", "WR", "TE", "DEF", "WR", "WR", "TE", "DEF"],
+    })
+    # See the equivalent comment in test_undrafted_standouts_... above --
+    # pl_wk_all must be passed explicitly alongside pl_wk on a replace().
+    s = dataclasses.replace(s, pl_wk=pl, pl_wk_all=pl)
+    board = pd.DataFrame([{c: None for c in draft._COLS}])
+    board.loc[0, ["player_id", "player_name", "position", "round", "pick_no",
+                  "pick_in_round", "draft_slot", "roster_id", "total",
+                  "pos_repl_ppg", "user_name", "ppg", "pos_adj", "pos_steal",
+                  "pos_rank"]] = ["pDraft", "Drafted Bust", "RB", 1, 1, 1, 1,
+                                   1, 0.0, 0.0, "Al", 0.0, 0.0, 0, 0]
+    draft._cache[f"{s.league_id}:{s.season}"] = board
+
+    out = draft.all_players_impact(s)
+    names = list(out["player_name"])
+    assert "Drafted Bust" in names            # drafted, 0 total -> still included
+    assert "Never Scored" not in names        # undrafted, 0 everywhere -> excluded
+    assert "Swing DEF" in names               # undrafted, +10/-10 nets 0 -> still included
+    assert "Big Season Elsewhere" in names    # undrafted, 0 here but real total -> still included
+    assert names[0] == "Drafted Bust"         # default sort = draft order, picks first
+    assert (out["pick"] == "UDFA").sum() == 3          # Ace, Swing DEF, Big Season Elsewhere
+    assert list(out["pick"])[-3:] == ["UDFA", "UDFA", "UDFA"]   # undrafted appended last
+    bust = out[out["player_name"] == "Drafted Bust"].iloc[0]
+    assert bust["pick"] == "1.01"
+    ace = out[out["player_name"] == "Waiver Ace"].iloc[0]
+    assert ace["pick"] == "UDFA"
+    draft._cache.clear()
+
+
+def test_mixed_flags_pos_steal_vs_pos_adj_not_steal_vs_pos_steal(monkeypatch):
+    """`mixed` compares the two columns actually shown on the Draft-finds
+    table -- `pos_steal` (+/-, a RANK read: draft-slot rank vs. true finish
+    rank at the position) and `pos_adj` (a MAGNITUDE read: true points vs.
+    replacement level) -- NOT `steal` vs `pos_steal` (an earlier version).
+    `steal` isn't even a displayed column, and comparing it against
+    `pos_steal` conflated two different-sized comparison pools: `steal`
+    ranks only within the players actually DRAFTED at a position, while
+    `pos_steal` ranks against the full real-NFL universe at that position.
+    That pool-size gap alone could flip the sign even at IDENTICAL points
+    (2025's Jerry Jeudy, the case that prompted this fix) -- a false "mixed"
+    with no real value disagreement behind it.
+
+    Two players, two positions (independent replacement levels, s.slots ==
+    {} except a TE slot below), each with team-realized `points` equal to
+    their true total (single team, full season -- so this isn't about
+    roster/trade scope at all):
+
+    - pA (WR): drafted 2nd among 3 WRs but out-produces the other two
+      drafted WRs (steal = +1, a "team-realized win"). Six additional real
+      (never-drafted) WRs outscore him, though, so his TRUE finish is only
+      7th overall -- capped at drafted_n=3, pos_steal = 2-3 = -1. `steal`
+      and `pos_steal` disagree in sign (the OLD definition would flag this).
+      But pA's true points (40) sit well below the position's replacement
+      level (100, the league's best real WR, since WR's pool_size is 1 with
+      no WR slot configured) -- pos_adj is ALSO negative, agreeing with
+      pos_steal. Correctly NOT mixed under the new definition: he's a
+      straightforward bust by both the rank read and the magnitude read,
+      once `steal` (an unrelated comparison pool) is taken out of it.
+    - pT2 (TE): drafted 1st among 3 TEs (pos_pick_rank=1) but finishes 2nd
+      of 4 real TEs (one undrafted TE narrowly outscores him) -- pos_steal
+      = 1-2 = -1 (negative, a real if mild rank miss). With a TE slot
+      configured (pool_size=3 for a 3-team league), replacement level is
+      the 3rd-best real TE's 10 points -- pT2's own 55 clears that by a
+      wide margin, so pos_adj = +45 (positive). pos_steal/pos_adj
+      genuinely disagree in sign here -- correctly flagged mixed.
+    """
+    from sleepermetrics import draft
+
+    ranks = {
+        "pA": {"position": "WR", "rank": 7, "points": 40.0},
+        "pB": {"position": "WR", "rank": 8, "points": 20.0},
+        "pC": {"position": "WR", "rank": 9, "points": 10.0},
+        "pX1": {"position": "WR", "rank": 1, "points": 100.0},
+        "pX2": {"position": "WR", "rank": 2, "points": 90.0},
+        "pX3": {"position": "WR", "rank": 3, "points": 80.0},
+        "pX4": {"position": "WR", "rank": 4, "points": 70.0},
+        "pX5": {"position": "WR", "rank": 5, "points": 60.0},
+        "pX6": {"position": "WR", "rank": 6, "points": 50.0},
+        "pT1": {"position": "TE", "rank": 1, "points": 60.0},
+        "pT2": {"position": "TE", "rank": 2, "points": 55.0},
+        "pT3": {"position": "TE", "rank": 3, "points": 10.0},
+        "pTX": {"position": "TE", "rank": 4, "points": 5.0},
+    }
+    monkeypatch.setattr(draft.metrics, "season_position_ranks", lambda s: ranks)
+    monkeypatch.setattr(draft, "players", lambda: pd.DataFrame({
+        "player_id": ["pB", "pA", "pC", "pT2", "pT1", "pT3"],
+        "player_name": ["WR Two", "WR Ay", "WR Cee", "TE Two", "TE One", "TE Three"],
+        "position": ["WR", "WR", "WR", "TE", "TE", "TE"],
+    }))
+
+    s = make_season()
+    import dataclasses
+
+    # make_season() itself pre-seeds an EMPTY board at this cache key (so
+    # other, unrelated tests never hit the network) -- clear it or
+    # draft_board() below short-circuits on the stale empty entry instead of
+    # calling the stubbed sleeper_api.
+    draft._cache.pop(f"{s.league_id}:{s.season}", None)
+    s = dataclasses.replace(
+        s, slots={"TE": 1},
+        user_map=pd.DataFrame({"roster_id": [1, 2, 3], "user_id": ["1", "2", "3"],
+                                "user_name": ["Al", "Bo", "Cy"]}))
+    pl_wk = pd.DataFrame({
+        "week": [1, 1, 1, 1, 1, 1],
+        "roster_id": [1, 1, 1, 1, 1, 1],
+        "player_id": ["pB", "pA", "pC", "pT2", "pT1", "pT3"],
+        "points": [20.0, 40.0, 10.0, 55.0, 60.0, 10.0],
+        "position": ["WR", "WR", "WR", "TE", "TE", "TE"],
+        "player_name": ["WR Two", "WR Ay", "WR Cee", "TE Two", "TE One", "TE Three"],
+    })
+    s = dataclasses.replace(s, pl_wk=pl_wk, pl_wk_all=pl_wk)
+
+    # Raw shape of Sleeper's own /draft/{id}/picks response -- see
+    # draft_board()'s own parsing loop for the fields it reads.
+    picks = [
+        {"round": 1, "pick_no": 1, "draft_slot": 1, "roster_id": 1, "player_id": "pB"},
+        {"round": 1, "pick_no": 2, "draft_slot": 1, "roster_id": 1, "player_id": "pA"},
+        {"round": 1, "pick_no": 3, "draft_slot": 1, "roster_id": 1, "player_id": "pC"},
+        {"round": 1, "pick_no": 4, "draft_slot": 1, "roster_id": 1, "player_id": "pT2"},
+        {"round": 1, "pick_no": 5, "draft_slot": 1, "roster_id": 1, "player_id": "pT1"},
+        {"round": 1, "pick_no": 6, "draft_slot": 1, "roster_id": 1, "player_id": "pT3"},
+    ]
+    monkeypatch.setattr(draft, "sleeper_api", lambda path: (
+        [{"draft_id": "d1", "settings": {"rounds": 6}}] if path.endswith("/drafts")
+        else picks))
+
+    d = draft.draft_board(s)
+    pa = d[d["player_id"] == "pA"].iloc[0]
+    pt2 = d[d["player_id"] == "pT2"].iloc[0]
+
+    assert pa["steal"] == 1 and pa["pos_steal"] == -1     # old definition WOULD flag (signs differ)
+    assert pa["pos_adj"] < 0                               # true magnitude also negative -- agrees w/ pos_steal
+    assert pa["mixed"] == False                            # correctly NOT mixed: no real disagreement
+
+    assert pt2["pos_steal"] == -1 and pt2["pos_adj"] > 0   # rank read negative, magnitude read positive
+    assert pt2["mixed"] == True                            # genuinely disagree -- correctly flagged
     draft._cache.clear()
 
 

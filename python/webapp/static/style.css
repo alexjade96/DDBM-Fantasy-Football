@@ -971,18 +971,51 @@ footer code { font-family: ui-monospace, Consolas, monospace; }
 .fa-vs-mode:has(#fam-opt:checked) .vs-tabs label[for="fam-opt"] {
   background: var(--ink); color: var(--surface); border-color: var(--ink); }
 
-/* Draft tab: gems / busts / undrafted, one shared viewswitch instead of
-   three separate always-visible sections -- fixed 3-id set (that grouping
-   doesn't vary per league) rather than generated. The position-adjusted
-   read lives as an extra column on gems/busts (and undrafted) instead of
-   its own tab -- one less place to look for the same picks. */
+/* Draft tab: gems / busts / undrafted / all players, one shared viewswitch
+   instead of four separate always-visible sections -- fixed 4-id set (that
+   grouping doesn't vary per league) rather than generated. The position-
+   adjusted read lives as an extra column on gems/busts (and undrafted, and
+   all players) instead of its own tab -- one less place to look for the
+   same picks. */
 .gb-vs-mode #gb-gems:checked ~ .vs-p-gems,
 .gb-vs-mode #gb-busts:checked ~ .vs-p-busts,
-.gb-vs-mode #gb-undrafted:checked ~ .vs-p-undrafted { display: block; }
+.gb-vs-mode #gb-undrafted:checked ~ .vs-p-undrafted,
+.gb-vs-mode #gb-all:checked ~ .vs-p-all { display: block; }
 .gb-vs-mode:has(#gb-gems:checked) .vs-tabs label[for="gb-gems"],
 .gb-vs-mode:has(#gb-busts:checked) .vs-tabs label[for="gb-busts"],
-.gb-vs-mode:has(#gb-undrafted:checked) .vs-tabs label[for="gb-undrafted"] {
+.gb-vs-mode:has(#gb-undrafted:checked) .vs-tabs label[for="gb-undrafted"],
+.gb-vs-mode:has(#gb-all:checked) .vs-tabs label[for="gb-all"] {
   background: var(--ink); color: var(--surface); border-color: var(--ink); }
+
+/* Draft tab (gems/busts/undrafted/all players): a player who was on more
+   than one roster this season -- drafted then traded, or a churned
+   undrafted add, tracked identically either way (see _attach_team_splits)
+   -- gets a per-team drilldown. It renders as one ADDITIONAL .detail-row
+   PER TEAM, immediately below the player's own row, reusing that same
+   row's column layout (Pick/Player/Trend stay blank -- who he is and his
+   season-long shape don't change per team; +/- and Pos-adj are now real
+   per-team figures, windowed to that team's own stretch with him -- see
+   _player_team_splits). This is the plain-<table> equivalent of a native
+   <details> row: toggled by index.html's prepFaRows, which now groups a
+   trigger row with EVERY immediately-following .detail-row so a re-sort
+   can't separate them (see makeSortable there) -- a #panel-scoped mirror of
+   weekly_report.html's .reportpanel-only version of this same component,
+   generalised since nothing in the dashboard proper had used it yet.
+   The chevron marker sits on the Manager cell's own `x N teams` badge
+   (.drilldown-mark), not the row's first cell -- the WHOLE row stays
+   clickable (bound in JS on the <tr> itself), but the visual cue only makes
+   sense where a reader is actually looking, next to the badge that explains
+   why this row has a drilldown at all. A row with no badge (teams <= 1) has
+   no .has-detail class in the first place, so this never orphans a chevron
+   with nothing to point at. */
+#panel tr.has-detail { cursor: pointer; }
+#panel tr.has-detail:hover { background: color-mix(in srgb, var(--turf) 6%, transparent); }
+#panel tr.has-detail .drilldown-mark::before {
+  content: '\25B8'; display: inline-block; width: 12px; margin-right: 2px;
+  font-size: 10px; color: var(--faint); }
+#panel tr.has-detail.open .drilldown-mark::before { content: '\25BE'; }
+#panel tr.detail-row td { color: var(--muted);
+  background: color-mix(in srgb, var(--ink) 3.5%, transparent); }
 
 /* Redraft report: the redrafted board's own By-final-season-results / By-ADP
    toggle -- same fixed-id viewswitch idiom as gb-vs-mode above. Standalone

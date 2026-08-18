@@ -424,21 +424,26 @@ def plot_pf_pa(s: Season):
     sizes = 40 + (d["wins"] - d["wins"].min()) / max(d["wins"].max() - d["wins"].min(), 1) * 220
     ax.scatter(d["points"], d["pa"], s=sizes, c=[pal[n] for n in d["user_name"]],
                alpha=0.9, zorder=3, edgecolors=T["edge"], linewidths=1)
-    _point_avatars(ax, d["points"], d["pa"], d["user_name"], s, zoom=0.44)
-    for _, r in d.iterrows():
-        ax.annotate(f"{r['user_name']} ({r['wins']}W)", (r["points"], r["pa"]),
-                    textcoords="offset points", xytext=(21, 0), va="center",
-                    fontsize=8, color=T["ink2"])
+    avatars = _point_avatars(ax, d["points"], d["pa"], d["user_name"], s, zoom=0.44)
     xr = ax.get_xlim(); yr = ax.get_ylim()
-    for (xx, yy, ha, va, lab) in [
-        (xr[1], yr[0], "right", "bottom", "Dominant"),
-        (xr[0], yr[1], "left", "top", "Snakebit"),
-        (xr[1], yr[1], "right", "top", "Shootouts"),
-        (xr[0], yr[0], "left", "bottom", "Low-event")]:
+    corners = [
         ax.text(xx, yy, lab, ha=ha, va=va, fontsize=9, style="italic", color="#bfbfbf")
-    return _finish(fig, ax, "Points For vs Points Against",
+        for (xx, yy, ha, va, lab) in [
+            (xr[1], yr[0], "right", "bottom", "Dominant"),
+            (xr[0], yr[1], "left", "top", "Snakebit"),
+            (xr[1], yr[1], "right", "top", "Shootouts"),
+            (xr[0], yr[0], "left", "bottom", "Low-event")]]
+    fig = _finish(fig, ax, "Points For vs Points Against",
                    "Lower-right beats up the league; upper-left gets snakebit  ·  size = wins",
                    "Points For", "Points Against", caption=_cap(s), grid_axis="both")
+    # After _finish (tight_layout has settled the axes) so the collision solver
+    # works with final geometry, and avoiding the avatar images themselves --
+    # same pattern as plot_boom_bust, needed here for the same reason (avatars
+    # cluster tightly enough that a fixed offset prints labels through them).
+    _place_labels(fig, ax, list(d["points"]), list(d["pa"]),
+                  [f"{r.user_name} ({r.wins}W)" for r in d.itertuples(index=False)],
+                  avoid=(*avatars, *corners))
+    return fig
 
 
 def plot_allplay(s: Season):
@@ -508,15 +513,26 @@ def plot_manager_profile(s: Season):
                c=[pal[n] for n in d["user_name"]], alpha=0.85, zorder=3,
                edgecolors=T["edge"], linewidths=1)
     # Avatar as each manager's marker (dot shows through where none loads).
-    _point_avatars(ax, d["moves_per_wk"], d["lineup_iq"], d["user_name"], s, zoom=0.46)
-    for _, r in d.iterrows():
-        ax.annotate(r["user_name"], (r["moves_per_wk"], r["lineup_iq"]),
-                    textcoords="offset points", xytext=(22, 0), va="center",
-                    fontsize=8, color=T["ink2"])
-    return _finish(fig, ax, "Manager Tendencies",
+    avatars = _point_avatars(ax, d["moves_per_wk"], d["lineup_iq"], d["user_name"], s, zoom=0.46)
+    # Pad both axes (same idiom as plot_boom_bust) so a point sitting near the
+    # data's own min/max doesn't leave the collision solver's left/right label
+    # candidates with nowhere to go but through the y-axis tick labels.
+    xr = (d["moves_per_wk"].max() - d["moves_per_wk"].min()) or 1
+    yr = (d["lineup_iq"].max() - d["lineup_iq"].min()) or 1
+    ax.set_xlim(d["moves_per_wk"].min() - xr * 0.15, d["moves_per_wk"].max() + xr * 0.15)
+    ax.set_ylim(d["lineup_iq"].min() - yr * 0.15, d["lineup_iq"].max() + yr * 0.15)
+    fig = _finish(fig, ax, "Manager Tendencies",
                    "Right = works the wire  ·  up = sets a sharp lineup  ·  bubble = trades made",
                    "Roster Moves per Week", "Lineup IQ (% of optimal)",
                    caption=_cap(s), grid_axis="both")
+    # After _finish (tight_layout has settled the axes) so the collision
+    # solver works with final geometry, and avoiding the avatar images
+    # themselves -- same pattern as plot_boom_bust; two managers landing
+    # close together (moves/wk, lineup IQ) used to print one name straight
+    # through the other's avatar and label.
+    _place_labels(fig, ax, list(d["moves_per_wk"]), list(d["lineup_iq"]),
+                  list(d["user_name"]), avoid=avatars)
+    return fig
 
 
 def plot_transaction_volume(s: Season):
@@ -2091,9 +2107,8 @@ def plot_mgr_sos(s: Season, manager: str, through_week: int | None = None):
         hero = r["user_name"] == manager
         ax.plot([r["sos"], r["own_ppg"]], [i, i], color=cols[i],
                 lw=(3 if hero else 1.8), alpha=(0.9 if hero else 0.45), zorder=2)
-    ax.scatter(d["sos"], range(len(d)), color="#a6a6a6", s=65, zorder=3,
-               label="opponents faced (PPG)")
-    ax.scatter(d["own_ppg"], range(len(d)), color=cols, s=95, zorder=4, label="own PPG")
+    ax.scatter(d["sos"], range(len(d)), color="#a6a6a6", s=65, zorder=3)
+    ax.scatter(d["own_ppg"], range(len(d)), color=cols, s=95, zorder=4)
     mean_sos = d["sos"].mean()
     ax.axvline(mean_sos, ls="--", color=T["rule"], zorder=1)
     ax.text(mean_sos, len(d) - 0.4, "league avg", ha="center", va="top",
@@ -2104,7 +2119,11 @@ def plot_mgr_sos(s: Season, manager: str, through_week: int | None = None):
         if nm == manager:
             t.set_fontweight("bold")
     _row_avatars(ax, d["user_name"], s)
-    ax.legend(loc="lower right", frameon=False, fontsize=8)
+    # No ax.legend() here -- a fixed lower-right legend used to sit directly on
+    # top of whichever manager's own dumbbell landed there (real, not
+    # hypothetical: LuckyHarm's row on 2025 DDBM data). The subtitle already
+    # states the grey/coloured encoding, so the legend was redundant as well
+    # as the thing colliding -- dropping it fixes both.
     span_txt = f"through week {through_week}" if through_week is not None else "all season"
     return _finish(fig, ax, f"Strength of Schedule ({manager} highlighted)",
                    f"Grey = opponents' avg PPG faced, coloured = own PPG, {span_txt}  ·  "

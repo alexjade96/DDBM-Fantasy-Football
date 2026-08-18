@@ -158,30 +158,47 @@
         th.setAttribute('role', 'button');
         var isPos = th.textContent.trim().toLowerCase() === 'pos';
         var run = function () {
-          var rows = Array.prototype.slice.call(body.rows);
+          // Group each row with EVERY immediately-following .detail-row
+          // sibling (a per-row drilldown -- possibly several rows deep for
+          // a multi-team split) so sorting always moves the whole group
+          // together, keyed on the group's own leading (data) row --
+          // otherwise a reorder could separate a row from its own expanded
+          // content, or attach it to the wrong neighbour. Mirrors
+          // weekly_report.html's standalone copy of this same fix.
+          var all = Array.prototype.slice.call(body.rows);
+          var groups = [];
+          for (var idx = 0; idx < all.length; idx++) {
+            var r = all[idx];
+            if (r.classList.contains('detail-row')) continue;
+            var grp = [r];
+            while (all[idx + 1] && all[idx + 1].classList.contains('detail-row')) {
+              grp.push(all[idx + 1]); idx++;
+            }
+            groups.push(grp);
+          }
           // Rows that aren't data (the neighbourhood table's "⋯" gap) stay put.
-          if (rows.some(function (r) { return r.cells.length <= 1; })) return;
+          if (groups.some(function (g) { return g[0].cells.length <= 1; })) return;
           var asc = th.dataset.dir !== 'asc';
           Array.prototype.forEach.call(head.cells, function (o) {
             delete o.dataset.dir; o.classList.remove('sort-asc', 'sort-desc');
           });
           th.dataset.dir = asc ? 'asc' : 'desc';
           th.classList.add(asc ? 'sort-asc' : 'sort-desc');
-          var overridden = rows.some(function (r) {
-            return r.cells[i] && r.cells[i].dataset.sort !== undefined;
+          var overridden = groups.some(function (g) {
+            return g[0].cells[i] && g[0].cells[i].dataset.sort !== undefined;
           });
-          var numeric = !isPos && !overridden && rows.every(function (r) {
-            return !r.cells[i] || sortValue(r.cells[i]) !== null;
+          var numeric = !isPos && !overridden && groups.every(function (g) {
+            return !g[0].cells[i] || sortValue(g[0].cells[i]) !== null;
           });
-          rows.sort(function (a, b) {
-            var x = a.cells[i], y = b.cells[i];
+          groups.sort(function (a, b) {
+            var x = a[0].cells[i], y = b[0].cells[i];
             if (!x || !y) return 0;
             var d = isPos ? posValue(x) - posValue(y)
               : numeric ? sortValue(x) - sortValue(y)
               : textValue(x).localeCompare(textValue(y));
             return asc ? d : -d;
           });
-          rows.forEach(function (r) { body.appendChild(r); });
+          groups.forEach(function (g) { g.forEach(function (r) { body.appendChild(r); }); });
         };
         th.addEventListener('click', run);
         th.addEventListener('keydown', function (e) {
@@ -195,26 +212,30 @@
     // Row-level drilldown (the Weekly tab's free-agent table, ported from
     // weekly_report.html's own copy of this same function -- the standalone
     // page has no shell to reach, so it keeps its inline original). Clicking
-    // a row with a .detail-row sibling toggles it; native <details> can't
-    // wrap a <tr>, so this is the table equivalent of the scoreboard's
-    // <details> rows. Guarded by dataset.expandable so a repeat htmx swap
-    // doesn't double-bind listeners on rows that survive the swap.
+    // a row with one or more immediately-following .detail-row siblings
+    // toggles all of them together (a multi-team split renders one
+    // .detail-row per team); native <details> can't wrap a <tr>, so this is
+    // the table equivalent of the scoreboard's <details> rows. Guarded by
+    // dataset.expandable so a repeat htmx swap doesn't double-bind listeners
+    // on rows that survive the swap.
     function prepFaRows() {
       document.querySelectorAll('#panel table.sortable').forEach(function (table) {
         var body = table.tBodies[0];
         if (!body) return;
         Array.prototype.forEach.call(body.rows, function (row) {
           if (row.dataset.expandable || row.classList.contains('detail-row')) return;
-          var detail = row.nextElementSibling;
-          if (!detail || !detail.classList.contains('detail-row')) return;
+          var details = [];
+          var sib = row.nextElementSibling;
+          while (sib && sib.classList.contains('detail-row')) { details.push(sib); sib = sib.nextElementSibling; }
+          if (!details.length) return;
           row.dataset.expandable = '1';
           row.classList.add('has-detail');
           row.tabIndex = 0;
           row.setAttribute('role', 'button');
           row.setAttribute('aria-expanded', 'false');
           var toggle = function () {
-            var willOpen = detail.hidden;
-            detail.hidden = !willOpen;
+            var willOpen = details[0].hidden;
+            details.forEach(function (d) { d.hidden = !willOpen; });
             row.classList.toggle('open', willOpen);
             row.setAttribute('aria-expanded', String(willOpen));
           };
