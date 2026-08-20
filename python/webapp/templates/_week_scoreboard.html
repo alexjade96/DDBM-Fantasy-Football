@@ -42,16 +42,23 @@
    Actual/Optimized choice to offer -- the drilldown renders the simulated
    lineup directly, with no toggle. The `dt-facts` line (a REAL-lineup-vs-
    REAL-optimal efficiency read, with no redrafted-roster equivalent
-   computed) is dropped for the same reason. Callers that leave `opt_default`
-   unset (the plain Weekly/Overview tabs) keep the full Actual/Optimized
-   toggle, unchanged.
+   computed) is dropped for the same reason, and there is no "flipped"
+   chip / bench "started in the actual lineup" flag either -- an
+   `opt_default` game is a self-contained simulated result end to end
+   (see draft.redraft_week_matchups/redraft_playoff's own docstrings), not
+   an actual result being compared against an optimal one, so nothing here
+   is marked as differing from what actually happened. Callers that leave
+   `opt_default` unset (the plain Weekly/Overview tabs) keep the full
+   Actual/Optimized toggle AND the flipped chip, unchanged.
 
    The summary row is deliberately just 3 symmetric columns -- Winner / Score /
    Opponent, names flanking inward toward the score -- with the margin folded
    into the score cell rather than a column of its own, and no separate "Note"
    column (nail-biter/rout/could-have-won tags): that reads as clutter on a
    collapsed row when the same "would have flipped it" fact is already one
-   click away in the expanded costliest-call line below. #}
+   click away in the expanded costliest-call line below (a real, non-sim
+   game only -- see the `opt_default` paragraph above for why a simulated
+   one has no such fact to show). #}
 {% import "_ident.html" as idm with context %}
 {% import "_lineupmacro.html" as lu with context %}
 <div class="tablewrap">
@@ -79,7 +86,6 @@
           <span class="q">&ndash;</span>
           <span class="score {{ 'score-w' if b_res == 'W' else 'score-l' if b_res == 'L' else '' }}">{{ "%.1f"|format(b_pts) if b_pts is not none else "—" }}</span>
           {%- if disp_margin is not none %} <span class="q">({{ "%.1f"|format(disp_margin) }})</span>{% endif %}
-          {%- if g.flipped %} <span class="chip flip" title="The simulated result differs from what actually happened">flipped</span>{% endif %}
         {%- else %}<span class="score">{{ "%.1f"|format(a_pts) if a_pts is not none else "—" }}</span>{% endif %}</span>
       <span class="dt-name-l">
         {%- if b %}{{ idm.who(b.user_name) }}
@@ -105,8 +111,6 @@
              idm.who(sd.user_name) ~ " — " ~ (opt_label or "Optimized")|lower,
              ("%.2f"|format(sd.opt_points) if sd.opt_points is not none else "—"),
              sd.opt_lineup, bench=sd.opt_bench,
-             bench_flag="was_started",
-             bench_flag_title="Started in the actual lineup, swapped out here",
              empty_text="No roster data.") }}
         {% endfor %}
       </div>

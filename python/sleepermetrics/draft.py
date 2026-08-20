@@ -1069,12 +1069,18 @@ def redraft_week_matchups(s: Season, basis: str = "value") -> dict:
     real roster's own bench could have done -- so the shared per-game
     drilldown's existing Actual/Optimized toggle becomes Actual/Simulated
     almost for free. `opt_bench` is the redrafted roster's own leftover
-    players that week (top 6 by points), carrying `was_started` -- reusing
-    the SAME flag/label the real Optimized panel already has ("started in
-    the actual lineup, swapped out here"), which turns out to mean exactly
-    the right thing here too: this bench player DID start on the manager's
-    REAL roster that week. Each side also gets `sim_result` (W/L from the
-    simulated score alone) alongside its real `result`.
+    players that week (uncapped, in points order), each row carrying
+    `pos_rank` (season-long position finish, same idiom `redraft_playoff`
+    already stamps onto its own rows) -- no "started in the real lineup"
+    flag here: the simulated lineup IS already the optimal one by
+    construction, so a bench player here is simply worse than the picks
+    made, full stop, not a missed call to compare against reality. Each
+    side also gets `sim_result` (W/L from the simulated score alone)
+    alongside its real `result`, used only to sort/cumulate this simulated
+    world -- this is a self-contained alternate season, not a real one
+    scored against an optimal lineup, so nothing here is flagged as
+    differing from what actually happened (no "flipped" chip, no win/loss
+    comparison against the real result beyond the plain `records` table).
 
     For a played game, `sides` is re-sorted by SIMULATED points (descending)
     rather than left in `week_matchups()`'s real-points order, and `margin`
@@ -1088,16 +1094,13 @@ def redraft_week_matchups(s: Season, basis: str = "value") -> dict:
     week, because the record was sim-based but the summary/sort was still
     real-based.
 
-    Returns {week: {"games": [...], "flips": n, "records": {...}, "high":
-    {...}, "low": {...}}} -- `flips` is how many MATCHUPS that week had a
-    different winner in the simulated world (one flipped 2-team game is 1,
-    not 2, even though both of its sides individually changed result).
-    `records` is each manager's cumulative SIMULATED win-loss record
-    THROUGH that week (same shape/idiom as the real Weekly tab's own
-    `records`, from `metrics.table_position`, just accumulated from
-    `sim_result` instead). `high`/`low` are that week's top/bottom simulated
-    scorer ({"user_name", "points"}), for the week-summary row. Empty dict
-    when there's no real draft to simulate against. Memoized per
+    Returns {week: {"games": [...], "records": {...}, "high": {...},
+    "low": {...}}}. `records` is each manager's cumulative SIMULATED
+    win-loss record THROUGH that week (same shape/idiom as the real Weekly
+    tab's own `records`, from `metrics.table_position`, just accumulated
+    from `sim_result` instead). `high`/`low` are that week's top/bottom
+    simulated scorer ({"user_name", "points"}), for the week-summary row.
+    Empty dict when there's no real draft to simulate against. Memoized per
     league:season:basis.
     """
     key = f"{s.league_id}:{s.season}:{basis}"
@@ -1112,6 +1115,11 @@ def redraft_week_matchups(s: Season, basis: str = "value") -> dict:
     board = board.copy()
     board["player_id"] = board["player_id"].astype(str)
     names = dict(zip(board["player_id"], board["player_name"]))
+    # Season-long position finish ("RB #4"), same idiom `redraft_playoff`
+    # already stamps onto its own opt_lineup/opt_bench rows -- see
+    # _lineupmacro.html's `pos_rank`.
+    pos_ranks = {pid: (int(pr) if pd.notna(pr) else None)
+                for pid, pr in zip(board["player_id"], board["pos_rank"])}
     rules = scoring.rules_from(s.league_id)
     ids = board["player_id"].unique().tolist()
     weekly = scoring.score_lineup(ids, s.season, range(1, s.last_week + 1), rules)
@@ -1139,7 +1147,8 @@ def redraft_week_matchups(s: Season, basis: str = "value") -> dict:
                     sd["opt_lineup"] = [
                         {"slot": x.slot, "player_id": x.player_id,
                          "player_name": names.get(x.player_id, x.player_id),
-                         "position": x.position, "points": round(float(x.points), 1)}
+                         "position": x.position, "points": round(float(x.points), 1),
+                         "pos_rank": pos_ranks.get(x.player_id)}
                         for x in picks.itertuples(index=False)]
                     sd["opt_points"] = round(float(picks["points"].sum()), 2)
                     # The redrafted roster's own bench -- everyone not picked,
@@ -1164,7 +1173,8 @@ def redraft_week_matchups(s: Season, basis: str = "value") -> dict:
                     sd["opt_bench"] = [
                         {"player_id": x.player_id,
                          "player_name": names.get(x.player_id, x.player_id),
-                         "position": x.position, "points": round(float(x.points), 1)}
+                         "position": x.position, "points": round(float(x.points), 1),
+                         "pos_rank": pos_ranks.get(x.player_id)}
                         for x in bn.itertuples(index=False)]
                 else:
                     sd["opt_lineup"], sd["opt_points"], sd["opt_bench"] = [], None, []
@@ -1204,21 +1214,11 @@ def redraft_week_matchups(s: Season, basis: str = "value") -> dict:
                 if sd.get("sim_result") in ("W", "L"):
                     w, l = cum.setdefault(sd["user_name"], [0, 0])
                     cum[sd["user_name"]][0 if sd["sim_result"] == "W" else 1] += 1
-        # One flipped MATCHUP, not one flipped side -- a 2-team game's sides
-        # flip together (zero-sum), so checking just side 0 already counts
-        # the game exactly once; checking every side would double-count it.
-        # Stashed on the game itself (not just summed into `flips` below) so
-        # the per-game template can mark WHICH game flipped, not just how
-        # many did that week.
-        for g in games:
-            g["flipped"] = bool(g["played"]
-                                and g["sides"][0]["sim_result"] != g["sides"][0]["result"])
-        flips = sum(1 for g in games if g["flipped"])
         all_sides = [sd for g in games for sd in g["sides"] if sd["opt_points"] is not None]
         hi = max(all_sides, key=lambda sd: sd["opt_points"]) if all_sides else None
         lo = min(all_sides, key=lambda sd: sd["opt_points"]) if all_sides else None
         out[wk] = {
-            "games": games, "flips": flips,
+            "games": games,
             "records": {nm: f"{w}-{l}" for nm, (w, l) in cum.items()},
             "high": {"user_name": hi["user_name"], "points": hi["opt_points"]} if hi else None,
             "low": {"user_name": lo["user_name"], "points": lo["opt_points"]} if lo else None,
@@ -1340,23 +1340,23 @@ def redraft_playoff(s: Season, p, basis: str = "value") -> dict:
     the simulation, which is what makes advancement (not just the score)
     something that can actually change.
 
-    Because a reseeded matchup can pair two teams that never really played
-    each other, "real" per-side facts are sourced two different ways:
-    `flipped` compares the simulated winner against the REAL winner
-    recorded AT THAT SAME BRACKET POSITION (matchup id) -- well-defined
-    regardless of who's actually playing there now, since it is answering
-    "did the outcome at this spot in the bracket change". The Actual lineup
-    tab, on the other hand, looks each side's own real lineup/points/result
-    up by (team, week) -- what that manager really did, independent of who
-    the bracket says they're facing under simulation; a team that missed
-    the real bracket entirely that week simply shows no roster data there,
-    same as the shared lineup table already degrades for any missing side.
+    A reseeded matchup can pair two teams that never really played each
+    other, so there is no meaningful "did this game's outcome change"
+    comparison to make against a real matchup at that bracket position --
+    unlike `redraft_week_matchups`' regular-season games (which always
+    replay the SAME real pairing), a playoff round's real winner at a given
+    matchup id may not even be one of the two teams shown here under
+    simulation. This whole section is a self-contained alternate bracket,
+    not a real one scored against an optimal lineup, so no game or the
+    champion line is flagged as differing from what actually happened --
+    `real_winner_of_mid` is used only internally, to resolve which team a
+    later round's literal name should route through.
 
     Returns {"rounds": {round_id: {"label", "games": [...], "byes": [...],
-    "flips": n, "high": {...}, "low": {...}}, ...}, "sim_champion",
-    "real_champion", "champion_flipped"}, rounds in bracket order (dict
-    insertion order, same idiom `redraft_week_matchups` already relies on).
-    A round with nothing decided yet is omitted (same convention as
+    "high": {...}, "low": {...}}, ...}, "sim_champion", "real_champion"},
+    rounds in bracket order (dict insertion order, same idiom
+    `redraft_week_matchups` already relies on). A round with nothing
+    decided yet is omitted (same convention as
     `playoffs.game_log`). Empty dict when there's no playoff, no bracket
     config/rounds to walk, or no draft to simulate against. Memoized per
     league:season:basis.
@@ -1476,7 +1476,7 @@ def redraft_playoff(s: Season, p, basis: str = "value") -> dict:
         weeks = [int(w) for w in rd.get("weeks", [])]
         wk_lbl = "+".join(str(w) for w in weeks)
         info = rounds.setdefault(rid, {"label": rd.get("name", rid), "games": [],
-                                       "byes": [], "flips": 0})
+                                       "byes": []})
         if not weeks:
             continue
         for mu in rd.get("matchups", []):
@@ -1533,17 +1533,11 @@ def redraft_playoff(s: Season, p, basis: str = "value") -> dict:
                                 "up" if p_["points"] > opp else
                                 "down" if p_["points"] < opp else "even")
             sides.sort(key=lambda sd: -sd["opt_points"])
-            real_winner = real_winner_of_mid.get(mid)
-            sim_winner = winners[mid]
-            flipped = bool(real_winner and sim_winner != real_winner)
             sim_margin = round(abs(sides[0]["opt_points"] - sides[1]["opt_points"]), 2)
             info["games"].append({
                 "matchup_id": mid, "sides": sides, "played": True,
                 "margin": None, "sim_margin": sim_margin,
-                "flipped": flipped, "winner": real_winner, "sim_winner": sim_winner,
             })
-            if flipped:
-                info["flips"] += 1
         # Record THIS round's real winners for later rounds' literal-name
         # references to route through -- done only now, after the whole
         # round is processed, so a name is never treated as an implicit
@@ -1570,12 +1564,10 @@ def redraft_playoff(s: Season, p, basis: str = "value") -> dict:
     final_id = cfg.get("final")
     sim_champion = winners.get(final_id) if final_id else None
     real_champion = p.champion
-    champion_flipped = (bool(sim_champion and real_champion and sim_champion != real_champion)
-                        if final_id else None)
 
     return _playoff_cache.setdefault(key, {
         "rounds": rounds, "sim_champion": sim_champion,
-        "real_champion": real_champion, "champion_flipped": champion_flipped,
+        "real_champion": real_champion,
     })
 
 

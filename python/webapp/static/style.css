@@ -302,12 +302,6 @@ tbody tr:last-child td { border-bottom: 0; }
 .chip { background: color-mix(in srgb, var(--gold) 22%, transparent); border-radius: 20px;
         padding: 1px 8px; font-weight: 600; }
 .chip.toilet { background: color-mix(in srgb, #a8743a 22%, transparent); }   /* basement's answer to gold */
-/* Redraft simulation: marks a game/round whose simulated result differs from
-   what actually happened (draft.redraft_week_matchups/redraft_playoff's
-   `flipped`) -- a distinct hue from .chip's gold (which already means
-   "postseason/toilet bowl" elsewhere) so it doesn't read as one of those. */
-.chip.flip { background: color-mix(in srgb, #4263eb 20%, transparent);
-             font-size: 11px; margin-left: 4px; }
 
 details.card { margin-top: 18px; }
 details summary { cursor: pointer; font-weight: 600; }

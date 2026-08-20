@@ -80,19 +80,20 @@
     <div class="fact"><span class="fl">Actual champion</span><span class="fv">
       {{ idm.who(sim_playoffs.real_champion) if sim_playoffs.real_champion else "—" }}</span></div>
     <div class="fact"><span class="fl">Simulated champion</span><span class="fv">
-      {{ idm.who(sim_playoffs.sim_champion) if sim_playoffs.sim_champion else "—" }}
-      {%- if sim_playoffs.champion_flipped %} <span class="chip flip" title="Different from the actual champion">flipped</span>{% endif %}</span></div>
+      {{ idm.who(sim_playoffs.sim_champion) if sim_playoffs.sim_champion else "—" }}</span></div>
   </div>
   {# Each round is its own .loground block -- same idiom _playoff_round.html
      uses for the real Playoffs tab -- games listed directly under the round
      heading rather than behind an extra round-level collapse. Each game's
      own row is _week_scoreboard.html's own opt_default rendering (Winner/
-     Score/Opponent, season_rank, per-slot cmp highlight, bench, the
-     "flipped" chip already folded into the score cell), so a simulated
-     round reads exactly like a real one. The old round-level High/Low
-     scorer summary is dropped for the same reason: the real Playoffs tab
-     never had one either, and each game's own "flipped" chip already
-     carries that signal per-matchup instead of aggregated per-round. #}
+     Score/Opponent, season_rank, per-slot cmp highlight, bench), so a
+     simulated round reads exactly like a real one. This is a
+     self-contained alternate bracket (see redraft_playoff's docstring),
+     not a real one scored against an optimal lineup, so no game is marked
+     as "flipped" vs. reality -- same reason the champion line above has
+     no such chip either. The old round-level High/Low scorer summary is
+     dropped for a different reason: the real Playoffs tab never had one
+     either. #}
   {% for rid, info in sim_playoffs.rounds.items() %}
   <div class="loground">
     <div class="loground-head">
@@ -183,9 +184,9 @@
 
   <div class="vs-panel vs-p-sim-weeks">
   <div class="tablewrap">
-  <div class="drilltable" style="--cols: minmax(60px,.5fr) minmax(150px,1.3fr) minmax(150px,1.3fr) minmax(130px,1fr)">
+  <div class="drilltable" style="--cols: minmax(60px,.5fr) minmax(150px,1.3fr) minmax(150px,1.3fr)">
     <div class="dt-head">
-      <span class="dt-num">Wk</span><span>High scorer</span><span>Low scorer</span><span>Vs. real</span>
+      <span class="dt-num">Wk</span><span>High scorer</span><span>Low scorer</span>
     </div>
     {% for wk, info in sim_weeks.items() %}
     <details class="dt-row">
@@ -193,7 +194,6 @@
         <span class="dt-num">{{ wk }}</span>
         <span>{% if info.high %}{{ idm.who(info.high.user_name) }} <span class="q">{{ "%.1f"|format(info.high.points) }}</span>{% else %}&mdash;{% endif %}</span>
         <span>{% if info.low %}{{ idm.who(info.low.user_name) }} <span class="q">{{ "%.1f"|format(info.low.points) }}</span>{% else %}&mdash;{% endif %}</span>
-        <span>{% if info.flips %}{{ info.flips }} matchup{{ "s" if info.flips != 1 }} flipped{% else %}no flips{% endif %}</span>
       </summary>
       <div class="dt-detail">
         {% set wk_games = info.games %}
