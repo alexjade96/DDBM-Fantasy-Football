@@ -1688,7 +1688,14 @@ def _draft_part_finds(request, s, d, key, ctx):
     ctx.update(draft.draft_extremes(s))
     # records() scrubs NaN so `{{ r.user_name or "—" }}` fires (NaN is
     # truthy in Jinja); a churned pickup can have a null primary manager.
-    ctx["undrafted"] = records(draft.undrafted_standouts(s))
+    ctx["drafted"] = records(draft.drafted_players(s))
+    # The Undrafted PANEL shows every real undrafted player (full real-NFL
+    # universe, "FA" manager for one nobody in this league ever added) --
+    # undrafted_universe(s), not the narrower undrafted_standouts() (which
+    # stays reserved for draft_standouts()'s "best undrafted find" headline
+    # tile, where a real DDBM-roster-benefited find is specifically what's
+    # wanted, not an obscure never-added player).
+    ctx["undrafted"] = records(draft.undrafted_universe(s))
     ctx["all_players"] = records(draft.all_players_impact(s))
     return tpl.TemplateResponse(request, "_draft_finds.html", ctx)
 

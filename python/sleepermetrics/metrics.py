@@ -1903,6 +1903,24 @@ def _position_totals(s: Season, weeks: range) -> tuple[dict, pd.Series]:
     """(pid -> summed fantasy points over `weeks`, pid -> position). Split out
     of `week_position_ranks` so the "price every NFL player's stat line" work
     stays reusable if a cumulative read is ever needed again.
+
+    A player only counts as having "played" a week if his stat line has AT
+    LEast one key that's actually in the league's own scoring rules --
+    Sleeper's `/stats/nfl/regular/{season}/{week}` endpoint emits a stub
+    entry for a player who was merely on an NFL roster that week (active or
+    not) but never touched the field: `{"gms_active": 1.0,
+    "pos_rank_std": 999.0, "pos_rank_ppr": 999.0, "pos_rank_half_ppr":
+    999.0}`, none of which are real scoring keys, and `999` is Sleeper's own
+    "unranked" sentinel (the same one `_ADP_FIELDS`/`_fetch_adp_raw` in
+    draft.py already treats as "no real value here"). Before this guard, a
+    dict entry existing at all was treated as "he played" -- which silently
+    fabricated a real-looking 0.0-point rank for a player who never actually
+    recorded a down that season (2025 real-data cases: Joe Mixon and Brandon
+    Aiyuk both carry this exact stub shape for all 17 weeks, no real
+    production stat ever present, yet ranked #159/#269 as if they'd had a
+    real, if unproductive, season). Filtering to real-stat-key presence
+    means such a player now correctly has NO entry in `totals` at all (he
+    never played), rather than a false rank among players who genuinely did.
     """
     from . import scoring
 
@@ -1917,6 +1935,8 @@ def _position_totals(s: Season, weeks: range) -> tuple[dict, pd.Series]:
             continue
         for pid, line in lines.items():
             if pos_map.get(pid) not in POSITIONS:
+                continue
+            if not any(k in rules for k in line):
                 continue
             pts = sum(v * rules[k] for k, v in line.items() if k in rules)
             totals[pid] = totals.get(pid, 0.0) + pts

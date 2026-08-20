@@ -107,64 +107,84 @@ def test_undrafted_standouts_excludes_drafted_and_ranks_by_started_points(monkey
     draft._cache.clear()
 
 
-def test_all_players_impact_gates_on_activity_or_true_total(monkeypatch):
+def test_all_players_impact_gates_on_real_rank_membership(monkeypatch):
     """The merged draft-and-wire view: every drafted pick survives regardless
     of output (a zero-point pick is still a real, notable pick -- often the
-    whole point of looking at it). An undrafted add survives if EITHER his
-    true season total is nonzero OR he had any nonzero roster-accumulated
-    week here -- catching a real season cut short by one scoreless stint on
-    this roster (total alone would keep him, activity alone would wrongly
-    drop him) as well as a boom/bust week that happens to cancel to a net
-    zero (activity alone catches him, a bare total>0 check would wrongly
-    drop him) -- while still excluding a churn add who never did anything,
-    anywhere. Default order is by draft pick, undrafted appended at the
-    end."""
+    whole point of looking at it). Every OTHER real player is included if he
+    has at least one real stat-line week this season (i.e. is a member of
+    `season_position_ranks`) -- REGARDLESS of whether any DDBM manager ever
+    rostered him at all (so the position-rank sequence stays gapless), with
+    `user_name` reading "FA" for one nobody ever added. A real player who
+    simply never recorded a stat line at all (absent from `ranks`, never
+    drafted either) is excluded -- there's no real season to report on him.
+    Default order is TOTAL POINTS descending (drafted and undrafted mixed
+    into one ranked list), not draft order."""
     import dataclasses
 
     import pandas as pd
     from sleepermetrics import draft, metrics as _metrics
-    # Only pElsewhere gets a real true-season total (a big season that
-    # happened almost entirely off this league's rosters); everyone else
-    # falls back to undrafted_standouts()'s own roster-accumulated total.
-    monkeypatch.setattr(_metrics, "season_position_ranks",
-                         lambda s: {"pElsewhere": {"points": 88.0, "rank": 5, "position": "WR"}})
+    # `ranks` is now the gate: pRostered and pNeverAdded both have real
+    # entries (so both survive); pNoStatLine has none (so it's excluded
+    # despite being a real, if practice-squad-level, player_id).
+    monkeypatch.setattr(_metrics, "season_position_ranks", lambda s: {
+        "pRostered": {"points": 65.0, "rank": 12, "position": "WR"},
+        "pNeverAdded": {"points": 30.0, "rank": 40, "position": "WR"},
+    })
     monkeypatch.setattr(draft, "_season_trend", lambda s, ids: {})
+    # draft.py calls the imported `players` name directly (`from .players
+    # import players`), so the patch target is draft.players, not the
+    # sleepermetrics.players module.
+    monkeypatch.setattr(draft, "players", lambda *a, **k: pd.DataFrame({
+        "player_id": ["pRostered", "pNeverAdded", "pNoStatLine"],
+        "player_name": ["Rostered Find", "Never Added", "No Stat Line"],
+        "position": ["WR", "WR", "WR"],
+    }))
     s = make_season()
     pl = pd.DataFrame({
-        "week":       [1, 1, 1, 1, 1, 2, 2, 2],
-        "roster_id":  [1, 2, 3, 4, 5, 2, 3, 4],
-        "player_id":  ["pDraft", "pFA", "pFAZero", "pSwing", "pElsewhere",
-                        "pFA", "pFAZero", "pSwing"],
-        "points":     [0.0, 25.0, 0.0, 10.0, 0.0, 40.0, 0.0, -10.0],
-        "is_starter": [True, True, True, True, True, True, True, True],
-        "player_name": ["Drafted Bust", "Waiver Ace", "Never Scored", "Swing DEF",
-                        "Big Season Elsewhere", "Waiver Ace", "Never Scored", "Swing DEF"],
-        "position":   ["RB", "WR", "TE", "DEF", "WR", "WR", "TE", "DEF"],
+        "week":       [1, 2],
+        "roster_id":  [2, 2],
+        "player_id":  ["pRostered", "pRostered"],
+        "points":     [25.0, 40.0],
+        "is_starter": [True, True],
+        "player_name": ["Rostered Find", "Rostered Find"],
+        "position":   ["WR", "WR"],
     })
     # See the equivalent comment in test_undrafted_standouts_... above --
     # pl_wk_all must be passed explicitly alongside pl_wk on a replace().
     s = dataclasses.replace(s, pl_wk=pl, pl_wk_all=pl)
     board = pd.DataFrame([{c: None for c in draft._COLS}])
+    # `rostered_weeks`/`rostered_ppg` (all-teams, what all_players_impact()
+    # actually renames to the outward `weeks`/`ppg`) must be seeded too, not
+    # just the drafting-team-only `ppg` -- a real draft_board() call always
+    # populates both from pl_wk_all, but this hand-built board bypasses that
+    # computation, and leaving them at the {c: None} default (object dtype)
+    # concatenates against the undrafted half's real float `ppg` column and
+    # trips a pandas FutureWarning on an all-NA column.
     board.loc[0, ["player_id", "player_name", "position", "round", "pick_no",
                   "pick_in_round", "draft_slot", "roster_id", "total",
-                  "pos_repl_ppg", "user_name", "ppg", "pos_adj", "pos_steal",
+                  "pos_repl_ppg", "user_name", "ppg", "rostered_weeks",
+                  "rostered_ppg", "pos_adj", "pos_steal",
                   "pos_rank"]] = ["pDraft", "Drafted Bust", "RB", 1, 1, 1, 1,
-                                   1, 0.0, 0.0, "Al", 0.0, 0.0, 0, 0]
+                                   1, 0.0, 0.0, "Al", 0.0, 0, 0.0, 0.0, 0, 0]
     draft._cache[f"{s.league_id}:{s.season}"] = board
 
     out = draft.all_players_impact(s)
     names = list(out["player_name"])
     assert "Drafted Bust" in names            # drafted, 0 total -> still included
-    assert "Never Scored" not in names        # undrafted, 0 everywhere -> excluded
-    assert "Swing DEF" in names               # undrafted, +10/-10 nets 0 -> still included
-    assert "Big Season Elsewhere" in names    # undrafted, 0 here but real total -> still included
-    assert names[0] == "Drafted Bust"         # default sort = draft order, picks first
-    assert (out["pick"] == "UDFA").sum() == 3          # Ace, Swing DEF, Big Season Elsewhere
-    assert list(out["pick"])[-3:] == ["UDFA", "UDFA", "UDFA"]   # undrafted appended last
-    bust = out[out["player_name"] == "Drafted Bust"].iloc[0]
-    assert bust["pick"] == "1.01"
-    ace = out[out["player_name"] == "Waiver Ace"].iloc[0]
-    assert ace["pick"] == "UDFA"
+    assert "No Stat Line" not in names        # never in ranks, never drafted -> excluded
+    assert "Rostered Find" in names           # undrafted but in ranks, rostered here -> included
+    assert "Never Added" in names             # undrafted, in ranks, NOBODY rostered him -> included
+    # Default sort = total pts descending: Rostered Find (65.0) > Never
+    # Added (30.0) > Drafted Bust (0.0).
+    assert names == ["Rostered Find", "Never Added", "Drafted Bust"]
+    assert (out["pick"] == "UDFA").sum() == 2          # Rostered Find, Never Added
+    rostered = out[out["player_name"] == "Rostered Find"].iloc[0]
+    assert rostered["pick"] == "UDFA"
+    assert rostered["user_name"] == "Bo"      # roster_id 2 -> real manager
+    never_added = out[out["player_name"] == "Never Added"].iloc[0]
+    assert never_added["pick"] == "UDFA"
+    assert never_added["user_name"] == "FA"   # nobody in this league ever rostered him
+    assert never_added["teams"] == 0
     draft._cache.clear()
 
 

@@ -26,7 +26,8 @@ from .season import Season, POSITIONS, _FLEX_ELIG
 _cache: dict = {}
 
 _COLS = ["round", "pick_no", "pick_in_round", "draft_slot", "roster_id", "user_name",
-         "player_id", "player_name", "position", "points", "weeks", "rostered_weeks", "ppg",
+         "player_id", "player_name", "position", "points", "weeks", "rostered_weeks",
+         "rostered_points", "ppg", "rostered_ppg",
          "pos_pick_rank", "pos_value_rank", "steal", "total", "mixed", "pos_rank",
          "pos_repl", "pos_repl_ppg", "pos_adj", "pos_steal",
          "value_rank", "redraft_round"]
@@ -288,19 +289,20 @@ def draft_board(s: Season) -> pd.DataFrame:
     # to one that sat on the same roster all year.
     d["ppg"] = (d["points"] / d["weeks"].fillna(0).clip(lower=1)).round(1)
 
-    # `rostered_weeks`: how many weeks this player was on ANY roster in this
-    # league this season, summed ACROSS every team that ever held him --
-    # unlike `weeks` above (drafting team only), this is what the Draft-finds
-    # table's own Weeks column shows, since it exists to explain a gap
-    # against `total`/`pos_rank` (which are themselves not scoped to any one
-    # team). A drafted-then-traded player's `weeks` (drafting team only)
-    # understates how much of the season he was actually rostered somewhere
-    # -- e.g. 11 weeks on the team that drafted him, then 3 more after a
-    # trade, `weeks`=11 but `rostered_weeks`=14. `undrafted_standouts()`
-    # already computes this correctly (it groups by player only, not
-    # player+roster); this mirrors that for drafted picks.
-    all_teams_weeks = s.pl_wk_all.groupby("player_id")["week"].nunique()
-    d["rostered_weeks"] = d["player_id"].map(all_teams_weeks).fillna(0).astype(int)
+    # `rostered_weeks`: how many weeks this player was on ANY roster this
+    # season -- summed ACROSS every team that ever held him, unlike `weeks`
+    # above (drafting team only). This is what the Draft-finds table's own
+    # Weeks column shows, since it exists to explain a gap against
+    # `total`/`pos_rank` (which are themselves not scoped to any one team). A
+    # drafted-then-traded player's `weeks` (drafting team only) understates
+    # how much of the season he was actually rostered somewhere -- e.g. 11
+    # weeks on the team that drafted him, then 6 more after a trade,
+    # `weeks`=11 but `rostered_weeks`=17.
+    all_teams = (s.pl_wk_all.groupby("player_id")
+                 .agg(rostered_weeks=("week", "nunique"), rostered_points=("points", "sum")))
+    d = d.merge(all_teams, on="player_id", how="left")
+    d["rostered_weeks"] = d["rostered_weeks"].fillna(0).astype(int)
+    d["rostered_points"] = d["rostered_points"].fillna(0.0).round(1)
 
     # Standard "round.pick" draft notation needs the pick WITHIN the round
     # (1..team count), not the overall pick_no -- `pick_no` is sequential
@@ -322,12 +324,29 @@ def draft_board(s: Season) -> pd.DataFrame:
     ranks = metrics.season_position_ranks(s)
     pid = d["player_id"].astype(str)
     d["total"] = pid.map(lambda p: ranks[p]["points"] if p in ranks else 0.0).round(1)
+    # `rostered_ppg`: SEASON-WIDE rate (`total` over `last_week_all`), not
+    # `rostered_points / rostered_weeks` -- this is what the Draft-finds
+    # table's outward PPG column shows (renamed on the way out by every
+    # caller). Deliberately not a "while rostered" rate any more: the table
+    # now splits a player's roster history into per-team AND per-FA-stretch
+    # rows (see `_player_team_splits`), so the parent row's own PPG reads as
+    # his true season-long rate, consistent with `total` sitting right next
+    # to it, rather than a rate whose implicit denominator (weeks rostered
+    # by anyone) no longer matches what the drilldown underneath it shows.
+    d["rostered_ppg"] = (d["total"] / max(s.last_week_all, 1)).round(1)
     # `pos_rank`: where he finished at his position leaguewide -- "RB #4" --
     # from the SAME true-season pricing as `total`, so the two numbers can't
-    # disagree with each other. A player who never recorded a stat line has
-    # no rank (nullable; filled below only for the `pos_steal` arithmetic,
-    # never shown filled -- an unresolved rank stays genuinely blank).
-    d["pos_rank"] = pid.map(lambda p: ranks[p]["rank"] if p in ranks else None).astype("Int64")
+    # disagree with each other. A player who never recorded a stat line at
+    # all is filled with `_never_played_pos_ranks()`'s UNCAPPED "one worse
+    # than the deepest real rank" convention (e.g. WR #145 if the worst real
+    # WR finished #144) rather than left blank -- displayed, not just an
+    # internal fallback. This is deliberately a DIFFERENT (uncapped) number
+    # from `pos_steal`'s own internal finish-side fallback just below, which
+    # stays capped at the drafted count for its own documented reason; do not
+    # let the two merge back into one shared fallback.
+    never_played = _never_played_pos_ranks(dict(zip(pid, d["position"])), ranks)
+    d["pos_rank"] = pid.map(
+        lambda p: ranks[p]["rank"] if p in ranks else never_played.get(p)).astype("Int64")
 
     # Steal metrics are POSITION-scoped, not draft-wide: ranking a QB's
     # points against a draft full of RB/WR/TE picks compares different
@@ -356,41 +375,45 @@ def draft_board(s: Season) -> pd.DataFrame:
                             .rank(ascending=False, method="first").astype(int))
     # `steal`: team-realized value vs draft slot, now position-scoped.
     d["steal"] = (d["pos_pick_rank"] - d["pos_value_rank"]).astype(int)
-    # `pos_steal`: the TRUE-value equivalent -- `pos_pick_rank` vs `pos_rank`
-    # instead of `pos_value_rank`. Pairing `steal`/`pos_steal` isolates a bad
-    # PLAYER (both negative) from a bad DECISION (pos_steal fine, steal
-    # deeply negative -- the team gave up on someone who kept producing). A
-    # player with no stat line at all (`pos_rank` null) is filled with a
-    # rank one worse than the deepest ranked player at that position, not
-    # left null (which would silently drop him from the comparison) --
-    # "never recorded a stat line" is itself the worst possible outcome.
-    #
-    # The finish side (`pos_rank`) is then capped at how many players were
-    # actually DRAFTED at this position, not left at the full real-NFL
-    # universe's raw size -- that universe is hundreds of players deep and a
-    # very different size per position (2025: 337 real WRs recorded a stat
-    # line vs. 193 real RBs, simply because more NFL teams roll out
-    # replacement-level WRs than RBs on a given week). Left uncapped, that
-    # size mismatch alone can make a deep-universe position's bust dwarf an
-    # equally- or more-deserved bust at a shallower one: 2025's Brandon
-    # Aiyuk (WR, pick 14.07, 0 true points) read -219, while Joe Mixon (RB,
-    # pick 9.02, also 0 points but drafted with real mid-draft capital --
-    # 30th of 48 RBs taken, a full 5 rounds earlier than Aiyuk's 50th of 58
-    # WRs) read only -129 -- backwards from what actually happened once you
-    # account for how much draft capital each represented. Once a player is
-    # worse than the LAST one anyone at his position actually bothered to
-    # draft, further real-world bench depth doesn't make the pick any more
-    # of a bust, so capping there -- not an arbitrary multiplier, this is
-    # already a real, known number -- fixes it: Mixon reads -18, worse than
-    # Aiyuk's -8, while Cam Ward (the cross-position case above) stays
-    # correctly negative (-1) rather than flipping to a false gem.
+    # `pos_steal`: the TRUE-value equivalent -- `pos_pick_rank` vs a finish
+    # rank -- instead of `pos_value_rank`. Pairing `steal`/`pos_steal`
+    # isolates a bad PLAYER (both negative) from a bad DECISION (pos_steal
+    # fine, steal deeply negative -- the team gave up on someone who kept
+    # producing). Deliberately NOT built from the DISPLAYED `pos_rank`
+    # column above (which now fills a never-played player with
+    # `_never_played_pos_ranks()`'s UNCAPPED rank, one worse than the
+    # deepest REAL rank at the position) -- `pos_steal`'s own finish side
+    # is recomputed here from `ranks` directly and capped at how many
+    # players were actually DRAFTED at this position, not left at the full
+    # real-NFL universe's raw size -- that universe is hundreds of players
+    # deep and a very different size per position (2025: 337 real WRs
+    # recorded a stat line vs. 193 real RBs, simply because more NFL teams
+    # roll out replacement-level WRs than RBs on a given week). Left
+    # uncapped, that size mismatch alone can make a deep-universe
+    # position's bust dwarf an equally- or more-deserved bust at a
+    # shallower one: 2025's Brandon Aiyuk (WR, pick 14.07, 0 true points)
+    # read -219, while Joe Mixon (RB, pick 9.02, also 0 points but drafted
+    # with real mid-draft capital -- 30th of 48 RBs taken, a full 5 rounds
+    # earlier than Aiyuk's 50th of 58 WRs) read only -129 -- backwards from
+    # what actually happened once you account for how much draft capital
+    # each represented. Once a player is worse than the LAST one anyone at
+    # his position actually bothered to draft, further real-world bench
+    # depth doesn't make the pick any more of a bust, so capping there --
+    # not an arbitrary multiplier, this is already a real, known number --
+    # fixes it: Mixon reads -18, worse than Aiyuk's -8, while Cam Ward (the
+    # cross-position case above) stays correctly negative (-1) rather than
+    # flipping to a false gem. This cap must stay independent of the
+    # DISPLAYED `pos_rank`'s own (uncapped) fallback above, or `pos_steal`
+    # would silently pick up the uncapped number the moment `pos_rank` is
+    # no longer null for these rows.
     worst_rank: dict = {}
     for r in ranks.values():
         worst_rank[r["position"]] = max(worst_rank.get(r["position"], 0), r["rank"])
     fallback_rank = d["position"].map(lambda p: worst_rank.get(str(p).upper(), 0) + 1)
     drafted_n = d["position"].dropna().astype(str).str.upper().value_counts()
     finish_cap = d["position"].map(lambda p: drafted_n.get(str(p).upper(), 1))
-    pos_rank_for_steal = (d["pos_rank"].astype(float).fillna(fallback_rank)
+    real_pos_rank = pid.map(lambda p: ranks[p]["rank"] if p in ranks else None)
+    pos_rank_for_steal = (pd.to_numeric(real_pos_rank, errors="coerce").fillna(fallback_rank)
                            .clip(upper=finish_cap.astype(float)))
     d["pos_steal"] = (d["pos_pick_rank"] - pos_rank_for_steal).astype(int)
 
@@ -1620,19 +1643,31 @@ def draft_extremes(s: Season, n: int | None = None) -> dict:
         if pd.notna(r["round"]) and pd.notna(r["pick_in_round"]) else "—", axis=1)
     # `points`/`total`/`steal`/`pos_steal`/`mixed`/`pos_rank`/`pos_adj`/
     # `pos_repl_ppg` all come straight from draft_board() -- see its
-    # docstring for what each compares. The outward `weeks` here is
-    # draft_board()'s `rostered_weeks` (ALL teams that ever held him,
-    # renamed on the way out) rather than its own internal `weeks` (drafting
-    # team only, which stays reserved for `points`/`ppg`/`steal`'s
-    # team-realized math) -- this table's Weeks column exists to explain a
-    # gap against `total`/`pos_rank`, which are themselves not scoped to any
-    # one team, so it needs the same all-teams scope undrafted_standouts()'s
-    # own `weeks` already has. `teams`/`splits` (see _attach_team_splits)
-    # cover a drafted pick who was later traded -- he touched more than one
-    # roster exactly like a churned waiver add does.
-    d = d.rename(columns={"weeks": "_team_weeks", "rostered_weeks": "weeks"})
-    cols = ["pick", "pick_no", "player_id", "player_name", "position", "pos_rank",
-            "user_name", "points", "ppg", "weeks", "pos_repl_ppg", "total", "steal",
+    # docstring for what each compares. The outward `weeks`/`ppg` here are
+    # draft_board()'s `rostered_weeks`/`rostered_ppg` (weeks on ANY roster,
+    # renamed on the way out; `ppg` is now a season-wide rate, `total` over
+    # `last_week_all`) rather than its own internal `weeks`/`ppg` (drafting
+    # team only, which stay reserved for `steal`'s team-realized math) --
+    # this table's Weeks/PPG columns exist to explain a gap against
+    # `total`/`pos_rank`, which are themselves not scoped to any one team, so
+    # they need the same all-teams scope undrafted_standouts()'s own
+    # `weeks`/`ppg` already has.
+    # `teams`/`splits` (see _attach_team_splits) cover a drafted pick who
+    # was later traded -- he touched more than one roster exactly like a
+    # churned waiver add does, and now also surface an FA row for any real
+    # unrostered stretch (see `_player_team_splits`).
+    d = d.rename(columns={"weeks": "_team_weeks", "rostered_weeks": "weeks",
+                           "ppg": "_team_ppg", "rostered_ppg": "ppg"})
+    # `points`/`pos_repl_ppg`/`steal` are drafting-TEAM-scoped or purely
+    # internal (pos_repl_ppg only ever feeds `trend`'s sparkline baseline,
+    # never rendered itself) -- none are displayed on the parent row in
+    # _draft_finds.html (only the per-team drilldown's OWN `points` is), so
+    # they're left off the final shape here, matching `drafted_players()`/
+    # `undrafted_universe()`'s already-established leaner column set. An
+    # undrafted row has no real drafting-team `steal` at all (nobody
+    # drafted him), which is the other reason these don't survive the merge.
+    cols = ["pick", "pick_no", "player_id", "player_name", "position", "pos_pick_rank",
+            "pos_rank", "user_name", "ppg", "weeks", "total",
             "pos_steal", "pos_adj", "mixed", "trend", "teams", "splits"]
     # Gate + rank, both on `pos_steal` -- see docstring for why a full round
     # (this season's team count) is the gate and why `pos_adj` isn't blended in.
@@ -1653,36 +1688,135 @@ def draft_extremes(s: Season, n: int | None = None) -> dict:
             axis=1)
     gems = _attach_team_splits(gems, s)
     busts = _attach_team_splits(busts, s)
-    # Selected by `pos_grade` above, but DISPLAYED in draft order (pick_no)
-    # rather than re-sorted by severity -- once the list is already narrowed
-    # to the notable picks, reading it in the order the draft actually
-    # happened is easier to scan (the ranked-by-severity view is already a
-    # click away via the sortable header).
-    gems = gems.sort_values("pick_no")
-    busts = busts.sort_values("pick_no")
+
+    # UNDRAFTED players are eligible for both Gems and Busts too, at the
+    # IDENTICAL threshold (`pos_steal` >= / <= the same team_count gate) --
+    # an undrafted player's own `pos_steal` (his individualized undrafted
+    # fallback pick-rank vs his true finish, UNCAPPED -- see
+    # `_full_undrafted_universe()`'s own comment on why no cap belongs
+    # there) is on the identical scale a drafted player's is, so the same
+    # gate applies unmodified. `undrafted_universe()` already computes
+    # `trend`/`teams`/`splits` for every row (it's built on top of
+    # `_full_undrafted_universe()`, the same primitive `undrafted_
+    # standouts()` uses), so no extra work is needed here beyond gating and
+    # concatenating.
+    und = undrafted_universe(s)
+    if not und.empty:
+        gems = pd.concat([gems, und[und["pos_steal"] >= team_count]],
+                          ignore_index=True, sort=False)
+        busts = pd.concat([busts, und[und["pos_steal"] <= -team_count]],
+                           ignore_index=True, sort=False)
+        if n is not None:
+            gems = gems.sort_values(["pos_steal", "total"], ascending=[False, False]).head(n)
+            busts = busts.sort_values(["pos_steal", "total"], ascending=[True, True]).head(n)
+
+    # DISPLAYED order: `pos_steal` (draft +/-), most extreme first in each
+    # direction -- Gems descending (biggest positive surprise first), Busts
+    # ascending (biggest negative surprise first, i.e. most negative). This
+    # is the SAME severity ranking that gated inclusion in the first place,
+    # so the top row is always the most extreme member of the list, in
+    # either panel. Every OTHER Draft-finds panel (All players, Drafted,
+    # Undrafted) defaults to total points instead -- see `all_players_
+    # impact()`'s own comment on that -- but Gems/Busts are specifically
+    # "ranked by how big a surprise", not "ranked by who scored the most",
+    # so `pos_steal` stays the sort key here.
+    gems = gems.sort_values("pos_steal", ascending=False)
+    busts = busts.sort_values("pos_steal", ascending=True)
     return {"gems": gems[cols].to_dict("records"),
             "busts": busts[cols].to_dict("records")}
 
 
+def _undrafted_pos_pick_ranks(board: pd.DataFrame, ranks: dict) -> dict:
+    """{player_id: pos_pick_rank} for UNDRAFTED players only (`ranks` minus
+    every id already on `board`) -- the single source both `undrafted_
+    standouts()` and `_pos_pick_ranks()` use, so an undrafted player's
+    implicit draft-position reads identically everywhere it's computed.
+    Extracted after this was a real, shipped bug: `_pos_pick_ranks()` used
+    to reimplement its own (stale) copy of this fallback, so the per-team
+    drilldown's `pos_steal` could disagree with the same player's row on
+    the main table -- the same "compute a paired/derived figure in two
+    places and let them drift" shape as the `weeks`/`ppg` denominator bug.
+
+    Each undrafted player's rank starts one worse than the LAST player
+    actually drafted at his position (going undrafted at all is worse than
+    being that last pick), then is individualized WITHIN that undrafted
+    group by his TRUE season `total` (points), best first, so a fresh
+    college dropout with a monster season and someone who never touched a
+    football don't share one flat placeholder number -- ties (most
+    commonly `total`=0.0) break on `player_id` for a deterministic order.
+
+    Returns {} if `ranks` is empty.
+    """
+    if not ranks:
+        return {}
+    drafted = set(board["player_id"].dropna().astype(str))
+    drafted_pos_counts = (board["position"].dropna().astype(str).str.upper()
+                           .value_counts().to_dict())
+    und = pd.DataFrame([
+        {"player_id": pid, "position": r["position"], "total": r["points"]}
+        for pid, r in ranks.items() if pid not in drafted
+    ])
+    if und.empty:
+        return {}
+    und = und.sort_values(["total", "player_id"], ascending=[False, True])
+    und["pos_pick_rank"] = (
+        und.groupby("position", sort=False).cumcount()
+        + und["position"].map(lambda p: drafted_pos_counts.get(str(p).upper(), 0) + 1))
+    return dict(zip(und["player_id"], und["pos_pick_rank"]))
+
+
+def _never_played_pos_ranks(pos_by_pid: dict, ranks: dict) -> dict:
+    """{player_id: pos_rank} for players in `pos_by_pid` (player_id ->
+    position) who have NO entry in `ranks` at all -- never recorded a single
+    real NFL stat line all season (hurt before ever playing, a practice-squad
+    player who never got activated, etc), as opposed to a real player who DID
+    play and simply scored 0 or negative (that player already has a real,
+    correctly-placed rank in `ranks`). This is the DISPLAYED-rank convention:
+    UNCAPPED at the full real-NFL universe size (unlike `pos_steal`'s own
+    internal finish-side fallback in `draft_board()`, which is deliberately
+    capped at how many players were actually drafted at the position -- see
+    that comment for why the cap exists there; this function must NOT feed
+    `pos_steal`, only the Pos rank column itself).
+
+    Each such player's rank starts one worse than the deepest real rank
+    `ranks` has at his position (e.g. if the lowest-scoring real WR finished
+    WR #144, a never-played WR reads WR #145) -- "never recorded a stat line"
+    is a worse outcome than the worst real season, so it sorts after every
+    real player, never among them. Multiple such players at the SAME
+    position are individualized with consecutive ranks (WR #145, WR #146,
+    ...), not left tied at the same number -- ties break on `player_id` for
+    a deterministic order, since there's no points to rank them by.
+
+    Returns {} if `pos_by_pid` is empty.
+    """
+    if not pos_by_pid:
+        return {}
+    rows = [{"player_id": pid, "position": pos} for pid, pos in pos_by_pid.items()
+            if pid not in ranks and pos]
+    if not rows:
+        return {}
+    worst_rank: dict = {}
+    for r in ranks.values():
+        worst_rank[r["position"]] = max(worst_rank.get(r["position"], 0), r["rank"])
+    never = pd.DataFrame(rows).sort_values(["position", "player_id"])
+    never["pos_rank"] = (
+        never.groupby("position", sort=False).cumcount()
+        + never["position"].map(lambda p: worst_rank.get(str(p).upper(), 0) + 1))
+    return dict(zip(never["player_id"], never["pos_rank"]))
+
+
 def _pos_pick_ranks(s: Season, ranks: dict) -> dict:
     """{player_id: pos_pick_rank} for EVERY player who ever appeared on a
-    roster this season, drafted or not -- the same primitive `draft_board()`'s
-    `pos_steal` and `undrafted_standouts()`'s `pos_steal` each compute
-    independently for their own rows, pulled out here so
+    roster this season, drafted or not -- pulled out so
     `_player_team_splits()` can grade a per-team figure against the same real
-    draft-slot baseline. A drafted player keeps his real `pos_pick_rank`
-    (first QB taken, etc); an undrafted player gets the same implicit "one
-    worse than the last real pick at that position" convention
-    `undrafted_standouts()` uses -- going undrafted at all is worse than
-    being the last pick there.
+    draft-slot baseline `draft_board()`/`undrafted_standouts()` use for
+    their own rows. A drafted player keeps his real `pos_pick_rank` (first
+    QB taken, etc); an undrafted player gets `_undrafted_pos_pick_ranks()`'s
+    individualized fallback -- see its docstring.
     """
     board = draft_board(s)
     pick_rank: dict = dict(zip(board["player_id"].astype(str), board["pos_pick_rank"]))
-    drafted_pos_counts = (board["position"].dropna().astype(str).str.upper()
-                           .value_counts().to_dict())
-    for pid, r in ranks.items():
-        if pid not in pick_rank:
-            pick_rank[pid] = drafted_pos_counts.get(r["position"], 0) + 1
+    pick_rank.update(_undrafted_pos_pick_ranks(board, ranks))
     return pick_rank
 
 
@@ -1699,33 +1833,57 @@ def _extrapolated_rank(pos: str, extrap_pts: float, ranks: dict) -> int:
 
 def _player_team_splits(s: Season, player_ids) -> dict:
     """{player_id: [{"user_name", "weeks", "points", "ppg", "pos_adj",
-    "pos_steal"}, ...]} for any player who was on MORE THAN ONE roster this
-    season -- drafted then traded, or a churned undrafted add, exactly the
-    same mechanically (`pl_wk` roster history doesn't know or care whether he
-    was drafted). Meant only for players a caller has already confirmed
-    touched multiple rosters (`teams` > 1, see `_attach_team_splits`); a
-    single-team player's split would just repeat the row already shown, so
-    this doesn't gate on that itself -- it's paid for once, only for players
-    worth it.
+    "pos_steal", "pos_pick_rank", "pos_rank", "position"}, ...]} for any
+    player worth drilling into -- one row per roster that ever held him
+    (drafted then traded, or a churned undrafted add, exactly the same
+    mechanically -- `pl_wk` roster history doesn't know or care whether he
+    was drafted), PLUS one synthetic `user_name = "FA"` row for any real
+    stretch of the season he was on NOBODY's roster in this league. Meant
+    only for players a caller has already confirmed are worth splitting
+    (`teams` > 1, or a real FA stretch -- see `_attach_team_splits`); a
+    player rostered by exactly one team for the WHOLE season has nothing to
+    split, so this doesn't gate on that itself -- it's paid for once, only
+    for players worth it.
 
-    `points`/`ppg` are what that team specifically accumulated (not the
+    `points`/`ppg` are what that team (or, for the FA row, the player
+    himself while nobody rostered him) specifically accumulated -- not the
     player's roster-independent `total`, which by definition can't vary by
-    team). `pos_adj`/`pos_steal` are both graded on an EXTRAPOLATED full
-    season: `ppg` (this team's own rate while he was rostered) times the
-    season's own week count -- "if he'd kept up exactly this rate the whole
-    season" -- rather than his real partial-season points. This is what
-    makes a team's own figures comparable in SCALE to the season-long
-    `pos_adj`/`+/-` sitting on the parent row (both denominated in
+    team. The FA row's points come from the SAME real-stat-line pricing
+    `total`/`_season_trend` use (every week has a real, known score
+    regardless of whether a manager ever started or even rostered him),
+    summed over exactly the weeks `pl_wk_all` has NO row for him at all --
+    not zero, since the production genuinely happened, just never got
+    banked by anyone.
+
+    `pos_adj`/`pos_steal`/`pos_rank` are all graded on an EXTRAPOLATED full
+    season: `ppg` (this row's own rate over its own weeks) times the
+    season's own week count -- "if this rate had held up the whole season"
+    -- rather than the real partial-season points. This is what makes a
+    row's own figures comparable in SCALE to the season-long
+    `pos_adj`/`+/-`/`pos_rank` sitting on the parent row (all denominated in
     full-season terms), instead of a real partial-season total read against
     a full-season baseline, which understated every short stint. `pos_adj`
-    subtracts the SAME season-long replacement total `draft_board()`/
-    `undrafted_standouts()` use; `pos_steal` ranks that same extrapolated
-    total against every other real player's actual season total at the
-    position (`_extrapolated_rank`), then compares that hypothetical rank
-    against the same real draft-slot baseline (`_pos_pick_ranks`) the
-    season-long `+/-` uses. `pos_rank`/`trend` still don't appear -- a
-    hypothetical extrapolation has no separate "trend shape" beyond what the
-    weeks actually rostered already show on the parent row's sparkline.
+    subtracts the SAME season-long replacement total
+    `draft_board()`/`undrafted_standouts()` use; `pos_rank`
+    (`_extrapolated_rank`) is where that same extrapolated total would land
+    among every other real player's ACTUAL season total at the position -- a
+    hypothetical finish, NOT the player's real season finish (which doesn't
+    split by team/FA at all, so there is no true per-row equivalent);
+    `pos_steal` then compares that hypothetical `pos_rank` against the same
+    real draft-slot baseline (`_pos_pick_ranks`) the season-long `+/-` uses,
+    so it's exactly the finish half of that same subtraction, not a
+    separately-computed number. This applies identically to the FA row --
+    its "if this rate had held up" reading is exactly as hypothetical as a
+    real team's, just describing a stretch nobody happened to roster him
+    for. `trend` still doesn't appear -- a hypothetical extrapolation has no
+    separate "trend shape" beyond what the parent row's own sparkline
+    already shows across the whole season. `pos_pick_rank` DOES repeat
+    identically across every row for the same player, FA included -- unlike
+    `pos_adj`/`pos_steal`/`pos_rank`, it isn't row-specific at all (who
+    drafted him, or his individualized undrafted fallback, is a fact about
+    the SEASON, not about any one roster or stretch), so it's included
+    purely for display -- the drilldown's Pos order column would otherwise
+    sit blank.
     """
     ids = {str(p) for p in player_ids}
     if not ids:
@@ -1735,17 +1893,61 @@ def _player_team_splits(s: Season, player_ids) -> dict:
             getattr(pl, "columns", [])):
         return {}
     st = pl[pl["player_id"].astype(str).isin(ids)].copy()
-    if st.empty:
-        return {}
-    st["pid"] = st["player_id"].astype(str)
+    # Not an early return on `st.empty` -- a player who was NEVER rostered by
+    # anyone this season (0 real roster rows at all, e.g. a drafted pick cut
+    # immediately and never re-added) still has 100% of the season as a real
+    # FA stretch worth showing, computed entirely below from `ids` rather
+    # than from `st`.
+    st["pid"] = st["player_id"].astype(str) if not st.empty else pd.Series(dtype=str)
     by_team = (st.groupby(["pid", "roster_id"])
                .agg(points=("points", "sum"), weeks=("week", "nunique"),
                     position=("position", "first"))
                .reset_index()
-               .merge(s.user_map[["roster_id", "user_name"]], on="roster_id", how="left"))
+               .merge(s.user_map[["roster_id", "user_name"]], on="roster_id", how="left")
+               if not st.empty else
+               pd.DataFrame(columns=["pid", "points", "weeks", "position", "user_name"]))
+    by_team = by_team.drop(columns=["roster_id"], errors="ignore")
+
+    # FA row: for each player, whichever of the season's weeks (1..
+    # last_week_all) he has NO `pl_wk_all` row for at all -- nobody rostered
+    # him then, in this league, on any team. Priced from the SAME real
+    # stat-line source `_season_trend`/`total` use (`scoring.score_lineup`),
+    # not zero -- the production genuinely happened, it just never landed on
+    # a roster here. `position` for the FA row is read off whichever real
+    # team-row already resolved it for this player (a player's position
+    # doesn't change week to week), so an FA-only player (never rostered at
+    # all, `teams`==0) still gets a position via `ranks` below rather than
+    # going entirely without one.
+    last_week_all = max(s.last_week_all, 1)
+    rostered_weeks: dict = {pid: set(g) for pid, g in st.groupby("pid")["week"]}
+    fa_weeks = {pid: sorted(set(range(1, last_week_all + 1)) - rostered_weeks.get(pid, set()))
+                for pid in ids}
+    fa_ids = [pid for pid, wks in fa_weeks.items() if wks]
+    fa_rows = []
+    if fa_ids:
+        # Same real per-week pricing primitive `total`/the sparkline trend
+        # use -- `_season_trend`'s list is week-ordered 1..last_week_all, so
+        # index i is week i+1.
+        weekly_by_id = _season_trend(s, fa_ids)
+        pos_by_pid = dict(zip(by_team["pid"], by_team["position"]))
+        ranks_for_pos = metrics.season_position_ranks(s)
+        for pid in fa_ids:
+            wks = fa_weeks[pid]
+            weekly = weekly_by_id.get(pid, [])
+            fa_points = sum(weekly[wk - 1] for wk in wks if wk - 1 < len(weekly))
+            pos = pos_by_pid.get(pid)
+            if pos is None and pid in ranks_for_pos:
+                pos = ranks_for_pos[pid]["position"]
+            fa_rows.append({
+                "pid": pid, "user_name": "FA",
+                "points": round(float(fa_points), 1),
+                "weeks": len(wks), "position": pos,
+            })
+    if fa_rows:
+        by_team = pd.concat([by_team, pd.DataFrame(fa_rows)], ignore_index=True, sort=False)
+
     ranks = metrics.season_position_ranks(s)
     repl = _replacement_level(s, ranks)
-    last_week_all = max(s.last_week_all, 1)
     by_team["pos_repl"] = by_team["position"].map(
         lambda p: repl.get(str(p).upper(), 0.0) if pd.notna(p) else 0.0)
     by_team["points"] = by_team["points"].round(1)
@@ -1755,13 +1957,30 @@ def _player_team_splits(s: Season, player_ids) -> dict:
 
     pick_rank = _pos_pick_ranks(s, ranks)
 
-    def _extrap_pos_steal(row):
+    def _extrap_finish(row):
         pos = str(row["position"]).upper() if pd.notna(row["position"]) else None
-        pid = row["pid"]
-        if pos is None or pid not in pick_rank:
+        if pos is None:
             return None
-        finish = _extrapolated_rank(pos, row["extrap_total"], ranks)
-        return int(pick_rank[pid] - finish)
+        return _extrapolated_rank(pos, row["extrap_total"], ranks)
+
+    # `pos_rank` here is the EXTRAPOLATED finish -- where this row's own
+    # rate, projected across the whole season, would land among every real
+    # player at the position (same primitive `pos_steal` below already
+    # computes internally via `_extrapolated_rank`, just also kept as its
+    # own field here instead of only feeding the subtraction). NOT his real
+    # season finish (`draft_board()`'s/`undrafted_standouts()`'s own
+    # `pos_rank`), which doesn't split by team/FA at all -- a hypothetical
+    # "kept this rate up all season" read, same convention as `pos_adj`/
+    # `pos_steal` on this same row.
+    by_team["pos_rank"] = by_team.apply(_extrap_finish, axis=1).astype("Int64")
+
+    def _extrap_pos_steal(row):
+        pid = row["pid"]
+        finish = row["pos_rank"]
+        rank = pick_rank.get(pid)
+        if pd.isna(finish) or rank is None or pd.isna(rank):
+            return None
+        return int(rank - finish)
 
     # Nullable Int64, not plain apply()'s default float64 -- a mix of int and
     # None coerces to float64 and silently turns None into NaN, which Jinja's
@@ -1770,16 +1989,30 @@ def _player_team_splits(s: Season, player_ids) -> dict:
     # to_dict("records") still hands back pd.NA for a genuinely missing rank,
     # not None.
     by_team["pos_steal"] = by_team.apply(_extrap_pos_steal, axis=1).astype("Int64")
-    by_team = by_team.sort_values(["pid", "points"], ascending=[True, False])
+    # `pos_pick_rank`: the SAME season-long value (from `pick_rank`, shared
+    # with `draft_board()`/`undrafted_standouts()`) on every one of a
+    # player's own rows, FA included -- who drafted him, or his
+    # individualized undrafted fallback, doesn't change depending which team
+    # (or nobody) happens to be rostering him at a given moment. Rides along
+    # so the drilldown's Pos order column doesn't sit blank next to the
+    # per-row `+/-` it feeds.
+    by_team["pos_pick_rank"] = by_team["pid"].map(pick_rank)
+    # FA sorts last within a player's group regardless of its own points --
+    # it's the residual "nobody wanted him" stretch, not a competing roster,
+    # so it reads best at the bottom of the drilldown rather than jostling
+    # for position among the real teams by raw points.
+    by_team["_fa_last"] = (by_team["user_name"] == "FA").astype(int)
+    by_team = by_team.sort_values(["pid", "_fa_last", "points"], ascending=[True, True, False])
     out: dict = {}
     for pid, g in by_team.groupby("pid"):
-        recs = g[["user_name", "weeks", "points", "ppg", "pos_adj",
-                   "pos_steal"]].to_dict("records")
+        recs = g[["user_name", "weeks", "points", "ppg", "pos_adj", "pos_steal",
+                   "pos_pick_rank", "pos_rank", "position"]].to_dict("records")
         for r in recs:
-            if pd.isna(r["pos_steal"]):
-                r["pos_steal"] = None
-            else:
-                r["pos_steal"] = int(r["pos_steal"])
+            for key in ("pos_steal", "pos_rank"):
+                if pd.isna(r[key]):
+                    r[key] = None
+                else:
+                    r[key] = int(r[key])
         out[pid] = recs
     return out
 
@@ -1789,12 +2022,18 @@ def _attach_team_splits(df: pd.DataFrame, s: Season) -> pd.DataFrame:
     column -- `teams` is how many DISTINCT rosters actually held him this
     season, read straight from `pl_wk_all` (every scored week, postseason
     included -- see draft_board()'s own `rostered_weeks` for why) regardless
-    of whether he was ever drafted; `splits` is `_player_team_splits()`'s
-    per-team breakdown ([] for a single-team player, nothing to drill into).
+    of whether he was ever drafted, 0 for a player nobody in this league
+    ever rostered at all; `splits` is `_player_team_splits()`'s per-row
+    breakdown ([] when there's nothing to drill into -- a single-team player
+    rostered every week of the season with no FA stretch, or a player nobody
+    ever rostered at all, since a lone FA row repeating the parent row would
+    be redundant).
     Shared by draft_extremes()/undrafted_standouts()/all_players_impact() so
-    "was this player on more than one roster" and its drilldown are computed
+    "was this player worth drilling into" and its drilldown are computed
     identically everywhere he can appear -- a drafted pick who gets traded
-    touches multiple rosters exactly the same way a churned waiver add does.
+    touches multiple rosters exactly the same way a churned waiver add does,
+    and a real unrostered STRETCH (not the whole season) is surfaced as the
+    FA row regardless of how many real teams also held him.
     `mixed` is NOT a proxy for "was this player traded" -- it flags a
     `pos_steal`/`pos_adj` sign disagreement (rank-based vs magnitude-based
     value reads), which fires just as often for a single-team player as a
@@ -1807,13 +2046,160 @@ def _attach_team_splits(df: pd.DataFrame, s: Season) -> pd.DataFrame:
         return df
     pl = s.pl_wk_all
     counts: dict = {}
-    if {"player_id", "roster_id"}.issubset(getattr(pl, "columns", [])):
-        counts = pl.groupby(pl["player_id"].astype(str))["roster_id"].nunique().to_dict()
+    rostered_weeks: dict = {}
+    if {"player_id", "roster_id", "week"}.issubset(getattr(pl, "columns", [])):
+        pid_col = pl["player_id"].astype(str)
+        counts = pl.groupby(pid_col)["roster_id"].nunique().to_dict()
+        rostered_weeks = pl.groupby(pid_col)["week"].nunique().to_dict()
     pid = df["player_id"].astype(str)
-    df["teams"] = pid.map(counts).fillna(1).astype(int)
-    splits_map = _player_team_splits(s, df.loc[df["teams"] > 1, "player_id"])
+    # `fillna(0)`, not 1 -- most callers only ever hand in players who were
+    # rostered somewhere (so `counts` always has a real entry for them and
+    # this branch never fires), but `all_players_impact()`'s widened
+    # undrafted universe (`_full_undrafted_universe`) now includes real
+    # players NOBODY in this league ever rostered at all -- `teams` must
+    # read 0 for them, not a false 1.
+    df["teams"] = pid.map(counts).fillna(0).astype(int)
+    # Worth a drilldown if he touched more than one roster, OR he was ever
+    # rostered but not for the WHOLE season -- that gap is real FA time
+    # (`_player_team_splits` derives the actual FA weeks itself; this is
+    # just the gate for which players are worth paying to compute for). A
+    # player with `teams`==0 (never rostered at all) has nothing to split --
+    # a lone FA row repeating the parent row would be redundant, so
+    # `has_fa_gap` requires having been rostered at least one real week
+    # first, not just "less than the full season" (0 < last_week_all would
+    # otherwise be true for him too).
+    last_week_all = max(s.last_week_all, 1)
+    weeks_here = pid.map(rostered_weeks).fillna(0).astype(int)
+    has_fa_gap = (weeks_here > 0) & (weeks_here < last_week_all)
+    worth_split = (df["teams"] > 1) | has_fa_gap
+    splits_map = _player_team_splits(s, df.loc[worth_split, "player_id"])
     df["splits"] = pid.apply(lambda p: splits_map.get(p, []))
     return df
+
+
+def _full_undrafted_universe(s: Season, board: pd.DataFrame, ranks: dict) -> pd.DataFrame:
+    """Every UNDRAFTED real player -- i.e. every id in `ranks` (had at least
+    one real stat-line week this season, drafted or not -- see
+    `metrics.season_position_ranks`) minus whoever is on `board` -- not just
+    the ones who happened to be rostered somewhere in this league. This is
+    what makes `all_players_impact()`'s position-rank sequence GAPLESS: if
+    Trey Benson finished RB #73 and Tank Bigsby RB #71, whoever the real
+    RB #72 is appears here too, even if no DDBM manager ever added him --
+    his `user_name` reads "FA" and his roster figures (`weeks`/`teams`) are
+    all zero.
+
+    Distinct from `undrafted_standouts()`, which is built FROM `pl_wk_all`
+    (roster history) and so can only ever include a player who was on some
+    roster in this league at some point -- structurally unable to surface a
+    player nobody ever added. This function starts from `ranks` instead and
+    left-joins roster history on top, so a never-rostered real player still
+    gets a full row.
+
+    Column shape matches `undrafted_standouts()`'s own (`player_id`,
+    `player_name`, `position`, `pos_pick_rank`, `pos_rank`, `user_name`,
+    `teams`, `weeks`, `points`, `ppg`, `pos_repl_ppg`, `total`, `pos_adj`,
+    `pos_steal`, `mixed`, `trend`) so `all_players_impact()` can treat the
+    two interchangeably. `points` for a never-rostered player is 0.0 (nobody
+    ever banked anything off him in this league); `total`/`pos_adj` still
+    read his real season output via `ranks`, same as everywhere else.
+    """
+    cols = ["player_id", "player_name", "position", "pos_pick_rank", "pos_rank", "user_name",
+            "teams", "weeks", "points", "ppg", "pos_repl_ppg", "total", "pos_adj",
+            "pos_steal", "mixed", "trend"]
+    if not ranks:
+        return pd.DataFrame(columns=cols)
+    drafted = set(board["player_id"].dropna().astype(str))
+    ids = [pid for pid in ranks if pid not in drafted]
+    if not ids:
+        return pd.DataFrame(columns=cols)
+
+    pinfo = players()
+    names = (pinfo.dropna(subset=["player_id"]).drop_duplicates("player_id")
+             .assign(player_id=lambda x: x["player_id"].astype(str))
+             .set_index("player_id")["player_name"])
+
+    per = pd.DataFrame({"player_id": ids})
+    per["player_name"] = per["player_id"].map(names)
+    per = per[per["player_name"].notna()].set_index("player_id")
+    if per.empty:
+        return pd.DataFrame(columns=cols)
+    per["position"] = per.index.to_series().map(lambda p: ranks[p]["position"])
+    per["total"] = per.index.to_series().map(lambda p: round(ranks[p]["points"], 1))
+    per["pos_rank"] = per.index.to_series().map(lambda p: ranks[p]["rank"]).astype("Int64")
+
+    # Roster history (if any -- a never-rostered player has none, and left-
+    # joins to nulls below): same "points banked here, weeks on ANY roster,
+    # primary manager = whoever got the most out of him" reads
+    # `undrafted_standouts()` uses, just optional here instead of required.
+    pl = s.pl_wk_all
+    roster_pts: dict = {}
+    roster_weeks: dict = {}
+    roster_teams: dict = {}
+    primary_manager: dict = {}
+    if {"player_id", "points", "roster_id", "week"}.issubset(getattr(pl, "columns", [])):
+        st = pl[pl["player_id"].astype(str).isin(ids)].copy()
+        if not st.empty:
+            st["pid"] = st["player_id"].astype(str)
+            agg = st.groupby("pid").agg(points=("points", "sum"), weeks=("week", "nunique"))
+            roster_pts = agg["points"].round(1).to_dict()
+            roster_weeks = agg["weeks"].to_dict()
+            roster_teams = st.groupby("pid")["roster_id"].nunique().to_dict()
+            by_team = (st.groupby(["pid", "roster_id"], as_index=False)["points"].sum()
+                       .merge(s.user_map[["roster_id", "user_name"]], on="roster_id", how="left"))
+            top = (by_team.sort_values("points", ascending=False)
+                   .drop_duplicates("pid").set_index("pid"))
+            primary_manager = top["user_name"].to_dict()
+
+    pid_series = per.index.to_series()
+    per["points"] = pid_series.map(roster_pts).fillna(0.0).round(1)
+    per["weeks"] = pid_series.map(roster_weeks).fillna(0).astype(int)
+    per["teams"] = pid_series.map(roster_teams).fillna(0).astype(int)
+    # "FA" for a player nobody in this league ever rostered -- same sentinel
+    # `_player_team_splits`' own synthetic row uses for an unrostered
+    # stretch, now extended to a player who was unrostered for the WHOLE
+    # season rather than just part of it.
+    per["user_name"] = pid_series.map(primary_manager).fillna("FA")
+
+    # `ppg`: SEASON-WIDE rate (`total` over `last_week_all`) -- same
+    # convention as draft_board()'s/undrafted_standouts()'s own `ppg`.
+    per["ppg"] = (per["total"] / max(s.last_week_all, 1)).round(1)
+    repl = _replacement_level(s, ranks)
+    pos_repl = per["position"].map(lambda p: repl.get(str(p).upper(), 0.0) if pd.notna(p) else 0.0)
+    per["pos_adj"] = (per["total"] - pos_repl).round(1)
+    per["pos_repl_ppg"] = (pos_repl / max(s.last_week_all, 1)).round(1)
+
+    # `pos_pick_rank`/`pos_steal`: identical formula shape to `undrafted_
+    # standouts()` -- see its own comments for why the pick-rank fallback
+    # exists. Every id here IS in `ranks` by construction (that's how `ids`
+    # was built), so there's no never-played branch to worry about the way
+    # `undrafted_standouts()` has to guard for.
+    #
+    # UNLIKE draft_board()'s own `pos_steal` (drafted players), the finish
+    # side here is NOT clipped at the drafted count. That cap exists there
+    # to stop a deep real-NFL universe from making a drafted bust look worse
+    # than his draft capital deserved (see draft_board()'s own comment) --
+    # but an undrafted player's `pos_pick_rank` is already PAST the drafted
+    # count by construction (that's the whole point of the undrafted
+    # fallback), so clipping his FINISH down to that same smaller number
+    # manufactured a huge, backwards gap: a last-ranked, zero-production
+    # undrafted WR at pick-rank 223 had his real finish (222) clipped down
+    # to ~58 (the drafted WR count), reading pos_steal=165 -- the single
+    # BIGGEST "steal" in the league for the worst, least relevant player at
+    # the position. Both sides of this subtraction are already on the same
+    # (real, full real-NFL universe) scale for an undrafted player, so no
+    # cap is needed or correct here.
+    pick_rank_map = _undrafted_pos_pick_ranks(board, ranks)
+    per["pos_pick_rank"] = pid_series.map(pick_rank_map).astype(int)
+    per["pos_steal"] = (per["pos_pick_rank"] - per["pos_rank"].astype(float)).astype(int)
+    per["mixed"] = (((per["pos_steal"] > 0) & (per["pos_adj"] < 0))
+                     | ((per["pos_steal"] < 0) & (per["pos_adj"] > 0)))
+
+    per = per.reset_index().rename(columns={"index": "player_id"})
+    weekly_by_id = _season_trend(s, per["player_id"])
+    per["trend"] = per.apply(
+        lambda r: _sparkline(weekly_by_id.get(str(r["player_id"]), []), r["pos_repl_ppg"]),
+        axis=1)
+    return per[cols]
 
 
 def undrafted_standouts(s: Season, n: int = 25) -> pd.DataFrame:
@@ -1850,7 +2236,7 @@ def undrafted_standouts(s: Season, n: int = 25) -> pd.DataFrame:
     replacement baseline as a rate) and `trend` are the same ready-to-render
     weekly-shape sparkline draft_extremes() attaches to gems/busts.
     """
-    cols = ["player_id", "player_name", "position", "pos_rank", "user_name",
+    cols = ["player_id", "player_name", "position", "pos_pick_rank", "pos_rank", "user_name",
             "teams", "weeks", "points", "ppg", "pos_repl_ppg", "total", "pos_adj",
             "pos_steal", "mixed", "trend", "splits"]
     board = draft_board(s)
@@ -1885,37 +2271,77 @@ def undrafted_standouts(s: Season, n: int = 25) -> pd.DataFrame:
     if per.empty:
         return pd.DataFrame(columns=cols)
     per["points"] = per["points"].round(1)
-    per["ppg"] = (per["points"] / per["weeks"].clip(lower=1)).round(1)
     # `total`/`pos_rank`: same true-season pricing as draft_board(), so an
     # undrafted find and a drafted pick can be compared on equal footing.
     ranks = metrics.season_position_ranks(s)
     pid_series = per.index.to_series()
     total_vals = pid_series.map(lambda p: ranks[p]["points"] if p in ranks else None)
     per["total"] = pd.to_numeric(total_vals, errors="coerce").fillna(per["points"]).round(1)
-    rank_vals = pid_series.map(lambda p: ranks[p]["rank"] if p in ranks else None)
+    # `ppg`: SEASON-WIDE rate (`total` over `last_week_all`) -- see
+    # draft_board()'s own `rostered_ppg` comment for why this is no longer a
+    # "while rostered" rate now that the drilldown splits a player's whole
+    # season into per-team AND FA-stretch rows.
+    per["ppg"] = (per["total"] / max(s.last_week_all, 1)).round(1)
+    # `pos_rank`: same UNCAPPED never-played convention as draft_board()'s
+    # displayed column -- see `_never_played_pos_ranks`'s docstring. In
+    # practice a row reaching this table already has `pl_wk_all` rows (it
+    # was rostered somewhere), so this rarely fires here, but it keeps the
+    # convention identical everywhere Pos rank is shown rather than only on
+    # draft_board()'s own rows.
+    never_played = _never_played_pos_ranks(
+        dict(zip(pid_series, per["position"])), ranks)
+    rank_vals = pid_series.map(
+        lambda p: ranks[p]["rank"] if p in ranks else never_played.get(p))
     per["pos_rank"] = pd.to_numeric(rank_vals, errors="coerce").astype("Int64")
     repl = _replacement_level(s, ranks)
     pos_repl = per["position"].map(lambda p: repl.get(str(p).upper(), 0.0) if pd.notna(p) else 0.0)
     per["pos_adj"] = (per["total"] - pos_repl).round(1)
     per["pos_repl_ppg"] = (pos_repl / max(s.last_week_all, 1)).round(1)
-    # `pos_steal`: same formula draft_board() uses -- implicit `pos_pick_rank`
-    # is one worse than the LAST player actually drafted at this position
-    # (going undrafted is worse than being that last pick), against `pos_rank`
-    # (his true finish), capped at that same drafted count -- see
-    # draft_board()'s docstring for why the finish side is capped there
-    # (the WR-universe-vs-RB-universe size mismatch).
+    # `pos_pick_rank`: starts one worse than the LAST player actually
+    # drafted at this position (going undrafted is worse than being that
+    # last pick), individualized WITHIN that undrafted tier by true season
+    # points -- see `_undrafted_pos_pick_ranks()`'s docstring (shared with
+    # `_pos_pick_ranks()` so the per-team drilldown can't drift from this
+    # table's own numbers).
     drafted_pos_counts = (board["position"].dropna().astype(str).str.upper()
                            .value_counts().to_dict())
-    per["pos_pick_rank"] = per["position"].map(
+    pick_rank_map = _undrafted_pos_pick_ranks(board, ranks)
+    # Fallback for the rare row whose player_id isn't in `ranks` at all (no
+    # real stat line ever recorded) -- `_undrafted_pos_pick_ranks()` can't
+    # rank what it was never given, so such a row keeps the plain
+    # one-worse-than-last-drafted constant instead of losing its rank
+    # entirely. Numeric (not object) dtype throughout so `.fillna()` doesn't
+    # need to downcast.
+    fallback_pick_rank = per["position"].map(
         lambda p: drafted_pos_counts.get(str(p).upper(), 0) + 1 if pd.notna(p) else 0)
+    mapped_pick_rank = pd.to_numeric(
+        per.index.to_series().map(pick_rank_map), errors="coerce")
+    per["pos_pick_rank"] = mapped_pick_rank.fillna(fallback_pick_rank).astype(int)
+    # `pos_steal`: `pos_pick_rank` against `pos_rank` (his true finish),
+    # UNCAPPED -- unlike draft_board()'s own `pos_steal` (drafted players),
+    # where the finish side IS clipped at the drafted count to stop a deep
+    # real-NFL universe from making a bust look worse than his draft
+    # capital deserved. An undrafted player's `pos_pick_rank` is already
+    # PAST the drafted count by construction (that's the whole point of the
+    # undrafted fallback above), so clipping his finish down to that same
+    # smaller number manufactured a huge, backwards gap: a last-ranked,
+    # zero-production undrafted WR read as the single BIGGEST "steal" in
+    # the league purely because his real finish got clipped from ~222 down
+    # to ~58. Both sides are already on the same (real, full universe)
+    # scale for an undrafted player, so no cap belongs here. Still falls
+    # back to `worst_rank + 1` for a player whose id isn't in `ranks` at
+    # all (no real stat line ever recorded) -- that fallback is about a
+    # MISSING finish, not about rescaling a real one, so it stays.
     worst_rank: dict = {}
     for r in ranks.values():
         worst_rank[r["position"]] = max(worst_rank.get(r["position"], 0), r["rank"])
     fallback_rank = per["position"].map(lambda p: worst_rank.get(str(p).upper(), 0) + 1)
-    finish_cap = per["position"].map(
-        lambda p: drafted_pos_counts.get(str(p).upper(), 1) if pd.notna(p) else 1)
-    pos_rank_for_steal = (per["pos_rank"].astype(float).fillna(fallback_rank)
-                           .clip(upper=finish_cap.astype(float)))
+    # Recomputed from `ranks` directly (NOT the displayed `per["pos_rank"]`
+    # above, which now fills a never-played row with the SAME uncapped
+    # convention -- they agree here, but computed independently since
+    # `per["pos_rank"]` could in principle diverge from `ranks` itself).
+    real_pos_rank = pid_series.map(lambda p: ranks[p]["rank"] if p in ranks else None)
+    pos_rank_for_steal = pd.to_numeric(real_pos_rank, errors="coerce").fillna(fallback_rank)
     per["pos_steal"] = (per["pos_pick_rank"] - pos_rank_for_steal).astype(int)
     # `mixed`: same read as draft_board()'s -- `pos_steal` (+/-, rank vs.
     # draft slot) and `pos_adj` (points vs. replacement level) disagree in
@@ -1941,66 +2367,40 @@ def undrafted_standouts(s: Season, n: int = 25) -> pd.DataFrame:
     return per[cols]
 
 
-def all_players_impact(s: Season) -> pd.DataFrame:
-    """Every player who left a real mark on the season, drafted or not -- the
-    single merged view draft_extremes()/undrafted_standouts() split into
-    three separate lists (gems/busts/undrafted).
+def drafted_players(s: Season) -> pd.DataFrame:
+    """Every drafted pick, regardless of output -- the DRAFTED half of
+    `all_players_impact()`'s merged table, pulled out as its own function so
+    the Draft-finds "Drafted" panel (between All players and Gems) can show
+    just this half without also paying for `_full_undrafted_universe()`'s
+    much larger undrafted-half computation. `all_players_impact()` itself
+    now calls this rather than duplicating the same board-to-rows logic.
 
-    EVERY drafted pick is included regardless of output -- being drafted at
-    all is notable on its own, and a zero-point pick (hurt before the season,
-    a real bust) is exactly the kind of row this view shouldn't hide. An
-    undrafted add survives if EITHER his true season `total` is nonzero (he
-    produced somewhere in the real season, even if a churned stint here
-    happened to miss it -- a big real season cut short by one scoreless week
-    on this particular roster is still worth surfacing) OR he had at least
-    one week with a NONZERO roster-accumulated score here (catching the
-    opposite case `total` alone would miss: a boom week cancelled by an
-    equally bad one nets to 0, and a defense can net NEGATIVE under
-    points-allowed scoring -- both are real weeks that happened, not the
-    same as a churn add who was rostered and never recorded a single
-    nonzero week anywhere). Without this gate at all, the undrafted half of
-    the table would be the entire waiver wire, most of which really is that
-    last, genuinely inert kind.
+    Same column shape as `all_players_impact()` (`pick`, `pick_no`,
+    `player_id`, `player_name`, `position`, `pos_pick_rank`, `pos_rank`,
+    `user_name`, `ppg`, `weeks`, `pos_adj`, `pos_steal`, `mixed`, `total`,
+    `trend`, `teams`, `splits`) -- `pick` is always a real "round.pick"
+    string here (never "UDFA", there's nothing undrafted in this view).
+    `pos_rank` for a player with no real stat line at all uses
+    `_never_played_pos_ranks()`'s synthetic, UNCAPPED convention -- see
+    draft_board()'s own comment on this.
 
-    Columns match the shared gems/busts/undrafted table shape (`pick`,
-    `pick_no`, `player_name`, `position`, `pos_rank`, `user_name`, `trend`,
-    `pos_steal`, `mixed`, `ppg`, `weeks`, `pos_adj`, `total`, `teams`), with `pick`
-    reading "UDFA" for an undrafted add so the two groups render in one
-    sortable table. `ppg` is the SAME "while rostered" (drafting team)
-    rate draft_board()/undrafted_standouts() already compute -- unified
-    across all four Draft-finds panels rather than recomputed from `total`
-    here (see the comment further down, where an earlier version of this
-    override used to live). `weeks` is draft_board()'s `rostered_weeks` for
-    the drafted half (ALL teams that ever held him, not just the drafting
-    team -- see draft_board()'s docstring for why `ppg`/`steal` stay
-    team-scoped while this doesn't) and undrafted_standouts()'s own `weeks`
-    for the undrafted half (already all-teams by construction), so the
-    column means the same thing -- "how much of the season was he rostered
-    ANYWHERE" -- on every row regardless of draft status. `teams`/`splits`
-    (see _attach_team_splits) are recomputed fresh from `pl_wk` for EVERY
-    row here, drafted or not -- a drafted pick who was traded touches
-    multiple rosters exactly like a churned waiver add, so both sides get
-    the same "was he on more than one roster" read and drilldown, not just
-    the undrafted half.
-    Ranked by draft order (`pick_no`) by default -- the table reads like the
-    draft itself, gems/busts/steals and all, with every undrafted find
-    appended after the last pick (ordered by `total` descending among
-    themselves, since they have no draft slot to order by). Not `pos_steal`
-    (that ordering is what makes the gems/busts split useful on its own tab)
-    or `total` (every column remains individually sortable client-side).
-
-    Returns an empty frame for a season with no draft data (same "no draft
-    to define this against" contract as undrafted_standouts()).
+    Returns an empty frame for a season with no draft data.
     """
-    cols = ["pick", "pick_no", "player_id", "player_name", "position", "pos_rank",
-            "user_name", "ppg", "weeks", "pos_adj", "pos_steal", "mixed", "total", "trend"]
+    cols = ["pick", "pick_no", "player_id", "player_name", "position", "pos_pick_rank",
+            "pos_rank", "user_name", "ppg", "weeks", "pos_adj", "pos_steal", "mixed", "total",
+            "trend"]
     d = draft_board(s)
     if d.empty:
         return pd.DataFrame(columns=cols + ["teams", "splits"])
     d = d[d["player_name"].notna()].copy()
     if d.empty:
         return pd.DataFrame(columns=cols + ["teams", "splits"])
-    d = d.rename(columns={"weeks": "_team_weeks", "rostered_weeks": "weeks"})
+    # Same all-teams rename draft_extremes() does -- see its own comment on
+    # this line for why `weeks` and `ppg` must be swapped TOGETHER (they're
+    # a numerator/denominator pair; pairing an all-teams weeks with a
+    # drafting-team-only ppg divides one team's points by another's weeks).
+    d = d.rename(columns={"weeks": "_team_weeks", "rostered_weeks": "weeks",
+                           "ppg": "_team_ppg", "rostered_ppg": "ppg"})
     d["pick"] = d.apply(
         lambda r: f"{int(r['round'])}.{int(r['pick_in_round']):02d}"
         if pd.notna(r["round"]) and pd.notna(r["pick_in_round"]) else "—", axis=1)
@@ -2008,45 +2408,134 @@ def all_players_impact(s: Season) -> pd.DataFrame:
     d["trend"] = d.apply(
         lambda r: _sparkline(weekly_by_id.get(str(r["player_id"]), []), r["pos_repl_ppg"]),
         axis=1)
-    drafted = d[cols]
+    d = d[cols]
+    d = _attach_team_splits(d, s)
+    return d.sort_values("pick_no").reset_index(drop=True)
 
-    und = undrafted_standouts(s, n=None)
-    # `pl_wk_all` -- a nonzero week during the postseason weeks should also
-    # count as "activity" for this gate, same reasoning as everywhere else
-    # in this function's family (see draft_board()'s `rostered_weeks`).
-    pl = s.pl_wk_all
-    had_activity: set = set()
-    if {"player_id", "points"}.issubset(getattr(pl, "columns", [])):
-        had_activity = set(pl.loc[pl["points"].fillna(0) != 0, "player_id"].astype(str))
-    impact = (und["total"].fillna(0) != 0) | und["player_id"].astype(str).isin(had_activity)
-    und = und[impact].copy()
+
+def undrafted_universe(s: Season) -> pd.DataFrame:
+    """Every UNDRAFTED real player -- the counterpart to `drafted_players()`,
+    and the UNDRAFTED half of `all_players_impact()`'s merged table, pulled
+    out as its own function so the Draft-finds "Undrafted" panel can show
+    ALL of them (not just the ones some DDBM manager happened to add --
+    see `_full_undrafted_universe()`'s own docstring for why that's a wider
+    universe than `undrafted_standouts()`, which stays as-is for the
+    headline "best undrafted find" tile that specifically wants a real
+    DDBM-roster-benefited find, not an obscure never-added player).
+    `all_players_impact()` itself now calls this rather than duplicating
+    the same board-to-rows logic.
+
+    Same column shape as `drafted_players()`/`all_players_impact()` (`pick`
+    always reads "UDFA"; `pick_no` is a synthetic sentinel derived from
+    `total` -- see the comment on it below -- not a real draft slot).
+
+    Returns an empty frame for a season with no draft data.
+    """
+    cols = ["pick", "pick_no", "player_id", "player_name", "position", "pos_pick_rank",
+            "pos_rank", "user_name", "ppg", "weeks", "pos_adj", "pos_steal", "mixed", "total",
+            "trend"]
+    board = draft_board(s)
+    if board.empty:
+        return pd.DataFrame(columns=cols + ["teams", "splits"])
+    board = board[board["player_name"].notna()]
+    if board.empty:
+        return pd.DataFrame(columns=cols + ["teams", "splits"])
+    ranks = metrics.season_position_ranks(s)
+    und = _full_undrafted_universe(s, board, ranks)
+    if und.empty:
+        return pd.DataFrame(columns=cols + ["teams", "splits"])
     und["pick"] = "UDFA"
-    # No draft slot -- a sentinel bigger than any real pick_no pushes every
-    # undrafted find after the last pick (ties broken by `total` below), and
-    # unlike a sort-only float("inf") this is now a genuine OUTPUT column the
-    # template reads for its own numeric data-sort override: the client's
-    # generic column-sort falls back to alphabetical for the WHOLE column the
-    # moment any one cell fails to parse as a number ("UDFA" has none), which
-    # is what made "1.10" sort ahead of "10.01" once undrafted rows appeared.
-    und["pick_no"] = 999999
-    undrafted = und[cols]
+    # `pick_no` is a SENTINEL bigger than any real pick_no (so a mixed
+    # drafted+undrafted table like All players always sorts real picks
+    # first), but the sentinel itself is NOT one flat constant -- it's
+    # derived from `total` (higher total -> smaller sentinel -> sorts
+    # earlier), so the undrafted block is ALREADY in total-descending order
+    # by this single numeric key alone -- see `all_players_impact()`'s own
+    # comment on this same formula for the full reasoning (client-side
+    # "Pick" column re-sort correctness, not just the server default order).
+    und["pick_no"] = (1_000_000 - (und["total"].fillna(0.0) * 10).round().clip(upper=900_000)
+                       ).astype(int)
+    und = _attach_team_splits(und[cols], s)
+    return und.sort_values("total", ascending=False).reset_index(drop=True)
+
+
+def all_players_impact(s: Season) -> pd.DataFrame:
+    """Every real player with at least one impact week this season -- drafted
+    or not, rostered in this league or not -- the single merged view
+    draft_extremes()/undrafted_standouts() split into three separate lists
+    (gems/busts/undrafted), now widened to the FULL real-NFL universe rather
+    than just this league's own draft board plus its own waiver wire.
+
+    EVERY drafted pick is included regardless of output -- being drafted at
+    all is notable on its own, and a zero-point pick (hurt before the season,
+    a real bust) is exactly the kind of row this view shouldn't hide. Every
+    OTHER real player who recorded at least one real NFL stat line this
+    season (`metrics.season_position_ranks` -- see `_full_undrafted_
+    universe`) is included too, REGARDLESS of whether any DDBM manager ever
+    rostered him -- this is what keeps the position-rank sequence GAPLESS:
+    if Trey Benson finished RB #73 and Tank Bigsby RB #71, whoever the real
+    RB #72 is appears here too, with `user_name` reading "FA" if nobody in
+    this league ever added him. This deliberately widens the table well
+    past "waiver wire this league actually saw" -- that's the point, the
+    position-rank column no longer skips real players just because nobody
+    happened to add them.
+
+    A drafted player is a DIFFERENT case: he's already committed roster
+    capital, so `draft_board()` includes him regardless of whether he ever
+    recorded a stat line at all. A drafted player with NO real stat line
+    (hurt before ever playing) gets `_never_played_pos_ranks()`'s synthetic,
+    UNCAPPED Pos rank (one worse than the deepest real rank at his
+    position) -- see draft_board()'s own comment on this.
+
+    Columns match the shared gems/busts/undrafted table shape (`pick`,
+    `pick_no`, `player_name`, `position`, `pos_rank`, `user_name`, `trend`,
+    `pos_steal`, `mixed`, `ppg`, `weeks`, `pos_adj`, `total`, `teams`), with `pick`
+    reading "UDFA" for an undrafted add so the two groups render in one
+    sortable table. `weeks` is draft_board()'s `rostered_weeks` for the
+    drafted half (weeks on ANY roster, not just the drafting team -- see
+    draft_board()'s docstring for why `steal` stays team-scoped while this
+    doesn't) and `_full_undrafted_universe()`'s own `weeks` for the
+    undrafted half (already all-teams by construction, 0 for a
+    never-rostered player). `ppg` is a season-wide rate (`total` over
+    `last_week_all`) on both halves, so it means the same thing -- his true
+    per-week rate across the whole season -- on every row regardless of
+    draft status. `teams`/`splits` (see _attach_team_splits) are recomputed
+    fresh from `pl_wk` for EVERY row here, drafted or not -- a drafted pick
+    who was traded touches multiple rosters exactly like a churned waiver
+    add, so both sides get the same "was he on more than one roster" read
+    and drilldown (now including an FA row for any real unrostered
+    stretch), not just the undrafted half; a never-rostered player simply
+    has `teams`=0 and an empty drilldown (nothing to split).
+    Ranked by TOTAL POINTS descending by default -- every Draft-finds panel
+    except Drafted itself (see `drafted_players()`, which stays in draft
+    order) defaults this way now, so a merged drafted+undrafted table reads
+    as one ranked list of who actually produced, not "draft order, with an
+    undrafted appendix stapled on the end." `pick`/`pick_no` still ride
+    along (and remain independently clickable to re-sort back to draft
+    order client-side), they just aren't the default axis any more.
+
+    Returns an empty frame for a season with no draft data (same "no draft
+    to define this against" contract as undrafted_standouts()).
+    """
+    cols = ["pick", "pick_no", "player_id", "player_name", "position", "pos_pick_rank",
+            "pos_rank", "user_name", "ppg", "weeks", "pos_adj", "pos_steal", "mixed", "total",
+            "trend"]
+    drafted_full = drafted_players(s)
+    if drafted_full.empty:
+        return pd.DataFrame(columns=cols + ["teams", "splits"])
+    drafted = drafted_full[drafted_full.columns.intersection(cols + ["teams", "splits"])]
+
+    und_full = undrafted_universe(s)
+    undrafted = und_full[und_full.columns.intersection(cols + ["teams", "splits"])]
 
     out = pd.concat([drafted, undrafted], ignore_index=True, sort=False)
-    # `ppg` stays the SAME "while rostered" rate draft_board()/
-    # undrafted_standouts() already compute (points accumulated on a roster,
-    # over weeks actually rostered) -- unified across all four Draft-finds
-    # panels rather than this view alone recomputing it from `total`/
-    # `last_week_all`. An earlier version of this override existed because a
-    # bare "PPG" header read as self-contradictory next to `total` for a
-    # barely-rostered player (a defense added for one bad points-allowed
-    # week showed -4.0 ppg beside a 77-point season total) -- but the actual
-    # fix for that is the column header itself now reading "Rostered PPG"
-    # (see _draft_finds.html), not silently swapping in a different
-    # statistic. `weeks` (already computed by both source functions) rides
-    # along so a reader can see how much of the season that rate is actually
-    # sampled from.
-    out = _attach_team_splits(out, s)
-    out = out.sort_values(["pick_no", "total"], ascending=[True, False])
+    # Default sort: TOTAL POINTS descending, not draft order -- every
+    # Draft-finds panel except Drafted itself (which stays in draft order,
+    # the one place "where he was picked" IS the organizing axis) now
+    # defaults to `total` so a mixed drafted+undrafted table reads as one
+    # ranked list of who actually produced, not two separately-ordered
+    # halves stitched together by draft slot.
+    out = out.sort_values("total", ascending=False)
     return out.reset_index(drop=True)
 
 
