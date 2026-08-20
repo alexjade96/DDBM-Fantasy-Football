@@ -1724,6 +1724,7 @@ def _redraft_board_ctx(s) -> dict:
             "pos_rank": int(r["pos_rank"]) if pd_notna(r["pos_rank"]) else None,
             "total": round(float(r["total"]), 1),
             "orig_pick": r["orig_pick"] if pd_notna(r["orig_pick"]) else None,
+            "orig_pick_no": int(r["orig_pick_no"]) if pd_notna(r["orig_pick_no"]) else None,
         } for _, r in g.iterrows()}
         redraft_rounds.append({"round": int(rnd),
                                "cells": [cells.get(sl) for sl in slots]})
@@ -1756,6 +1757,7 @@ def _redraft_board_adp_ctx(s) -> dict:
             "pos_rank": int(r["pos_rank"]) if pd_notna(r["pos_rank"]) else None,
             "total": round(float(r["total"]), 1),
             "orig_pick": r["orig_pick"] if pd_notna(r["orig_pick"]) else None,
+            "orig_pick_no": int(r["orig_pick_no"]) if pd_notna(r["orig_pick_no"]) else None,
         } for _, r in g.iterrows()}
         redraft_rounds_adp.append({"round": int(rnd),
                                    "cells": [cells.get(sl) for sl in slots]})

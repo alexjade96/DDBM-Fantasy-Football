@@ -480,7 +480,10 @@ def redraft_board(s: Season) -> pd.DataFrame:
     `orig_round`/`orig_pick` record where (if anywhere) that player really
     went -- both `None` when he actually went undrafted -- so a cell can be
     annotated "(originally R3)" or "(undrafted)" for direct comparison
-    against the real board.
+    against the real board. `orig_pick_no` is the same real-draft slot as a
+    raw overall pick number (rather than `orig_pick`'s "3.02" display
+    string), so a cell's `pick_no` in THIS simulated order can be compared
+    numerically against it for a rose/fell-vs-reality signal.
 
     Points-first, not `_value_ranks`' points-above-replacement (`pos_adj`):
     a position with a naturally compressed scoring range (Kicker) can
@@ -704,6 +707,8 @@ def redraft_board(s: Season) -> pd.DataFrame:
             "orig_round": int(o["round"]) if o is not None and pd.notna(o["round"]) else None,
             "orig_pick": (f"{int(o['round'])}.{int(o['pick_in_round']):02d}"
                           if o is not None and pd.notna(o["round"]) else None),
+            "orig_pick_no": (int(o["pick_no"])
+                             if o is not None and pd.notna(o["pick_no"]) else None),
         })
     return pd.DataFrame(rows)
 
@@ -899,6 +904,8 @@ def redraft_board_adp(s: Season) -> pd.DataFrame:
             "orig_round": int(o["round"]) if o is not None and pd.notna(o["round"]) else None,
             "orig_pick": (f"{int(o['round'])}.{int(o['pick_in_round']):02d}"
                           if o is not None and pd.notna(o["round"]) else None),
+            "orig_pick_no": (int(o["pick_no"])
+                             if o is not None and pd.notna(o["pick_no"]) else None),
         })
     return pd.DataFrame(rows)
 

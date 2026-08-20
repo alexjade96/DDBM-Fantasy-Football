@@ -680,10 +680,14 @@ table.dt-games tr.cmp-down td { background: color-mix(in srgb, #e03131 8%, trans
 .draftboard .pl .pface { width: 15px; height: 15px; margin-right: 4px; }
 .draftboard .q { font-size: 10px; padding-left: 6px; }
 .draftboard .pts { color: var(--muted); font-size: 10.5px; font-variant-numeric: tabular-nums; }
-/* Draft value tint: a pick that beat/missed its slot by a full round or more,
-   "slight" enough not to fight the position-colour accent on .pl above it.
-   Global (not .draftboard-scoped) so the hint text's inline legend renders
-   with the same look. */
+/* Draft value tint: a pick that beat/missed its slot, "slight" enough not to
+   fight the position-colour accent on .pl above it. Global (not
+   .draftboard-scoped) so the hint text's inline legend renders with the same
+   look. Two distinct comparisons share this same look: the actual board's
+   `.pts` (a full-round-or-more threshold vs true redraft_round, see
+   app.py's `dv`) and the redraft/ADP boards' "Orig." `.q` label (any exact
+   pick_no difference vs the real draft, see _redraft_board_table.html /
+   _redraft_board_adp_table.html). */
 .dv-pos { color: #2f9e44;
   background: color-mix(in srgb, #2f9e44 14%, transparent); border-radius: 4px; padding: 0 3px; }
 .dv-neg { color: #e03131;
