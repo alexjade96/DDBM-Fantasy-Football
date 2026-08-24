@@ -380,7 +380,6 @@ def png(fig) -> Response:
 SEASON_CHARTS = {
     "standings": plots.plot_standings, "luck": plots.plot_luck,
     "efficiency": plots.plot_efficiency, "consistency": plots.plot_consistency,
-    "fa_season_optimal": plots.plot_fa_season_optimal,
     "pf_pa": plots.plot_pf_pa, "table_position": plots.plot_table_position,
     "team_points": plots.plot_team_points,
     "allplay": plots.plot_allplay, "power_rank": plots.plot_power_rank,
@@ -391,6 +390,7 @@ SEASON_CHARTS = {
     "flex_usage": plots.plot_flex_usage,
     "position_box": plots.plot_position_box,
     "roster_counts": plots.plot_roster_counts,
+    "season_optimal": plots.plot_season_optimal,
     "trade_performance": plots.plot_trade_performance,
     "waiver_performance": plots.plot_waiver_performance,
     "waiver_position_churn": plots.plot_waiver_position_churn,
@@ -400,9 +400,7 @@ SEASON_CHARTS = {
     "draft_value": plots.plot_draft_value,
     "draft_grades_value": plots.plot_draft_grades_value,
     "redraft_standings": plots.plot_redraft_standings,
-    "redraft_points": plots.plot_redraft_points,
     "redraft_finish_slope": plots.plot_redraft_finish_slope,
-    "redraft_points_delta": plots.plot_redraft_points_delta,
 }
 
 
@@ -434,7 +432,6 @@ MANAGER_CHARTS = {
     "mgr_sos": plots.plot_mgr_sos,
     "mgr_efficiency_trend": plots.plot_mgr_efficiency_trend,
     "mgr_roster_heatmap": plots.plot_mgr_roster_heatmap,
-    "mgr_starter_bench_weeks": plots.plot_mgr_starter_bench_weeks,
 }
 
 
@@ -457,17 +454,20 @@ CHART_META = {
     "pf_pa": {"cap": "What each team scored against what it faced."},
     # Management (Roster + former Coaching, reconciled 2026-08)
     "efficiency": {"cap": "Points started as a share of the best legal lineup available — the cost of the decision."},
-    "fa_season_optimal": {"cap": "Even your OWN best possible lineup, summed all season, against the best available free agents.", "wide": True},
     "position_scoring": {"cap": "Started points by position and each slot's share of the total."},
     "roster_counts": {"cap": "The average roster shape each manager carried."},
+    "season_optimal": {"cap": "Started vs the best legal lineup, averaged across every manager, by week."},
+    "playoff_players_topband": {"cap": "PROTOTYPE: Best Playoff Players, legend moved above the axes instead of in-axes lower-right."},
+    "playoff_players_postext": {"cap": "PROTOTYPE: Best Playoff Players, position shown as text instead of bar color — no legend needed."},
+    "playoff_players_medal": {"cap": "PROTOTYPE: Best Playoff Players, ring count as gold/silver/bronze dots instead of trailing stars."},
+    "playoff_players_splice": {"cap": "Each bar split into one slice per playoff game, earliest first — a total shown as the games that built it."},
     "roster_heatmap": {"cap": "How deep each team built at every position — weeks rostered, by manager."},
     "flex_usage": {"cap": "Which position — RB, WR or TE — fills the flex spot most often, by manager."},
     "position_box": {"cap": "The scoring spread at each position — good weeks against bad."},
     "boom_bust": {"cap": "Each manager's ceiling and floor around their average week."},
     "consistency": {"cap": "Week-to-week spread — a short bar is dependable, a long one runs hot and cold."},
     "mgr_roster_heatmap": {"cap": "Their own scoring, by week and position."},
-    "mgr_starter_bench_weeks": {"cap": "What they started vs what sat on the bench, week by week.", "wide": True},
-    "mgr_optimal": {"cap": "Started vs optimal, and the running cost of the bench.", "wide": True},
+    "mgr_optimal": {"cap": "Started vs optimal, with weekly efficiency."},
     # Transactions
     "manager_profile": {"cap": "Moves, trades and drops per manager, with a lineup-IQ score."},
     "tx_volume": {"cap": "How busy the league was, and when — trades vs. waiver/FA moves by week."},
@@ -481,9 +481,7 @@ CHART_META = {
     "draft_value": {"cap": "Roster points each pick returned to the team that drafted him."},
     "draft_grades_value": {"cap": "Sorted by roster points actually kept — a long red line is value that got traded or dropped away before it counted."},
     "redraft_standings": {"cap": "Real wins vs. simulated wins if every team had redrafted by true season value, same schedule replayed."},
-    "redraft_points": {"cap": "Prototype: same idea, real points vs. simulated points — explains WHY the win totals moved."},
     "redraft_finish_slope": {"cap": "The standings reshuffle itself — real finish vs. simulated finish, per manager."},
-    "redraft_points_delta": {"cap": "Prototype: simulated minus real points, one signed bar per manager."},
     # Career
     "career": {"cap": "Cumulative record and points across every season on record."},
     "trajectory": {"cap": "Where each manager finished, season by season."},
@@ -498,13 +496,21 @@ tpl.env.globals["CHART_META"] = CHART_META
 # Testing tab: ad-hoc prototype charts under review, grouped by what existing
 # chart they're a proposed alternative/addition to -- a holding area for
 # "what if we tried..." requests so they're visible and clickable without
-# committing them to a real tab first. To add one: write the chart function
-# (SEASON_CHARTS + CHART_META entries, same as any other chart) and list its
-# key in a group here; nothing else needs touching. Remove the key (and the
-# chart function, if it's been rejected) once a prototype's fate is decided.
+# committing them to a real tab first. To add one: write the chart function,
+# a CHART_META entry, and a dispatch line in the /chart route (SEASON_CHARTS
+# for a plain season-scoped chart, or an `if name ==` branch if it needs the
+# same special-cased args a sibling chart already gets -- e.g. the
+# playoff_players_* prototypes below share playoff_players' own `po`/`scope`
+# setup rather than duplicating it) -- then list its key in a group here;
+# nothing else needs touching. Remove the key (and the chart function/dispatch
+# line, if it's been rejected) once a prototype's fate is decided.
 TESTING_CHARTS = [
-    ("Redraft Simulation — a companion to the wins dumbbell", [
-        "redraft_points", "redraft_points_delta",
+    ("Best Playoff Players — three legend/label alternatives: the position-color "
+     "legend moved above the axes instead of risking a lower-right collision with "
+     "the shortest bars, position shown as plain text instead of bar color (so "
+     "there's no legend at all), and ring count pulled out into gold/silver/bronze "
+     "medal dots instead of trailing stars buried at the end of each row's label", [
+        "playoff_players_topband", "playoff_players_postext", "playoff_players_medal",
     ]),
 ]
 
@@ -581,6 +587,14 @@ def chart(name: str, league: str = DEFAULT_LEAGUE, season: str | None = None,
             return png(plots.plot_playoff_stats(po, scope))
         if name == "playoff_players":
             return png(plots.plot_playoff_players(po, scope=scope))
+        if name == "playoff_players_topband":
+            return png(plots.plot_playoff_players_topband(po, scope=scope))
+        if name == "playoff_players_postext":
+            return png(plots.plot_playoff_players_postext(po, scope=scope))
+        if name == "playoff_players_medal":
+            return png(plots.plot_playoff_players_medal(po, scope=scope))
+        if name == "playoff_players_splice":
+            return png(plots.plot_playoff_players_splice({key: d["seasons"][key]}, po, scope=scope))
         if name == "clutch":
             return png(plots.plot_clutch({key: d["seasons"][key]}, po, scope))
         if name == "playoff_stats_all":
@@ -1153,6 +1167,10 @@ def tab(name: str, request: Request, league: str = DEFAULT_LEAGUE,
         bracket: str | None = None, boot: int = 0):
     if refresh:
         scoring.clear_stats_cache()      # a live week must not serve stale points
+        # roster_detail/roster_weeks/roster_honors/player_honors memoize on
+        # league+season (see metrics._cached) -- a re-score must not keep
+        # serving their pre-refresh numbers for the rest of that cache's TTL.
+        metrics.clear_metrics_cache()
     try:
         # A refresh re-assembles the league from the API (fresh=True), not just
         # the scoring cache -- otherwise a live week's matchup points stay frozen
@@ -1242,15 +1260,15 @@ def tab(name: str, request: Request, league: str = DEFAULT_LEAGUE,
     elif name == "roster":
         # Fast response: just the manager rail + chart images (already their
         # own lazy <img> fetches). Every other section on this tab -- roster
-        # standouts, the per-manager drilldown, the free-agent comparison,
-        # week by week, and honors -- is backed by roster_detail()/
-        # coaching_detail()/roster_weeks()/roster_honors()/player_honors()/
-        # free_agent_best_team_season(), each a full per-manager or per-week
-        # loop with NO caching between them (unlike Draft's cached board), so
-        # none of it belongs here; see the five @tab_part("roster", ...)
-        # handlers below. `mgr` resolution/`charts_*` stay here since the
-        # deferred parts need the identical scoping/chart-list logic and
-        # would otherwise duplicate it -- see _roster_part_ctx() below.
+        # standouts, the per-manager drilldown, week by week, and honors --
+        # is backed by roster_detail()/coaching_detail()/roster_weeks()/
+        # roster_honors()/player_honors(), each a full per-manager or
+        # per-week loop with NO caching between them (unlike Draft's cached
+        # board), so none of it belongs here; see the four
+        # @tab_part("roster", ...) handlers below. `mgr` resolution/
+        # `charts_*` stay here since the deferred parts need the identical
+        # scoping/chart-list logic and would otherwise duplicate it -- see
+        # _roster_part_ctx() below.
         mgr = manager or None
         if mgr and not (s.standings["user_name"] == mgr).any():
             mgr = None                      # scope doesn't exist in this season
@@ -1263,11 +1281,8 @@ def tab(name: str, request: Request, league: str = DEFAULT_LEAGUE,
         # Fast response: standouts + charts + trades (trade_deals() is
         # bounded by trade count, not weeks, so it's cheap enough to stay
         # inline). The waiver table (every pickup, not trimmed -- real bytes
-        # even though waiver_ledger() itself is cheap) and the free-agent
-        # comparison (free_agent_best_team_season() -- the same per-week
-        # optimal-lineup solve Roster's league view pays for separately) are
-        # each their own lazy part; see the two @tab_part("transactions", ...)
-        # handlers below.
+        # even though waiver_ledger() itself is cheap) is its own lazy part;
+        # see the @tab_part("transactions", ...) handler below.
         ctx["charts"] = ["tx_volume", "manager_profile"]
         # One card per deal, not one row per team: the ledger's mirror-image
         # rows read as duplicates and print every player's name twice.
@@ -1534,18 +1549,52 @@ def _playoffs_part_games(request, s, d, key, ctx):
 def _roster_part_ctx(mgr: str | None) -> dict:
     """Which charts each section shows, by scope -- shared by tab()'s fast
     response and every one of this tab's lazy parts so the mgr/league
-    chart-list branching isn't duplicated six times over.
+    chart-list branching isn't duplicated six times over. `charts_top`
+    feeds the tab's own top-of-page chart grid (tab_roster.html);
+    `charts_rosters` feeds the "Roster" section rendered by the
+    /part/rosters lazy part.
     """
     if mgr:
         # Personal-timeline charts (registered in MANAGER_CHARTS, rendered via
         # manual <img manager=...> tags -- the shared ch.chart() macro has no
         # manager param, same as every other manager-scoped chart in this app).
-        return {"charts_top": [], "charts_rosters": ["mgr_roster_heatmap", "mgr_optimal"],
-                "charts_weeks": ["mgr_starter_bench_weeks"]}
-    # League view: charts split across three spots instead of one wall up
-    # top -- each sits beside the table it's actually the picture of.
-    return {"charts_top": ["position_scoring", "position_box"],
-            "charts_rosters": ["roster_counts", "efficiency"],
+        # charts_rosters is empty here: the per-manager "Roster" and "Roster
+        # breakdown" sections have no chart of their own (breakdown's
+        # position-build bars/flex allocation come straight off the roster
+        # row, same as league scope's plain Roster table). The new
+        # "Efficiency" section (week-by-week lineup drilldown, 2026-08
+        # Roster/Roster breakdown/Efficiency split) also has no chart of its
+        # own: `efficiency` (below) is a LEAGUE-WIDE ranked comparison across
+        # every manager with no manager-scoped variant -- passing manager= to
+        # it is silently ignored -- and `mgr_optimal` above already carries
+        # this manager's own weekly efficiency trend line, so nothing here
+        # would add a genuinely new picture. No charts_weeks: the "Week by
+        # week" section (Team of the Week) is league-only -- see
+        # tab_roster.html.
+        return {"charts_top": ["mgr_roster_heatmap", "mgr_optimal"],
+                "charts_rosters": [], "charts_weeks": []}
+    # League view: charts split across spots instead of one wall up top --
+    # each sits beside the table it's actually the picture of. `efficiency`
+    # stays here (league-wide ranked comparison, no manager-scoped variant --
+    # see the mgr branch above) even though its former table partner
+    # (week-by-week lineup calls) is manager-only now.
+    #
+    # 2026-08 reshuffle: "Where the Points Come From" (`position_scoring`)
+    # removed from this tab entirely -- still exists as a function/metric
+    # (report.py's standalone season report and the webapp's own Season
+    # Report tab both still render it via /chart/position_scoring, so
+    # neither the chart function nor its SEASON_CHARTS/CHART_META
+    # registration were touched, only ITS SPOT ON THIS TAB). `roster_counts`
+    # ("Average Roster Composition") moved up to fill that now-empty
+    # charts_top slot. `season_optimal` (promoted out of the Testing tab,
+    # see plots.plot_season_optimal -- the league-wide seasonal Started-vs-
+    # Optimal chart, averaged across every manager by week) fills
+    # `roster_counts`' OLD charts_rosters slot, staying beside `efficiency`
+    # as its natural pairing (both are lineup-decision charts, where
+    # `roster_counts` was a composition chart that fit better next to
+    # `position_box`, another composition chart, up top).
+    return {"charts_top": ["roster_counts", "position_box"],
+            "charts_rosters": ["season_optimal", "efficiency"],
             "charts_weeks": ["boom_bust", "consistency"]}
 
 
@@ -1553,12 +1602,77 @@ def _roster_part_ctx(mgr: str | None) -> dict:
 def _roster_part_standouts(request, s, d, key, ctx):
     # roster_standouts() is cheap on its own, but coaching_standouts() calls
     # coaching_detail() -- the same full per-manager loop the "rosters" part
-    # needs -- so the two stay one section rather than splitting what's
-    # visually one block across two different loading states.
+    # needs -- so the two stay one lazy part rather than splitting what's
+    # visually one tile grid across two different loading states. Merged
+    # into a single list here since the template renders one flat grid, not
+    # two labeled sub-groups.
     mgr = ctx.get("manager")
-    ctx["standouts_roster"] = None if mgr else metrics.roster_standouts(s)
-    ctx["standouts_coaching"] = None if mgr else metrics.coaching_standouts(s)
+    if mgr:
+        ctx["standouts"] = _manager_roster_standouts(s, mgr)
+    else:
+        ctx["standouts"] = metrics.roster_standouts(s) + metrics.coaching_standouts(s)
     return tpl.TemplateResponse(request, "_roster_standouts.html", ctx)
+
+
+def _manager_roster_standouts(s, mgr):
+    # Manager-scope tiles (2026-08): the league-wide superlatives above
+    # ("most players used", "best lineup efficiency") have nothing to rank
+    # against with only one manager in view, so this is a genuinely
+    # different tile set -- facts ABOUT this one manager's own season,
+    # not a comparison. Deliberately reuses roster_detail()/coaching_detail()
+    # (this fetch is independent of the "rosters" lazy part's own identical
+    # fetch -- each lazy part is its own request, so there's no context to
+    # share across them) rather than adding new metrics.py aggregation --
+    # every fact here is already sitting on the enriched row the "rosters"
+    # part builds the same way (see _roster_part_rosters' `enrich`).
+    rows = [r for r in metrics.roster_detail(s) if r["user_name"] == mgr]
+    if not rows:
+        return []
+    r = rows[0]
+    coach = next((c for c in metrics.coaching_detail(s) if c["user_name"] == mgr), None)
+    out = []
+
+    def tile(label, value, detail=""):
+        out.append({"label": label, "value": value, "holder": None, "detail": detail})
+
+    # Best value pick: highest PPG among players THIS MANAGER DRAFTED
+    # (excludes trade acquisitions and waiver/FA pickups, which read as a
+    # different kind of "value" and may get their own standout later) and
+    # rostered 3+ weeks (a 1-2 week emergency streamer can post an outlier
+    # rate on a tiny sample). draft.draft_board() is normally only fetched
+    # lazily when the Draft tab itself renders (a network hit to Sleeper's
+    # draft endpoints) -- calling it here pulls that cost onto the Roster
+    # tab too, accepted as a best-effort trade-off: a league/season with no
+    # draft data (private draft, fetch failure) returns an empty frame, in
+    # which case `drafted_ids` is empty and this tile is simply omitted for
+    # everyone, same as this codebase's other best-effort draft/portrait
+    # patterns (see headshots.py). Matching on player_id alone (not
+    # roster_id too) is intentional -- roster_detail()'s `players` already
+    # only lists who this manager currently has (this season's own pl_wk),
+    # so a player they drafted then traded away is already absent from
+    # `r["players"]`; the drafted-id set only needs to answer "did THIS
+    # manager draft him", not "is he still on the drafting roster".
+    board = draft.draft_board(s)
+    drafted_ids = (set(board.loc[board["user_name"] == mgr, "player_id"])
+                   if len(board) else set())
+    eligible = [p for p in r["players"]
+                if p["weeks"] >= 3 and p["player_id"] in drafted_ids]
+    if eligible:
+        best = max(eligible, key=lambda p: p["ppg"])
+        tile("Best value pick", f"{best['ppg']:.1f} ppg",
+             f"{best['player_name']} ({best['position']}) · {best['weeks']} wks · drafted")
+    flex_top = r.get("flex_top")
+    if flex_top and r.get("flex_share"):
+        tile("Flex MVP", flex_top,
+             f"started there {r['flex_share'].get(flex_top, 0)}% of flex weeks")
+    if coach and coach.get("weeks"):
+        best_wk = max(coach["weeks"], key=lambda w: w["eff"])
+        worst_wk = min(coach["weeks"], key=lambda w: w["eff"])
+        tile("Best lineup week", f"{best_wk['eff']:.0f}%",
+             f"week {best_wk['week']} · {best_wk['actual']:.1f} of {best_wk['optimal']:.1f} possible")
+        tile("Worst lineup week", f"{worst_wk['eff']:.0f}%",
+             f"week {worst_wk['week']} · {worst_wk['cost']:.1f} pts left on the bench")
+    return out
 
 
 @tab_part("roster", "rosters")
@@ -1585,28 +1699,52 @@ def _roster_part_rosters(request, s, d, key, ctx):
             r["lineup_weeks"] = c["weeks"] if c else []
         return rows
 
-    # Per-position cross-manager max (weeks rostered), for the "Position
-    # build" fact's bar scaling -- computed from the FULL league, not the
-    # filtered manager view, so a single manager's bar still reads against
-    # the whole league rather than trivially maxing out at their own value.
     all_rosters = metrics.roster_detail(s)
-    ctx["pos_max"] = {
-        p: max((r["pos_counts"].get(p, 0) for r in all_rosters), default=0)
-        for p in ["QB", "RB", "WR", "TE", "K", "DEF"]
-    }
     ctx["rosters"] = enrich(
         [r for r in all_rosters if r["user_name"] == mgr] if mgr else all_rosters)
-    ctx["charts_rosters"] = _roster_part_ctx(mgr)["charts_rosters"]
-    return tpl.TemplateResponse(request, "_roster_by_manager.html", ctx)
-
-
-@tab_part("roster", "fa")
-def _roster_part_fa(request, s, d, key, ctx):
-    # fa_season (best-lineup-vs-FAs) has no manager-scoped CHART counterpart,
-    # so it stays league-only -- see tab_roster.html (the placeholder for
-    # this part isn't even emitted in manager-scoped view).
-    ctx["fa_season"] = None if ctx.get("manager") else metrics.free_agent_best_team_season(s)
-    return tpl.TemplateResponse(request, "_roster_fa.html", ctx)
+    rp = _roster_part_ctx(mgr)
+    ctx["charts_rosters"] = rp["charts_rosters"]
+    # "Roster" (_roster_by_manager.html) renders in both scopes -- league
+    # scope shows every manager's row, manager scope shows just the one
+    # (already filtered into ctx["rosters"] above) with its position-build
+    # content folded directly into that row's own display (no separate
+    # "Roster breakdown" section/template any more -- merged 2026-08, see
+    # _roster_by_manager.html's header comment). "Efficiency" is still a
+    # separate manager-only section, concatenated onto the same response
+    # rather than a second lazy part since it reads the identical
+    # roster_detail()+coaching_detail() data this part already fetched.
+    # tpl.TemplateResponse() (not .get_template().render()) for each piece,
+    # same rendering path every other part on this tab uses -- keeps
+    # request/context-processor injection identical rather than introducing
+    # a second convention.
+    parts = [tpl.TemplateResponse(request, "_roster_by_manager.html", ctx)]
+    if mgr:
+        # Per-week actual + optimal lineup (each with its own bench), keyed
+        # by week -- backs the Efficiency section's per-week drilldown.
+        lineups = metrics.manager_week_lineups(s, mgr)
+        # pos_rank is THAT WEEK's position rank, not a season-long one --
+        # week_position_ranks() is naturally per-week (unlike idm.posrank's
+        # single shared week_pos_ranks context var, which only ever covers
+        # ONE week at a time, the weekly report's own scope), so it's
+        # called once per week actually played and stamped onto every row
+        # here rather than routed through that macro/context convention.
+        for wk, row in lineups.items():
+            ranks = metrics.week_position_ranks(s, wk)
+            for grp in ("lineup", "bench", "opt_lineup", "opt_bench"):
+                for p in row[grp]:
+                    pr = ranks.get(p["player_id"])
+                    p["pos_rank"] = pr["rank"] if pr else None
+        ctx["mgr_lineups"] = lineups
+        # Lineup % text color scales red->green across THIS manager's own
+        # real best-to-worst week (not a fixed 0-100 axis) -- same "zoom to
+        # the real spread" instinct this app's charts already apply
+        # elsewhere (plot_efficiency etc.), so week-to-week variation stays
+        # visible instead of every week reading as similarly green.
+        effs = [w["eff"] for w in ctx["rosters"][0]["lineup_weeks"]] if ctx["rosters"] else []
+        ctx["eff_min"] = min(effs) if effs else 0.0
+        ctx["eff_max"] = max(effs) if effs else 100.0
+        parts.append(tpl.TemplateResponse(request, "_roster_efficiency.html", ctx))
+    return HTMLResponse(b"".join(p.body for p in parts))
 
 
 @tab_part("roster", "weeks")
@@ -1880,8 +2018,15 @@ def _draft_sim_ctx(s, d, key, ctx: dict, basis: str = "value", suffix: str = "")
     orig_board = draft.draft_board(s)
     orig_drafter = dict(zip(orig_board["player_id"].astype(str), orig_board["roster_id"]))
     rdb = draft.redraft_board_adp(s) if basis == "adp" else draft.redraft_board(s)
+    # Drilldown default order is by POSITION (QB/RB/WR/TE/K/DEF), not draft
+    # round -- a manager's expanded roster reads as a lineup, not a pick log.
+    # `round` stays the secondary key so same-position players keep their
+    # relative pick order; an unset/unrecognized position (the "—" fallback
+    # below) sorts after every real one via the dict's own .get default.
+    _pos_order = {p: i for i, p in enumerate(metrics.POSITIONS)}
+    rdb = rdb.assign(_pos_sort=rdb["position"].map(lambda p: _pos_order.get(p, len(metrics.POSITIONS))))
     rosters: dict[int, list[dict]] = {}
-    for r in rdb.sort_values(["roster_id", "round"]).itertuples(index=False):
+    for r in rdb.sort_values(["roster_id", "_pos_sort", "round"]).itertuples(index=False):
         rosters.setdefault(int(r.roster_id), []).append({
             "player_id": r.player_id if pd_notna(r.player_id) else None,
             "player_name": r.player_name or "—",

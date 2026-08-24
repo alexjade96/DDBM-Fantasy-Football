@@ -19,11 +19,10 @@
   <div class="vs-panel vs-p-manager">
     <div class="tablewrap">
     <div class="drilltable"
-         style="--cols: minmax(140px,1.4fr) minmax(100px,1fr) minmax(130px,1.2fr) minmax(140px,1.2fr) minmax(120px,1.2fr)">
+         style="--cols: minmax(140px,1.4fr) minmax(100px,1fr) minmax(130px,1.2fr) minmax(140px,1.2fr)">
       <div class="dt-head">
-        <span>Manager</span><span class="dt-num">TOTW picks</span>
-        <span class="dt-num">Best lineup picks</span><span class="dt-num">POTW picks</span>
-        <span class="dt-num">Best bench picks</span>
+        <span>Manager</span><span class="dt-num">TOTW awards</span>
+        <span class="dt-num">Best lineup awards</span><span class="dt-num">POTW awards</span>
       </div>
       {% for h in honors %}
       <details class="dt-row">
@@ -32,7 +31,6 @@
           <span class="dt-num">{{ h.totw_picks }}</span>
           <span class="dt-num">{{ h.best_lineup_weeks }}</span>
           <span class="dt-num">{{ h.player_of_week_weeks }}</span>
-          <span class="dt-num">{{ h.best_benched_weeks }}</span>
         </summary>
         <div class="dt-detail">
           <table class="dt-games">
@@ -43,7 +41,9 @@
             {% for g in h.summary %}
               <tr>
                 <td>{{ g.honor }}</td>
-                <td>{% if g.player_name %}{{ idm.headshot(g.player_id) }}{{ g.player_name }}{% else %}<span class="q">&mdash;</span>{% endif %}</td>
+                <td>{% if g.player_name %}{{ idm.headshot(g.player_id) }}{{ g.player_name }}
+                    {% if g.position %}<span class="q">{{ g.position }}{% if g.pos_rank %} #{{ g.pos_rank }}{% endif %}</span>{% endif %}
+                    {% else %}<span class="q">&mdash;</span>{% endif %}</td>
                 <td class="n">{{ g.times }}</td>
                 <td><span class="q">{{ g.weeks|join(", ") }}</span></td>
               </tr>
@@ -60,11 +60,10 @@
   <div class="vs-panel vs-p-position">
     <div class="tablewrap">
     <div class="drilltable"
-         style="--cols: minmax(70px,.6fr) minmax(110px,1fr) minmax(140px,1.2fr) minmax(120px,1.2fr)">
+         style="--cols: minmax(70px,.6fr) minmax(110px,1fr) minmax(140px,1.2fr)">
       <div class="dt-head">
         <span>Pos</span><span class="dt-num">Unique players</span>
-        <span class="dt-num">POTW picks</span>
-        <span class="dt-num">Best bench picks</span>
+        <span class="dt-num">POTW awards</span>
       </div>
       {% for g in phonors %}
       <details class="dt-row">
@@ -72,23 +71,21 @@
           <span>{{ g.position }}</span>
           <span class="dt-num">{{ g.count }}</span>
           <span class="dt-num">{{ g.player_of_week_weeks }}</span>
-          <span class="dt-num">{{ g.best_benched_weeks }}</span>
         </summary>
         <div class="dt-detail">
           <table class="dt-games">
             <thead><tr>
               <th>Player</th>
-              <th class="n">TOTW picks</th>
-              <th class="n">POTW picks</th>
-              <th class="n">Best bench picks</th>
+              <th class="n">TOTW awards</th>
+              <th class="n">POTW awards</th>
             </tr></thead>
             <tbody>
             {% for p in g.players %}
               <tr>
-                <td>{{ idm.headshot(p.player_id) }}<strong>{{ p.player_name }}</strong></td>
+                <td>{{ idm.headshot(p.player_id) }}<strong>{{ p.player_name }}</strong>
+                    <span class="q">{{ p.position }}{% if p.pos_rank %} #{{ p.pos_rank }}{% endif %}</span></td>
                 <td class="n">{{ p.totw_weeks }}</td>
                 <td class="n">{{ p.player_of_week_weeks }}</td>
-                <td class="n">{{ p.best_benched_weeks }}</td>
               </tr>
             {% endfor %}
             </tbody>

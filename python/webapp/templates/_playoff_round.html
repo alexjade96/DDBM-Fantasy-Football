@@ -62,10 +62,17 @@
       <div class="dt-detail">
         <div class="dt-tables">
           {% for sd in g.sides %}
+          {# show_id=True (2026-08, was False): _redraft_side_score's own docstring
+             confirms `player_id` rides along on every bracket-game lineup row
+             specifically so idm.headshot can key off it -- show_id=false predates
+             that field and was stranding a working portrait lookup. idm.posrank
+             (this-WEEK rank, also gated by show_id) stays a safe no-op here since
+             week_pos_ranks is only ever populated for the Weekly tab's own
+             context -- this tab simply has none to show, no double-rank risk. #}
           {{ lu.lineup_table(
                sd.team ~ (" — won" if sd.result == 'W' else " — lost" if sd.result == 'L' else ""),
                ("%.2f"|format(sd.points) if sd.points is not none else "—"),
-               sd.lineup, bench=sd.bench, show_id=false, empty_text="No lineup submitted yet.") }}
+               sd.lineup, bench=sd.bench, empty_text="No lineup submitted yet.") }}
           {% endfor %}
         </div>
       </div>

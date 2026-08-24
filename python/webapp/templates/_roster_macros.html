@@ -16,20 +16,64 @@
 </section>
 {% endif %}
 {% endmacro %}
+{# Position is its own column (2026-08) -- headed exactly "Pos" (not
+   "Position") to opt into index.html's existing POS_ORDER sort (QB/RB/WR/
+   TE/K/DEF, not alphabetical DEF/K/QB/RB/TE/WR) -- makeSortable() matches
+   on the literal header text "pos" (case-insensitive), same convention
+   _fa_standouts.html/_week_transactions.html's own Pos columns already use.
+   The Player cell's OWN `<span class="q">` still carries `{{ p.position }}
+   #{{ p.pos_rank }}` (e.g. "WR #4") -- that badge is a season POSITION
+   RANK, a different fact from the plain position label in the new column,
+   so it keeps its position prefix rather than reading as a bare "#4". "Pts"
+   renamed "Total pts"
+   and re-pointed at `p.total_pts`
+   (started + bench, added to roster_detail()'s per-player dict) rather than
+   `p.started_pts` -- this table is about what a manager rostered, not what
+   they started (that's the Efficiency section), so the headline number
+   should be the full season take. `ppg` now divides that same total by
+   `weeks`, not just started points -- see metrics.py's roster_detail()
+   docstring for why. "Starter pts" (2026-08) sits BETWEEN Total pts and
+   Bench pts -- `p.started_pts` was already computed per player
+   (roster_detail() needs it to derive `total_pts`/`bench_pts` in the first
+   place) but had no column of its own; Total pts = Starter pts + Bench pts
+   is now visible as three adjacent columns instead of requiring the reader
+   to do that subtraction themselves.
+
+   "Starting PPG"/"Bench PPG" (2026-08) sit immediately LEFT of their
+   respective "Starter pts"/"Bench pts" columns -- each a RATE reading of
+   the pts column right beside it, same left-of-total convention the
+   existing "PPG" column already uses next to "Total pts". Both read
+   `p.started_ppg`/`p.bench_ppg` (roster_detail(), scoped to
+   `started_weeks`/`bench_weeks` -- weeks actually played in THAT role, not
+   the combined `weeks` the plain "PPG" column divides by) so a player who
+   mixed started/benched weeks doesn't have either rate diluted by weeks
+   spent in the other role.
+
+   `data-pos` on the row (2026-08) backs the per-manager Roster row's
+   click-a-position-chip filter -- see _roster_by_manager.html's `.pblabel`
+   comment. Plain attribute, not a class, so it doesn't interact with any
+   existing row-state class (`.cmp-up`/`.cmp-down` etc. elsewhere use
+   classes for styling hooks; this one is read-only data for JS). #}
 {% macro roster_players_table(r) %}
 <table class="dt-games">
   <thead><tr>
-    <th>Player</th><th class="n">Wks</th>
-    <th class="n">Pts</th><th class="n">PPG</th><th class="n">Bench pts</th>
+    <th>Player</th><th>Pos</th><th class="n">Wks</th>
+    <th class="n">PPG</th><th class="n">Total pts</th>
+    <th class="n">Starting PPG</th><th class="n">Starter pts</th>
+    <th class="n">Bench PPG</th><th class="n">Bench pts</th>
   </tr></thead>
   <tbody>
   {% for p in r.players %}
-    <tr>
+    <tr data-pos="{{ p.position }}">
       <td data-sort="{{ p.player_name }}">{{ idm.headshot(p.player_id) }}<strong>{{ p.player_name }}</strong>
-          {% if p.pos_rank %}<span class="q">{{ p.position }} #{{ p.pos_rank }}</span>{% else %}<span class="q">{{ p.position }}</span>{% endif %}</td>
+          {% if p.pos_rank %}<span class="q">{{ p.position }} #{{ p.pos_rank }}</span>{% endif %}</td>
+      <td>{{ p.position }}</td>
       <td class="n">{{ p.weeks }}</td>
-      <td class="n">{{ "%.1f"|format(p.started_pts) }}</td>
       <td class="n">{{ "%.1f"|format(p.ppg) }}</td>
+      <td class="n">{{ "%.1f"|format(p.total_pts) }}</td>
+      <td class="n">{{ "%.1f"|format(p.started_ppg) }}</td>
+      <td class="n">{{ "%.1f"|format(p.started_pts) }}</td>
+      <td class="n">{{ "%.1f"|format(p.bench_ppg) }}</td>
       <td class="n">{{ "%.1f"|format(p.bench_pts) }}</td>
     </tr>
   {% endfor %}

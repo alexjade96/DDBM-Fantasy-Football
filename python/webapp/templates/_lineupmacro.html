@@ -10,43 +10,79 @@
 
    `rows` carries `slot`/`player_id`/`player_name`/`points`, optionally `cmp`
    ('up'/'down', the slot-vs-slot matchup highlight -- absent rows just don't
-   highlight) and `pos_rank` (his FINAL season-long position finish -- "RB
-   #4" -- shown next to his name whenever a row carries it, regardless of
-   `show_id`: the playoff engine's submitted lineups have no headshot to
-   show but DO carry `player_id`/`pos_rank` now, same idiom the redraft
-   simulation's own roster table already uses). `show_id` drops the
-   headshot+THIS-WEEK-posrank for callers with no `player_id` to key off of.
-   `points` may be None (a submitted lineup with no score yet) and renders
-   as an em dash rather than a bogus "0.00".
+   highlight), `swapped` (True highlights the row gold -- the SAME
+   `.bench-impact` treatment the bench section below uses for its
+   would_start/was_started flag, applied here to a MAIN-table row: on an
+   Actual lineup this marks a starter the optimal lineup would drop, on an
+   Optimal lineup it marks a player added who wasn't actually started, so a
+   swap reads as the same highlight on both sides of the pair of tables)
+   and `pos_rank` (his FINAL season-long position finish -- "RB #4" -- shown
+   next to his name whenever a row carries it, regardless of `show_id`: the
+   playoff engine's submitted lineups carry `player_id`/`pos_rank` (same
+   idiom the redraft simulation's own roster table already uses), and as of
+   2026-08 `_playoff_round.html` also shows headshots off that same
+   `player_id` -- `show_id` is no longer forced off there). `show_id` drops
+   the headshot+THIS-WEEK-posrank for callers with no `player_id` to key
+   off of. `points` may be None (a
+   submitted lineup with no score yet) and renders as an em dash rather than
+   a bogus "0.00".
 
    `bench`, when given, adds the "Bench" divider + rows below the main table --
    `bench_flag`/`bench_flag_title` name which boolean field on each bench row
    marks it (the wording and the field itself differ between an Actual panel's
    "would have outscored a starter" and an Optimized panel's "was benched to
-   make room for this pick", so both are passed in rather than hardcoded).
-   `show_id` gates the bench rows' headshot+THIS-WEEK-posrank the same way it
-   gates the main rows' -- a caller with no headshot-worthy player_id (the
-   playoff engine) shouldn't gain one just because its bench happens to be
-   populated.
+   make room for this pick", so both are passed in rather than hardcoded). A
+   flagged row gets the same `.bench-impact` gold row highlight `swapped`
+   uses above -- no separate star glyph any more (removed 2026-08: it marked
+   the identical thing the row highlight already does, so it was pure
+   redundancy once both existed); `bench_flag_title` still surfaces as the
+   row's own `title` attribute, so the "why" is still there on hover, just
+   not as a second visual marker. `show_id` gates the bench rows'
+   headshot+THIS-WEEK-posrank the same way it gates the main rows' -- a
+   caller with no headshot-worthy player_id (the playoff engine) shouldn't
+   gain one just because its bench happens to be populated.
 
    `nosort`: this is a fixed-slot box score (QB, RB1, RB2, ...), not a
    ranking, and its colspan title/total header (2 <th>s) doesn't line up
    1:1 with the 3 <td>s each body row actually has -- #panel's generic
    "make every table sortable" pass would otherwise wire a header click to
    the WRONG column (e.g. the total-points header would sort the Player
-   column instead). #}
+   column instead).
+
+   `rows_are_bench` (2026-08, added for the Roster tab's Efficiency
+   drilldown -- see _roster_efficiency.html): renders `rows` using the
+   BENCH row markup (position label instead of slot, `bench_flag`/
+   `bench_flag_title` instead of `swapped`/`cmp`) with no "Bench" divider
+   and no empty-rows placeholder row -- for a table that IS a bench listing
+   on its own (not a starters table with a bench section appended below
+   it). `bench`/`bench_flag`/`bench_flag_title` keep their existing
+   meaning when this is off; when it's on, `rows` takes over that same
+   flag/title pair and `bench` is ignored. #}
 {% import "_ident.html" as idm with context %}
 {% macro lineup_table(title_html, total_fmt, rows, bench=None, bench_flag=None,
                        bench_flag_title="", show_id=True,
-                       empty_text="No lineup recorded.") %}
+                       empty_text="No lineup recorded.", rows_are_bench=False) %}
 <table class="dt-games nosort">
   <thead><tr>
     <th colspan="2">{{ title_html }}</th>
     <th class="n">{{ total_fmt }}</th>
   </tr></thead>
   <tbody>
+  {% if rows_are_bench %}
   {% for pl in rows %}
-    <tr {% if pl.cmp == 'up' %}class="cmp-up"{% elif pl.cmp == 'down' %}class="cmp-down"{% endif %}>
+    {% set flagged = pl[bench_flag] if bench_flag else false %}
+    <tr {% if flagged %}class="bench-impact" title="{{ bench_flag_title }}"{% endif %}>
+      <td><span class="q">{{ pl.position }}</span></td>
+      <td>{% if show_id %}{{ idm.headshot(pl.player_id) }}{% endif %}{{ pl.player_name }}{% if show_id %} {{ idm.posrank(pl.player_id) }}{% endif %}
+        {%- if pl.pos_rank %} <span class="q posrank">{{ pl.position }} #{{ pl.pos_rank }}</span>{% endif %}</td>
+      <td class="n">{% if pl.points is not none %}{{ "%.2f"|format(pl.points) }}{% else %}&mdash;{% endif %}</td>
+    </tr>
+  {% else %}
+    <tr><td colspan="3"><span class="q">{{ empty_text }}</span></td></tr>
+  {% endfor %}
+  {% else %}
+  {% for pl in rows %}
+    <tr {% if pl.swapped %}class="bench-impact"{% elif pl.cmp == 'up' %}class="cmp-up"{% elif pl.cmp == 'down' %}class="cmp-down"{% endif %}>
       <td><span class="q">{{ pl.slot }}</span></td>
       <td>{% if show_id %}{{ idm.headshot(pl.player_id) }}{% endif %}<strong>{{ pl.player_name }}</strong>{% if show_id %} {{ idm.posrank(pl.player_id) }}{% endif %}{% if pl.pos_rank %} <span class="q posrank">{{ pl.position }} #{{ pl.pos_rank }}</span>{% endif %}</td>
       <td class="n">{% if pl.points is not none %}{{ "%.2f"|format(pl.points) }}{% else %}&mdash;{% endif %}</td>
@@ -58,14 +94,14 @@
     <tr><td colspan="3"><span class="q">Bench</span></td></tr>
     {% for pl in bench %}
     {% set flagged = pl[bench_flag] if bench_flag else false %}
-    <tr {% if flagged %}class="bench-impact"{% endif %}>
+    <tr {% if flagged %}class="bench-impact" title="{{ bench_flag_title }}"{% endif %}>
       <td><span class="q">{{ pl.position }}</span></td>
       <td>{% if show_id %}{{ idm.headshot(pl.player_id) }}{% endif %}{{ pl.player_name }}{% if show_id %} {{ idm.posrank(pl.player_id) }}{% endif %}
-        {%- if pl.pos_rank %} <span class="q posrank">{{ pl.position }} #{{ pl.pos_rank }}</span>{% endif %}
-        {%- if flagged %} <span class="q star" title="{{ bench_flag_title }}">*</span>{% endif %}</td>
+        {%- if pl.pos_rank %} <span class="q posrank">{{ pl.position }} #{{ pl.pos_rank }}</span>{% endif %}</td>
       <td class="n"><span class="q">{{ "%.2f"|format(pl.points) }}</span></td>
     </tr>
     {% endfor %}
+  {% endif %}
   {% endif %}
   </tbody>
 </table>

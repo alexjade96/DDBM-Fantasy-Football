@@ -57,6 +57,77 @@
   </div>
 </section>
 
+{# Postseason results moved above Bracket (2026-08) -- the season's final
+   standings read as the headline fact, right after the Champion/Toilet bowl
+   tiles above; the bracket graphic and game-by-game log are the supporting
+   detail, not the lead. The two "Playoff analytics" charts (and the "Count
+   which games?" scope control that scopes them -- it never filtered the
+   bracket graphic, only these two) moved INTO this section, above the
+   table, when the standalone "Playoff analytics" section was folded into
+   this one -- the section heading now covers both the charts and the
+   standings table below them. #}
+<section class="finalplace">
+  <h2>Postseason results</h2>
+  {% if has_conso %}
+  <form class="controls inline" hx-get="/tab/playoffs" hx-target="#panel"
+        hx-swap="innerHTML" hx-include="#league, #season, #theme, #bracket" hx-trigger="change">
+    <label>
+      <span>Count which games?</span>
+      <select name="scope">
+        <option value="title" {% if scope == 'title' %}selected{% endif %}>Championship path only</option>
+        <option value="all" {% if scope == 'all' %}selected{% endif %}>Include consolation</option>
+        <option value="consolation" {% if scope == 'consolation' %}selected{% endif %}>Consolation only</option>
+      </select>
+    </label>
+  </form>
+  {% endif %}
+  <p class="hint">Scoped to the {{ season }} postseason, like the rest of this tab —
+     switch season in the header to see another. These two charts are the only thing
+     <strong>Count which games?</strong> changes; the bracket below always shows every game.
+     {%- if not has_conso %} The {{ season }} bracket has no consolation games, so there is
+     nothing to include or exclude and the control is hidden.{% endif %}</p>
+  <div class="grid two">
+    {{ ch.chart("playoff_players_splice", scope=scope, bracket=bracket, alt="Best playoff players") }}
+    {{ ch.chart("clutch", scope=scope, bracket=bracket, alt="Clutch index") }}
+  </div>
+  <p class="hint">Every team, champion to last place &mdash; the bracket run and the teams that
+     missed it, in one board. <strong>Seed</strong> (next to each team&rsquo;s name) is the
+     bracket&rsquo;s own seeding (the regular-season order{% if reg_weeks %}, weeks
+     1&ndash;{{ reg_weeks }}{% endif %}).
+     The rate stats are <em>postseason only</em> &mdash; bracket games &mdash; so a team that
+     missed the bracket shows &ldquo;&mdash;&rdquo; here, with its games in the <strong>Games</strong>
+     log below. <strong>Margin</strong> is the average; <strong>Outcome</strong> is the title path.</p>
+  <div class="card tablewrap">
+    <table>
+      <thead><tr>
+        <th class="n">Finish</th><th>Team</th>
+        <th class="n">G</th><th class="n">W</th><th class="n">L</th><th class="n">Playoff PPG</th>
+        <th class="n">Margin</th><th>Outcome</th>
+      </tr></thead>
+      <tbody>
+      {% for r in results %}
+        {% if r.sep_before %}
+        <tr class="dt-sep"><td colspan="8"><span>Missed the bracket &mdash; toilet bowl</span></td></tr>
+        {% endif %}
+        <tr{% if r.is_last %} class="lastrow"{% endif %}>
+          <td class="n">{{ r.finish }}</td>
+          <td>{{ idm.who(r.team) }}{% if r.seed is not none %}<span class="q">#{{ r.seed }}</span>{% endif %}</td>
+          <td class="n">{% if r.games is not none %}{{ r.games }}{% else %}&mdash;{% endif %}</td>
+          <td class="n">{% if r.wins is not none %}{{ r.wins }}{% else %}&mdash;{% endif %}</td>
+          <td class="n">{% if r.losses is not none %}{{ r.losses }}{% else %}&mdash;{% endif %}</td>
+          <td class="n">{% if r.ppg is not none %}{{ r.ppg | round(1) }}{% else %}&mdash;{% endif %}</td>
+          <td class="n">{% if r.avg_margin is not none %}{{ "%+.1f"|format(r.avg_margin) }}{% else %}&mdash;{% endif %}</td>
+          <td>{% if r.outcome == 'Champion' %}<span class="chip">Champion</span>
+              {%- elif r.outcome == 'Runner-up' %}<strong>Runner-up</strong>
+              {%- elif r.outcome == 'Toilet bowl champion' %}<span class="chip toilet">Toilet bowl champion</span>
+              {%- else %}{{ r.outcome }}{% endif %}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
 {# The scope selector deliberately does NOT live here. It never filtered the
    bracket graphic (which always draws every game), so sitting above it read as
    a broken control; it belongs beside the analytics it actually scopes. #}
@@ -82,75 +153,6 @@
    the per-matchup chart and the separate postseason-weeks table -- each of which
    re-drew these same games. #}
 {{ lz.lazy("/tab/playoffs/part/games?league=" ~ league|urlencode ~ "&season=" ~ season|urlencode ~ "&theme=" ~ theme ~ "&bracket=" ~ bracket|urlencode, height="260px") }}
-
-<div class="rowhead">
-  <h2>Playoff analytics</h2>
-  {% if has_conso %}
-  <form class="controls inline" hx-get="/tab/playoffs" hx-target="#panel"
-        hx-swap="innerHTML" hx-include="#league, #season, #theme, #bracket" hx-trigger="change">
-    <label>
-      <span>Count which games?</span>
-      <select name="scope">
-        <option value="title" {% if scope == 'title' %}selected{% endif %}>Championship path only</option>
-        <option value="all" {% if scope == 'all' %}selected{% endif %}>Include consolation</option>
-        <option value="consolation" {% if scope == 'consolation' %}selected{% endif %}>Consolation only</option>
-      </select>
-    </label>
-  </form>
-  {% endif %}
-</div>
-<p class="hint">Scoped to the {{ season }} postseason, like the rest of this tab —
-   switch season in the header to see another. These three charts are the only thing
-   <strong>Count which games?</strong> changes; the bracket above always shows every game.
-   {%- if not has_conso %} The {{ season }} bracket has no consolation games, so there is
-   nothing to include or exclude and the control is hidden.{% endif %}</p>
-<div class="grid two">
-  {{ ch.chart("playoff_players", scope=scope, bracket=bracket, alt="Best playoff players") }}
-  {{ ch.chart("clutch", scope=scope, bracket=bracket, alt="Clutch index") }}
-</div>
-{{ ch.chart("playoff_stats", scope=scope, bracket=bracket, alt=season ~ " playoff record") }}
-
-<section class="finalplace">
-  <h2>Postseason results</h2>
-  <p class="hint">Every team, champion to last place &mdash; the bracket run and the teams that
-     missed it, in one board. <strong>Seed</strong> is the bracket&rsquo;s own seeding (the
-     regular-season order{% if reg_weeks %}, weeks 1&ndash;{{ reg_weeks }}{% endif %}).
-     The rate stats are <em>postseason only</em> &mdash; bracket games &mdash; so a team that
-     missed the bracket shows &ldquo;&mdash;&rdquo; here, with its games in the <strong>Games</strong>
-     log above. <strong>Margin</strong> is the average; <strong>Outcome</strong> is the title path.</p>
-  <div class="card tablewrap">
-    <table>
-      <thead><tr>
-        <th class="n">Finish</th><th class="n">Seed</th><th>Team</th>
-        <th class="n">G</th><th class="n">W</th><th class="n">L</th><th class="n">PPG</th>
-        <th class="n">High</th><th class="n">Low</th><th class="n">Margin</th><th>Outcome</th>
-      </tr></thead>
-      <tbody>
-      {% for r in results %}
-        {% if r.sep_before %}
-        <tr class="dt-sep"><td colspan="11"><span>Missed the bracket &mdash; toilet bowl</span></td></tr>
-        {% endif %}
-        <tr{% if r.is_last %} class="lastrow"{% endif %}>
-          <td class="n">{{ r.finish }}</td>
-          <td class="n">{% if r.seed is not none %}{{ r.seed }}{% else %}&mdash;{% endif %}</td>
-          <td>{{ idm.who(r.team) }}</td>
-          <td class="n">{% if r.games is not none %}{{ r.games }}{% else %}&mdash;{% endif %}</td>
-          <td class="n">{% if r.wins is not none %}{{ r.wins }}{% else %}&mdash;{% endif %}</td>
-          <td class="n">{% if r.losses is not none %}{{ r.losses }}{% else %}&mdash;{% endif %}</td>
-          <td class="n">{% if r.ppg is not none %}{{ r.ppg | round(1) }}{% else %}&mdash;{% endif %}</td>
-          <td class="n">{% if r.high is not none %}{{ r.high | round(1) }}{% else %}&mdash;{% endif %}</td>
-          <td class="n">{% if r.low is not none %}{{ r.low | round(1) }}{% else %}&mdash;{% endif %}</td>
-          <td class="n">{% if r.avg_margin is not none %}{{ "%+.1f"|format(r.avg_margin) }}{% else %}&mdash;{% endif %}</td>
-          <td>{% if r.outcome == 'Champion' %}<span class="chip">Champion</span>
-              {%- elif r.outcome == 'Runner-up' %}<strong>Runner-up</strong>
-              {%- elif r.outcome == 'Toilet bowl champion' %}<span class="chip toilet">Toilet bowl champion</span>
-              {%- else %}{{ r.outcome }}{% endif %}</td>
-        </tr>
-      {% endfor %}
-      </tbody>
-    </table>
-  </div>
-</section>
 
 <details class="card">
   <summary>League point-calculation chart ({{ n_rules }} rules, stored with the bracket)</summary>

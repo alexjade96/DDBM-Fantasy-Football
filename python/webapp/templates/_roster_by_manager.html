@@ -1,132 +1,330 @@
-{# "Rosters by manager" section. Deferred behind /tab/roster/part/rosters (see
+{# "Roster" section. Deferred behind /tab/roster/part/rosters (see
    app.py's TAB_PARTS) since it's backed by roster_detail()+coaching_detail(),
    each a full per-manager/per-week loop -- see tab_roster.html, which renders
-   this fragment's placeholder. #}
+   this fragment's placeholder. Renders in BOTH scopes: league scope shows
+   every manager's row, manager scope shows the one row already filtered
+   into `rosters` by app.py. "Efficiency" is still its own manager-only
+   section (_roster_efficiency.html, 2026-08 split). "Roster breakdown"
+   (position build + flex allocation) used to be its own manager-only
+   section too, but per-manager scope only ever has ONE row, so its
+   position-build content now renders directly in THAT row -- always
+   visible, no expand needed -- rather than living behind a second click in
+   a separate table; the player listing is still the row's expandable
+   detail, same as league scope.
+
+   Manager-scope row summary (2026-08, four rounds): "Pts" changed from
+   started-only to `started_pts + bench_pts` (the true season total,
+   matching what roster_detail() actually tracks per player -- see
+   _roster_macros.html). "Bench %" was briefly dropped from this row (one
+   manager can't be compared to anyone) then restored per explicit
+   follow-up request -- this row is meant to carry the manager's own facts,
+   not stay minimal; explained in the hint paragraph below rather than a
+   header tooltip, since this app has no header-tooltip convention and the
+   hint blurb is where every other section-specific term (e.g. "Bench pts"
+   in the league-scope hint) already gets defined. "Flex" is `r.flex_top`
+   (already computed) -- just the position this manager leaned on most for
+   the flex slot (e.g. "WR"), NOT paired with its own count (`flex_top_n`,
+   tried first, then dropped per explicit follow-up -- the flex allocation
+   bar below already shows the fuller RB/WR/TE % split, so a raw count here
+   was redundant with it); no flex starts at all (`flex_top` is None) shows
+   an em dash.
+
+   PPG and Eff % were added, then REMOVED again per explicit follow-up
+   ("isolate to relevant columns for roster, not including coaching-type
+   items like efficiency") -- this row is roster COMPOSITION (what was
+   carried), not lineup-decision performance. Eff % duplicated `_roster_
+   efficiency.html`'s own factoid and belongs only there; PPG (the
+   MANAGER's own overall rate) is a scoring RATE, closer to a performance
+   read than a composition fact, so it went too even though it's not
+   strictly "coaching." Flex stayed -- it's a roster-allocation/
+   composition fact (which position filled a slot), not a decision-quality
+   one, and the row body already shows the fuller RB/WR/TE flex split
+   right below it, so the summary-row Flex cell is consistent with keeping
+   that section.
+
+   "Pts" relabeled "Season pts" for clarity (at the time, still `started_pts
+   + bench_pts` -- see the LATER correction below, which changed the actual
+   value). "Best PPG"/"Most wks" ARE a distinction worth
+   surfacing at a glance (per explicit follow-up after they were first
+   dropped as duplicative) -- which position scored the fastest and which
+   one got rostered the most, without expanding to the position-build rows
+   below -- but compute NOTHING new: both read `r.pos_avg`/`r.pos_counts`
+   (the exact same dicts the `.pbval` rows already read) via `dictsort(by=
+   "value") | last`, so they're a different VIEW of already-fetched data,
+   not a duplicate metrics.py pass. Ties break on dictsort's own stable
+   POSITIONS-insertion order (whichever position sorts last among equal
+   values). A manager with every value at 0 (e.g. no scored weeks yet)
+   shows an em dash rather than an arbitrary "position 0" pick.
+
+   League/manager column unification (2026-08): league scope's summary row
+   used to be a DIFFERENT, narrower 3-column set (Players/Pts(started-only)/
+   Bench pts) than manager scope's 6 -- both diverging in COUNT and in what
+   "Pts" even meant (started-only at league scope vs. started+bench at
+   manager scope, AT THE TIME). Both scopes now render the identical column
+   set -- `best_ppg`/`most_wks` are computed once per row ABOVE the
+   `{% if manager %}` branch (previously manager-scope-only) so the
+   league-scope `<details>` summary reads them too; `--cols` is no longer
+   scope-conditional. A manager's row therefore looks identical whether
+   reached by expanding it from the league table or by switching to that
+   manager's own tab scope -- same columns, same values everywhere.
+
+   "Season pts" -> started-only (2026-08, LATEST correction, supersedes
+   both mentions above): explicitly changed from `r.started_pts +
+   r.bench_pts` to just `r.started_pts` per follow-up request -- despite
+   the label still reading "Season pts" (unchanged), the value is now what
+   this manager actually STARTED across the season, not their whole
+   roster's production. The hint blurb below states this explicitly
+   ("what they actually started -- bench production isn't counted") since
+   the column name alone no longer implies it. `r.bench_pts` stays
+   available on the row for the position-build body / drilldown's own
+   Bench pts column, just no longer folded into this summary number.
+
+   Each position-build row's `.pbval` reads "N players · N wks · NN.N ppg"
+   -- `r.pos_players` (metrics.py) is the DISTINCT player count at that
+   position, `n` (the same roster-week count `pos_counts` always held) is
+   back per explicit follow-up ("re-add position weeks rostered totals")
+   after being dropped during an earlier length trim, and the rate
+   (`r.pos_avg`, relabeled "ppg" from "avg" since that's genuinely what it
+   is) is points per roster-week at that position. The % (true composition
+   share) used to live here too but moved INSIDE the bar itself (see
+   bar-scaling note below) per a later explicit follow-up -- removed from
+   this text once redundant with the in-bar label. The wording went
+   through several rounds (see style.css's `.pbval` comment for the full
+   width/text history) -- "of roster" dropped, "PPG" lowercased, "players"
+   tried-then-kept spelled out, "wks" dropped-then-restored, "%" moved out
+   entirely -- landing here at "players"/"wks" spelled out, "ppg" kept
+   short, no % clause at all.
+
+   Position-build bar scaling (2026-08, two changes): bars were first
+   rescoped from league-wide (`pos_max`, the max any manager carried at
+   that position) to THIS manager's own total roster-weeks (`n /
+   roster_wks`, six bars summing to 100%) per explicit follow-up ("adjust
+   bars to each individual manager's roster build instead of league-wide").
+   That summed-to-100% version then made most individual bars visually
+   tiny (6 positions sharing one full-width track), so bar length was
+   changed AGAIN, per a second explicit follow-up ("adjust/scale bars to
+   fit width"), to `n / own_max` -- THIS manager's own single
+   most-rostered position now always fills the track, with the rest scaled
+   against it, so the spread is actually readable. That means bar length
+   and roster-share are now two DIFFERENT numbers (a position can be this
+   manager's biggest, filling the bar, while still being a modest % of
+   their whole roster) -- the true composition % (`share`) is now labelled
+   INSIDE the bar itself (2026-08, per explicit follow-up -- "move the %
+   inside each bar"), moved there from `.pbval` text where it briefly
+   lived; the blurb below (trimmed to one line per an earlier explicit
+   follow-up -- "too verbose") notes the split briefly rather than
+   spelling it out at length. The label is gated at `bar_width >= 12` (the
+   bar's own rendered width, NOT `share`) -- same threshold/reasoning
+   `.flexbar`'s label already used before ITS gate was removed (see below);
+   here the gate stayed, since realistic position-build bars can render
+   much thinner than flex-share segments ever do (a barely-touched
+   position, e.g. a 2-week emergency streamed TE, checked against real
+   roster-composition scenarios -- see this round's verification). Below
+   that width there's no room for even "4%" inside the fill, so it's
+   simply omitted rather than spilling (unlike the flex bar's new
+   behavior, see below). The % clause was REMOVED from `.pbval`'s own
+   text this round since it's now redundant with the in-bar label; see
+   style.css's own `.pbtrack span` comment.
+   `pos_max` (the OLD league-wide value)
+   is no longer computed or passed by app.py at all (removed as dead once
+   the first rescoping stopped reading it -- see app.py's
+   `_roster_part_rosters`, right before `ctx["rosters"] = enrich(...)`);
+   `own_max`/`roster_wks` are both computed inline in this template from
+   `r.pos_counts`, already on the row.
+
+   Flex allocation label (2026-08, changed): the `pct >= 12` gate that used
+   to hide a thin segment's "RB N%" label was REMOVED entirely per explicit
+   follow-up ("include pos and % as long as it's shown/not 0") -- every
+   segment with `pct > 0` (the existing, unchanged outer gate -- a position
+   with ZERO flex starts still renders no segment at all) now always shows
+   its label, even a segment too thin to fit it without the text visually
+   spilling into its neighbour. That tradeoff was raised explicitly and
+   confirmed acceptable before implementing -- see style.css's own
+   `.flexbar span` comment for how the spill is kept legible
+   (`white-space: nowrap` so it spills sideways on one line instead of
+   wrapping and getting clipped by the bar's fixed height).
+
+   Drilldown default sort (2026-08): `roster_players_table`'s rows now
+   arrive pre-sorted by POSITION (QB/RB/WR/TE/K/DEF order, not points) --
+   see metrics.py's `_roster_detail_impl`, which sorts `players` by
+   `POSITIONS.index(position)` (ties broken by `-total_pts`) instead of
+   `-total_pts` alone. index.html's client-side sort still lets a click on
+   any header re-sort (including a click on "Pos" itself, which uses the
+   same POS_ORDER the column opted into already -- see that column's own
+   comment) -- this only changes the table's INITIAL, unsorted-yet order.
+
+   Full player list: scrollable + filterable by position (2026-08). The
+   player table can run to 20+ rows once every waiver churn is included, so
+   `.dt-detail` around it caps at `.roster-scroll`'s fixed max-height with a
+   vertical scrollbar (see style.css) instead of growing the panel
+   indefinitely -- applied at BOTH scopes' drilldown (manager scope's
+   `.dt-row-players` detail, and league scope's plain `.dt-row` `<details>`,
+   below), since either can hold the same 20+-row list once expanded.
+   Filtering reuses the position-build rows' OWN `.pblabel` chips ABOVE the
+   table as the filter control, rather than adding a second, separate set of
+   position chips -- clicking "RB" up there both means "this is the RB row"
+   (unchanged) and now ALSO filters the player list below to RB. Each
+   `.pblabel` gets `data-filter-pos="{{ pos }}"`; `index.html`'s
+   `prepRosterFilters()` wires the click (toggle: clicking the ALREADY-active
+   position clears the filter back to all rows) and reads/writes each row's
+   visibility via the `data-pos` attribute `_roster_macros.html` now puts on
+   every `<tr>`. Pure client-side, no server round-trip -- the full list is
+   already in the DOM once expanded. League scope's `.dt-row` intentionally
+   does NOT get `data-roster-filter`/the click-filter wiring -- that scope
+   has no position-build `.pblabel` chips of its own to click (the row is a
+   plain summary, not the manager-scope row's always-visible position-build
+   body), so there is no filter control to wire up; only scrollability
+   (a plain CSS class, needing no JS) applies at both scopes. #}
 {% import "_ident.html" as idm with context %}
 {% import "_roster_macros.html" as rm with context %}
+{# Compact player-chip cell (2026-08): headshot + name + position, for the
+   "Best PPG"/"Best player" summary cells -- reused by BOTH the manager-scope
+   row and the league-scope <details> summary so the two stay visually
+   identical (same reason best_ppg_p/best_pts_p are computed once, above the
+   scope branch, rather than each branch re-deriving its own). Smaller
+   headshot (16px, via inline style) than the standard 22px `.pface` -- these
+   cells sit in the SAME narrow `minmax(85px,1fr)` numeric columns every
+   other summary-row value uses, and the row already truncates long content
+   with an ellipsis (`.dt-row-summary > *`), so a full-size portrait would
+   crowd out the name almost immediately. Position rank (2026-08) appended
+   as "#N" after the position -- `p.pos_rank` is the same SEASON position
+   rank `roster_players_table`'s own player cell already shows (see
+   _roster_macros.html's "WR #4" convention); a player with no rank
+   (`pos_rank` is None -- can happen for a player with no scored weeks)
+   omits the "#N" suffix rather than printing a bare "#None". #}
+{% macro player_chip(p) -%}
+{%- if p -%}
+<img class="pface" style="width:16px;height:16px;margin-right:4px"
+     src="https://sleepercdn.com/content/nfl/players/{{ p.player_id }}.jpg" alt=""
+     loading="lazy" onerror="this.remove()">{{ p.player_name }} <span class="q">{{ p.position }}{% if p.pos_rank %} #{{ p.pos_rank }}{% endif %}</span>
+{%- else -%}
+&mdash;
+{%- endif -%}
+{%- endmacro %}
 {% if rosters %}
-<h2>Rosters by manager</h2>
-<p class="hint">Expand a manager for their roster shape and flex habit (<strong>Roster
-   breakdown</strong>), every player they rostered (<strong>Roster</strong>), or their
-   week-by-week lineup calls (<strong>Efficiency</strong>) &mdash; whichever view is
-   selected below. <strong>Bench pts</strong> is what their bench scored &mdash; the cost
-   of the roster they carried; <strong>Points below optimal</strong> (in the drilldown) is
-   the cost of the decisions &mdash; only the bench points a legal swap would actually
-   have converted.</p>
+<h2>Roster</h2>
+<p class="hint">{% if manager %}What {{ manager }} rostered this season &mdash; position
+   build, flex allocation, and every player.{% else %}Expand a manager for every player
+   they rostered.{% endif %} <strong>Season pts</strong> is what they actually started &mdash;
+   bench production isn&rsquo;t counted. <strong>Best PPG</strong> is the player with the
+   highest starting rate; <strong>Best player</strong> is the one with the most total
+   points.</p>
 {{ rm.chartgrid(charts_rosters) }}
-<div class="viewswitch roster-view-mode">
-  <input type="radio" name="rvmode" id="rv-breakdown" class="vs-radio" checked>
-  <input type="radio" name="rvmode" id="rv-roster" class="vs-radio">
-  <input type="radio" name="rvmode" id="rv-eff" class="vs-radio">
-  <div class="rail vs-tabs">
-    <span class="k">View</span>
-    <label class="year" for="rv-breakdown">Roster breakdown</label>
-    <label class="year" for="rv-roster">Roster</label>
-    <label class="year" for="rv-eff">Efficiency</label>
-  </div>
-  <div class="tablewrap">
-  <div class="drilltable"
-       style="--cols: minmax(130px,1.5fr) minmax(80px,.9fr) repeat(2, minmax(95px,1fr)) minmax(80px,.9fr) minmax(90px,1fr) minmax(105px,1.1fr)">
+<div class="tablewrap">
+<div class="drilltable"
+     style="--cols: minmax(130px,1.5fr) repeat(5, minmax(85px,1fr))">
   <div class="dt-head">
-    <span>Manager</span><span class="dt-num">Players</span>
-    <span class="dt-num">Pts</span>
-    <span class="dt-num">Bench pts</span><span class="dt-num">Bench %</span>
-    <span class="dt-num">Lineup %</span><span class="dt-num">Lost to bench</span>
+    <span>Manager</span>
+    <span class="dt-num">Avg flex</span>
+    <span class="dt-num">Best PPG</span>
+    <span class="dt-num">Best player</span>
+    <span class="dt-num">Season pts</span>
+    <span class="dt-num">Players</span>
   </div>
   {% for r in rosters %}
+  {# Avg flex/Best PPG/Best player/Season pts are the SAME 5 summary
+     columns in both scopes (2026-08 unification) -- computed once here,
+     above the manager/league branch, so the league-scope row (a plain
+     <details> summary, below) reads identically to the manager-scope
+     row's own always-visible summary rather than each scope hand-rolling
+     its own subset.
+
+     "Avg flex" (2026-08, renamed from "Flex usage", itself renamed from
+     "Flex") -- header text only, same `r.flex_top` value/logic unchanged
+     (which position filled the flex slot most).
+
+     "Bench %" (2026-08, removed) -- dropped from this summary row
+     entirely; `r.bench_share` is no longer read here. Bench composition
+     is still visible in the position-build body below (each `.pbval` row
+     already states players/weeks/ppg per position) and in the drilldown's
+     own Bench pts/Bench PPG columns, so the fact isn't lost, just no
+     longer duplicated as a 6th summary number.
+
+     "Best PPG" (2026-08, was the POSITION with the highest average PPG via
+     `r.pos_avg` dictsort) now identifies the PLAYER with the highest
+     STARTING ppg (`p.started_ppg`, roster_detail() -- see _roster_macros.
+     html's own comment on why that's scoped to started_weeks specifically,
+     not the combined weeks a plain ppg would use). "Best player" (2026-08,
+     was "Most wks" -- the POSITION with the most roster-weeks via
+     `r.pos_counts` dictsort) now identifies the PLAYER with the highest
+     TOTAL points (`p.total_pts`) -- a genuinely different read from "best
+     PPG" (rate vs. total), so the two columns can name different players.
+     Both are Jinja's `max(attribute=...)` over `r.players` (guarded by
+     `if r.players` -- Jinja's `max` filter has no `default` kwarg, unlike
+     Python's builtin, and errors on an empty sequence) rather than a new
+     metrics.py pass -- the list is already on the row. #}
+  {% set best_ppg_p = r.players | max(attribute="started_ppg") if r.players else none %}
+  {% set best_pts_p = r.players | max(attribute="total_pts") if r.players else none %}
+  {% if manager %}
+  {# Manager scope has exactly one row -- its position-build content is the
+     row's OWN display (always visible, no expand), a plain sibling block
+     rather than living inside <details>/.dt-detail. Only the player listing
+     stays behind the expand click below. #}
+  <div class="dt-row dt-row-static">
+    <div class="dt-row-summary">
+      <span>{{ idm.who(r.user_name) }}</span>
+      <span class="dt-num">{% if r.flex_top %}{{ r.flex_top }}{% else %}&mdash;{% endif %}</span>
+      <span class="dt-num">{{ player_chip(best_ppg_p) }}</span>
+      <span class="dt-num">{{ player_chip(best_pts_p) }}</span>
+      <span class="dt-num">{{ "%.0f"|format(r.started_pts) }}</span>
+      <span class="dt-num">{{ r.players_used }}</span>
+    </div>
+    <div class="dt-row-body">
+      {% set roster_wks = r.pos_counts.values() | sum %}
+      {% set own_max = r.pos_counts.values() | max %}
+      <div class="posbuild">
+        {% for pos in ["QB", "RB", "WR", "TE", "K", "DEF"] %}
+        {% set n = r.pos_counts.get(pos, 0) %}
+        {% set bar_width = (n / own_max * 100) if own_max else 0 %}
+        {% set share = (n / roster_wks * 100) if roster_wks else 0 %}
+        <div class="pbrow">
+          <button type="button" class="pblabel pos-{{ pos|lower }}" data-filter-pos="{{ pos }}">{{ pos }}</button>
+          <div class="pbtrack"><span class="pos-{{ pos|lower }}"
+               style="width: {{ bar_width | round(1) }}%">{% if bar_width >= 12 %}{{ "%.0f"|format(share) }}%{% endif %}</span></div>
+          <span class="pbval q">{{ r.pos_players.get(pos, 0) }} players &middot; {{ n }} wks &middot; {{ "%.1f"|format(r.pos_avg.get(pos, 0)) }} ppg</span>
+        </div>
+        {% endfor %}
+      </div>
+      <p class="q">Position build: bars are scaled to this manager&rsquo;s own heaviest position, not
+        their roster share &mdash; see the % figure for actual composition. Click a position to
+        filter the full player list below.</p>
+      {% if r.flex_share %}
+      <div class="flexbar">
+        {% for pos in ["RB", "WR", "TE"] %}
+        {% set pct = r.flex_share.get(pos, 0) %}
+        {% if pct > 0 %}
+        <span class="pos-{{ pos|lower }}" style="width: {{ pct }}%">{{ pos }} {{ pct }}%</span>
+        {% endif %}
+        {% endfor %}
+      </div>
+      <p class="q">Flex allocation: RB {{ r.flex_share.get("RB", 0) }}% &middot;
+        WR {{ r.flex_share.get("WR", 0) }}% &middot;
+        TE {{ r.flex_share.get("TE", 0) }}%</p>
+      {% endif %}
+    </div>
+    <details class="dt-row-players" data-roster-filter>
+      <summary class="q">Full player list</summary>
+      <div class="dt-detail roster-scroll">
+        {{ rm.roster_players_table(r) }}
+      </div>
+    </details>
+  </div>
+  {% else %}
   <details class="dt-row">
     <summary>
       <span>{{ idm.who(r.user_name) }}</span>
-      <span class="dt-num">{{ r.players_used }}</span>
+      <span class="dt-num">{% if r.flex_top %}{{ r.flex_top }}{% else %}&mdash;{% endif %}</span>
+      <span class="dt-num">{{ player_chip(best_ppg_p) }}</span>
+      <span class="dt-num">{{ player_chip(best_pts_p) }}</span>
       <span class="dt-num">{{ "%.0f"|format(r.started_pts) }}</span>
-      <span class="dt-num">{{ "%.0f"|format(r.bench_pts) }}</span>
-      <span class="dt-num">{{ "%.0f"|format(r.bench_share) }}%</span>
-      <span class="dt-num">{% if r.eff is not none %}{{ "%.1f"|format(r.eff) }}%{% else %}&mdash;{% endif %}</span>
-      <span class="dt-num">{% if r.cost_losses %}<span class="res l">{{ r.cost_losses }}</span>{% else %}&mdash;{% endif %}</span>
+      <span class="dt-num">{{ r.players_used }}</span>
     </summary>
-    <div class="dt-detail">
-      <div class="dt-facts">
-        {% if r.perfect is not none %}
-        <div class="fact"><span class="fl">Perfect lineups</span><span class="fv">
-          <span class="pts">{{ r.perfect }}</span>
-          <span class="q">of {{ r.lineup_weeks | length }} weeks</span></span></div>
-        {% endif %}
-        {% if r.points_below_optimal is not none %}
-        <div class="fact"><span class="fl">Points below optimal</span><span class="fv">
-          <span class="pts">{{ "%.1f"|format(r.points_below_optimal) }}</span></span></div>
-        {% endif %}
-        {% if r.worst_week %}
-        <div class="fact"><span class="fl">Worst week</span><span class="fv">
-          <span class="pts">{{ "%.1f"|format(r.worst_week.cost) }}</span>
-          <span class="q">left on the bench in wk {{ r.worst_week.week }}</span></span></div>
-        {% endif %}
-      </div>
-      <div class="rv-panels">
-        <div class="vs-panel vs-p-breakdown">
-          <div class="posbuild">
-            {% for pos in ["QB", "RB", "WR", "TE", "K", "DEF"] %}
-            {% set n = r.pos_counts.get(pos, 0) %}
-            {% set mx = pos_max.get(pos, 0) %}
-            <div class="pbrow">
-              <span class="pblabel pos-{{ pos|lower }}">{{ pos }}</span>
-              <div class="pbtrack"><span class="pos-{{ pos|lower }}"
-                   style="width: {{ ((n / mx * 100) if mx else 0) | round(1) }}%"></span></div>
-              <span class="pbval q">{{ n }} wks &middot; {{ "%.1f"|format(r.pos_avg.get(pos, 0)) }} avg</span>
-            </div>
-            {% endfor %}
-          </div>
-          <p class="q">Position build: each bar scaled to its own position&rsquo;s league-wide max.</p>
-          {% if r.flex_share %}
-          <div class="flexbar">
-            {% for pos in ["RB", "WR", "TE"] %}
-            {% set pct = r.flex_share.get(pos, 0) %}
-            {% if pct > 0 %}
-            <span class="pos-{{ pos|lower }}" style="width: {{ pct }}%">{% if pct >= 12 %}{{ pos }} {{ pct }}%{% endif %}</span>
-            {% endif %}
-            {% endfor %}
-          </div>
-          <p class="q">Flex allocation: RB {{ r.flex_share.get("RB", 0) }}% &middot;
-            WR {{ r.flex_share.get("WR", 0) }}% &middot;
-            TE {{ r.flex_share.get("TE", 0) }}%</p>
-          {% endif %}
-        </div>
-        <div class="vs-panel vs-p-roster">
-          {{ rm.roster_players_table(r) }}
-        </div>
-        <div class="vs-panel vs-p-eff">
-          {% if r.lineup_weeks %}
-          <table class="dt-games">
-            <thead><tr>
-              <th class="n">Wk</th><th class="n">Started</th><th class="n">Optimal</th>
-              <th class="n">Cost</th><th class="n">Lineup %</th><th>Result</th>
-            </tr></thead>
-            <tbody>
-            {% for w in r.lineup_weeks %}
-              <tr>
-                <td class="n">{{ w.week }}</td>
-                <td class="n">{{ "%.1f"|format(w.actual) }}</td>
-                <td class="n">{{ "%.1f"|format(w.optimal) }}</td>
-                <td class="n">{% if w.cost > 0.05 %}<span class="q">{{ "%.1f"|format(w.cost) }}</span>{% else %}&mdash;{% endif %}</td>
-                <td class="n">{{ "%.0f"|format(w.eff) }}%</td>
-                <td>
-                  {%- if w.result is defined -%}
-                    <span class="res {{ 'w' if w.result == 'W' else 'l' if w.result == 'L' else '' }}">{{ w.result }}</span>
-                    {% if w.would_have_won %}<span class="q">&mdash; optimal wins it</span>{% endif %}
-                  {%- else -%}&mdash;{%- endif -%}
-                </td>
-              </tr>
-            {% endfor %}
-            </tbody>
-          </table>
-          {% else %}
-          <p class="hint">No week-by-week lineup data for this manager.</p>
-          {% endif %}
-        </div>
-      </div>
+    <div class="dt-detail roster-scroll">
+      {{ rm.roster_players_table(r) }}
     </div>
   </details>
+  {% endif %}
   {% endfor %}
-</div>
 </div>
 </div>
 {% endif %}

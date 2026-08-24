@@ -557,6 +557,60 @@ details summary { cursor: pointer; font-weight: 600; }
   background: color-mix(in srgb, var(--ink) 3.5%, transparent); overflow-x: auto; }
 .dt-detail strong { color: var(--ink); }
 
+/* Per-manager Roster row (.dt-row-static): unlike a plain .dt-row, this row's
+   position-build content is the row's OWN always-visible display, not a
+   click-to-expand .dt-detail -- per-manager scope only ever has ONE row, so
+   there's nothing to collapse to save space. .dt-row-summary reuses the
+   .dt-head/.dt-row>summary grid look (same --cols var) without the
+   <details>/<summary> clickable semantics; .dt-row-body is a plain block,
+   not a .dt-detail (no inset tint/border -- it's not a "drilled into"
+   panel, it's the row's own face). Only the player listing keeps a REAL
+   nested <details> (.dt-row-players), styled as a quiet inline toggle
+   rather than a second full drilltable row. */
+.dt-row-static { border-top: 1px solid var(--line); }
+.dt-row-summary { display: grid; grid-template-columns: var(--cols);
+  gap: 10px; padding: 9px 30px 9px 12px; align-items: center; font-size: 13.5px; }
+.dt-row-summary > * { min-width: 0; overflow: hidden; text-overflow: ellipsis;
+  white-space: nowrap; }
+.dt-row-body { padding: 4px 16px 15px 12px; font-size: 12.5px; color: var(--muted);
+  line-height: 1.6; }
+.dt-row-players { border-top: 1px solid var(--line); }
+.dt-row-players > summary { cursor: pointer; list-style: none;
+  padding: 8px 16px; font-size: 12.5px; }
+.dt-row-players > summary::-webkit-details-marker { display: none; }
+.dt-row-players > summary::before { content: '\25B8'; display: inline-block;
+  margin-right: 6px; color: var(--faint); font-size: 10px; }
+.dt-row-players[open] > summary::before { content: '\25BE'; }
+.dt-row-players > .dt-detail { border-top: 1px solid var(--line); }
+/* Full player list can run to 20+ rows once every waiver churn is included
+   (2026-08) -- caps the list at a fixed height with its own scrollbar
+   instead of letting the panel grow indefinitely. thead stays pinned via
+   position:sticky so the column headers (and their click-to-sort handlers,
+   unaffected -- sticky is purely visual) stay visible while scrolling
+   through a long roster. Horizontal `overflow-x: auto` on the parent
+   `.dt-detail` rule above still applies unchanged for narrow panels. thead's
+   sticky background must match `.dt-detail`'s own tinted background exactly
+   (same color-mix recipe, opaque -- not var(--surface), which is the plain
+   page background one layer further out and would show a visible seam)
+   or scrolled rows show through behind the pinned header text. */
+/* display:block + width:100% made explicit (2026-08): originally only ever
+   co-applied directly on a .dt-detail element (already a full-width block by
+   itself), but the redraft-sim report's drilldown nests .roster-scroll as a
+   SEPARATE inner div (alongside a .dt-facts sibling that must stay
+   unscrolled), and a bare div with only max-height/overflow-y can shrink to
+   its content's width in that context instead of spanning the row. */
+.roster-scroll { display: block; width: 100%; max-height: 420px; overflow-y: auto; }
+/* `#panel .dt-detail > table.dt-games { width: 100% }` (below, direct-child
+   combinator) only matches a table that's a DIRECT child of .dt-detail --
+   the redraft-sim report's drilldown nests the table one level deeper
+   (.dt-detail > .roster-scroll > table.dt-games), which falls outside that
+   selector, so the table itself needs its own width rule here too, not just
+   the .roster-scroll div wrapping it. */
+.roster-scroll table.dt-games { width: 100%; }
+.roster-scroll table.dt-games thead th {
+  position: sticky; top: 0;
+  background: color-mix(in srgb, var(--ink) 3.5%, var(--bg)); }
+
 /* Drill bodies are labelled fields / mini-tables, never a run-on sentence.
    Values wrap rather than truncate, and the grid re-flows on narrow panels. */
 .dt-facts { display: grid;
@@ -579,18 +633,125 @@ details summary { cursor: pointer; font-weight: 600; }
 .pos-k { color: var(--k); background: var(--k); }
 .pos-def { color: var(--def); background: var(--def); }
 /* Roster tab's "Roster breakdown" tab panel (Roster Construction / Flex
-   Allocation charts folded inline instead of their own standalone graphics). */
-.posbuild { display: flex; flex-direction: column; gap: 5px; margin-bottom: 4px; }
-.pbrow { display: flex; align-items: center; gap: 8px; }
-.pblabel { width: 30px; flex: none; font-size: 11px; font-weight: 700; }
-.pbtrack { flex: 1; height: 10px; border-radius: 3px;
+   Allocation charts folded inline instead of their own standalone graphics).
+
+   Grid, not flex-column-of-flex-rows (2026-08, re-architected after 3
+   flexbox-only rounds kept trading one problem for another -- see the
+   .pbtrack/.pbval comments below for that history). The actual ask
+   ("essentially use two columns, one for the pos bars, one for the
+   related text... all pos bars should stretch until they hit the maximum
+   pos text space... but the pos text does not have to stretch or
+   accommodate extra space for the non-max text") is a shared-column-
+   tracks-across-sibling-rows layout, which plain flexbox (each .pbrow
+   sized independently) cannot express -- a flex row has no way to know
+   what its SIBLING rows' content needs. CSS Grid can: `.posbuild` is now
+   the grid, `grid-template-columns: auto 1fr auto` (label / bar / text),
+   and each `.pbrow` uses `display: contents` so its 3 children register
+   as direct items of THIS shared grid instead of their own isolated flex
+   row -- every row's label column is exactly as wide as the longest label
+   needs (34px fixed, unchanged), every row's bar column (`1fr`) is
+   IDENTICAL width across all six rows since it's one grid track, not six
+   independent flex-1s, and the text column is `auto` -- sized to whichever
+   row's text is actually longest, with every other row's text column just
+   as wide (grid columns are uniform by definition) but NOT stretched
+   further than that longest content needs. */
+.posbuild { display: grid; grid-template-columns: auto 1fr auto;
+  align-items: center; row-gap: 5px; column-gap: 8px; margin-bottom: 4px; }
+.pbrow { display: contents; }
+/* A filled chip, not plain colored text -- .pos-X's `color` half is unused
+   here (overridden to white for contrast against the fill), only its
+   `background` half applies, same "solid position-colored badge with white
+   text" look .flexbar span's segments already use. A dark outline (8 offset
+   text-shadows -- cardinal + diagonal, not the non-standard/inconsistently-
+   supported -webkit-text-stroke) keeps the white text crisp against the
+   lighter fills (K's pink especially) without darkening the chip itself. */
+/* Now a <button> (2026-08, was a plain <span>) -- doubles as the full
+   player list's position filter (see _roster_by_manager.html's own
+   comment and index.html's prepRosterFilters()). border:0/font inherit/
+   cursor reset undo the browser's default button chrome so it keeps
+   looking exactly like the old span chip; `.active` (applied by JS to
+   whichever position is currently filtered) gets a light ring so it's
+   clear which position the player list below is filtered to. */
+.pblabel { width: 34px; flex: none; text-align: center; font-size: 10.5px;
+  font-weight: 700; color: #fff; border-radius: 4px; padding: 2px 0;
+  border: 0; font-family: inherit; cursor: pointer;
+  text-shadow: -1px 0 rgba(0,0,0,.7), 1px 0 rgba(0,0,0,.7),
+    0 -1px rgba(0,0,0,.7), 0 1px rgba(0,0,0,.7),
+    -1px -1px rgba(0,0,0,.7), 1px -1px rgba(0,0,0,.7),
+    -1px 1px rgba(0,0,0,.7), 1px 1px rgba(0,0,0,.7); }
+.pblabel.active { box-shadow: 0 0 0 2px var(--ink); }
+/* Height raised 10px -> 14px (2026-08) to fit the in-bar % label added the
+   same round (see .pbtrack span below) -- 10px had no room for even a
+   9px label without clipping top/bottom.
+
+   `width: 100%` fills its grid column (2026-08) -- this went through two
+   wrong flexbox attempts first (flex:1, then a guessed fixed 220px) before
+   landing on `.posbuild`'s grid restructure (see that rule's own comment
+   for the full history): under grid, `.pbtrack`'s column is ONE shared
+   `1fr` track spanning all six rows, so every row's track is already
+   pixel-identical without this rule doing anything itself -- `width: 100%`
+   just fills whatever that shared column resolves to, rather than trying
+   to guess a fixed px value per row. */
+.pbtrack { width: 100%; height: 14px; border-radius: 3px;
   background: var(--line); overflow: hidden; }
-.pbtrack span { display: block; height: 100%; border-radius: 3px; }
-.pbval { width: 130px; flex: none; text-align: right; }
+/* The % label (2026-08, moved in from .pbval per explicit follow-up --
+   "move the % inside each bar") reuses .flexbar span's exact look (centered,
+   white, same 8-offset outline for contrast against the lighter fills) so
+   the two in-bar-label idioms on this same tab read identically. Gated at
+   `bar_width >= 12` in the template, same threshold .flexbar's own label
+   already uses and for the same reason: checked against realistic roster
+   distributions (K/DEF/QB rarely dip far below ~25-30% of this manager's
+   own max; a barely-touched position -- e.g. a 2-week emergency streamed
+   TE -- can realistically fall under 5%) and a position that thin has no
+   room for even "4%" without the text spilling past its own fill. The %
+   value itself is `share` (true roster-composition %), NOT `bar_width`
+   (the scaled-to-own-max value the bar's actual width uses) -- see
+   _roster_by_manager.html's own comment on why those two numbers differ. */
+.pbtrack span { display: flex; align-items: center; justify-content: center;
+  height: 100%; border-radius: 3px; font-size: 9px; font-weight: 700;
+  color: #fff; text-shadow: -1px 0 rgba(0,0,0,.7), 1px 0 rgba(0,0,0,.7),
+    0 -1px rgba(0,0,0,.7), 0 1px rgba(0,0,0,.7),
+    -1px -1px rgba(0,0,0,.7), 1px -1px rgba(0,0,0,.7),
+    -1px 1px rgba(0,0,0,.7), 1px 1px rgba(0,0,0,.7); }
+/* Auto grid column, right-aligned (2026-08 -- landed here after 4 flexbox-
+   only attempts, each fixing one symptom while creating another; see
+   .posbuild's own comment for why grid replaced flexbox for this layout
+   entirely, and don't re-attempt a flex-only fix here without reading it
+   first). Under `.posbuild`'s grid, `.pbval`'s column is `auto` -- ONE
+   shared track sized to whichever row's text is genuinely the longest, so
+   every row's text column is that same width but never wider than that
+   longest content actually needs. Right-aligned (changed from left per
+   explicit follow-up -- "make text right justified so the space is
+   allocated between the non-max pos text areas"): a shorter row's slack
+   now sits BETWEEN its own bar and where its text starts, not trailing
+   after the text -- every row's text ends flush at the same right edge,
+   reading as one aligned column rather than six independently-positioned
+   strings. white-space: nowrap is still the guard against silently
+   re-wrapping onto 2 lines -- under grid, a row whose own text is exactly
+   the column's max width has zero slack, so nowrap is what keeps it from
+   wrapping there; a hypothetically longer string still simply overflows
+   the column visibly. */
+.pbval { text-align: right; white-space: nowrap; }
 .flexbar { display: flex; height: 15px; border-radius: 4px; overflow: hidden; margin-bottom: 4px; }
+/* Same dark outline as .pblabel above (2026-08) -- white text on the lighter
+   fills (K's pink, TE's amber) was hard to read without it; identical
+   8-offset text-shadow recipe, not -webkit-text-stroke, for the same
+   cross-browser reason .pblabel's own comment gives. */
+/* No longer gated at pct >= 12 (2026-08, per explicit follow-up -- "include
+   pos and % as long as it's shown/not 0") -- every non-zero segment now
+   labels itself, including ones too thin to fit "RB 3%" inside their own
+   fill. white-space: nowrap keeps a too-narrow label spilling sideways
+   into the neighbouring segment(s) rather than wrapping and getting
+   clipped by .flexbar's own overflow:hidden + fixed 15px height, which
+   read as broken/cut-off text; a one-line sideways spill at least stays
+   fully legible. Confirmed acceptable per explicit follow-up after this
+   exact tradeoff was raised. */
 .flexbar span { display: flex; align-items: center; justify-content: center;
-  font-size: 9px; font-weight: 700; color: #fff; }
-.vs-p-breakdown p.q { margin: 6px 0 10px; }
+  font-size: 9px; font-weight: 700; color: #fff; white-space: nowrap;
+  text-shadow: -1px 0 rgba(0,0,0,.7), 1px 0 rgba(0,0,0,.7),
+    0 -1px rgba(0,0,0,.7), 0 1px rgba(0,0,0,.7),
+    -1px -1px rgba(0,0,0,.7), 1px -1px rgba(0,0,0,.7),
+    -1px 1px rgba(0,0,0,.7), 1px 1px rgba(0,0,0,.7); }
 table.dt-games { border-collapse: collapse; font-size: 12.5px; width: auto;
   margin-top: 2px; }
 /* A drill body can hold facts and then mini-tables -- keep them apart. The
@@ -599,8 +760,7 @@ table.dt-games { border-collapse: collapse; font-size: 12.5px; width: auto;
    itself would have gotten as .dt-facts' direct next sibling. */
 .dt-detail .dt-facts + table.dt-games,
 .dt-detail .dt-facts + .dt-tables,
-.dt-detail .dt-facts + .dt-lineup-mode,
-.dt-detail .dt-facts + .rv-panels { margin-top: 16px; }
+.dt-detail .dt-facts + .dt-lineup-mode { margin-top: 16px; }
 /* Started vs optimal sit side by side when there's room. Grid items default to
    align-items:stretch -- with two <table>s of different row counts (a team's
    bench is rarely the same size as their opponent's), the shorter table was
@@ -611,6 +771,16 @@ table.dt-games { border-collapse: collapse; font-size: 12.5px; width: auto;
    start keeps each table at its own natural height. */
 .dt-tables { display: grid; align-items: start;
   grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 18px 36px; }
+/* Roster tab's Efficiency drilldown (Started | Bench, not Started | Optimal):
+   a plain "these two groups trade players" cue between the two tables, not a
+   per-player connector (the existing gold .bench-impact highlight already
+   marks which specific players would swap -- see _lineupmacro.html's
+   rows_are_bench). auto-fit above would otherwise size this like a third
+   equal column; pin it narrow and center the glyph both axes since it has
+   to sit level with whichever table ends up taller. */
+.dt-tables-arrow { grid-template-columns: 1fr auto 1fr; }
+.dt-arrow { align-self: center; justify-self: center; font-size: 20px;
+  color: var(--faint); padding-top: 22px; }
 .dt-block { min-width: 0; }
 .dt-sub { font-size: 10px; text-transform: uppercase; letter-spacing: .07em;
   color: var(--turf); font-weight: 700; margin-bottom: 6px; }
@@ -1020,7 +1190,18 @@ footer code { font-family: ui-monospace, Consolas, monospace; }
   content: '\25B8'; display: inline-block; width: 12px; margin-right: 2px;
   font-size: 10px; color: var(--faint); }
 #panel tr.has-detail.open .drilldown-mark::before { content: '\25BE'; }
-#panel tr.detail-row td { color: var(--muted);
+/* > td (direct children only), not the descendant combinator: this rule
+   used to reach EVERY td nested anywhere inside a .detail-row, including a
+   nested table's own rows -- harmless while a .detail-row only ever held
+   plain <td>s directly (the Draft-finds table this was written for), but
+   the Roster tab's Efficiency drilldown later nested a full lineup table
+   (with its OWN row-level highlight classes, e.g. .bench-impact) inside a
+   .detail-row's <td>, and this ID-specificity rule silently overrode every
+   highlighted row's background in there -- the highlight class was applied
+   correctly in the markup, just invisibly losing the cascade. Scoping to
+   direct children keeps this rule doing only what it was meant to (tint
+   the drilldown's own immediate cell) without reaching past it. */
+#panel tr.detail-row > td { color: var(--muted);
   background: color-mix(in srgb, var(--ink) 3.5%, transparent); }
 
 /* Draft-finds Player/Order pair (columns 2-3: Pick, Player, Order, ...):
@@ -1086,9 +1267,9 @@ footer code { font-family: ui-monospace, Consolas, monospace; }
    four are genuinely DIFFERENT tables (season totals, postseason rounds, one
    row per manager, one row per week), not different ways of looking at the
    same row, so this is the simple top-level N-panel idiom (.db-vs-mode/
-   .fa-vs-mode) rather than .roster-view-mode's shared-table-with-nested-
-   panels one: .vs-p-sim-* are direct siblings of the radios, each holding
-   its own complete section/.tablewrap. The toggle supersedes the table (sits
+   .fa-vs-mode): .vs-p-sim-* are direct siblings of the radios, each holding
+   its own complete section/.tablewrap, rather than one shared table whose
+   rows swap between nested panels. The toggle supersedes the table (sits
    above it, swaps which whole table renders) instead of being buried inside
    a drilldown. Season's two charts sit inside their OWN .vs-p-sim-season
    wrapper rather than being tagged directly with the toggle's own
@@ -1118,27 +1299,6 @@ footer code { font-family: ui-monospace, Consolas, monospace; }
   background: var(--ink); color: var(--surface); border-color: var(--ink); }
 .sim-view-mode > .vs-panel { margin-top: 10px; }
 
-/* Roster tab: "Rosters by manager" drilldown's Roster breakdown / Roster /
-   Efficiency toggle -- ONE instance for the whole section (not per row), so
-   it's the same fixed-id idiom as .rh-vs-mode above rather than
-   .dt-lineup-mode's structural one. The radios sit in the section header;
-   `~` reaches past the intervening hint/chart siblings into EVERY row's
-   .vs-panel, however deep it's nested inside its own <details> -- a
-   general-sibling combinator is not depth-limited on the descendant side,
-   so one shared toggle can drive all ten managers' panels at once without
-   :has(). Each row keeps its own .rv-panels wrapper (the three .vs-panel
-   divs, no radios of their own anymore) -- Roster breakdown and Roster are
-   always populated (roster shape and the player list both come straight off
-   roster_detail(), independent of lineup data), only Efficiency falls back
-   to a plain message for a manager with no lineup weeks. */
-.roster-view-mode #rv-breakdown:checked ~ .tablewrap .vs-p-breakdown,
-.roster-view-mode #rv-roster:checked ~ .tablewrap .vs-p-roster,
-.roster-view-mode #rv-eff:checked ~ .tablewrap .vs-p-eff { display: block; }
-.roster-view-mode:has(#rv-breakdown:checked) .vs-tabs label[for="rv-breakdown"],
-.roster-view-mode:has(#rv-roster:checked) .vs-tabs label[for="rv-roster"],
-.roster-view-mode:has(#rv-eff:checked) .vs-tabs label[for="rv-eff"] {
-  background: var(--ink); color: var(--surface); border-color: var(--ink); }
-.rv-panels { margin-top: 4px; }
 .fa-vs-mode > .vs-panel { margin-top: 10px; }
 
 /* Bars sized in Python (pct, floored at 6 so a scoreless week still shows a
@@ -1201,10 +1361,16 @@ th.trend-col, td.trend-col { text-align: center; }
 .reportpanel .fa-fit-table th.n, .reportpanel .fa-fit-table td.n { text-align: right; padding-right: 0; }
 .posrank { margin-left: 2px; }
 
-/* Bench player who'd outscore a same-position starter: a soft tint + a *
-   marker (week_matchups' `would_start`) replacing the old "costliest call"
+/* Bench player who'd outscore a same-position starter: a soft tint
+   (week_matchups' `would_start`) replacing the old "costliest call"
    sentence, so every player who mattered is flagged, not just the single
-   biggest swap. Same color-mix idiom as the scoreboard's cmp-up/cmp-down. */
+   biggest swap. Same color-mix idiom as the scoreboard's cmp-up/cmp-down.
+   Also used on main-lineup rows for `swapped` (see _lineupmacro.html). Used
+   to pair with a `*` glyph there too -- dropped 2026-08 from
+   _lineupmacro.html specifically, as pure redundancy once the row
+   highlight covers the same signal on its own; .star ITSELF stays, since
+   _team_of_week.html still uses it for a DIFFERENT flag ("was benched on
+   their real roster") that has no row highlight of its own to duplicate. */
 tr.bench-impact td { background: color-mix(in srgb, #d9a441 8%, transparent); }
 .star { color: #d9a441; font-weight: 700; margin-left: 1px; }
 
@@ -1228,18 +1394,6 @@ tr.bench-impact td { background: color-mix(in srgb, #d9a441 8%, transparent); }
 #panel .dt-detail > table.dt-games tbody td:last-child { padding-right: 0; }
 /* Give the listing room to breathe under the facts row above it. */
 #panel .dt-detail .dt-facts + table.dt-games { margin-top: 18px; }
-/* Same fix, same reason, for the "Rosters by manager" Full roster / Efficiency
-   toggle: each .vs-panel holds exactly ONE full-width listing table (not a
-   narrow side-by-side pair like .dt-lineup-mode's), so it needs the same
-   width:100% + header/cell padding match as a bare table.dt-games would have
-   gotten as .dt-detail's direct child -- the .rv-panels/.vs-panel wrapper
-   otherwise defeats the `> table.dt-games` child selector above and the
-   table falls back to width:auto, packed against the left edge. */
-#panel .rv-panels .vs-panel > table.dt-games { width: 100%; }
-#panel .rv-panels .vs-panel > table.dt-games thead th,
-#panel .rv-panels .vs-panel > table.dt-games tbody td { padding-right: 28px; }
-#panel .rv-panels .vs-panel > table.dt-games thead th:last-child,
-#panel .rv-panels .vs-panel > table.dt-games tbody td:last-child { padding-right: 0; }
 
 /* Titular rows: the head + each summary. Fixed-width columns beside an `fr`
    column let the fr one absorb ALL the slack -- the name column sprawled to
@@ -1277,11 +1431,6 @@ tr.bench-impact td { background: color-mix(in srgb, #d9a441 8%, transparent); }
 #panel > h2 + *, #panel > p.hint + * { margin-top: 10px; }
 /* .rowhead wraps its own h2; the wrapper already took the gap. */
 #panel > .rowhead h2 { margin-top: 0; }
-/* Roster tab's section-wide Roster breakdown/Roster/Efficiency toggle
-   (.roster-view-mode) needs no special rhythm rule of its own: it's a plain
-   #panel child (the h2/hint/chart grid it applies to sit as ordinary
-   siblings BEFORE it, not wrapped inside it), and .rail's own
-   margin-bottom already gaps it from the .tablewrap that follows. */
 /* Sub-section labels inside a chart grid (e.g. Overview's grouped charts) hug
    the grid they title, same convention as h2 above but a smaller gap since h3
    is itself a lighter-weight label. */

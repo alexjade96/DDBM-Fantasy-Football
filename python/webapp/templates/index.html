@@ -209,6 +209,36 @@
     function prepTables() {
       document.querySelectorAll('#panel table').forEach(makeSortable);
     }
+    // Roster tab, per-manager scope: clicking a position-build row's
+    // .pblabel chip (e.g. "RB") filters the Full player list drilldown
+    // below to just that position, reusing the chip that's already there
+    // rather than adding a second set of filter controls -- see
+    // _roster_by_manager.html's own comment. Scoped per [data-roster-filter]
+    // details block (one per manager row) so filtering one manager's list
+    // can't reach another's. Clicking the ALREADY-active chip clears the
+    // filter back to every row. Guarded by dataset.filterable so a repeat
+    // htmx swap doesn't double-bind.
+    function prepRosterFilters() {
+      document.querySelectorAll('[data-roster-filter]').forEach(function (det) {
+        if (det.dataset.filterable) return;
+        det.dataset.filterable = '1';
+        var chips = det.parentElement.querySelectorAll('[data-filter-pos]');
+        var rows = det.querySelectorAll('table.dt-games tbody tr');
+        chips.forEach(function (chip) {
+          chip.addEventListener('click', function () {
+            var pos = chip.dataset.filterPos;
+            var active = chip.classList.contains('active');
+            chips.forEach(function (c) { c.classList.remove('active'); });
+            rows.forEach(function (r) { r.hidden = false; });
+            if (!active) {
+              chip.classList.add('active');
+              rows.forEach(function (r) { r.hidden = r.dataset.pos !== pos; });
+              det.open = true;
+            }
+          });
+        });
+      });
+    }
     // Row-level drilldown (the Weekly tab's free-agent table, ported from
     // weekly_report.html's own copy of this same function -- the standalone
     // page has no shell to reach, so it keeps its inline original). Clicking
@@ -264,6 +294,7 @@
     document.body.addEventListener('htmx:afterSwap', prepCharts);
     document.body.addEventListener('htmx:afterSwap', prepTables);
     document.body.addEventListener('htmx:afterSwap', prepFaRows);
+    document.body.addEventListener('htmx:afterSwap', prepRosterFilters);
 
     // When the Playoffs tab loads (its editor is present) and no bracket token is
     // active, restore this browser's saved custom bracket by re-POSTing it for a

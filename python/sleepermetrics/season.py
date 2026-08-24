@@ -341,6 +341,63 @@ def assemble_season(link: dict) -> Season:
     transactions = _unnest_transactions(tx_rows, user_map, pinfo)
 
     base = pd.DataFrame(tw_rows)
+    if base.empty:
+        # Nothing scored yet -- a brand-new league whose draft is done but
+        # week 1 hasn't been played/locked, or (defensively) any season
+        # whose recorded last_scored_leg is 0. `lw` is forced to at least 1
+        # above so a week-1 fetch is always attempted; Sleeper answers an
+        # empty matchups list for a week nobody has played, which makes
+        # `tw_rows` empty and `base` a ZERO-COLUMN frame -- the very next
+        # line used to call `.dropna(subset=["matchup_id"])` on that, which
+        # raises KeyError (that column doesn't exist on a columnless frame),
+        # crashing the whole Season assembly rather than just leaving this
+        # one season empty. Every downstream metric/template already
+        # tolerates an empty `pl_wk`/`team_wk` via column-presence checks
+        # (see `_roster_ok` in metrics.py, and the same pattern throughout
+        # plots.py/app.py) -- they just need the RIGHT COLUMNS to exist on
+        # an otherwise-empty frame, not any rows. So: skip the opponent
+        # merge/groupby/standings computation entirely (all of which assume
+        # at least one real matchup row) and return a Season with correctly
+        # shaped, empty frames -- the app then renders the same "no data"
+        # states it already shows for a manager/week with nothing in it,
+        # instead of failing to load the league at all.
+        # Explicit dtypes, not a bare `columns=[...]` list: a columns-only
+        # DataFrame defaults every column to `object`, and several downstream
+        # functions call numeric ops (e.g. table_position()'s `.cumsum()`)
+        # that pandas refuses on an empty object-dtype column (verified: it
+        # raises TypeError, not just a silently-wrong result).
+        empty_tw = pd.DataFrame({
+            "week": pd.Series(dtype="int64"), "roster_id": pd.Series(dtype="int64"),
+            "matchup_id": pd.Series(dtype="float64"), "points": pd.Series(dtype="float64"),
+            "opp": pd.Series(dtype="float64"), "pa": pd.Series(dtype="float64"),
+            "result": pd.Series(dtype="object"), "allplay_w": pd.Series(dtype="int64"),
+            "allplay_l": pd.Series(dtype="int64"), "is_high": pd.Series(dtype="bool"),
+            "user_id": pd.Series(dtype="object"), "user_name": pd.Series(dtype="object"),
+        })
+        empty_pl = pd.DataFrame({
+            "week": pd.Series(dtype="int64"), "roster_id": pd.Series(dtype="int64"),
+            "player_id": pd.Series(dtype="object"), "points": pd.Series(dtype="float64"),
+            "is_starter": pd.Series(dtype="bool"), "player_name": pd.Series(dtype="object"),
+            "position": pd.Series(dtype="object"),
+        })
+        empty_lineup = pd.DataFrame({
+            "user_name": pd.Series(dtype="object"), "week": pd.Series(dtype="int64"),
+            "actual": pd.Series(dtype="float64"), "optimal": pd.Series(dtype="float64"),
+            "left_on_bench": pd.Series(dtype="float64"),
+        })
+        empty_standings = pd.DataFrame({
+            "roster_id": pd.Series(dtype="int64"), "user_id": pd.Series(dtype="object"),
+            "user_name": pd.Series(dtype="object"), "wins": pd.Series(dtype="int64"),
+            "losses": pd.Series(dtype="int64"), "points": pd.Series(dtype="float64"),
+            "pa": pd.Series(dtype="float64"), "allplay_w": pd.Series(dtype="int64"),
+            "allplay_l": pd.Series(dtype="int64"), "highs": pd.Series(dtype="int64"),
+            "final_position": pd.Series(dtype="int64"), "champion": pd.Series(dtype="bool"),
+            "season": pd.Series(dtype="object"),
+        })
+        return Season(link["season"], link.get("name"), lid, lw, slots,
+                      empty_tw, empty_pl, empty_lineup, empty_standings, user_map,
+                      transactions, accounts, link.get("status"), pws or None,
+                      empty_tw, empty_pl, lw)
     # Opponent via self-merge on (week, matchup_id) EXCLUDING NaN matchup_id, so
     # eliminated/bye teams never get a phantom opponent (== R na_matches="never").
     opp = (base.dropna(subset=["matchup_id"])[["week", "matchup_id", "roster_id", "points"]]

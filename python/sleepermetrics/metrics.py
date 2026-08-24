@@ -1,12 +1,43 @@
 """Descriptive metric tables (pure compute; mirrors R metrics.R)."""
 from __future__ import annotations
 
+import copy
+
 import pandas as pd
 
 from .players import players
 from .season import Season
 
 POSITIONS = ["QB", "RB", "WR", "TE", "K", "DEF"]
+
+# A handful of these functions (roster_detail/roster_weeks/roster_honors/
+# player_honors) walk every manager x week with a nested groupby -- real,
+# measured cost (~0.8-1s each) even against an already-assembled Season, not
+# network time. The webapp's own Season cache (app.py's league_data()) means
+# the SAME Season object is handed to these on every tab switch/manager-rail
+# click within its TTL, so without this they redo identical work every time.
+# Keyed on f"{league_id}:{season}:{fn.__name__}", same convention draft.py's
+# own _cache already uses for draft_board() -- not on id(s), so a cache hit
+# survives even if a caller happens to hold a different Season instance for
+# the same league+season (a hand-built one in a test, say). The webapp calls
+# clear_metrics_cache() on its own live-refresh path (mirrors
+# scoring.clear_stats_cache() there), so a re-scored week isn't served stale.
+_cache: dict = {}
+
+
+def _cached(s: Season, fn):
+    key = f"{s.league_id}:{s.season}:{fn.__name__}"
+    if key not in _cache:
+        _cache[key] = fn(s)
+    # A deep copy, not the cached object itself: at least one caller
+    # (app.py's roster-detail enrichment) mutates the rows it gets back
+    # in place, which would otherwise corrupt the cache for every other
+    # request sharing this Season.
+    return copy.deepcopy(_cache[key])
+
+
+def clear_metrics_cache() -> None:
+    _cache.clear()
 
 
 def standings(s: Season) -> pd.DataFrame:
@@ -989,7 +1020,7 @@ def _roster_ok(s: Season) -> bool:
             "is_starter"}.issubset(getattr(s.pl_wk, "columns", []))
 
 
-def roster_detail(s: Season) -> list[dict]:
+def _roster_detail_impl(s: Season) -> list[dict]:
     """Per manager: roster shape, plus every player they rostered.
 
     `bench_pts` is points scored by players on their bench that week -- the
@@ -1001,7 +1032,15 @@ def roster_detail(s: Season) -> list[dict]:
     Coaching), so the count shouldn't silently be a start count. `pos_avg` is
     the average points per roster-week at that position (started or benched),
     alongside `pos_counts` so the drilldown can show roster depth and scoring
-    quality in one place instead of a separate standalone chart. `flex_top`
+    quality in one place instead of a separate standalone chart. `pos_players`
+    is the DISTINCT player count at that position (nunique player_id) --
+    `pos_counts` alone can't answer "how many different players did they run
+    through this slot", since 17 roster-weeks could be one player all season
+    or a dozen different waiver churns. Per-player `started_ppg`/`bench_ppg`
+    are each scoped to `started_weeks`/`bench_weeks` (weeks actually played
+    in THAT role), not the combined `weeks` -- a mixed started/benched stint
+    would otherwise understate both rates by using the wrong denominator for
+    each. `flex_top`
     is a genuine slot-assignment read (which position a start went to a
     FLEX-type slot restricted to RB/WR/TE, excluding SUPER_FLEX) since "which
     position did the flex spot mostly go to" can't be read off a player's own
@@ -1027,23 +1066,50 @@ def roster_detail(s: Season) -> list[dict]:
         players = []
         for (pid, pn, pos), pg in g.groupby(["player_id", "player_name", "position"]):
             pst = pg[pg["is_starter"]]
+            pbn = pg[~pg["is_starter"]]
             r = ranks.get(str(pid))
             weeks = int(pg["week"].nunique())
+            started_weeks = int(pst["week"].nunique())
+            bench_weeks = int(pbn["week"].nunique())
             started_pts = round(float(pst["points"].sum()), 1)
+            bench_pts = round(float(pbn["points"].sum()), 1)
+            total_pts = round(started_pts + bench_pts, 1)
             players.append({
                 "player_id": pid, "player_name": pn, "position": pos,
                 "pos_rank": r["rank"] if r else None,
                 "weeks": weeks,
                 "started_pts": started_pts,
-                # Points per week ROSTERED, not per week started -- same rate
+                "total_pts": total_pts,
+                # Points per week ROSTERED, not per week started, and off the
+                # TOTAL points scored (started + bench) -- same rate
                 # convention draft.py's ppg uses, so a mid-season pickup/drop
-                # doesn't read as unproductive next to one who sat all year.
-                "ppg": round(started_pts / max(weeks, 1), 1),
-                "bench_pts": round(float(pg.loc[~pg["is_starter"], "points"].sum()), 1),
+                # doesn't read as unproductive next to one who sat all year,
+                # and a high-scoring bench week isn't silently dropped from
+                # the rate the way a started-only PPG would.
+                "ppg": round(total_pts / max(weeks, 1), 1),
+                # started_ppg/bench_ppg (2026-08): each scoped to the weeks
+                # ACTUALLY PLAYED IN THAT ROLE (`started_weeks`/`bench_weeks`,
+                # not the combined `weeks` above) -- a player started 1 week
+                # and benched the other of a 2-week stint should read his
+                # true single-week starting rate, not that total halved
+                # against both weeks the way reusing `weeks` for both would.
+                "started_weeks": started_weeks,
+                "bench_weeks": bench_weeks,
+                "started_ppg": round(started_pts / max(started_weeks, 1), 1) if started_weeks else 0.0,
+                "bench_ppg": round(bench_pts / max(bench_weeks, 1), 1) if bench_weeks else 0.0,
+                "bench_pts": bench_pts,
             })
-        players.sort(key=lambda x: -x["started_pts"])
+        # Default sort is POSITION (QB/RB/WR/TE/K/DEF), not points -- the
+        # Roster tab's drilldown table reads like a roster, not a
+        # leaderboard; ties within a position still fall back to points
+        # descending. A position not in POSITIONS (shouldn't happen, but
+        # cheaper than crashing on it) sorts last.
+        players.sort(key=lambda x: (
+            POSITIONS.index(x["position"]) if x["position"] in POSITIONS else len(POSITIONS),
+            -x["total_pts"]))
         pos_rostered = g["position"].value_counts()
         pos_avg = g.groupby("position")["points"].mean()
+        pos_players = g.groupby("position")["player_id"].nunique()
         # Flex starts only exist at team-week scope (a slot assignment is
         # meaningless summed across different weeks' rosters), so this walks
         # each of this manager's team-weeks separately rather than doing it
@@ -1070,9 +1136,14 @@ def roster_detail(s: Season) -> list[dict]:
                            for p in ("RB", "WR", "TE")} if flex_total else {}),
             "pos_counts": {p: int(pos_rostered.get(p, 0)) for p in POSITIONS},
             "pos_avg": {p: round(float(pos_avg.get(p, 0.0)), 1) for p in POSITIONS},
+            "pos_players": {p: int(pos_players.get(p, 0)) for p in POSITIONS},
             "players": players,
         })
     return sorted(out, key=lambda x: -x["started_pts"])
+
+
+def roster_detail(s: Season) -> list[dict]:
+    return _cached(s, _roster_detail_impl)
 
 
 def _team_of_week(pl_for_week: pd.DataFrame, slots: dict, wk, pos_ranks: dict) -> dict | None:
@@ -1134,7 +1205,7 @@ def week_team_of_week(s: Season, week: int) -> dict | None:
     return _team_of_week(pl, s.slots, wk, _position_ranks_through(s, wk))
 
 
-def roster_weeks(s: Season) -> list[dict]:
+def _roster_weeks_impl(s: Season) -> list[dict]:
     """Per week: who got the most out of their roster, and who left the most on it."""
     if not _roster_ok(s):
         return []
@@ -1191,8 +1262,11 @@ def roster_weeks(s: Season) -> list[dict]:
             # The week's single worst-scoring STARTER leaguewide -- the
             # inverse of `player_of_week` (lowest instead of highest points
             # among players actually started), not to be confused with
-            # `best_benched` (the best player left ON a bench) below, which
-            # `roster_honors`/`player_honors` still tally separately.
+            # `best_benched` (the best player left ON a bench) below --
+            # a standalone per-week fact, no longer tallied into
+            # `roster_honors`/`player_honors` as of 2026-08 (removed, see
+            # those functions' own docstrings), kept here as-is for anything
+            # else that wants the raw per-week fact.
             "worst_player": (None if worst_starter is None else
                              {"player_id": worst_starter["player_id"],
                               "player_name": worst_starter["player_name"],
@@ -1209,7 +1283,11 @@ def roster_weeks(s: Season) -> list[dict]:
     return out
 
 
-def roster_honors(s: Season) -> list[dict]:
+def roster_weeks(s: Season) -> list[dict]:
+    return _cached(s, _roster_weeks_impl)
+
+
+def _roster_honors_impl(s: Season) -> list[dict]:
     """Season-long tally of "best roster" honors -- who owned the standout
     player or lineup most often, week over week. Built from roster_weeks()'s
     own per-week picks rather than a second pass over pl_wk, so the two
@@ -1217,8 +1295,6 @@ def roster_honors(s: Season) -> list[dict]:
 
     - `player_of_week_weeks`: weeks this manager owned the week's single best
       starter, i.e. Player of the Week (`player_of_week`).
-    - `best_benched_weeks`: weeks this manager owned the week's best player
-      left on a bench.
     - `best_lineup_weeks`: weeks this manager's own real lineup outscored
       every other team's.
     - `totw_picks`: total number of times one of this manager's players was
@@ -1227,21 +1303,27 @@ def roster_honors(s: Season) -> list[dict]:
       manager can (and often does) contribute more than one player to a
       given week's Team of the Week.
 
-    Each row also carries `summary` -- the events behind those four counts,
+    Deliberately does NOT tally "Best bench" (removed 2026-08) -- the best
+    player left on a bench each week is still available as `roster_weeks()`'s
+    own per-week `best_benched` fact for anything that wants it, but nothing
+    in this tally or the Roster tab's "Roster honors" section reads it
+    anymore, so it isn't summed/grouped here.
+
+    Each row also carries `summary` -- the events behind those three counts,
     but collapsed to one row per (honor, player) pair rather than one row per
     individual week: a manager whose Jonathan Taylor was named TOTW six
     times gets a single "Jonathan Taylor -- TOTW -- 6x" row, not six
     identical-looking rows a week apart. Grouped in honor order (TOTW, Best
-    lineup, Player of the Week, Best bench -- the same order the four count
-    columns read in) then by `times` descending within each honor, so the
-    Roster tab's drilldown reads as a summary, not a week-by-week log.
-    `weeks` (sorted) rides along on each row for anyone who wants the
-    specifics. `best_lineup` rows carry no player (it's a team-level honor,
-    not a player one).
+    lineup, Player of the Week -- the same order the three count columns
+    read in) then by `times` descending within each honor, so the Roster
+    tab's drilldown reads as a summary, not a week-by-week log. `weeks`
+    (sorted) rides along on each row for anyone who wants the specifics.
+    `best_lineup` rows carry no player (it's a team-level honor, not a
+    player one).
 
     Returns one row per manager who earned at least one honor, sorted by
     `totw_picks` descending -- the most representative single number of the
-    four, since the other three are each a single week's spotlight while
+    three, since the other two are each a single week's spotlight while
     this one is a running tally of actually rostering the league's best
     players.
     """
@@ -1254,7 +1336,7 @@ def roster_honors(s: Season) -> list[dict]:
         if not name:
             return
         row = tally.setdefault(name, {"user_name": name, "player_of_week_weeks": 0,
-                                       "best_benched_weeks": 0, "best_lineup_weeks": 0,
+                                       "best_lineup_weeks": 0,
                                        "totw_picks": 0, "events": []})
         row[key] += 1
         row["events"].append(event)
@@ -1264,42 +1346,51 @@ def roster_honors(s: Season) -> list[dict]:
         if tp:
             bump(tp["user_name"], "player_of_week_weeks",
                  {"week": w["week"], "honor": "Player of the Week", "player_id": tp.get("player_id"),
-                  "player_name": tp.get("player_name"), "points": tp.get("points")})
-        bb = w.get("best_benched")
-        if bb:
-            bump(bb["user_name"], "best_benched_weeks",
-                 {"week": w["week"], "honor": "Best bench", "player_id": bb.get("player_id"),
-                  "player_name": bb.get("player_name"), "points": bb.get("points")})
+                  "player_name": tp.get("player_name"), "position": tp.get("position"),
+                  "points": tp.get("points")})
         best = w.get("best")
         if best:
             bump(best["user_name"], "best_lineup_weeks",
                  {"week": w["week"], "honor": "Best lineup", "player_id": None,
-                  "player_name": None, "points": best.get("started")})
+                  "player_name": None, "position": None, "points": best.get("started")})
         totw = w.get("team_of_week")
         if totw:
             for p in totw["lineup"]:
                 bump(p.get("user_name"), "totw_picks",
                      {"week": w["week"], "honor": "TOTW", "player_id": p.get("player_id"),
-                      "player_name": p.get("player_name"), "points": p.get("points")})
+                      "player_name": p.get("player_name"), "position": p.get("position"),
+                      "points": p.get("points")})
 
-    honor_order = {"TOTW": 0, "Best lineup": 1, "Player of the Week": 2, "Best bench": 3}
+    # `pos_rank` is the player's FINAL season-long position rank (same source
+    # as roster_detail()'s own badge -- see season_position_ranks()), attached
+    # once per summary row rather than per event so every duplicate pick of
+    # the same player shares one lookup.
+    ranks = season_position_ranks(s)
+    honor_order = {"TOTW": 0, "Best lineup": 1, "Player of the Week": 2}
     for row in tally.values():
         grouped: dict = {}
         for e in row.pop("events"):
             key = (e["honor"], e.get("player_id") or e.get("player_name"))
             g = grouped.setdefault(key, {"honor": e["honor"], "player_id": e.get("player_id"),
                                           "player_name": e.get("player_name"),
+                                          "position": e.get("position"),
                                           "times": 0, "weeks": []})
             g["times"] += 1
             g["weeks"].append(e["week"])
         for g in grouped.values():
             g["weeks"].sort()
+            r = ranks.get(str(g["player_id"])) if g["player_id"] else None
+            g["pos_rank"] = r["rank"] if r else None
         row["summary"] = sorted(grouped.values(),
                                  key=lambda g: (honor_order.get(g["honor"], 99), -g["times"]))
     return sorted(tally.values(), key=lambda r: -r["totw_picks"])
 
 
-def player_honors(s: Season) -> list[dict]:
+def roster_honors(s: Season) -> list[dict]:
+    return _cached(s, _roster_honors_impl)
+
+
+def _player_honors_impl(s: Season) -> list[dict]:
     """Season-long tally of "best roster" honors at the PLAYER level -- the
     flip side of `roster_honors` (which tallies the same events by MANAGER):
     which players themselves were the standout most often. Same source
@@ -1308,15 +1399,15 @@ def player_honors(s: Season) -> list[dict]:
 
     - `player_of_week_weeks`: weeks THIS PLAYER was the week's single best
       starter, i.e. Player of the Week.
-    - `best_benched_weeks`: weeks THIS PLAYER was the week's best player left
-      on a bench.
     - `totw_weeks`: weeks this player was named to the Team of the Week --
       selected into that week's hypothetical best-legal-lineup-leaguewide.
       Always at most 1 per week (a player can't fill two slots the same
       week), unlike a manager's `totw_picks`, which can be.
 
     No lineup-level equivalent here -- "best lineup" is a team concept, not a
-    player one, so `roster_honors`' four columns become three.
+    player one, so `roster_honors`' three columns become two. Does NOT tally
+    "Best bench" either (removed 2026-08, same as `roster_honors` -- see
+    that function's docstring).
 
     Each row also carries `managers` -- the set of managers who rostered him
     for a counted event -- so a manager-scoped view of this tab can filter
@@ -1336,7 +1427,7 @@ def player_honors(s: Season) -> list[dict]:
         if not pid:
             return
         row = tally.setdefault(pid, {"player_id": pid, "player_name": name, "position": pos,
-                                      "player_of_week_weeks": 0, "best_benched_weeks": 0,
+                                      "player_of_week_weeks": 0,
                                       "totw_weeks": 0, "managers": set()})
         row[key] += 1
         if mgr:
@@ -1347,18 +1438,26 @@ def player_honors(s: Season) -> list[dict]:
         if tp:
             bump(tp.get("player_id"), tp["player_name"], tp["position"], tp.get("user_name"),
                  "player_of_week_weeks")
-        bb = w.get("best_benched")
-        if bb:
-            bump(bb.get("player_id"), bb["player_name"], bb["position"], bb.get("user_name"),
-                 "best_benched_weeks")
         totw = w.get("team_of_week")
         if totw:
             for p in totw["lineup"]:
                 bump(p.get("player_id"), p.get("player_name"), p.get("position"),
                      p.get("user_name"), "totw_weeks")
 
+    # Same season-final position rank as roster_honors()' own summary rows --
+    # see season_position_ranks() -- attached once per player here rather
+    # than per event.
+    ranks = season_position_ranks(s)
+    for row in tally.values():
+        r = ranks.get(str(row["player_id"]))
+        row["pos_rank"] = r["rank"] if r else None
+
     return sorted(tally.values(),
                   key=lambda r: (-r["totw_weeks"], -r["player_of_week_weeks"]))
+
+
+def player_honors(s: Season) -> list[dict]:
+    return _cached(s, _player_honors_impl)
 
 
 def player_honors_by_position(rows: list[dict]) -> list[dict]:
@@ -1375,7 +1474,7 @@ def player_honors_by_position(rows: list[dict]) -> list[dict]:
 
     Returns [] for an empty input; otherwise one dict per position that has
     at least one honored player: {"position", "count", "totw_weeks",
-    "player_of_week_weeks", "best_benched_weeks", "players"}.
+    "player_of_week_weeks", "players"}.
     """
     if not rows:
         return []
@@ -1383,12 +1482,11 @@ def player_honors_by_position(rows: list[dict]) -> list[dict]:
     for r in rows:
         pos = r.get("position") or "UNK"
         g = by_pos.setdefault(pos, {"position": pos, "count": 0, "totw_weeks": 0,
-                                     "player_of_week_weeks": 0, "best_benched_weeks": 0,
+                                     "player_of_week_weeks": 0,
                                      "players": []})
         g["count"] += 1
         g["totw_weeks"] += r["totw_weeks"]
         g["player_of_week_weeks"] += r["player_of_week_weeks"]
-        g["best_benched_weeks"] += r["best_benched_weeks"]
         g["players"].append(r)
     order = {p: i for i, p in enumerate(POSITIONS)}
     return sorted(by_pos.values(), key=lambda g: order.get(g["position"], len(POSITIONS)))
@@ -1400,24 +1498,13 @@ def roster_standouts(s: Season) -> list[dict]:
         return []
     pl = s.pl_wk.merge(s.user_map[["roster_id", "user_name"]], on="roster_id",
                        how="left")
-    st, bn = pl[pl["is_starter"]], pl[~pl["is_starter"]]
+    st = pl[pl["is_starter"]]
     out = []
 
     def tile(label, value, holder, detail=""):
         out.append({"label": label, "value": value, "holder": holder,
                     "detail": detail})
 
-    if len(st):
-        r = st.loc[st["points"].idxmax()]
-        tile("Best player-week", f"{r['points']:.1f}", r["user_name"],
-             f"{r['player_name']} · {r['position']} · wk {int(r['week'])}")
-    if len(bn):
-        r = bn.loc[bn["points"].idxmax()]
-        tile("Most points benched (one player)", f"{r['points']:.1f}",
-             r["user_name"], f"{r['player_name']} · {r['position']} · wk {int(r['week'])}")
-        g = bn.groupby("user_name")["points"].sum()
-        tile("Most points on the bench (season)", f"{g.max():.0f}", g.idxmax(),
-             "across every week")
     used = pl.groupby("user_name")["player_name"].nunique()
     if len(used):
         tile("Most players used", f"{int(used.max())}", used.idxmax(),
@@ -1502,6 +1589,104 @@ def coaching_detail(s: Season) -> list[dict]:
     return sorted(out, key=lambda x: -x["eff"])
 
 
+def manager_week_lineups(s: Season, manager: str) -> dict[int, dict]:
+    """One manager's actual AND optimal lineup for every week, each with its
+    own bench -- `{week: {"lineup": [...], "bench": [...], "opt_lineup":
+    [...], "opt_bench": [...], "swap_count": N}}`, each player row carrying
+    `slot` (lineup rows only)/`player_id`/`player_name`/`position`/`points`
+    plus `pos_rank` (that player's position rank FOR THAT WEEK specifically,
+    filled in by the caller -- see app.py, which already has the per-week
+    rank lookups this needs).
+
+    Backs the Roster tab's per-manager Efficiency drilldown ("what did they
+    actually start, and what would the best legal lineup off this same
+    roster have been"). Mirrors `week_matchups()`'s own actual/optimal +
+    bench construction (assign_slots() for display order, was_started/
+    would_start bench flags) so the two stay consistent in shape, EXCEPT
+    for `bench`'s `would_start` -- see below, deliberately narrower here.
+
+    `swap_count` is how many STARTER SLOTS differ between the two lineups --
+    the number of actual swaps required to reach optimal, not just "yes/no
+    changed." Both `lineup` and `opt_lineup` rows also carry `swapped`
+    (True on a `lineup` row for a starter the optimal lineup DROPPED, True
+    on an `opt_lineup` row for a player the optimal lineup ADDED that
+    wasn't started) -- the main-table counterpart to `bench`/`opt_bench`'s
+    existing would_start/was_started flags, both rendered with the same
+    `.bench-impact` gold highlight so a swap reads consistently wherever it
+    appears in the pair of tables.
+
+    `bench`'s `would_start` is deliberately narrower than `week_matchups()`'s
+    own version of the same flag: there, EVERY bench player who individually
+    outscores the worst same-position starter is flagged (a real, useful
+    "who mattered" read for a matchup drilldown with no optimal-lineup pair
+    sitting right next to it). Here, with the Optimal table right beside the
+    Started one, that same rule flagged players the optimal lineup never
+    actually picked -- real case: LuckyHarm wk6 2025, WR2 Michael Pittman
+    (4.0 pts) started; both Brian Thomas (23.0, the one the optimal lineup
+    picked) AND Khalil Shakir (6.3, individually also better than Pittman
+    but with nowhere to go once Thomas took the one open slot) both lit up
+    gold, even though only Thomas is part of the real swap shown on the
+    Optimal side. `would_start` here is instead `player_id in opt_ids` --
+    True only for a bench player who IS one of `opt_lineup`'s actual picks
+    -- so a highlighted bench row always corresponds to a real player
+    visible in the Optimal table next to it.
+    """
+    from .season import assign_slots, optimal_lineup
+
+    pl = s.pl_wk
+    if not len(pl) or "week" not in pl.columns:
+        return {}
+    rid = s.user_map.loc[s.user_map["user_name"] == manager, "roster_id"]
+    if not len(rid):
+        return {}
+    slots = getattr(s, "slots", {}) or {}
+    roster = pl[pl["roster_id"] == rid.iloc[0]]
+    out: dict[int, dict] = {}
+    for wk, g in roster.groupby("week"):
+        st = g[g["is_starter"]]
+        bn = g[~g["is_starter"]]
+        row: dict = {"lineup": [], "bench": [], "opt_lineup": [], "opt_bench": [],
+                     "swap_count": 0}
+        started_ids = set(st["player_id"]) if len(st) else set()
+        opt_ids: set = set()
+        if len(g):
+            opt_picks = optimal_lineup(g, slots)
+            if not opt_picks.empty:
+                opt_picks = assign_slots(opt_picks, slots)
+                opt_ids = {str(x.player_id) for x in opt_picks.itertuples(index=False)}
+                row["opt_lineup"] = [{"slot": x.slot, "player_id": x.player_id,
+                                      "player_name": x.player_name, "position": x.position,
+                                      "points": float(x.points),
+                                      "swapped": str(x.player_id) not in started_ids}
+                                     for x in opt_picks.itertuples(index=False)]
+        if len(st):
+            ls = assign_slots(st, slots)
+            row["lineup"] = [{"slot": x.slot, "player_id": x.player_id,
+                              "player_name": x.player_name, "position": x.position,
+                              "points": float(x.points),
+                              "swapped": bool(opt_ids) and str(x.player_id) not in opt_ids}
+                             for x in ls.itertuples(index=False)]
+            row["swap_count"] = sum(1 for p in row["lineup"] if p["swapped"])
+        if len(bn):
+            b = bn.sort_values("points", ascending=False)
+            row["bench"] = [{"player_id": x.player_id, "player_name": x.player_name,
+                             "position": x.position, "points": float(x.points),
+                             "would_start": str(x.player_id) in opt_ids}
+                            for x in b.itertuples(index=False)]
+        if len(g) and opt_ids:
+            non_opt = g[~g["player_id"].astype(str).isin(opt_ids)].copy()
+            non_opt["was_started"] = non_opt["player_id"].isin(started_ids)
+            swapped = non_opt[non_opt["was_started"]].sort_values("points", ascending=False)
+            rest = non_opt[~non_opt["was_started"]].sort_values("points", ascending=False)
+            ob = pd.concat([swapped, rest])
+            row["opt_bench"] = [{"player_id": x.player_id, "player_name": x.player_name,
+                                 "position": x.position, "points": float(x.points),
+                                 "was_started": bool(x.was_started)}
+                                for x in ob.itertuples(index=False)]
+        out[int(wk)] = row
+    return out
+
+
 def bench_regrets(s: Season, top_n: int = 15) -> list[dict]:
     """The season's costliest single bench calls, league-wide.
 
@@ -1566,20 +1751,6 @@ def coaching_standouts(s: Season) -> list[dict]:
          f"{det[0]['bench']:.0f} pts left on the bench")
     tile("Worst lineup efficiency", f"{det[-1]['eff']:.1f}%", det[-1]["user_name"],
          f"{det[-1]['bench']:.0f} pts left on the bench")
-    pf = max(det, key=lambda x: x["perfect"])
-    if pf["perfect"]:
-        tile("Most perfect lineups", str(pf["perfect"]), pf["user_name"],
-             "weeks with nothing left on the bench")
-    cl = max(det, key=lambda x: x["cost_losses"])
-    if cl["cost_losses"]:
-        tile("Losses the bench cost", str(cl["cost_losses"]), cl["user_name"],
-             "lost while the optimal lineup would have won")
-    worst = max((x for x in det if x["worst_week"]),
-                key=lambda x: x["worst_week"]["cost"], default=None)
-    if worst:
-        tile("Worst single week", f"{worst['worst_week']['cost']:.1f}",
-             worst["user_name"],
-             f"benched in wk {worst['worst_week']['week']}")
     return out
 
 
@@ -1725,17 +1896,26 @@ def week_matchups(s: Season, week: int) -> list[dict]:
                                 for x in ob.itertuples(index=False)]
         if len(bn):
             b = bn.sort_values("points", ascending=False)
-            # `would_start`: this bench player alone outscored the worst starter
-            # at their own position -- i.e. a legal swap that upgrades the
-            # lineup. Marked per-player (not just the single costliest one, see
-            # `regret` below) so the drilldown can flag every player who
-            # mattered, not just the headline swap.
-            worst_by_pos = (st.groupby("position")["points"].min()
-                            if len(st) else pd.Series(dtype=float))
+            # `would_start`: this bench player is one of the OPTIMAL lineup's
+            # own picks -- i.e. the swap the Optimized panel right next to
+            # this one actually made, not just any player who'd individually
+            # outscore the worst same-position starter. That looser rule
+            # (points > worst_by_pos[position]) used to flag every player
+            # CAPABLE of an upgrade even when the roster only had room for
+            # one of them -- real case: a team started a low-scoring WR2,
+            # and two different bench WRs each individually beat that
+            # starter, but the optimal lineup could only take one (there's
+            # only one open slot); the other lit up gold in the Actual
+            # panel with no matching pick to point at in the Optimized one,
+            # which read as a highlight that didn't correspond to anything.
+            # Derived from row["opt_lineup"] (already built above, unlike
+            # opt_bench's own opt_ids local a few lines up, which sits
+            # inside that block's own `if` guard) -- keeps a highlighted
+            # bench row always tied to a real optimal pick.
+            opt_ids = {p["player_id"] for p in row["opt_lineup"]}
             row["bench"] = [{"player_id": x.player_id, "player_name": x.player_name,
                              "position": x.position, "points": float(x.points),
-                             "would_start": bool(x.position in worst_by_pos.index
-                                                  and float(x.points) > worst_by_pos[x.position])}
+                             "would_start": x.player_id in opt_ids}
                             for x in b.itertuples(index=False)]
         if lu is not None:
             m = lu[(lu["user_name"] == nm) & (lu["week"] == int(week))]
@@ -2369,53 +2549,3 @@ def free_agent_best_team(s: Season, week: int) -> dict | None:
         "beats": beats, "n_teams": int(len(tw)), "teams": teams,
         "opt_beats": opt_beats,
     }
-
-
-def free_agent_best_team_season(s: Season) -> dict | None:
-    """The best possible free-agent lineup, week by week, summed across the
-    whole regular season -- "what if you'd drafted the waiver wire every
-    single week" -- against each manager's actual season point total.
-
-    Reuses `free_agent_best_team()` unchanged, one call per week, rather than
-    duplicating its optimal-lineup-selection logic; `s.last_week` is the
-    regular-season cap every other season-scoped metric here already uses.
-
-    Each team also carries `opt_points`/`opt_gain`/`weeks_beaten_optimal` --
-    the same comparison against their own best POSSIBLE lineup each week
-    (bench included), not what they actually started, summed the same way.
-    The actual-based fields read as "value left on the wire" (Transactions'
-    natural complement to the Waiver wire table); the optimal-based fields
-    read as "would even perfect coaching have beaten this" (Coaching's
-    natural complement to the efficiency chart). None is None for a manager
-    with no lineup data any week (a season with no `s.lineup`).
-    """
-    weekly = []
-    for wk in range(1, s.last_week + 1):
-        r = free_agent_best_team(s, wk)
-        if r:
-            weekly.append({
-                "week": wk, "total": r["total"],
-                "beats": {b["user_name"] for b in r["beats"]},
-                "opt_pts_by_team": {t["user_name"]: t["opt_points"] for t in r["teams"]
-                                    if t["opt_points"] is not None},
-            })
-    if not weekly:
-        return None
-    fa_total = round(sum(w["total"] for w in weekly), 1)
-    season_pts = s.team_wk.groupby("user_name")["points"].sum()
-    teams = []
-    for name, pts in season_pts.items():
-        wins = sum(1 for w in weekly if name in w["beats"])
-        opt_weeks = [w for w in weekly if name in w["opt_pts_by_team"]]
-        opt_total = sum(w["opt_pts_by_team"][name] for w in opt_weeks)
-        opt_wins = sum(1 for w in opt_weeks if w["opt_pts_by_team"][name] < w["total"])
-        teams.append({
-            "user_name": name, "points": round(float(pts), 1),
-            "gain": round(fa_total - float(pts), 1),
-            "weeks_beaten": wins, "weeks": len(weekly),
-            "opt_points": round(opt_total, 1) if opt_weeks else None,
-            "opt_gain": (round(fa_total - opt_total, 1) if opt_weeks else None),
-            "weeks_beaten_optimal": opt_wins if opt_weeks else None,
-        })
-    teams.sort(key=lambda t: -t["points"])
-    return {"total": fa_total, "weeks": len(weekly), "teams": teams}

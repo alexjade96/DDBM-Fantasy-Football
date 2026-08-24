@@ -1,35 +1,34 @@
 {# "Roster standouts" tiles. Deferred behind /tab/roster/part/standouts (see
    app.py's TAB_PARTS) -- roster_standouts() is cheap on its own, but
    coaching_standouts() calls coaching_detail() (the same full per-manager
-   loop "Rosters by manager" needs), so the pair is kept together as one
-   section rather than splitting one visual block across two loading states.
-   See tab_roster.html, which renders this fragment's placeholder. #}
+   loop the "Roster"/"Roster breakdown"/"Efficiency" sections need), so the
+   pair is kept together as one lazy part; app.py merges them into the
+   single `standouts` list this template renders as one flat grid. See
+   tab_roster.html, which renders this fragment's placeholder.
+
+   Manager scope (2026-08): `standouts` holds a DIFFERENT tile set here --
+   see app.py's `_manager_roster_standouts` -- facts about this one
+   manager's own season (best value pick, flex MVP, best/worst lineup week)
+   rather than league-wide superlatives, since a one-row scope has nothing
+   to rank against. Every tile's `holder` is None in this scope (the tile
+   IS about the manager already in view, so an identity chip repeating
+   their own name would be redundant) -- the existing `{% if t.holder %}`
+   guard below already handles that, no template branching needed. #}
 {% import "_ident.html" as idm with context %}
-{% if standouts_roster or standouts_coaching %}
+{% if standouts %}
 <h2>Roster standouts</h2>
-<p class="hint">The season&rsquo;s extremes in what teams rostered and how well they used it.</p>
-{% if standouts_roster %}
-<h3>What they rostered</h3>
+<p class="hint">{% if manager %}The season&rsquo;s extremes in what {{ manager }} rostered and how
+   well they used it.{% else %}The season&rsquo;s extremes in what teams rostered and how well
+   they used it.{% endif %}</p>
 <section class="stats">
-  {% for t in standouts_roster %}
+  {% for t in standouts %}
   <div class="stat {% if loop.index0 == 0 %}gold{% endif %}">
     <span class="k">{{ t.label }}</span>
     <span class="v">{{ t.value }}</span>
-    <span class="sub">{{ idm.who(t.holder) }}{% if t.detail %} · {{ t.detail }}{% endif %}</span>
+    {# A tile with no single holder omits the identity chip entirely rather
+       than rendering a bare "—" placeholder ahead of the detail text. #}
+    <span class="sub">{% if t.holder %}{{ idm.who(t.holder) }}{% if t.detail %} · {% endif %}{% endif %}{{ t.detail }}</span>
   </div>
   {% endfor %}
 </section>
-{% endif %}
-{% if standouts_coaching %}
-<h3>How they used it</h3>
-<section class="stats">
-  {% for t in standouts_coaching %}
-  <div class="stat {% if loop.index0 == 0 %}gold{% endif %}">
-    <span class="k">{{ t.label }}</span>
-    <span class="v">{{ t.value }}</span>
-    <span class="sub">{{ idm.who(t.holder) }}{% if t.detail %} · {{ t.detail }}{% endif %}</span>
-  </div>
-  {% endfor %}
-</section>
-{% endif %}
 {% endif %}

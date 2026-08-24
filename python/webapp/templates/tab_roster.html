@@ -1,14 +1,32 @@
 {# Management tab: rosters + lineup decisions, reconciled from the former
-   separate Roster and Coaching tabs (2026-08) -- the two only really
-   differed on efficiency (decision quality), so lineup-setting is now more
-   columns/facts/a second table on "Rosters by manager" rather than a whole
-   second per-manager table on its own tab. The drill markup (drilltable /
-   dt-*) is global CSS, promoted out of .reportpanel. `manager` scopes the
-   whole tab to one team (charts + every drilldown) -- same rail pattern as
-   the Season report tab (tab_report.html), landing on the whole-league view
-   by default. The free-agent-ceiling comparison stays league-only (no
-   manager-scoped chart counterpart exists for it -- see its own guard
-   below). #}
+   separate Roster and Coaching tabs (2026-08). The drill markup
+   (drilltable / dt-*) is global CSS, promoted out of .reportpanel.
+   `manager` scopes the whole tab to one team (charts + every drilldown) --
+   same rail pattern as the Season report tab (tab_report.html), landing on
+   the whole-league view by default.
+
+   Roster/Roster breakdown/Efficiency split (2026-08): the whole-league view
+   used to show a single "Rosters by manager" table with a 3-way view-mode
+   toggle (Roster breakdown/Roster/Efficiency) baked into one drilltable.
+   The league page now shows only the plain "Roster" table
+   (_roster_by_manager.html, one row per manager, player list on expand).
+   Per-manager scope keeps that same "Roster" section/template, but since
+   there's only ever one row there, its position-build content ("Roster
+   breakdown") renders directly as that row's own always-visible display
+   instead of a separate section -- only the player listing stays behind an
+   expand click. "Efficiency" (_roster_efficiency.html) is still its own
+   manager-only section. Both rendered by the same /tab/roster/part/rosters
+   lazy part below since they share one roster_detail()+coaching_detail()
+   fetch -- see app.py's _roster_part_rosters.
+
+   "Roster standouts" (2026-08): used to be league-scope only (a manager
+   scope only ever has one row, so the ORIGINAL tiles -- "most players
+   used", "best lineup efficiency", etc. -- have nothing to rank against).
+   Now unconditionally lazy-loaded in both scopes: _roster_part_standouts
+   builds a DIFFERENT, manager-specific tile set (best value pick, flex
+   MVP, best/worst lineup week) when `manager` is set, rather than the
+   league-wide superlatives -- see that handler's own comment and
+   _roster_standouts.html for the two tile sets. #}
 {% import "_ident.html" as idm with context %}
 {% import "_roster_macros.html" as rm with context %}
 {% import "_lazy.html" as lz %}
@@ -24,13 +42,11 @@
   {% endfor %}
 </nav>
 {% include "_liveband.html" %}
-{% if not manager %}
 {{ lz.lazy("/tab/roster/part/standouts" ~ part_qs, height="140px") }}
-{% endif %}
 
 {% if manager %}
 <p class="hint">{{ manager }}&rsquo;s own roster this season &mdash; what they carried and how
-   well they set it, week by week. Switch to <strong>Whole league</strong> above for the
+   well they set it. Switch to <strong>Whole league</strong> above for the
    season-wide charts.</p>
 {% else %}
 <p class="hint">What teams <em>rostered</em> and how well they <em>used</em> it &mdash; composition
@@ -41,9 +57,7 @@
 {{ lz.lazy("/tab/roster/part/rosters" ~ part_qs, height="360px") }}
 
 {% if not manager %}
-{{ lz.lazy("/tab/roster/part/fa" ~ part_qs, height="300px") }}
-{% endif %}
-
 {{ lz.lazy("/tab/roster/part/weeks" ~ part_qs, height="300px") }}
 
 {{ lz.lazy("/tab/roster/part/honors" ~ part_qs, height="260px") }}
+{% endif %}

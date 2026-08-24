@@ -158,6 +158,12 @@
           {% endif %}
         </div>
         {% if roster %}
+        {# roster-scroll wraps ONLY the table, not the whole .dt-detail --
+           .dt-facts above (Real/Sim points, Kept count) must stay visible
+           and unscrolled; same component .roster-scroll already provides
+           for the real Roster tab's own drilldown table (_roster_by_manager.html),
+           applied here to a full simulated roster which can run just as long. #}
+        <div class="roster-scroll">
         <table class="dt-games">
           <thead><tr>
             <th>Player</th><th class="n">Pts</th><th>Actual pick</th><th>Original roster</th>
@@ -174,6 +180,7 @@
           {% endfor %}
           </tbody>
         </table>
+        </div>
         {% endif %}
       </div>
     </details>

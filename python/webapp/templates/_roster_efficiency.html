@@ -1,0 +1,202 @@
+{# "Efficiency" section -- manager-only. Split off (2026-08) from the
+   former shared Roster breakdown/Roster/Efficiency view-mode drilltable in
+   _roster_by_manager.html; the whole-league tab has no Efficiency section
+   any more (see app.py's _roster_part_ctx). Rendered by the same
+   /tab/roster/part/rosters lazy part as _roster_by_manager.html, since both
+   read the identical roster_detail()+coaching_detail() row -- see app.py.
+   No chart of its own: `efficiency` (still shown league-wide, above,
+   paired with roster_counts) is a ranked comparison ACROSS every manager
+   with no manager-scoped variant -- manager= is silently ignored by it --
+   and mgr_optimal (in charts_top above) already carries this manager's own
+   weekly efficiency trend line, so nothing here would add a genuinely new
+   picture.
+
+   Default table layout (2026-08): manager scope has exactly one manager,
+   so the season-summary facts render as a plain always-visible block (no
+   outer <details>/click needed, matching "Roster"'s per-manager row
+   treatment) rather than behind an expand. The week-by-week table is a
+   `table.sortable` wrapped in `.tablewrap.card` for the same bordered-card
+   outline `_fa_standouts.html`'s sortable tables already use, EXCEPT each
+   week's own row now carries a `.detail-row` sibling (native <details>
+   can't wrap a <tr>, so this is the existing table-row-drilldown idiom
+   _fa_standouts.html/_draft_finds.html already use -- index.html's
+   prepFaRows finds the `.detail-row` sibling(s) after each data row and
+   wires the click/keyboard toggle, no per-template JS needed).
+
+   Drilldown layout (2026-08, revised from an earlier Started+bench |
+   Optimal+bench pairing): the two side-by-side tables are now Started
+   (starters ONLY, no bench section) and Bench (that week's full bench,
+   rendered via _lineupmacro.html's `rows_are_bench=True` mode -- position
+   label + would_start highlight, same markup the old bench SECTION used,
+   just now the table's own rows instead of a second block glued under the
+   starters) -- the Optimal lineup itself is no longer shown as a separate
+   table; `wl.opt_lineup`/`wl.opt_bench` are still computed by
+   manager_week_lineups() (needed for the Optimal-column highlight and the
+   swap math below) but this drilldown no longer renders them directly. A
+   plain `.dt-arrow` (&harr;) sits between the two tables via the
+   `.dt-tables-arrow` grid variant -- a "these two groups trade players"
+   cue, not a per-player connector; the actual per-player swap signal stays
+   the existing gold `.bench-impact` highlight, now on BOTH sides at once
+   (a started player the optimal lineup would bench; a bench player the
+   optimal lineup would start) so hovering either table's gold rows tells
+   you who trades with whom without needing a literal line drawn between
+   them. metrics.manager_week_lineups(s, mgr) mirrors week_matchups()'s own
+   actual/optimal + bench construction (same assign_slots()/optimal_lineup()
+   primitives, same was_started/would_start bench flags). Each row also
+   carries `pos_rank` -- THAT WEEK's position rank (metrics.week_position_
+   ranks, stamped on by app.py per week) -- which the macro renders
+   automatically next to a player's name whenever the field is present.
+
+   Swap count (2026-08): the week header row's own "Swaps" column is
+   `wl.swap_count` -- how many starter SLOTS differ between the actual and
+   optimal lineups, i.e. how many actual swaps it would take to reach
+   optimal that week (not just "yes/no this week wasn't perfect", which
+   "Lineup %" already covers). Computed from the (no-longer-directly-shown)
+   opt_lineup/opt_bench comparison inside manager_week_lineups() itself, so
+   removing the Optimal table from this view didn't require touching that
+   function.
+
+   "Winnable" highlight (2026-08, replacing the earlier separate "Winnable?"
+   column): `w.would_have_won` (already computed by coaching_detail() --
+   this manager's OWN optimal points vs. the OPPONENT'S ACTUAL score, not
+   the opponent's own optimal; deliberately NOT a "if both sides played
+   perfectly" question, since the opponent's real defense doesn't change
+   just because this manager set a better lineup) is now rendered as a text
+   highlight on the "Optimal" cell itself (the same .res.w green used
+   elsewhere) rather than a dedicated Yes/No column -- the Optimal number
+   IS the answer to "could they have won", so coloring it green when
+   `would_have_won` is true says the same thing with one fewer column. Only
+   ever true on loss weeks (would_have_won is always False when `result`
+   isn't 'L'), so no highlight ever appears on a win. The separate "Result"
+   (W/L) column was dropped earlier the same round: "Lineup pts"/"Opp pts"
+   are now themselves colour-coded green/red by which one won (see below),
+   so a bare W/L column read as duplicate information once the two score
+   cells already said the same thing visually.
+
+   "Opp pts" column (2026-08): `w.pa` ("points against" -- opponent's
+   actual score that week), already computed by coaching_detail() alongside
+   `result` (both come from the same team_wk merge, see that function) --
+   no new metrics work, just a second reader of a field that already
+   existed. Both "Lineup pts" (renamed from "Started" the same round -- the
+   column is this manager's STARTED lineup total, and "Lineup pts" reads
+   less ambiguously next to "Opp pts") and "Opp pts" are colour-coded
+   green/red by which ACTUALLY won the week (`w.result`), not by comparing
+   the two numbers independently -- Lineup pts is green/W's color when
+   `result == 'W'` (it's the higher score), Opp pts takes the opposite
+   color, and a bye/no-opponent week (`w.result` undefined) leaves both
+   plain.
+
+   "Lineup %" text color (2026-08): a continuous red-to-green hue scale via
+   inline `style="color: hsl(...)"`, computed per-cell in the template
+   since there's no server-side chart/colormap involved here (this is a
+   plain HTML table, not a rendered PNG). Scaled to THIS MANAGER'S OWN real
+   best-to-worst week this season (`ctx["eff_min"]`/`ctx["eff_max"]`,
+   computed once in app.py rather than recomputed every row), not a fixed
+   0-100 axis -- real Lineup % rarely dips much below ~55%, so a literal
+   0-100 scale would bunch nearly every week into the same narrow green
+   band and bury the real week-to-week spread; this is the same "honestly
+   zoomed to the real range" instinct this app's charts already apply
+   elsewhere (plot_efficiency etc.), just computed inline in HTML instead
+   of matplotlib. hue 0 (red) at eff_min, hue 120 (green) at eff_max,
+   straight linear interpolation; a manager with only one week (span=0)
+   reads as full green rather than dividing by zero.
+
+   Column order (2026-08): Wk, Lineup pts, Opp pts, Lineup %, Optimal,
+   Swaps -- Lineup % moved next to Opp pts/Lineup pts (the three per-week
+   score reads sit together) with Optimal (now carrying the winnable
+   highlight, see above) and Swaps following as the "what changing it would
+   take" pair.
+
+   Factoids (2026-08 rewrite): "Lost to bench"/"Perfect lineups"/"Worst
+   week" removed -- redundant once the per-week table below already shows
+   every week's own numbers and the Optimal-column winnable highlight
+   answers "did a bad week cost a win" directly, week by week, rather than
+   as a separate season-total tile. "Lineup %" is now a range (lowest --
+   average -- highest across `r.lineup_weeks`, i.e. the exact same values
+   `eff_min`/`eff_max` already scale the per-row hue to, plus `r.eff` -- the
+   season-total efficiency -- as the bolded middle figure) rather than a
+   single number, so the factoid row states the same spread the color scale
+   visualizes. All three figures carry the SAME hue scale the per-week
+   table uses -- eff_min/eff_max are themselves the scale's fixed red/green
+   endpoints (hue 0/120), so those two are hardcoded rather than
+   recomputed, while the average's hue is interpolated exactly like a
+   per-row cell (`favg_hue`, same formula as the table's `hue`). "Points
+   below optimal" (a season TOTAL) renamed "Average pts
+   from optimal" and changed to a per-week AVERAGE (`r.points_below_optimal
+   / r.lineup_weeks | length`) to match the new "Average players from
+   optimal" (`swap_count` averaged the same way, from `mgr_lineups`) it now
+   sits beside -- both are now "typical week" figures rather than one total
+   and one count, so they read consistently side by side. #}
+{% import "_ident.html" as idm with context %}
+{% import "_lineupmacro.html" as lu with context %}
+{% if rosters %}
+{% set r = rosters[0] %}
+<h2>Efficiency</h2>
+<p class="hint">{{ manager }}&rsquo;s week-by-week lineup calls. <strong>Average pts
+   from optimal</strong> is the typical cost of the decisions &mdash; only the bench points a
+   legal swap would actually have converted, per week. Expand a week to see who started and
+   who sat, with gold rows marking who would have swapped with whom in the best legal
+   lineup; a highlighted Optimal score means that lineup would have beaten the week's
+   opponent.</p>
+{% if r.eff is not none %}
+{% set nweeks = r.lineup_weeks | length %}
+<div class="dt-facts">
+  {% set favg = eff_max - eff_min %}
+  {% set favg_frac = ((r.eff - eff_min) / favg) if favg > 0 else 1.0 %}
+  {% set favg_hue = (favg_frac * 120) | round(0) | int %}
+  <div class="fact"><span class="fl">Lineup %</span><span class="fv">
+    <span class="pts"><span style="color: hsl(0, 70%, 45%)">{{ "%.1f"|format(eff_min) }}%</span> &ndash; <strong style="color: hsl({{ favg_hue }}, 70%, 45%)">{{ "%.1f"|format(r.eff) }}%</strong> &ndash; <span style="color: hsl(120, 70%, 45%)">{{ "%.1f"|format(eff_max) }}%</span></span></span></div>
+  {% if r.points_below_optimal is not none and nweeks %}
+  <div class="fact"><span class="fl">Average pts from optimal</span><span class="fv">
+    <span class="pts">{{ "%.1f"|format(r.points_below_optimal / nweeks) }}</span></span></div>
+  {% endif %}
+  {% if nweeks %}
+  {% set total_swaps = mgr_lineups.values() | map(attribute="swap_count") | sum %}
+  <div class="fact"><span class="fl">Average players from optimal</span><span class="fv">
+    <span class="pts">{{ "%.1f"|format(total_swaps / nweeks) }}</span></span></div>
+  {% endif %}
+</div>
+{% endif %}
+{% if r.lineup_weeks %}
+<div class="tablewrap card">
+<table class="sortable">
+  <thead><tr>
+    <th class="n">Wk</th><th class="n">Lineup pts</th><th class="n">Opp pts</th>
+    <th class="n">Lineup %</th><th class="n">Optimal</th><th class="n">Swaps</th>
+  </tr></thead>
+  <tbody>
+  {% for w in r.lineup_weeks %}
+    {% set wl = mgr_lineups.get(w.week, {}) %}
+    {% set span = eff_max - eff_min %}
+    {% set frac = ((w.eff - eff_min) / span) if span > 0 else 1.0 %}
+    {% set hue = (frac * 120) | round(0) | int %}
+    {% set winnable = w.result is defined and w.result == 'L' and w.would_have_won %}
+    <tr>
+      <td class="n">{{ w.week }}</td>
+      <td class="n">{% if w.result is defined %}<span class="res {{ 'w' if w.result == 'W' else 'l' }}">{{ "%.1f"|format(w.actual) }}</span>{% else %}{{ "%.1f"|format(w.actual) }}{% endif %}</td>
+      <td class="n">{% if w.pa is defined %}<span class="res {{ 'l' if w.result == 'W' else 'w' }}">{{ "%.1f"|format(w.pa) }}</span>{% else %}&mdash;{% endif %}</td>
+      <td class="n" style="color: hsl({{ hue }}, 70%, 45%)">{{ "%.0f"|format(w.eff) }}%</td>
+      <td class="n">{% if winnable %}<span class="res w" title="This lineup would have beaten the opponent's actual score">{{ "%.1f"|format(w.optimal) }}</span>{% else %}{{ "%.1f"|format(w.optimal) }}{% endif %}</td>
+      <td class="n">{% if wl.swap_count %}{{ wl.swap_count }}{% else %}&mdash;{% endif %}</td>
+    </tr>
+    <tr class="detail-row" hidden>
+      <td colspan="6">
+        <div class="dt-tables dt-tables-arrow">
+          {{ lu.lineup_table("Started, wk " ~ w.week, "Pts", wl.get("lineup", []),
+               empty_text="No roster data.") }}
+          <div class="dt-arrow" aria-hidden="true">&harr;</div>
+          {{ lu.lineup_table("Bench, wk " ~ w.week, "Pts", wl.get("bench", []),
+               rows_are_bench=True, bench_flag="would_start",
+               bench_flag_title="Would have outscored a same-position starter in the optimal lineup",
+               empty_text="No bench.") }}
+        </div>
+      </td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{% else %}
+<p class="hint">No week-by-week lineup data for this manager.</p>
+{% endif %}
+{% endif %}

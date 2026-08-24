@@ -1,6 +1,8 @@
 """Charts (matplotlib; mirrors R plots.R theme, palette + flair)."""
 from __future__ import annotations
 
+import textwrap
+
 import matplotlib
 
 matplotlib.use("Agg")
@@ -194,9 +196,23 @@ def palette(names) -> dict:
 
 def _finish(fig, ax, title, subtitle=None, xlabel=None, ylabel=None, caption=None,
             grid_axis="x"):
-    ax.set_title(title, loc="left", fontsize=16, fontweight="bold",
-                 color=T["ink"], pad=24)
+    # A long subtitle (e.g. plot_efficiency's 3-clause one) runs off the right
+    # edge of the figure at its natural width -- ax.text has no width limit of
+    # its own, and matplotlib's `wrap=True` wraps to the FIGURE width, not the
+    # axes' width, so it never fires while the text still starts near x=0.
+    # Wrapping explicitly at a fixed character width (measured against this
+    # file's usual figsize=(9,6)/9.5pt font) keeps it inside the canvas; the
+    # title's own `pad` grows with the wrapped line count so a 2-line subtitle
+    # doesn't climb into the title above it (that direction only, since the
+    # subtitle is anchored at the axes top and grows upward from there).
+    wrapped_subtitle = None
+    n_lines = 1
     if subtitle:
+        wrapped_subtitle = textwrap.fill(subtitle, width=95, break_long_words=False)
+        n_lines = wrapped_subtitle.count("\n") + 1
+    ax.set_title(title, loc="left", fontsize=16, fontweight="bold",
+                 color=T["ink"], pad=24 + max(0, n_lines - 1) * 13)
+    if wrapped_subtitle:
         # A subtitle positioned as an AXES-FRACTION y (e.g. 1.015) scales with the
         # axes' own height in points, while the title's `pad` is a fixed point
         # value -- so the two drift relative to each other per chart, and for a
@@ -207,7 +223,7 @@ def _finish(fig, ax, title, subtitle=None, xlabel=None, ylabel=None, caption=Non
         # chart regardless of axes height.
         from matplotlib.transforms import offset_copy
         trans = offset_copy(ax.transAxes, fig=fig, x=0, y=5, units="points")
-        ax.text(0, 1.0, subtitle, transform=trans, fontsize=9.5,
+        ax.text(0, 1.0, wrapped_subtitle, transform=trans, fontsize=9.5,
                 color=T["muted"], va="bottom")
     if xlabel:
         ax.set_xlabel(xlabel, fontsize=10, color=T["muted"])
@@ -252,11 +268,19 @@ def _place_labels(fig, ax, xs, ys, texts, fontsize=8.4, color=None, avoid=()):
     fig.canvas.draw()
     rend = fig.canvas.get_renderer()
     pix = ax.transData.transform(list(zip(xs, ys)))
+    fig_bounds = fig.bbox
     # Seed with any fixed artists that must also be dodged (zone captions etc.),
     # otherwise the solver treats their space as free.
     boxes: list = [a.get_window_extent(rend) for a in avoid]
 
     def clashes(bb):
+        # A point at the edge of the data range (e.g. the rightmost x) can have
+        # every candidate spot clear of every OTHER label/marker yet still spill
+        # off the canvas itself -- nothing else is out there to collide with, so
+        # this must be checked separately from the pairwise clash test below.
+        if bb.x0 < fig_bounds.x0 or bb.x1 > fig_bounds.x1 or \
+                bb.y0 < fig_bounds.y0 or bb.y1 > fig_bounds.y1:
+            return True
         if any(bb.overlaps(o) for o in boxes):
             return True
         return any(bb.x0 - 5 <= px <= bb.x1 + 5 and bb.y0 - 5 <= py <= bb.y1 + 5
@@ -269,6 +293,7 @@ def _place_labels(fig, ax, xs, ys, texts, fontsize=8.4, color=None, avoid=()):
         if j != i and abs(pix[j][0] - pix[i][0]) < 90 and abs(pix[j][1] - pix[i][1]) < 55))
     for i in order:
         best = None
+        on_canvas_fallback = None      # clashes another label, but not the edge
         for dx, dy, ha, va in _LABEL_SPOTS:
             ann = ax.annotate(texts[i], (xs[i], ys[i]), textcoords="offset points",
                               xytext=(dx, dy), ha=ha, va=va, fontsize=fontsize,
@@ -279,14 +304,26 @@ def _place_labels(fig, ax, xs, ys, texts, fontsize=8.4, color=None, avoid=()):
             if not clashes(bb):
                 best = (ann, bb)
                 break
+            off_canvas = bb.x0 < fig_bounds.x0 or bb.x1 > fig_bounds.x1 or \
+                bb.y0 < fig_bounds.y0 or bb.y1 > fig_bounds.y1
+            if on_canvas_fallback is None and not off_canvas:
+                on_canvas_fallback = (ann, bb)
+                continue
             ann.remove()
-        if best is None:      # every spot taken -- fall back to directly above
+        # Every spot clashes with something -- prefer a spot that only overlaps
+        # another label (still readable, just crowded) over the (0, 16) default,
+        # which can itself run off the figure edge for an extreme point.
+        if best is None and on_canvas_fallback is not None:
+            best = on_canvas_fallback
+        elif best is None:
             ann = ax.annotate(texts[i], (xs[i], ys[i]), textcoords="offset points",
                               xytext=(0, 16), ha="center", va="bottom",
                               fontsize=fontsize, color=color or T["ink"], zorder=5,
                               bbox=dict(facecolor=T["bg"], edgecolor="none",
                                         alpha=.75, pad=1.4))
             best = (ann, ann.get_window_extent(rend))
+        elif on_canvas_fallback is not None and on_canvas_fallback[0] is not best[0]:
+            on_canvas_fallback[0].remove()
         boxes.append(best[1])
 
 def _cap(s: Season) -> str:
@@ -367,8 +404,37 @@ def plot_efficiency(s: Season):
     this tab, here applied to efficiency specifically). The axis is honestly
     zoomed to the combined range (averages AND weekly extremes), not just the
     averages, so a whisker is never clipped by an axis sized only for dots.
+
+    The whisker's own two ENDPOINTS now carry small marker caps (2026-08,
+    replacing the earlier "-X pts benched" text label) -- a faint bar alone
+    tells you a range exists but not exactly where its two ends land without
+    hovering/guessing off the axis; a light "|" cap at each end pins the
+    actual best/worst week value precisely, the same way a box plot's
+    whisker caps do. The bench-points text is dropped entirely rather than
+    moved -- it was answering a different question (a season TOTAL cost,
+    not a per-week extreme) that the endpoint markers don't replace, and
+    keeping both crowded the row; `bench` is still on `d` for any caller
+    that wants it, just no longer printed on this chart.
+
+    Each of the three marks now carries its OWN label planted next to IT
+    (2026-08, replacing one combined "88.5% (76-97%)" string anchored past
+    the whisker's right edge) -- the average % sits beside the average dot,
+    the low % beside the low cap, the high % beside the high cap, so a
+    reader finds a number by looking at the mark, not by matching a
+    parenthetical back to whichever end of the bar it must belong to. The
+    low/high labels are vertically offset (low label below its row's
+    center line, high label above) since the two caps can sit close
+    together -- or even overlap -- for a metronomically consistent manager,
+    and same-height labels at nearly the same x would otherwise collide;
+    the average label stays vertically centered on its dot, matching the
+    convention every other row-label in this chart family already uses.
+    Omitted when a manager has no weekly range (a single scored week, or
+    missing lineup data), leaving just the centered season-average % label
+    as before.
     """
     d = metrics.efficiency(s).sort_values("eff").reset_index(drop=True)
+    if d.empty:
+        return _no_data(f"No lineup data for {s.season} yet.")
     lu = getattr(s, "lineup", None)
     weekly_range = {}
     if lu is not None and {"user_name", "actual", "optimal"}.issubset(
@@ -388,29 +454,50 @@ def plot_efficiency(s: Season):
         if rng and rng[1] > rng[0]:
             ax.plot(rng, [i, i], color=T["neutral"], lw=4, alpha=0.5, zorder=2,
                     solid_capstyle="round")
+            # Endpoint caps: a low-key "|" marker pinning the worst/best
+            # WEEK exactly, distinct from the season-average dot (below) --
+            # smaller and unfilled so they read as a range boundary, not a
+            # second data series competing with the average.
+            ax.scatter(rng, [i, i], s=55, marker="|", linewidths=1.6,
+                       color=T["muted"], zorder=2.5)
     ax.scatter(d["eff"], range(len(d)), s=130, c=[cmap(norm(v)) for v in d["eff"]],
                zorder=3, edgecolors=T["edge"], linewidths=1)
     ax.set_yticks(range(len(d)))
     ax.set_yticklabels(d["user_name"])
     _row_avatars(ax, d["user_name"], s)
+    off = (span_hi - span_lo) * 0.015
     for i, (_, r) in enumerate(d.iterrows()):
-        # Anchor past the WHISKER's far end, not just past the dot -- the
-        # range often reaches further right than the season-average dot
-        # does, and a label starting right at the dot used to sit on top of
-        # that trailing whisker segment (measured: the overlapped stretch of
-        # the semi-transparent line rendered invisible under the opaque
-        # text, not just visually crowded -- moving the label clear of it
-        # entirely is the robust fix, independent of that rendering quirk).
         rng = weekly_range.get(r["user_name"])
-        right_edge = max(r["eff"], rng[1] if rng else r["eff"])
-        ax.text(right_edge + (span_hi - span_lo) * 0.02, i,
-                f"{r['eff']:.1f}%  ({round(r['bench'])} pts benched)",
-                va="center", fontsize=8, color=T["ink2"])
+        has_range = bool(rng and rng[1] > rng[0])
+        # Average label: centered on its own row, offset ABOVE the whisker
+        # when a range exists (so it never sits on the semi-transparent
+        # whisker line passing directly through the row's own y), plain
+        # centered when there's no range to avoid.
+        ax.text(r["eff"], i + (0.26 if has_range else 0),
+                f"{r['eff']:.1f}%", ha="center",
+                va="bottom" if has_range else "center",
+                fontsize=8, fontweight="bold", color=T["ink2"])
+        if has_range:
+            # Low/high labels sit INLINE with the whisker (same y as the
+            # row, va="center") just outside their own cap -- low label to
+            # the LEFT of the low cap, high label to the RIGHT of the high
+            # cap (2026-08, replacing a below-the-row placement that pushed
+            # the bottom row's labels down far enough to collide with the
+            # x-axis itself). Horizontal, not vertical, is the only
+            # direction guaranteed clear here: the whisker line the labels
+            # sit beside already reserves that row's own y for every
+            # manager, top to bottom, so placing labels off to the sides
+            # keeps every row's labels inside its own lane regardless of
+            # position in the chart.
+            ax.text(rng[0] - off, i, f"{rng[0]:.0f}%", ha="right",
+                    va="center", fontsize=7.5, color=T["muted"])
+            ax.text(rng[1] + off, i, f"{rng[1]:.0f}%", ha="left",
+                    va="center", fontsize=7.5, color=T["muted"])
     pad = max((span_hi - span_lo) * 0.15, 1.5)
-    ax.set_xlim(span_lo - pad, span_hi + pad * 2.6)
-    return _finish(fig, ax, "Lineup Efficiency (Coaching)",
-                   "Started points as % of the optimal lineup each week  ·  darker = better  ·  "
-                   "faint bar = that manager's worst-to-best week",
+    ax.set_xlim(span_lo - pad, span_hi + pad)
+    return _finish(fig, ax, "Lineup Efficiency",
+                   "Darker = better  ·  faint bar = that manager's worst-to-best week  ·  "
+                   "caps mark their single best/worst week",
                    "Efficiency %", caption=_cap(s))
 
 
@@ -585,72 +672,11 @@ def plot_consistency(s: Season):
                    "Weekly Points", caption=_cap(s))
 
 
-def _plot_fa_season_bar(s: Season, r: dict, pts_key: str, weeks_key: str,
-                        title: str, subtitle: str):
-    """Cleveland dot plot backing plot_fa_season_optimal: each manager's
-    own optimal-lineup total against the season-long best-possible
-    free-agent lineup total (dashed line). A zero-based bar wasted most of
-    its own axis here too (season
-    totals cluster tightly relative to a from-zero scale) -- same fix as
-    `plot_efficiency`, zoomed to the combined range of every manager's total
-    AND the free-agent reference total, so the dashed line is never pushed
-    outside the drawn axis.
-
-    Colour is a single sequential ramp keyed to the dot's own value (darker =
-    higher), not a categorical colour per manager -- this is one ranked
-    series with names already on the axis, so a rainbow-per-dot (the old
-    `palette()` treatment) encoded nothing and just added visual noise.
-    """
-    d = sorted([t for t in r["teams"] if t[pts_key] is not None], key=lambda t: t[pts_key])
-    if not d:
-        return _no_data(f"No free-agent data for {s.season}.")
-    names = [t["user_name"] for t in d]
-    pts = [t[pts_key] for t in d]
-    cmap = matplotlib.colormaps["Blues"]
-    lo, hi = min(pts), max(pts)
-    norm = mcolors.Normalize(vmin=lo - (hi - lo) * 0.3, vmax=hi + (hi - lo) * 0.15)
-    span_lo, span_hi = min(pts + [r["total"]]), max(pts + [r["total"]])
-    fig, ax = plt.subplots(figsize=(9, 6))
-    ax.axvline(r["total"], ls="--", lw=1.6, color=T["rule"], zorder=1)
-    ax.scatter(pts, range(len(d)), s=130, c=[cmap(norm(v)) for v in pts], zorder=3,
-               edgecolors=T["edge"], linewidths=1)
-    ax.set_yticks(range(len(d)))
-    ax.set_yticklabels(names)
-    _row_avatars(ax, names, s)
-    pad = max((span_hi - span_lo) * 0.15, 5)
-    for i, t in enumerate(d):
-        ax.text(t[pts_key] + pad * 0.15, i, f"beat it {t[weeks_key]}/{t['weeks']} wks",
-                va="center", fontsize=8, color=T["ink2"])
-    # Explicit ylim (rather than relying on scatter's autoscale margin, which
-    # differs from the old barh's) -- the top row otherwise sat close enough
-    # to the axes edge that this label collided with the subtitle above it.
-    ax.set_ylim(-0.5, len(d) - 0.5)
-    ax.text(r["total"], len(d) - 1, f"  best FA team: {r['total']:.0f}",
-            va="bottom", fontsize=8.5, color=T["muted"])
-    ax.set_xlim(span_lo - pad, span_hi + pad * 2.4)
-    return _finish(fig, ax, title, subtitle, "Season Points", caption=_cap(s))
-
-
-def plot_fa_season_optimal(s: Season):
-    """Every manager's OWN BEST POSSIBLE lineup (bench included), summed
-    across the season, against the same free-agent total -- would even
-    perfect coaching have beaten the wire. Coaching tab's complement to the
-    efficiency chart, not a restatement of managers' actual season totals.
-    """
-    r = metrics.free_agent_best_team_season(s)
-    if not r or not r["teams"]:
-        return _no_data(f"No free-agent data for {s.season}.")
-    return _plot_fa_season_bar(
-        s, r, "opt_points", "weeks_beaten_optimal",
-        f"{s.season}: Your Best Lineup vs the Best Available Free-Agent Team",
-        "Season points from each manager's OWN optimal lineup every week  ·  dashed line = the free-agent total")
-
-
 def plot_career(seasons: dict):
     """Career standings, ranked by win %. Colour is a sequential ramp on the
     bar's own value (darker = higher win %) rather than a categorical colour
-    per manager -- same reasoning as `_plot_fa_season_bar`: one ranked series
-    with names already on the axis, so hue-per-manager was decorative.
+    per manager -- one ranked series with names already on the axis, so
+    hue-per-manager was decorative.
     """
     d = metrics.career(seasons).copy()
     d["rank"] = d["win_pct"].rank(ascending=False, method="first").astype(int)
@@ -984,7 +1010,15 @@ def plot_roster_counts(s: Season):
             ax.text(j, start[j] + bench[j] / 2, f"{bench[j]:.1f}", ha="center",
                     va="center", fontsize=8, fontweight="bold", color="white")
     ax.set_xticks(list(x))
-    ax.set_xticklabels(POSITIONS)
+    ax.set_xticklabels(POSITIONS, fontweight="bold")
+    # Tick labels tinted by POS_COLORS -- the same position-identity colour
+    # `plot_position_scoring`/`plot_position_box` key their own data on, so a
+    # position reads as the same colour everywhere on this tab. The bars
+    # themselves stay green/grey (Starters/Bench is the thing THIS chart
+    # encodes in colour); tinting the axis instead of the bars adds that
+    # shared identity without competing with that encoding.
+    for tick, p in zip(ax.get_xticklabels(), POSITIONS):
+        tick.set_color(POS_COLORS[p])
     ax.legend(loc="upper right", frameon=False, fontsize=9)
     return _finish(fig, ax, "Average Roster Composition",
                    "Mean roster slots per team each week, by position",
@@ -1182,6 +1216,236 @@ def plot_playoff_players(playoffs: dict, n: int = 15, scope: str = "title"):
                    "Playoff Points")
 
 
+def plot_playoff_players_splice(seasons: dict, playoffs: dict, n: int = 15, scope: str = "title"):
+    """Best Playoff Players, spliced-bar version (2026-08, promoted out of the
+    Testing tab onto the Playoffs tab itself, replacing `plot_playoff_players`
+    there -- that function stays as-is for the Career tab's `_all` scope,
+    which hasn't been asked to make the same jump): each player's
+    total-points bar is cut into one SEGMENT PER GAME instead of drawn as one
+    solid block -- e.g. a player whose 80 total points came from games of 20,
+    20, and 40 shows three visible slices of those exact widths, left to
+    right, rather than a single 80-wide bar that hides how that total was
+    actually built. Reads `playoff_performances()` directly (the row-per-
+    player-week grain `playoff_players()` itself aggregates FROM) rather than
+    the aggregated table, since the per-game rows are exactly what's missing
+    from that simpler chart.
+
+    Slices are ordered CHRONOLOGICALLY (earliest game first, sorted by season
+    then week) -- left to right traces the player's whole playoff career in
+    order, so a late-career hot streak (or early-career quiet stretch) is
+    visible as a shape, not just implied by the total. A player's games can
+    span MULTIPLE SEASONS (this is a CAREER leaderboard, same scope as the
+    original chart), so "game 1" means their first career playoff game, not
+    game 1 of any single bracket.
+
+    Colour is GAME SLOT (1st game, 2nd game, 3rd...), the same fixed hue at
+    that slot for every player, reusing `_MANAGER_HUES` purely as an ordered
+    categorical set here (same "index by position, not by manager identity"
+    precedent `plot_trade_single_contribution` already uses for its own
+    per-player segments) -- this replaces position-as-color entirely, so
+    position moves into the label instead (same "position as text, not bar
+    color" convention the `_postext` prototype in this same round already
+    established) and there is no swatch legend, since a "game 1/2/3..." key
+    would need as many entries as the deepest career run and still not tell
+    a reader anything a hover/label doesn't already say better -- each
+    slice's own points value is labelled inside it when there's room.
+
+    `seasons` ({season_str: Season}, the same dict `plot_clutch` already
+    takes) is needed for the label's `pos_rank` badge -- that rank is a
+    SEASON-scoped fact (`metrics.season_position_ranks`), and this is a
+    CAREER chart, so a player who scored playoff points in more than one
+    season has no single "the" rank; the label shows their MOST RECENT
+    scoring season's rank (highest season key each player's own rows touch)
+    rather than their best-ever or a blended figure, matching how an
+    identity is normally read as "current." Best-effort: a season key with
+    no matching `Season` in `seasons`, or no rank for that player, degrades
+    to no badge rather than failing the whole chart.
+    """
+    import pandas as pd
+    from .playoffs import playoff_performances, playoff_players
+    top = playoff_players(playoffs, scope).head(n).iloc[::-1].reset_index(drop=True)
+    if top.empty:
+        return _no_data("No playoff performances recorded.")
+    perf = playoff_performances(playoffs, scope)
+    perf = perf[perf["player_id"].isin(top["player_id"])]
+    perf = perf.sort_values(["player_id", "season", "week"])
+    fig, ax = plt.subplots(figsize=(10, 6.4))
+    pos_ranks: dict = {}
+    for pid, g in perf.groupby("player_id"):
+        latest = str(g["season"].max())
+        s_obj = seasons.get(latest)
+        if s_obj is None:
+            continue
+        try:
+            r = metrics.season_position_ranks(s_obj).get(str(pid))
+        except Exception:
+            r = None
+        if r:
+            pos_ranks[pid] = r["rank"]
+    labels = []
+    for _, r in top.iterrows():
+        badge = f" #{pos_ranks[r['player_id']]}" if r["player_id"] in pos_ranks else ""
+        labels.append(f"{r['player_name']}  ·  {r['position']}{badge}")
+    ax.set_yticks(range(len(top)))
+    ax.set_yticklabels(labels, fontsize=8.5)
+    _portraits(ax, labels, top["player_id"], top["position"])
+    xmax = float(top["points"].max())
+    for i, r in top.iterrows():
+        games = perf[perf["player_id"] == r["player_id"]]
+        left = 0.0
+        for j, (_, g) in enumerate(games.iterrows()):
+            pts = float(g["points"])
+            color = _MANAGER_HUES[j % len(_MANAGER_HUES)]
+            ax.barh(i, pts, left=left, height=0.72, color=color,
+                    edgecolor=T["bg"], linewidth=1.0, zorder=2)
+            if pts >= xmax * 0.045:
+                ax.text(left + pts / 2, i, f"{pts:.0f}", ha="center", va="center",
+                        fontsize=7, fontweight="bold", color="white", zorder=3)
+            left += pts
+        ax.text(left + xmax * 0.01, i, f"{r['points']:.0f} total  ({r['ppg']:.1f} ppg)",
+                va="center", fontsize=8.5, color=T["ink2"])
+    ax.set_xlim(0, xmax * 1.34)
+    sub = "championship path only" if scope == "title" else f"scope: {scope}"
+    suffix, span = _po_span(playoffs)
+    return _finish(fig, ax, f"Best Playoff Players{suffix}",
+                   f"Points scored across {span}  ·  {sub}  ·  each slice = one playoff "
+                   "game, earliest first, width = that game's points",
+                   "Playoff Points")
+
+
+def plot_playoff_players_topband(playoffs: dict, n: int = 15, scope: str = "title"):
+    """Best Playoff Players (PROTOTYPE), legend variant: the position-color key
+    moves to a horizontal strip ABOVE the axes (bbox_to_anchor) instead of
+    `loc="lower right"` sitting in-axes -- the original's legend currently
+    clears the shortest bars by luck (15 real players), not by any
+    guarantee, and is the exact collision shape already fixed on `plot_mgr_sos`/
+    `plot_clutch`/`plot_draft_grades_value` this session. Everything else
+    (rings, portraits, labels) is untouched, so this is a single isolated
+    variable to judge.
+    """
+    from .playoffs import playoff_players
+    d = playoff_players(playoffs, scope).head(n).iloc[::-1].reset_index(drop=True)
+    fig, ax = plt.subplots(figsize=(10, 6.4))
+    ax.barh(range(len(d)), d["points"], height=0.72,
+            color=[POS_COLORS.get(str(p), "#999999") for p in d["position"]])
+    labels = [f"{n}  ·  {p}" for n, p in zip(d["player_name"], d["position"])]
+    ax.set_yticks(range(len(d)))
+    ax.set_yticklabels(labels, fontsize=8.5)
+    _portraits(ax, labels, d["player_id"], d["position"])
+    xmax = float(d["points"].max())
+    for i, r in d.iterrows():
+        rings = "★" * int(r["rings"])
+        ax.text(r["points"] + xmax * 0.01, i,
+                f"{r['points']:.0f}  ({r['ppg']:.1f} ppg)  {rings}",
+                va="center", fontsize=8.5, color=T["ink2"])
+    ax.set_xlim(0, xmax * 1.34)
+    sub = "championship path only" if scope == "title" else f"scope: {scope}"
+    seen = [p for p in POSITIONS if p in set(d["position"])]
+    handles = [plt.Rectangle((0, 0), 1, 1, color=POS_COLORS[p]) for p in seen]
+    ax.legend(handles, seen, loc="lower left", frameon=False, fontsize=8, ncol=6,
+              bbox_to_anchor=(0.0, 1.02))
+    suffix, span = _po_span(playoffs)
+    return _finish(fig, ax, f"Best Playoff Players{suffix} (PROTOTYPE: top legend)",
+                   f"Points scored across {span}  ·  {sub}  ·  ★ per title",
+                   "Playoff Points")
+
+
+def plot_playoff_players_postext(playoffs: dict, n: int = 15, scope: str = "title"):
+    """Best Playoff Players (PROTOTYPE), no-legend variant: position is
+    plain text next to each player's name instead of encoded in bar color --
+    every bar is one neutral color, so there is no legend to place (and
+    therefore no collision risk at all, the most direct fix of the three
+    prototypes here) and no need to cross-reference a color swatch back to a
+    position name. Trade-off: scanning "which rows are RBs" at a glance is
+    slower than reading bar color -- judge whether that's a real loss or not.
+    """
+    from .playoffs import playoff_players
+    d = playoff_players(playoffs, scope).head(n).iloc[::-1].reset_index(drop=True)
+    fig, ax = plt.subplots(figsize=(10, 6.4))
+    ax.barh(range(len(d)), d["points"], height=0.72, color=T["neutral"])
+    labels = list(d["player_name"])
+    ax.set_yticks(range(len(d)))
+    ax.set_yticklabels(labels, fontsize=8.5)
+    _portraits(ax, labels, d["player_id"], d["position"])
+    xmax = float(d["points"].max())
+    for i, r in d.iterrows():
+        rings = "★" * int(r["rings"])
+        ax.text(r["points"] + xmax * 0.01, i,
+                f"{r['position']}  ·  {r['points']:.0f}  ({r['ppg']:.1f} ppg)  {rings}",
+                va="center", fontsize=8.5, color=T["ink2"])
+    ax.set_xlim(0, xmax * 1.42)
+    sub = "championship path only" if scope == "title" else f"scope: {scope}"
+    suffix, span = _po_span(playoffs)
+    return _finish(fig, ax, f"Best Playoff Players{suffix} (PROTOTYPE: no legend)",
+                   f"Points scored across {span}  ·  {sub}  ·  ★ per title  ·  "
+                   "position shown as text, not bar color",
+                   "Playoff Points")
+
+
+def plot_playoff_players_medal(playoffs: dict, n: int = 15, scope: str = "title"):
+    """Best Playoff Players (PROTOTYPE), medal variant: ring count pulled OUT
+    of the trailing text label into its own medal-colored badge (reusing the
+    same MEDAL gold/silver/bronze palette this file already validates
+    elsewhere), planted right after the value text -- a repeat champion is
+    now visible without reading all the way to a trailing "★★★" at the very
+    end of the row. 1 ring = gold circle, 2 = gold+silver, 3+ =
+    gold+silver+bronze (caps at 3 markers regardless of ring count, labelled
+    with the real count past that so a 5-time champion doesn't need 5 drawn
+    circles to be legible).
+
+    Dot x-position is measured from the value text's OWN rendered width
+    (draw once, read `get_window_extent()`, same "measure, don't guess"
+    technique `_identity_rows`' portrait placement already uses) rather than
+    a fixed axis-fraction offset -- a fixed offset broke on the first real
+    render here: it placed the dots in DATA coordinates near the y-axis
+    origin, which overlapped the player-name tick labels `_portraits`
+    already occupies that space with, instead of sitting in the open space
+    after each bar's own value text where they were intended to go.
+    """
+    from .playoffs import playoff_players
+    d = playoff_players(playoffs, scope).head(n).iloc[::-1].reset_index(drop=True)
+    fig, ax = plt.subplots(figsize=(10, 6.4))
+    ax.barh(range(len(d)), d["points"], height=0.72,
+            color=[POS_COLORS.get(str(p), "#999999") for p in d["position"]])
+    labels = [f"{n}  ·  {p}" for n, p in zip(d["player_name"], d["position"])]
+    ax.set_yticks(range(len(d)))
+    ax.set_yticklabels(labels, fontsize=8.5)
+    _portraits(ax, labels, d["player_id"], d["position"])
+    xmax = float(d["points"].max())
+    ax.set_xlim(0, xmax * 1.55)  # wider than the original 1.34: room for medal dots past the value text
+    fig.canvas.draw()  # realise text extents before measuring below
+    inv = ax.transData.inverted()
+    for i, r in d.iterrows():
+        rings = int(r["rings"])
+        txt = ax.text(r["points"] + xmax * 0.01, i,
+                       f"{r['points']:.0f}  ({r['ppg']:.1f} ppg)",
+                       va="center", fontsize=8.5, color=T["ink2"])
+        if not rings:
+            continue
+        # Right edge of the text just drawn, converted back to data x, plus a
+        # small gap -- so the first dot always starts clear of the text
+        # regardless of how wide the PPG number happens to render.
+        text_right = inv.transform((txt.get_window_extent(fig.canvas.get_renderer()).x1, 0))[0]
+        start = text_right + xmax * 0.02
+        shown = min(rings, 3)
+        for j in range(shown):
+            ax.scatter(start + j * xmax * 0.035, i, s=60,
+                       color=MEDAL[j], edgecolors=T["edge"], linewidths=0.6,
+                       zorder=4, clip_on=False)
+        if rings > 3:
+            ax.text(start + shown * xmax * 0.035, i, f"+{rings - 3}",
+                    va="center", fontsize=7.5, color=T["muted"])
+    sub = "championship path only" if scope == "title" else f"scope: {scope}"
+    seen = [p for p in POSITIONS if p in set(d["position"])]
+    handles = [plt.Rectangle((0, 0), 1, 1, color=POS_COLORS[p]) for p in seen]
+    ax.legend(handles, seen, loc="lower right", frameon=False, fontsize=8, ncol=3)
+    suffix, span = _po_span(playoffs)
+    return _finish(fig, ax, f"Best Playoff Players{suffix} (PROTOTYPE: medal markers)",
+                   f"Points scored across {span}  ·  {sub}  ·  "
+                   "gold/silver/bronze dots = ring count",
+                   "Playoff Points")
+
+
 def plot_clutch(seasons: dict, playoffs: dict, scope: str = "title"):
     """Playoff PPG vs regular-season PPG -- who raises their game."""
     from .playoffs import clutch as _clutch
@@ -1191,16 +1455,17 @@ def plot_clutch(seasons: dict, playoffs: dict, scope: str = "title"):
     for i, r in d.iterrows():
         ax.plot([r["reg_ppg"], r["po_ppg"]], [i, i], color=cols[i], lw=2.5,
                 alpha=0.5, zorder=1)
-    ax.scatter(d["reg_ppg"], range(len(d)), color="#a6a6a6", s=65, zorder=2,
-               label="regular season")
-    ax.scatter(d["po_ppg"], range(len(d)), color=cols, s=95, zorder=3, label="playoffs")
+    ax.scatter(d["reg_ppg"], range(len(d)), color="#a6a6a6", s=65, zorder=2)
+    ax.scatter(d["po_ppg"], range(len(d)), color=cols, s=95, zorder=3)
     for i, r in d.iterrows():
         off, ha = (2, "left") if r["clutch"] > 0 else (-2, "right")
         ax.text(r["po_ppg"] + off, i, f"{r['clutch']:+.1f}", va="center", ha=ha,
                 fontsize=8, fontweight="bold", color=cols[i])
     ax.set_yticks(range(len(d)))
     ax.set_yticklabels(d["user_name"])
-    ax.legend(loc="lower right", frameon=False, fontsize=8)
+    # No ax.legend() here -- redundant with the subtitle, which already states
+    # the grey/coloured encoding (same fix as plot_mgr_sos/plot_draft_grades_value
+    # for the identical redundant-legend pattern).
     _, span = _po_span(playoffs)
     return _finish(fig, ax, "Clutch: Playoff vs Regular-Season Scoring",
                    f"Grey dot = regular-season PPG; coloured = playoff PPG  ·  "
@@ -1486,6 +1751,8 @@ def plot_loyalty(seasons: dict, top_n: int = 14, min_seasons: int = 2):
 def plot_boom_bust(s: Season):
     """Scoring average vs volatility -- steady teams vs boom-or-bust ones."""
     d = metrics.boom_bust(s)
+    if d.empty:
+        return _no_data(f"No scored weeks for {s.season} yet.")
     pal = palette(d["user_name"])
     fig, ax = plt.subplots(figsize=(9, 6))
     mx, my = d["avg"].median(), d["sd"].median()
@@ -1723,7 +1990,13 @@ def plot_draft_grades_value(s: Season):
     ax.set_yticks(range(len(d)))
     ax.set_yticklabels(d["user_name"])
     _row_avatars(ax, d["user_name"], s)
-    ax.legend(loc="lower right", frameon=False, fontsize=8)
+    # No ax.legend() here -- a fixed lower-right legend used to sit directly on
+    # top of whichever manager's own row/label landed there (rows are sorted
+    # by `points` ascending, so the bottom row is always adjacent to it, and
+    # that row's own "+X lost" label often extends into the same corner).
+    # Same fix as `plot_mgr_sos`'s identical collision: the subtitle already
+    # states the grey/green/red encoding, so the legend was redundant as well
+    # as the thing colliding -- dropping it fixes both.
     ax.set_xlim(0, hi * 1.25)
     return _finish(fig, ax, f"{s.season} Draft Grades vs. True Value",
                    "Grey = points kept  ·  green = players' true value  ·  "
@@ -1785,47 +2058,6 @@ def plot_redraft_standings(s: Season, basis: str = "value"):
                    "Wins", caption=_cap(s))
 
 
-def plot_redraft_points(s: Season):
-    """Testing-tab prototype: a companion to `plot_redraft_standings` --
-    same dumbbell idiom, real points against simulated points instead of
-    wins. Wins are lumpy (a blowout and a nail-biter both count as one), so
-    this is the chart that actually explains WHY a team's win total moved --
-    real production against what the redrafted roster would have scored,
-    not just the won/lost verdict that fell out of it.
-    """
-    from . import draft as _draft
-    d = _draft.redraft_standings(s)
-    if d.empty:
-        return _no_data(f"No draft data to simulate against in {s.season}.")
-    d = d.sort_values("sim_position", ascending=False).reset_index(drop=True)
-    fig, ax = plt.subplots(figsize=(9, max(4, len(d) * 0.55)))
-    line_cols = ["#2ca02c" if p > r else "#d62728" if p < r else T["rule"]
-                for p, r in zip(d["points"], d["real_points"])]
-    for i, r in d.iterrows():
-        ax.plot([r["real_points"], r["points"]], [i, i], color=line_cols[i],
-                lw=2.4, alpha=0.75, zorder=2)
-    ax.scatter(d["real_points"], range(len(d)), color=T["neutral"], s=60, zorder=3,
-               edgecolors=T["edge"], linewidths=0.6)
-    ax.scatter(d["points"], range(len(d)), color="#2ca02c", s=75, zorder=4,
-               edgecolors=T["edge"], linewidths=0.6)
-    hi = float(max(d["real_points"].max(), d["points"].max()))
-    lo = float(min(d["real_points"].min(), d["points"].min()))
-    span = (hi - lo) or 1
-    for i, r in d.iterrows():
-        delta = r["points"] - r["real_points"]
-        note = f"{delta:+.0f}" if round(delta) != 0 else "even"
-        ax.text(max(r["real_points"], r["points"]) + span * 0.02, i, note,
-                va="center", fontsize=7.5, fontweight="bold",
-                color=line_cols[i] if round(delta) != 0 else T["muted"])
-    ax.set_yticks(range(len(d)))
-    ax.set_yticklabels(d["user_name"], fontsize=8.5)
-    _row_avatars(ax, d["user_name"], s)
-    ax.set_xlim(lo - span * 0.05, hi + span * 0.18)
-    return _finish(fig, ax, f"{s.season}: Redraft Simulation — Points, Real vs. True Value",
-                   "Grey = real points, green = simulated  ·  line colour = gained or lost points",
-                   "Points", caption=_cap(s))
-
-
 def plot_redraft_finish_slope(s: Season, basis: str = "value"):
     """Live in the redraft simulation section, beside `plot_redraft_standings`
     -- the standings RESHUFFLE itself, which the wins dumbbell doesn't show
@@ -1873,40 +2105,6 @@ def plot_redraft_finish_slope(s: Season, basis: str = "value"):
     return _finish(fig, ax, f"{s.season}: Redraft Simulation — Standings Reshuffle{basis_label}",
                    "Green = redraft finishes higher, red = lower  ·  1st place at top",
                    caption=_cap(s), grid_axis="y")
-
-
-def plot_redraft_points_delta(s: Season):
-    """Testing-tab prototype: a companion to `plot_redraft_standings` --
-    the simplest possible read, one signed net-points bar per manager
-    (simulated points minus real points). No real/sim comparison needed to
-    read this one at a glance, unlike the two dumbbell variants.
-    """
-    from . import draft as _draft
-    d = _draft.redraft_standings(s)
-    if d.empty:
-        return _no_data(f"No draft data to simulate against in {s.season}.")
-    d = d.assign(delta=d["points"] - d["real_points"]).sort_values("delta")
-    names = d["user_name"].tolist()
-    deltas = d["delta"].tolist()
-    colors = ["#2ca02c" if x > 0 else "#d62728" if x < 0 else T["neutral"] for x in deltas]
-    fig, ax = plt.subplots(figsize=(7, max(4, len(d) * 0.5)))
-    y = list(range(len(d)))
-    ax.barh(y, deltas, color=colors, edgecolor=T["edge"], linewidth=0.5, height=0.6)
-    ax.axvline(0, color=T["spine"], linewidth=0.8)
-    ax.set_yticks(y)
-    ax.set_yticklabels(names, fontsize=8.5)
-    span = max(max(deltas, default=0), abs(min(deltas, default=0)), 1)
-    ax.set_xlim(-span * 1.25, span * 1.25)
-    for yi, x in zip(y, deltas):
-        # round()-then-format, not "+.0f" on the raw float directly -- a
-        # genuinely tiny delta must not format as the confusing "-0".
-        lbl = f"{round(x):+d}" if round(x) != 0 else "0"
-        ax.text(x + (span * 0.03 if x >= 0 else -span * 0.03), yi, lbl,
-                va="center", ha="left" if x >= 0 else "right", fontsize=8,
-                color=T["ink"], fontweight="bold")
-    return _finish(fig, ax, f"{s.season}: Redraft Simulation — Points Gained or Lost",
-                   "Simulated points minus real points, per manager",
-                   "Points", caption=_cap(s))
 
 
 # --- manager-scoped charts -------------------------------------------------
@@ -1986,36 +2184,139 @@ def plot_mgr_score_band(s: Season, manager: str, through_week: int | None = None
                    "Week", "Points", caption=_cap(s), grid_axis="y")
 
 
-def plot_mgr_optimal(s: Season, manager: str, through_week: int | None = None):
-    """Started vs optimal each week, over the running cost of the bench.
+def _eff_axis_floor(eff) -> int:
+    """The ONE shared rule for a Started-vs-Optimal efficiency axis floor:
+    the lowest real efficiency value in `eff`, rounded down to the nearest
+    10 -- never a fixed constant (an earlier version defaulted to 50 unless
+    data went lower, which on a season whose real low was e.g. 77% stranded
+    the line in the top ~40% of its own axis with a large dead zone below it
+    -- see git history), and never derived from an average either (a
+    mean-based floor was tried and rejected for the same "not the actual
+    rule" reason: the rule is the given series' own minimum, full stop).
 
-    Two stacked panels rather than one chart with two y-scales: weekly points
-    and a season-cumulative total are different magnitudes, and a dual axis
-    would make their crossings meaningless. `through_week` caps the season at
-    that week, for the weekly report's reuse of this otherwise season-wide
-    chart (the cumulative panel should run through the viewed week, not the
-    whole season).
+    `eff` need not be the caller's own scope: `plot_season_optimal` (the
+    league-wide average chart) passes its own per-week average series, so
+    its floor is independent of every other chart. `plot_mgr_optimal` (the
+    per-manager chart), as of 2026-08, deliberately passes the WHOLE
+    league's efficiency series (every manager, every week, not just the one
+    being drawn) so every per-manager chart shares one floor and stays
+    comparable side by side -- see that function's own comment for why.
+    Either way, this function itself stays a pure "min of what I was
+    handed, floored to 10" -- don't reintroduce a hardcoded floor or a
+    duplicate formula in either caller; change the rule (or which series
+    gets passed in) at the call site, not here.
+    """
+    return max(int(float(eff.min()) // 10 * 10), 0)
+
+
+def _highlight_eff_extremes(ax2, w, eff) -> None:
+    """Mark the best and worst efficiency weeks on a Started-vs-Optimal
+    trend line (shared by `plot_mgr_optimal`/`plot_season_optimal`, called
+    right after each draws its own `ax2.plot(...)` line).
+
+    Lowest week: a larger dot at its real value, labelled with that value --
+    the week most worth asking "what happened here."  Highest week: a
+    larger dot labelled with its value UNLESS it's a real 100% (efficiency
+    is capped there, so a 100% week means "no lineup could have beaten
+    this," not merely "the best of these weeks") -- a 100% week instead
+    draws a star marker with no value label, since the axis top plus the
+    "100%" tick already say the number and a star reads as "perfect" at a
+    glance rather than requiring the reader to check a label. If the best
+    week and worst week are the same single week (e.g. only one week of
+    data), the low styling wins -- drawing a star over a real value would
+    misrepresent a lone below-100% week as flawless.
+
+    Colors are deliberately NOT the chart's existing green/red (the started
+    bars and the bar-gap "-X" labels): gold for the high marker/star and
+    blue for the low marker read as their own distinct layer instead of
+    blending into the bars sitting directly underneath this twin axis --
+    the original version used the same `#2ca02c` as the started bars for
+    the high dot, which visually merged into the bar it was sitting on top
+    of at a glance. A thick white ring around each marker (2026-08) gives it
+    a hard edge against whichever bar color it happens to land on, and each
+    value label sits in a solid `T["bg"]`-colored pill (same convention
+    `_place_labels` uses for its own text-over-data labels) rather than bare
+    colored text -- plain text in these colors was still hard to read
+    against the green bar fill and the grey gridlines behind it.
+
+    `w`/`eff` are the same week/efficiency series just handed to `ax2.plot`.
+    Skips silently for fewer than 2 points -- there's no "best vs worst" to
+    contrast with only one number.
+    """
+    if len(eff) < 2:
+        return
+    w = list(w)
+    eff = list(eff)
+    hi_i = max(range(len(eff)), key=lambda i: eff[i])
+    lo_i = min(range(len(eff)), key=lambda i: eff[i])
+    if hi_i == lo_i:
+        return
+    label_bbox = dict(facecolor=T["bg"], edgecolor="none", alpha=0.85,
+                       boxstyle="round,pad=0.22")
+    lo_val = eff[lo_i]
+    ax2.plot(w[lo_i], lo_val, marker="o", markersize=10, markerfacecolor="#1f77b4",
+              markeredgecolor="white", markeredgewidth=2, zorder=6, linestyle="none")
+    ax2.annotate(f"{lo_val:.0f}%", (w[lo_i], lo_val), textcoords="offset points",
+                 xytext=(0, -14), ha="center", va="top", fontsize=8.5,
+                 fontweight="bold", color="#1f77b4", zorder=7, bbox=label_bbox)
+    hi_val = eff[hi_i]
+    if hi_val >= 100:
+        ax2.plot(w[hi_i], hi_val, marker="*", markersize=18, markerfacecolor="#f1c40f",
+                  markeredgecolor="white", markeredgewidth=1.6, zorder=6, linestyle="none")
+    else:
+        ax2.plot(w[hi_i], hi_val, marker="o", markersize=10, markerfacecolor="#f1c40f",
+                  markeredgecolor="white", markeredgewidth=2, zorder=6, linestyle="none")
+        ax2.annotate(f"{hi_val:.0f}%", (w[hi_i], hi_val), textcoords="offset points",
+                     xytext=(0, 12), ha="center", va="bottom", fontsize=8.5,
+                     fontweight="bold", color="#b8860b", zorder=7, bbox=label_bbox)
+
+
+def plot_mgr_optimal(s: Season, manager: str, through_week: int | None = None):
+    """Started vs optimal each week, with a weekly efficiency trend line.
+
+    One panel, not the season-cumulative-cost panel this used to carry
+    underneath: the bars already answer "how much got left on the bench and
+    when," so the trend line (started / optimal, per week) adds "was that
+    getting better or worse" without a second, differently-scaled axis for a
+    running total. Efficiency rides `ax.twinx()`, zoomed to that WEEK-TO-WEEK
+    range (not a fixed 0-100%) so the line's own shape -- which weeks trended
+    up or down -- actually reads, rather than flattening into a near-straight
+    band the way a full 0-100 axis would for a manager whose real efficiency
+    lives in a tight 70-95% window. White-filled markers on a solid line at a
+    high zorder keep it legible where it crosses in front of the bars (an
+    earlier low-alpha/behind-the-bars treatment, borrowed from the count
+    lines on the rejected position-pickups prototypes, was tried first and
+    made the line's own shape unreadable -- this chart's whole point is
+    "trending up or down," which a flattened, backgrounded line defeats).
+    `through_week` caps the season at that week, for the weekly report's
+    reuse of this otherwise season-wide chart.
     """
     lu = getattr(s, "lineup", None)
     if lu is None or not {"user_name", "week", "actual", "optimal"}.issubset(
             getattr(lu, "columns", [])):
         return _no_data(f"No lineup data for {manager} in {s.season}.")
-    d = lu[lu["user_name"] == manager]
-    if through_week is not None:
-        d = d[d["week"] <= through_week]
+    lu_scope = lu[lu["week"] <= through_week] if through_week is not None else lu
+    d = lu_scope[lu_scope["user_name"] == manager]
     d = d.sort_values("week")
     if d.empty:
         return _no_data(f"No lineup data for {manager} in {s.season}.")
     lost = (d["optimal"] - d["actual"]).clip(lower=0)
-    # No explicit hspace: _finish runs tight_layout, which warns and overrides
-    # a hand-set gridspec spacing.
-    fig, (ax, ax2) = plt.subplots(
-        2, 1, figsize=(9.5, 6.4), sharex=True,
-        gridspec_kw={"height_ratios": [3, 1]})
+    eff = (d["actual"] / d["optimal"].clip(lower=1e-9) * 100).clip(upper=100)
+    # Floor is shared across EVERY per-manager chart (2026-08), not each
+    # manager's own low: the lowest efficiency week ANY manager had (through
+    # `through_week` when capped, so the floor matches what's actually
+    # plottable at that cutoff) becomes the floor for ALL of them, so a
+    # reader can compare two managers' charts side by side without the axis
+    # itself changing scale underneath them. `plot_season_optimal` (the
+    # league-wide average chart) is NOT part of this -- it stays scoped to
+    # its own series via `_eff_axis_floor(eff)` directly, unchanged.
+    league_eff = (lu_scope["actual"] / lu_scope["optimal"].clip(lower=1e-9) * 100).clip(upper=100)
+    floor = _eff_axis_floor(league_eff) if len(league_eff) else _eff_axis_floor(eff)
+    fig, ax = plt.subplots(figsize=(9.5, 6))
     w = d["week"]
     ax.bar(w, d["optimal"], width=0.68, color=T["neutral"], alpha=0.55,
-           zorder=1, label="optimal")
-    ax.bar(w, d["actual"], width=0.68, color="#2ca02c", zorder=2, label="started")
+           zorder=2, label="optimal")
+    ax.bar(w, d["actual"], width=0.68, color="#2ca02c", zorder=3, label="started")
     # Only annotate weeks that actually cost something, so the labels stay scannable.
     top = float(d["optimal"].max())
     for wk, opt, gap in zip(w, d["optimal"], lost):
@@ -2023,24 +2324,122 @@ def plot_mgr_optimal(s: Season, manager: str, through_week: int | None = None):
             ax.text(wk, opt + top * 0.015, f"-{gap:.0f}", ha="center",
                     fontsize=7.5, color="#d62728", fontweight="bold")
     ax.set_ylim(0, top * 1.12)
-    # No legend: the bars run full height, so any in-axes placement sits on the
-    # data, and the subtitle already names both series.
-    ax2.fill_between(w, lost.cumsum(), color="#d62728", alpha=0.28, zorder=1)
-    ax2.plot(w, lost.cumsum(), color="#d62728", lw=1.8, zorder=2)
-    ax2.set_xticks(list(w))
-    ax2.set_ylabel("Cumulative", fontsize=9, color=T["muted"])
-    ax2.set_xlabel("Week", fontsize=10, color=T["muted"])
-    ax2.grid(axis="y", color=T["grid"], linewidth=0.7)
-    ax2.set_axisbelow(True)
-    ax2.tick_params(colors=T["tick"], labelsize=9.5)
-    for sp in ("top", "right", "left"):
+    ax.set_xticks(list(w))
+    ax.set_xlabel("Week", fontsize=10, color=T["muted"])
+    # No legend for the bars: they run full height, so any in-axes placement
+    # sits on the data, and the subtitle already names both series.
+    ax2 = ax.twinx()
+    ax2.plot(w, eff, color="#6a51a3", lw=2, alpha=0.85, zorder=4,
+             marker="o", markersize=4.5, markerfacecolor=T["bg"],
+             markeredgecolor="#6a51a3", markeredgewidth=1.3)
+    _highlight_eff_extremes(ax2, w, eff)
+    # Fixed, evenly-ticked axis (2026-08, replacing an earlier zoomed-to-
+    # real-range version -- see git history/CLAUDE.md for that prior
+    # design's own reasoning). Efficiency is DEFINED on a 0-100 scale, so
+    # this axis reads literally rather than relative to this one manager's
+    # own season. Floor is the shared `floor` computed above -- the lowest
+    # efficiency week ANY manager had (not just this one), rounded down to
+    # the nearest 10 via `_eff_axis_floor`, so every per-manager chart uses
+    # the SAME floor and is safe to compare side by side. See the comment
+    # above `floor`'s computation for why this diverges from
+    # `_eff_axis_floor`'s own docstring (written when both charts were
+    # still purely self-scoped) -- `plot_season_optimal` is unaffected and
+    # still passes its own series straight through.
+    # MultipleLocator(10) from that floor forces clean ticks (e.g.
+    # 50/60/70/80/90/100) rather than matplotlib's auto-placed ones (which
+    # on the old zoomed range could land on odd values like 65/75/85). A
+    # small top pad (102, not 100) keeps a real 100%-efficiency week's
+    # marker/line from sitting flush on the axis edge, where it could
+    # visually clip or collide with the plot border -- purely a rendering
+    # buffer, the tick labels themselves still stop at 100 since
+    # MultipleLocator(10) never places one at 102.
+    from matplotlib.ticker import MultipleLocator
+    ax2.set_ylim(floor, 102)
+    ax2.yaxis.set_major_locator(MultipleLocator(10))
+    ax2.set_ylabel("Efficiency %", fontsize=9, color="#6a51a3")
+    ax2.tick_params(axis="y", colors="#6a51a3", labelsize=8.5)
+    for sp in ("top", "left"):
         ax2.spines[sp].set_visible(False)
-    ax2.spines["bottom"].set_color(T["spine"])
+    ax2.spines["right"].set_color("#6a51a3")
     total = float(lost.sum())
     span_txt = f"through week {through_week}" if through_week is not None else "all season"
     return _finish(fig, ax, f"{manager} · Started vs Optimal",
-                   "Grey = the best legal lineup that week; green = what they "
-                   f"started  ·  {total:.0f} pts left on the bench {span_txt}",
+                   "Grey = the best legal lineup that week; green = what they started  ·  "
+                   f"purple line = efficiency %  ·  {total:.0f} pts left on the bench {span_txt}",
+                   None, "Points", caption=_cap(s), grid_axis="y")
+
+
+def plot_season_optimal(s: Season):
+    """The LEAGUE-WIDE seasonal counterpart to `plot_mgr_optimal` -- same
+    bar+twin-axis-line shape (grey optimal / green started bars, purple
+    efficiency line), but each week's bars are the AVERAGE across every
+    manager that week, not one manager's own total. Answers "how did the
+    whole league's lineup-setting trend over the season" in one picture,
+    rather than needing to flip between ten separate per-manager charts to
+    notice a league-wide pattern (e.g. bye weeks/injury-heavy stretches
+    dragging everyone's efficiency down at once). Efficiency axis floor
+    comes from `_eff_axis_floor()`, the SAME shared helper `plot_mgr_optimal`
+    calls -- not a separate formula here -- so both charts follow one rule
+    (this scope's own real low, rounded down to the nearest 10) rather than
+    two independently-tuned ones that could drift apart.
+
+    Promoted out of the Testing tab (2026-08) onto the league-scope Roster
+    tab itself, in the "Roster" section's chart slot `roster_counts` used
+    to occupy -- see app.py's `_roster_part_ctx` for the full reshuffle
+    ("Where the Points Come From" removed from this tab, `roster_counts`
+    moved up to replace it, this chart filling `roster_counts`' old spot).
+    """
+    lu = getattr(s, "lineup", None)
+    if lu is None or not {"user_name", "week", "actual", "optimal"}.issubset(
+            getattr(lu, "columns", [])):
+        return _no_data(f"No lineup data for {s.season}.")
+    d = lu.groupby("week", as_index=False).agg(actual=("actual", "mean"), optimal=("optimal", "mean"))
+    d = d.sort_values("week")
+    if d.empty:
+        return _no_data(f"No lineup data for {s.season}.")
+    lost = (d["optimal"] - d["actual"]).clip(lower=0)
+    eff = (d["actual"] / d["optimal"].clip(lower=1e-9) * 100).clip(upper=100)
+    fig, ax = plt.subplots(figsize=(9.5, 6))
+    w = d["week"]
+    ax.bar(w, d["optimal"], width=0.68, color=T["neutral"], alpha=0.55,
+           zorder=2, label="optimal")
+    ax.bar(w, d["actual"], width=0.68, color="#2ca02c", zorder=3, label="started")
+    top = float(d["optimal"].max())
+    for wk, opt, gap in zip(w, d["optimal"], lost):
+        if gap >= top * 0.04:
+            ax.text(wk, opt + top * 0.015, f"-{gap:.0f}", ha="center",
+                    fontsize=7.5, color="#d62728", fontweight="bold")
+    ax.set_ylim(0, top * 1.12)
+    ax.set_xticks(list(w))
+    ax.set_xlabel("Week", fontsize=10, color=T["muted"])
+    ax2 = ax.twinx()
+    ax2.plot(w, eff, color="#6a51a3", lw=2, alpha=0.85, zorder=4,
+             marker="o", markersize=4.5, markerfacecolor=T["bg"],
+             markeredgecolor="#6a51a3", markeredgewidth=1.3)
+    _highlight_eff_extremes(ax2, w, eff)
+    # Floor is `_eff_axis_floor(eff)` -- the SAME shared rule
+    # `plot_mgr_optimal` uses (see that function's own comment and
+    # `_eff_axis_floor`'s docstring): this chart's own scope is the
+    # league's per-week AVERAGE efficiency, so `eff` here is that series,
+    # and the floor becomes the lowest such weekly league average, rounded
+    # down to the nearest 10 (e.g. a lowest week of 65% -> floor 60). Two
+    # earlier versions of this floor (a fixed 50, then a season-mean-based
+    # formula) both got replaced once the actual rule was pinned down to
+    # "the scope's own real low, nothing else" -- see _eff_axis_floor,
+    # the single place that rule now lives for both charts.
+    from matplotlib.ticker import MultipleLocator
+    ax2.set_ylim(_eff_axis_floor(eff), 102)
+    ax2.yaxis.set_major_locator(MultipleLocator(10))
+    ax2.set_ylabel("Efficiency %", fontsize=9, color="#6a51a3")
+    ax2.tick_params(axis="y", colors="#6a51a3", labelsize=8.5)
+    for sp in ("top", "left"):
+        ax2.spines[sp].set_visible(False)
+    ax2.spines["right"].set_color("#6a51a3")
+    total = float(lost.sum())
+    return _finish(fig, ax, f"{s.season}: Started vs Optimal, League Average",
+                   "Grey = the league's average best legal lineup that week; green = what "
+                   "the league averaged starting  ·  purple line = average efficiency %  ·  "
+                   f"{total:.0f} avg pts left on the bench all season",
                    None, "Points", caption=_cap(s), grid_axis="y")
 
 
@@ -2226,39 +2625,6 @@ def plot_mgr_roster_heatmap(s: Season, manager: str, through_week: int | None = 
     fig.text(0.99, 0.01, _cap(s), ha="right", fontsize=7, color=T["faint"])
     fig.tight_layout(rect=(0, 0.03, 1, 1))
     return fig
-
-
-def plot_mgr_starter_bench_weeks(s: Season, manager: str, through_week: int | None = None):
-    """This manager's started vs bench points, per week -- the personal-trend
-    analogue of the league-wide `plot_starter_bench` (which is one season-total
-    bar per manager per position; this is one week-by-week pair for one manager).
-    """
-    rid = _mgr_rid(s, manager)
-    pl = s.pl_wk
-    if rid is None or not {"roster_id", "week", "is_starter", "points"}.issubset(
-            getattr(pl, "columns", [])):
-        return _no_data(f"No roster data for {manager} in {s.season}.")
-    d = pl[pl["roster_id"] == rid]
-    if through_week is not None:
-        d = d[d["week"] <= through_week]
-    if d.empty:
-        return _no_data(f"No roster data for {manager} in {s.season}.")
-    weeks = sorted(d["week"].unique())
-    started = (d[d["is_starter"]].groupby("week")["points"].sum()
-               .reindex(weeks).fillna(0))
-    bench = (d[~d["is_starter"]].groupby("week")["points"].sum()
-             .reindex(weeks).fillna(0))
-    fig, ax = plt.subplots(figsize=(9.5, 5.5))
-    ax.bar(weeks, started.values, width=0.68, color="#2f9e44", zorder=2,
-           edgecolor=T["bg"], linewidth=1.0, label="Started")
-    ax.bar(weeks, bench.values, width=0.68, bottom=started.values,
-           color=T["neutral"], alpha=0.7, zorder=2,
-           edgecolor=T["bg"], linewidth=1.0, label="Bench")
-    ax.set_xticks(weeks)
-    ax.legend(loc="best", frameon=False, fontsize=9)
-    return _finish(fig, ax, f"{manager} · Started vs Bench by Week",
-                   "Every point the roster scored each week, split by whether it was started",
-                   "Week", "Points", caption=_cap(s), grid_axis="y")
 
 
 def plot_week_matchups(s: Season, week: int):
