@@ -527,23 +527,53 @@ def load_playoffs(playoff_dir: str = "season", league_ids=None) -> dict:
             for s, p in config_paths(playoff_dir, league_ids).items()}
 
 
+def _runner_up(p: "Playoff") -> str | None:
+    """The title game's loser -- same final-matchup logic `playoff_summary`'s
+    own `outcome()` uses, but standalone since callers here only need the
+    team name, not a full per-team outcome frame."""
+    cfg = p.config if isinstance(p.config, dict) else {}
+    rounds = cfg.get("rounds") or []
+    final_id = cfg.get("final") or (
+        rounds[-1]["matchups"][-1]["id"] if rounds and rounds[-1].get("matchups") else None)
+    if final_id is None:
+        return None
+    d = p.results
+    lost = d[(d["matchup_id"] == final_id) & (d["result"] == "L")]
+    return lost.iloc[0]["team"] if len(lost) else None
+
+
 def playoff_performances(playoffs: dict, scope: str = "title") -> pd.DataFrame:
-    """Every started player-week across all brackets (the player-metric grain)."""
+    """Every started player-week across all brackets (the player-metric grain).
+
+    `round_id` (e.g. "R1"/"R2"/"R3") is already a column on `p.players`
+    itself (stamped in `playoff()`) -- only the display `round` NAME is
+    merged in here from `p.results`, since merging `round_id` too would
+    collide with the one `p.players` already carries and get suffixed
+    (`round_id_x`/`round_id_y`) instead of staying plain `round_id`. A
+    season's own `config["rounds"]` list is already ordered by bracket
+    depth (`R1` before `R2` before `R3`...), so `round_id`'s position
+    within that season's own round list is a stable "how deep is this
+    round" ordinal even though the display NAME varies per season/league
+    (e.g. 2025's "Round 1 (seeds 5-8)" vs 2022's plain "Round 1") and can't
+    be compared as a string across seasons the way `round_id` can be
+    compared as a position.
+    """
     frames = []
     for s, p in playoffs.items():
         if not len(p.players):
             continue
         d = p.players.merge(p.results[["matchup_id", "round"]].drop_duplicates(),
                             on="matchup_id", how="left")
-        d = d.assign(season=str(s), champion=d["team"] == (p.champion or ""))
+        d = d.assign(season=str(s), champion=d["team"] == (p.champion or ""),
+                     runner_up=d["team"] == (_runner_up(p) or ""))
         frames.append(d)
     if not frames:
         return pd.DataFrame()
     d = scope_frame(pd.concat(frames, ignore_index=True), scope)
     # player_id rides along: it is the only safe key for a portrait (names are
     # neither unique nor stable).
-    cols = ["season", "round", "bracket", "matchup_id", "team", "player_id",
-            "player_name", "position", "week", "points", "champion"]
+    cols = ["season", "round", "round_id", "bracket", "matchup_id", "team", "player_id",
+            "player_name", "position", "week", "points", "champion", "runner_up"]
     return d[cols].sort_values("points", ascending=False).reset_index(drop=True)
 
 
@@ -892,7 +922,7 @@ def playoff_summary(p: Playoff) -> pd.DataFrame:
         if len(out_in):
             return f"Lost in {out_in.iloc[-1]['round']}"
         # Never lost and no title: the bracket has not finished resolving.
-        return "Still alive" if not p.champion else "—"
+        return "Still alive" if not p.champion else "N/A"
 
     # Seed is the commissioner's own seeding from the config -- which is the
     # REGULAR-season order (standings.reg_position), not the blended win/loss
@@ -1132,7 +1162,7 @@ def toilet_bowl(s, p=None) -> dict:
                           "points": float(r.points),
                           # None (not 0) when the team never had a toilet game --
                           # keeps every po_* field blank together in the combined
-                          # board rather than a stray "0" beside a "—".
+                          # board rather than a stray "0" beside a dash placeholder.
                           "po_games": rec["games"] if rec else None,
                           "po_wins": rec["wins"] if rec else None,
                           "po_losses": rec["losses"] if rec else None,
@@ -1225,7 +1255,7 @@ def postseason_weeks(s, p=None) -> list[dict]:
             if nm in playing.get(w, set()):
                 role, note = "bracket", "bracket game"
             elif nm in byes.get(w, set()):
-                role, note = "bye", "bye — advanced without playing"
+                role, note = "bye", "bye, advanced without playing"
             elif pd.notna(getattr(r, "matchup_id", None)):
                 role, note = "outside", "played, but outside the bracket"
             else:
@@ -1352,6 +1382,13 @@ def game_log(s, p, toilet=None) -> list[dict]:
     results = getattr(p, "results", None)
     players = getattr(p, "players", None)
     ref = reference_scores(s)
+    rounds_cfg = cfg.get("rounds") or []
+    # Same convention as `playoff_summary`'s own `final_id` resolution: an
+    # explicit `config["final"]` wins, falling back to the last matchup of the
+    # last configured round for a config that never set one.
+    final_id = cfg.get("final") or (
+        rounds_cfg[-1]["matchups"][-1]["id"]
+        if rounds_cfg and rounds_cfg[-1].get("matchups") else None)
     try:
         ranks = metrics.season_position_ranks(s)
     except Exception:
@@ -1378,6 +1415,42 @@ def game_log(s, p, toilet=None) -> list[dict]:
         if len(sides) == 2 and all(x["points"] is not None for x in sides):
             return round(abs(sides[0]["points"] - sides[1]["points"]), 2)
         return None
+
+    def _round_blurb(games, byes, kind, is_final, wk_lbl):
+        # Generalized from the round's own shape (game/bye counts, kind, and
+        # whether it's the championship round) rather than the round's display
+        # name -- names vary by league/season (plain "Round 1" vs "Round 1
+        # (seeds 5-8)"), same reasoning `plot_playoff_players_splice` already
+        # applies to round coloring (see CLAUDE.md).
+        n_games = len(games)
+        n_byes = len(byes)
+        wk_word = f"week {wk_lbl}" if wk_lbl and "," not in wk_lbl else f"weeks {wk_lbl}" if wk_lbl else None
+        if is_final:
+            # The championship: always the most detail, regardless of shape.
+            parts = ["The championship game, winner takes the title"
+                     if n_games == 1 else "The championship round"]
+            if wk_word:
+                parts.append(f"played in {wk_word}")
+            if n_byes:
+                parts.append(f"with {n_byes} team{'s' if n_byes != 1 else ''} "
+                              "already through on a bye")
+            return ", ".join(parts) + "."
+        bits = []
+        if n_games:
+            bits.append(f"{n_games} game{'s' if n_games != 1 else ''}")
+        if n_byes:
+            bits.append(f"{n_byes} team{'s' if n_byes != 1 else ''} on a bye")
+        if not bits:
+            return None
+        lead = " and ".join(bits) if len(bits) <= 2 else ", ".join(bits[:-1]) + f", and {bits[-1]}"
+        sentence = f"{lead[0].upper()}{lead[1:]} this round"
+        if wk_word:
+            sentence += f", {wk_word}"
+        if kind == "consolation":
+            sentence += ", placement games, not part of the title path"
+        elif kind == "mixed":
+            sentence += ", a mix of title-path and consolation games"
+        return sentence + "."
 
     if results is not None and len(results):
         by_mid = {mid: g for mid, g in results.groupby("matchup_id")}
@@ -1433,9 +1506,13 @@ def game_log(s, p, toilet=None) -> list[dict]:
             if games or byes:
                 brs = {gm["bracket"] for gm in games if gm.get("bracket")}
                 kind = brs.pop() if len(brs) == 1 else ("mixed" if brs else "title")
+                is_final = final_id is not None and any(
+                    gm["id"] == final_id for gm in games)
                 groups.append({
                     "key": rd.get("id"), "label": rd.get("name") or rd.get("id"),
-                    "weeks": wk_lbl, "kind": kind, "games": games, "byes": byes})
+                    "weeks": wk_lbl, "kind": kind, "games": games, "byes": byes,
+                    "is_final": is_final,
+                    "blurb": _round_blurb(games, byes, kind, is_final, wk_lbl)})
 
     # Toilet bowl / outside-bracket games as their own trailing group.
     tb = toilet if toilet is not None else toilet_bowl(s, p)
@@ -1458,7 +1535,22 @@ def game_log(s, p, toilet=None) -> list[dict]:
                               "weeks": str(gm.get("week")), "sides": sides,
                               "winner": winner, "margin": margin, "pending": False})
         wlbl = ", ".join(str(w) for w in sorted(x for x in wks if x is not None))
+        # Extra detail here since the toilet bowl is easy to misread as just
+        # more bracket games -- these are the teams that MISSED the bracket
+        # entirely, and (per `toilet_bowl`'s own basis) last place goes to the
+        # loser of the LAST such game, not any game in this group.
+        n_tgames = len(out_games)
+        blurb = (f"{n_tgames} game{'s' if n_tgames != 1 else ''} between the "
+                 "teams that missed the championship bracket, ordinary "
+                 "matchups played once the postseason started, not part of "
+                 "the bracket above. ")
+        last_team = (tb or {}).get("last")
+        if last_team and (tb or {}).get("basis") == "game":
+            blurb += f"The loser of the final one, {last_team}, finishes last."
+        else:
+            blurb += "The loser of the final one finishes last."
         groups.append({"key": "toilet", "label": "Toilet bowl", "weeks": wlbl,
-                       "kind": "toilet", "games": out_games, "byes": []})
+                       "kind": "toilet", "games": out_games, "byes": [],
+                       "blurb": blurb})
 
     return groups

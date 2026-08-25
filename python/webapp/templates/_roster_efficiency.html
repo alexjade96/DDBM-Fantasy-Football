@@ -133,7 +133,7 @@
 {% set r = rosters[0] %}
 <h2>Efficiency</h2>
 <p class="hint">{{ manager }}&rsquo;s week-by-week lineup calls. <strong>Average pts
-   from optimal</strong> is the typical cost of the decisions &mdash; only the bench points a
+   from optimal</strong> is the typical cost of the decisions, only the bench points a
    legal swap would actually have converted, per week. Expand a week to see who started and
    who sat, with gold rows marking who would have swapped with whom in the best legal
    lineup; a highlighted Optimal score means that lineup would have beaten the week's
@@ -174,10 +174,10 @@
     <tr>
       <td class="n">{{ w.week }}</td>
       <td class="n">{% if w.result is defined %}<span class="res {{ 'w' if w.result == 'W' else 'l' }}">{{ "%.1f"|format(w.actual) }}</span>{% else %}{{ "%.1f"|format(w.actual) }}{% endif %}</td>
-      <td class="n">{% if w.pa is defined %}<span class="res {{ 'l' if w.result == 'W' else 'w' }}">{{ "%.1f"|format(w.pa) }}</span>{% else %}&mdash;{% endif %}</td>
+      <td class="n">{% if w.pa is defined %}<span class="res {{ 'l' if w.result == 'W' else 'w' }}">{{ "%.1f"|format(w.pa) }}</span>{% else %}N/A{% endif %}</td>
       <td class="n" style="color: hsl({{ hue }}, 70%, 45%)">{{ "%.0f"|format(w.eff) }}%</td>
       <td class="n">{% if winnable %}<span class="res w" title="This lineup would have beaten the opponent's actual score">{{ "%.1f"|format(w.optimal) }}</span>{% else %}{{ "%.1f"|format(w.optimal) }}{% endif %}</td>
-      <td class="n">{% if wl.swap_count %}{{ wl.swap_count }}{% else %}&mdash;{% endif %}</td>
+      <td class="n">{% if wl.swap_count %}{{ wl.swap_count }}{% else %}N/A{% endif %}</td>
     </tr>
     <tr class="detail-row" hidden>
       <td colspan="6">

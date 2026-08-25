@@ -4,7 +4,7 @@
    placeholder. #}
 {% if po_charts %}
 <h2>Postseason, all time</h2>
-<p class="hint">Every stored bracket combined — {{ po_seasons | join(", ") }}. The
+<p class="hint">Every stored bracket combined: {{ po_seasons | join(", ") }}. The
    Playoffs tab shows one postseason at a time, whichever season is selected above.</p>
 <section class="grid">
   {% for c in po_charts %}
@@ -31,7 +31,7 @@
         <td class="n">{{ r.wins }}</td>
         <td class="n">{{ r.losses }}</td>
         <td class="n">{{ r.win_pct | round(1) }}</td>
-        <td class="n">{% if r.titles %}<span class="chip">{{ r.titles }}</span>{% else %}—{% endif %}</td>
+        <td class="n">{% if r.titles %}<span class="chip">{{ r.titles }}</span>{% else %}N/A{% endif %}</td>
         <td class="n">{{ r.ppg | round(1) }}</td>
       </tr>
     {% endfor %}

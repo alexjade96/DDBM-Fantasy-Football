@@ -1639,7 +1639,7 @@ def draft_extremes(s: Season, n: int | None = None) -> dict:
         return empty
     d["pick"] = d.apply(
         lambda r: f"{int(r['round'])}.{int(r['pick_in_round']):02d}"
-        if pd.notna(r["round"]) and pd.notna(r["pick_in_round"]) else "—", axis=1)
+        if pd.notna(r["round"]) and pd.notna(r["pick_in_round"]) else "N/A", axis=1)
     # `points`/`total`/`steal`/`pos_steal`/`mixed`/`pos_rank`/`pos_adj`/
     # `pos_repl_ppg` all come straight from draft_board() -- see its
     # docstring for what each compares. The outward `weeks`/`ppg` here are
@@ -2402,7 +2402,7 @@ def drafted_players(s: Season) -> pd.DataFrame:
                            "ppg": "_team_ppg", "rostered_ppg": "ppg"})
     d["pick"] = d.apply(
         lambda r: f"{int(r['round'])}.{int(r['pick_in_round']):02d}"
-        if pd.notna(r["round"]) and pd.notna(r["pick_in_round"]) else "—", axis=1)
+        if pd.notna(r["round"]) and pd.notna(r["pick_in_round"]) else "N/A", axis=1)
     weekly_by_id = _season_trend(s, d["player_id"])
     d["trend"] = d.apply(
         lambda r: _sparkline(weekly_by_id.get(str(r["player_id"]), []), r["pos_repl_ppg"]),

@@ -12,13 +12,13 @@ one-off script, `ddbmFF.R`, remains at the repo root as the origin source).
 
 Three separated concerns:
 
-- **compute** — `sl_standings()`, `sl_luck()`, `sl_efficiency()`,
+- **compute**: `sl_standings()`, `sl_luck()`, `sl_efficiency()`,
   `sl_consistency()`, `sl_points_for_against()`, `sl_high_scores()`,
   `sl_career()`, `sl_player_loyalty()` return tidy tibbles.
-- **render** — `sl_plot_*()` turn those into `ggplot` objects (`theme_sleeper()`).
-- **narrate** — `sl_summary_season()`, `sl_summary_career()` return markdown.
+- **render**: `sl_plot_*()` turn those into `ggplot` objects (`theme_sleeper()`).
+- **narrate**: `sl_summary_season()`, `sl_summary_career()` return markdown.
 
-Data flow: `sleeper_api()` → `sl_league_chain()` → `sl_season()` /
+Data flow: `sleeper_api()` -> `sl_league_chain()` -> `sl_season()` /
 `sl_seasons()` (each returns a `sleeper_season` holding `team_wk`, `pl_wk`,
 `lineup`, `standings`).
 

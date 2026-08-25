@@ -14,7 +14,7 @@
 {# ---- Lead: current week, current playoff round, or season complete ------- #}
 {% if phase == "playoffs" %}
 <div class="rowhead">
-  <h2>Playoffs &mdash; {{ current_round.label }}
+  <h2>Playoffs: {{ current_round.label }}
     {% if live %}<span class="live-badge">Live</span>{% endif %}
   </h2>
   <div class="rowhead-actions">
@@ -25,12 +25,12 @@
       Playoff {{ current_round.label }} &rarr;</button>
   </div>
 </div>
-<p class="hint">The postseason in progress at a glance &mdash; this round&rsquo;s games, expandable
+<p class="hint">The postseason in progress at a glance: this round&rsquo;s games, expandable
    to both submitted lineups. Full bracket and postseason analytics are on the
    <em>Playoffs</em> tab.</p>
 {% elif phase == "complete" %}
 <div class="rowhead">
-  <h2>Season complete{% if champion %} &mdash; Champion: {{ champion }}{% endif %}</h2>
+  <h2>Season complete{% if champion %}: Champion, {{ champion }}{% endif %}</h2>
   {% if playoff_recap %}
   <div class="rowhead-actions">
     <button type="button" class="ghost"
@@ -40,17 +40,17 @@
   {% endif %}
 </div>
 {% if playoff_recap %}
-<p class="hint">The whole postseason, start to finish &mdash; headline numbers from every
+<p class="hint">The whole postseason, start to finish: headline numbers from every
   round that was played. Full bracket, game log and postseason analytics are on the
   <em>Playoffs</em> tab.</p>
 {% else %}
-<p class="hint">The season has wrapped up &mdash; the numbers below cover the whole
+<p class="hint">The season has wrapped up; the numbers below cover the whole
   season. See <em>Regular season</em> for the full picture.</p>
 {% endif %}
 {% else %}
 <div class="rowhead">
   <h2>
-    {% if live %}This week{% else %}Latest week{% endif %} &mdash; Week {{ week }}
+    {% if live %}This week{% else %}Latest week{% endif %}: Week {{ week }}
     {% if live %}<span class="live-badge">Live</span>{% endif %}
   </h2>
   <div class="rowhead-actions">
@@ -69,7 +69,7 @@
 </div>
 <p class="hint">
   {% if live %}The week in progress at a glance.{% else %}The most recent week played.{% endif %}
-  Headline numbers, then the games as a picture and in full &mdash; expand a row for both
+  Headline numbers, then the games as a picture and in full; expand a row for both
   lineups in slot order, what sat on the bench, and the single legal same-position swap that
   cost the most. Full week analysis is on the <em>Weekly</em> tab.</p>
 {% endif %}
@@ -77,7 +77,7 @@
 <section class="stats">
   {% for label, kpi, cls in overview_tiles %}
   <div class="stat {{ cls }}">
-    <span class="k">{{ label }}</span><span class="v">{{ kpi.value if kpi else "—" }}</span>
+    <span class="k">{{ label }}</span><span class="v">{{ kpi.value if kpi else "N/A" }}</span>
     {% if kpi and kpi.user_name %}<span class="sub">{{ idm.who(kpi.user_name) }}</span>{% endif %}
   </div>
   {% endfor %}
@@ -117,7 +117,7 @@
    (weeks 1..current_week, which is itself capped to the regular season -- see
    Season.current_week / Season.last_week in season.py) rather than reading as
    "the whole season". #}
-<h2>Regular season{% if current_week %} &mdash; through week {{ current_week }}{% endif %}</h2>
+<h2>Regular season{% if current_week %}: through week {{ current_week }}{% endif %}</h2>
 {% if summary %}
 <section class="card prose">
   {{ summary | md }}
@@ -134,7 +134,7 @@
   {{ extra_insights | md }}
 </section>
 {% endif %}
-<p class="hint">The regular season beyond any one week &mdash; standing and merit at a
+<p class="hint">The regular season beyond any one week: standing and merit at a
    glance. Each chart below carries the takeaway underneath.</p>
 <section class="grid">
   {% for c in charts %}{{ ch.chart(c) }}{% endfor %}

@@ -198,14 +198,14 @@
      src="https://sleepercdn.com/content/nfl/players/{{ p.player_id }}.jpg" alt=""
      loading="lazy" onerror="this.remove()">{{ p.player_name }} <span class="q">{{ p.position }}{% if p.pos_rank %} #{{ p.pos_rank }}{% endif %}</span>
 {%- else -%}
-&mdash;
+N/A
 {%- endif -%}
 {%- endmacro %}
 {% if rosters %}
 <h2>Roster</h2>
-<p class="hint">{% if manager %}What {{ manager }} rostered this season &mdash; position
+<p class="hint">{% if manager %}What {{ manager }} rostered this season: position
    build, flex allocation, and every player.{% else %}Expand a manager for every player
-   they rostered.{% endif %} <strong>Season pts</strong> is what they actually started &mdash;
+   they rostered.{% endif %} <strong>Season pts</strong> is what they actually started;
    bench production isn&rsquo;t counted. <strong>Best PPG</strong> is the player with the
    highest starting rate; <strong>Best player</strong> is the one with the most total
    points.</p>
@@ -263,7 +263,7 @@
   <div class="dt-row dt-row-static">
     <div class="dt-row-summary">
       <span>{{ idm.who(r.user_name) }}</span>
-      <span class="dt-num">{% if r.flex_top %}{{ r.flex_top }}{% else %}&mdash;{% endif %}</span>
+      <span class="dt-num">{% if r.flex_top %}{{ r.flex_top }}{% else %}N/A{% endif %}</span>
       <span class="dt-num">{{ player_chip(best_ppg_p) }}</span>
       <span class="dt-num">{{ player_chip(best_pts_p) }}</span>
       <span class="dt-num">{{ "%.0f"|format(r.started_pts) }}</span>
@@ -286,7 +286,7 @@
         {% endfor %}
       </div>
       <p class="q">Position build: bars are scaled to this manager&rsquo;s own heaviest position, not
-        their roster share &mdash; see the % figure for actual composition. Click a position to
+        their roster share; see the % figure for actual composition. Click a position to
         filter the full player list below.</p>
       {% if r.flex_share %}
       <div class="flexbar">
@@ -313,7 +313,7 @@
   <details class="dt-row">
     <summary>
       <span>{{ idm.who(r.user_name) }}</span>
-      <span class="dt-num">{% if r.flex_top %}{{ r.flex_top }}{% else %}&mdash;{% endif %}</span>
+      <span class="dt-num">{% if r.flex_top %}{{ r.flex_top }}{% else %}N/A{% endif %}</span>
       <span class="dt-num">{{ player_chip(best_ppg_p) }}</span>
       <span class="dt-num">{{ player_chip(best_pts_p) }}</span>
       <span class="dt-num">{{ "%.0f"|format(r.started_pts) }}</span>

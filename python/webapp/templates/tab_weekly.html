@@ -48,7 +48,7 @@
                              ("Closest game", kpi_close, ""), ("Most points benched", kpi_bench, "")] %}
   <div class="stat {{ cls }}">
     <span class="k">{{ label }}</span>
-    <span class="v">{{ kpi.value if kpi else "—" }}</span>
+    <span class="v">{{ kpi.value if kpi else "N/A" }}</span>
     {% if kpi %}<span class="sub">{{ idm.who(kpi.user_name) }}</span>{% endif %}
   </div>
   {% endfor %}
@@ -75,7 +75,7 @@
    in this app uses) and stacks them below 720px. #}
 <h2>Week {{ week }} in context</h2>
 <p class="hint">The league&rsquo;s bump through week {{ week }} so far. On the right, the
-   week&rsquo;s games, one dumbbell per matchup &mdash; green side won, orange lost, and the
+   week&rsquo;s games, one dumbbell per matchup: green side won, orange lost, and the
    gap between them is the margin.</p>
 <div class="grid two">
   {{ ch.chart("week_race", week=week) }}

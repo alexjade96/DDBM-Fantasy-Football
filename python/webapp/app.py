@@ -1,4 +1,4 @@
-"""FastAPI + HTMX dashboard — the Python instance's web app.
+"""FastAPI + HTMX dashboard, the Python instance's web app.
 
 Mirrors the R Shiny dashboard (sl_dashboard) tab for tab. Charts are the very
 same matplotlib figures the package already renders, streamed as PNG, so the
@@ -444,52 +444,52 @@ MANAGER_CHARTS = {
 # the `_chartmacro.html` macro; unknown keys fall back to a plain figure.
 CHART_META = {
     # Season / overview
-    "standings": {"cap": "Where each team stands — record first, total points breaking ties."},
+    "standings": {"cap": "Where each team stands: record first, total points breaking ties."},
     "power_rank": {"cap": "Scoring, all-play, recent form and lineup efficiency blended into one number."},
-    "allplay": {"cap": "The record a team would carry if it played the whole league every week — schedule removed."},
-    "luck": {"cap": "Points scored set against the record they actually bought — a gap is the schedule helping or hurting."},
-    "team_points": {"cap": "Weekly points stacked — total output and how steady it was.", "wide": True},
-    "sos": {"cap": "How strong a schedule each team drew — their opponents' average points."},
+    "allplay": {"cap": "The record a team would carry if it played the whole league every week, schedule removed."},
+    "luck": {"cap": "Points scored set against the record they actually bought; a gap is the schedule helping or hurting."},
+    "team_points": {"cap": "Weekly points stacked: total output and how steady it was.", "wide": True},
+    "sos": {"cap": "How strong a schedule each team drew: their opponents' average points."},
     "schedule_swap": {"cap": "Each team's record replayed under every rival's schedule."},
     "pf_pa": {"cap": "What each team scored against what it faced."},
     # Management (Roster + former Coaching, reconciled 2026-08)
-    "efficiency": {"cap": "Points started as a share of the best legal lineup available — the cost of the decision."},
+    "efficiency": {"cap": "Points started as a share of the best legal lineup available: the cost of the decision."},
     "position_scoring": {"cap": "Started points by position and each slot's share of the total."},
     "roster_counts": {"cap": "The average roster shape each manager carried."},
     "season_optimal": {"cap": "Started vs the best legal lineup, averaged across every manager, by week."},
     "playoff_players_topband": {"cap": "PROTOTYPE: Best Playoff Players, legend moved above the axes instead of in-axes lower-right."},
-    "playoff_players_postext": {"cap": "PROTOTYPE: Best Playoff Players, position shown as text instead of bar color — no legend needed."},
+    "playoff_players_postext": {"cap": "PROTOTYPE: Best Playoff Players, position shown as text instead of bar color, no legend needed."},
     "playoff_players_medal": {"cap": "PROTOTYPE: Best Playoff Players, ring count as gold/silver/bronze dots instead of trailing stars."},
-    "playoff_players_splice": {"cap": "Each bar split into one slice per playoff game, earliest first — a total shown as the games that built it."},
-    "roster_heatmap": {"cap": "How deep each team built at every position — weeks rostered, by manager."},
-    "flex_usage": {"cap": "Which position — RB, WR or TE — fills the flex spot most often, by manager."},
-    "position_box": {"cap": "The scoring spread at each position — good weeks against bad."},
+    "playoff_players_splice": {"cap": "Each bar split into one slice per playoff game, earliest first: a total shown as the games that built it."},
+    "roster_heatmap": {"cap": "How deep each team built at every position: weeks rostered, by manager."},
+    "flex_usage": {"cap": "Which position (RB, WR or TE) fills the flex spot most often, by manager."},
+    "position_box": {"cap": "The scoring spread at each position: good weeks against bad."},
     "boom_bust": {"cap": "Each manager's ceiling and floor around their average week."},
-    "consistency": {"cap": "Week-to-week spread — a short bar is dependable, a long one runs hot and cold."},
+    "consistency": {"cap": "Week-to-week spread: a short bar is dependable, a long one runs hot and cold."},
     "mgr_roster_heatmap": {"cap": "Their own scoring, by week and position."},
     "mgr_optimal": {"cap": "Started vs optimal, with weekly efficiency."},
     # Transactions
     "manager_profile": {"cap": "Moves, trades and drops per manager, with a lineup-IQ score."},
-    "tx_volume": {"cap": "How busy the league was, and when — trades vs. waiver/FA moves by week."},
+    "tx_volume": {"cap": "How busy the league was, and when: trades vs. waiver/FA moves by week."},
     "trade_performance": {"cap": "Every traded player by the points he returned while rostered."},
     "waiver_performance": {"cap": "Every waiver or free-agent pickup by points returned while rostered."},
-    "trade_single_contribution": {"cap": "Points received in this deal, by player — net alongside each side's total."},
+    "trade_single_contribution": {"cap": "Points received in this deal, by player, net alongside each side's total."},
     "trade_single_cumulative": {"cap": "Each side's cumulative points since the trade, as a race."},
     "waiver_position_churn": {"cap": "Which positions get streamed on the wire vs. picked up once."},
     "waiver_activity": {"cap": "Cumulative waiver/FA moves per manager, week by week."},
     # Draft
     "draft_value": {"cap": "Roster points each pick returned to the team that drafted him."},
-    "draft_grades_value": {"cap": "Sorted by roster points actually kept — a long red line is value that got traded or dropped away before it counted."},
+    "draft_grades_value": {"cap": "Sorted by roster points actually kept; a long red line is value that got traded or dropped away before it counted."},
     "redraft_standings": {"cap": "Real wins vs. simulated wins if every team had redrafted by true season value, same schedule replayed."},
-    "redraft_finish_slope": {"cap": "The standings reshuffle itself — real finish vs. simulated finish, per manager."},
+    "redraft_finish_slope": {"cap": "The standings reshuffle itself: real finish vs. simulated finish, per manager."},
     # Career
     "career": {"cap": "Cumulative record and points across every season on record."},
     "trajectory": {"cap": "Where each manager finished, season by season."},
     "head_to_head": {"cap": "All-time record of every manager against every other."},
     "loyalty": {"cap": "The players a manager keeps re-rostering year after year."},
     # Week (used where these render via the macro, e.g. the season-so-far race)
-    "week_matchups": {"cap": "Every game this week — who played whom, and the margin.", "wide": True},
-    "week_race": {"cap": "Table position after each week — where lines cross, the lead changed."},
+    "week_matchups": {"cap": "Every game this week: who played whom, and the margin.", "wide": True},
+    "week_race": {"cap": "Table position after each week: where lines cross, the lead changed."},
 }
 tpl.env.globals["CHART_META"] = CHART_META
 
@@ -505,7 +505,7 @@ tpl.env.globals["CHART_META"] = CHART_META
 # nothing else needs touching. Remove the key (and the chart function/dispatch
 # line, if it's been rejected) once a prototype's fate is decided.
 TESTING_CHARTS = [
-    ("Best Playoff Players — three legend/label alternatives: the position-color "
+    ("Best Playoff Players, three legend/label alternatives: the position-color "
      "legend moved above the axes instead of risking a lower-right collision with "
      "the shortest bars, position shown as plain text instead of bar color (so "
      "there's no legend at all), and ring count pulled out into gold/silver/bronze "
@@ -730,7 +730,7 @@ def _week_context(s, week: str | int | None = None) -> dict:
              if ws["left_on_bench"].notna().any() else None)
     # {value, user_name} instead of a pre-joined string, so a template can put
     # the manager's portrait (idm.who) next to the figure instead of a bare
-    # name -- None when there's no such game, and templates fall back to "—".
+    # name -- None when there's no such game, and templates fall back to a dash placeholder.
     def kpi(row, val, fmt):
         return None if row is None else {"value": fmt(row[val]), "user_name": row["user_name"]}
 
@@ -899,7 +899,7 @@ def _week_manager_context(s, week: int, manager: str, wk_games: list[dict]) -> d
     else:
         res = mine.get("result")
         tiles.append((
-            "Result", res if res in ("W", "L", "T") else "—",
+            "Result", res if res in ("W", "L", "T") else "N/A",
             f"{mine['points']:.1f}–{theirs['points']:.1f} vs {theirs['user_name']}"))
     if rank is not None:
         if rank_delta is None:
@@ -911,16 +911,16 @@ def _week_manager_context(s, week: int, manager: str, wk_games: list[dict]) -> d
         else:
             tiles.append(("Standings", f"Holding #{rank}", "unchanged"))
     if regret:
-        tag = " — would have flipped it" if regret.get("flips") else ""
+        tag = ", would have flipped it" if regret.get("flips") else ""
         tiles.append(("Lineup call", f"-{regret['gain']:.1f} pts",
                       f"started {regret['out']} over {regret['In']}{tag}"))
     elif mine is not None:
         tiles.append(("Lineup call", "Optimal", "nothing left costly on the bench"))
     if allplay:
         aw, al, ad = allplay["allplay_w"], allplay["allplay_l"], allplay["rank_delta"]
-        sub = (f"#{allplay['allplay_rank']} all-play — earned" if not ad else
-               f"#{allplay['allplay_rank']} all-play — schedule flattered them by {ad}" if ad > 0 else
-               f"#{allplay['allplay_rank']} all-play — outplaying their record by {-ad}")
+        sub = (f"#{allplay['allplay_rank']} all-play, earned" if not ad else
+               f"#{allplay['allplay_rank']} all-play, schedule flattered them by {ad}" if ad > 0 else
+               f"#{allplay['allplay_rank']} all-play, outplaying their record by {-ad}")
         tiles.append(("All-play", f"{aw}-{al}", sub))
 
     parts = []
@@ -1006,7 +1006,7 @@ def _week_recap(s, week: int, ws) -> dict:
     worst_name, worst_facts = (max(negs.items(), key=lambda kv: len(kv[1]))
                                if negs else (None, []))
     if len(worst_facts) > 1:
-        lead.append(f"{worst_name} had the toughest week — "
+        lead.append(f"{worst_name} had the toughest week: "
                     f"{worst_facts[0]}, on top of {', '.join(worst_facts[1:])}.")
     elif worst_facts:
         lead.append(f"{worst_name} {worst_facts[0]}.")
@@ -1041,7 +1041,7 @@ def _week_recap(s, week: int, ws) -> dict:
             # because their actual opponent happened to be that team.
             if aw == 1:
                 value = (f"{r['user_name']} won with almost the league's worst score this "
-                         f"week — only their opponent scored less")
+                         f"week; only their opponent scored less")
             else:
                 value = (f"{r['user_name']} won despite outscoring only {aw} of {aw + al} teams")
             chips.append({"icon": "\U0001F340", "label": "Luckiest win", "value": value})
@@ -1328,7 +1328,7 @@ def tab(name: str, request: Request, league: str = DEFAULT_LEAGUE,
         ctx["summary"] = summaries.summary_career(d["seasons"])
         ctx["charts"] = ["career", "trajectory", "head_to_head", "loyalty"]
         ctx["charts_intro"] = (
-            "The league across every season on record &mdash; each chart&rsquo;s takeaway is "
+            "The league across every season on record, each chart&rsquo;s takeaway is "
             "noted beneath it. Identity follows the persistent account, so a manager who renamed "
             "themselves is still one person.")
         # The all-time postseason lives here, on the league's cross-season tab;
@@ -1391,7 +1391,7 @@ def tab(name: str, request: Request, league: str = DEFAULT_LEAGUE,
             if o.startswith("Lost in "):
                 # Deeper round (higher index) ranks earlier -> negate the index.
                 return (2, -_round_ix.get(o[len("Lost in "):], -1), -pts)
-            return (3, 0, -pts)   # "Still alive" / "—" trail the decided runs
+            return (3, 0, -pts)   # "Still alive" / the dash placeholder trail the decided runs
 
         _summary = records(sm.playoff_summary(p))
         _summary.sort(key=_outcome_key)
@@ -1400,7 +1400,7 @@ def tab(name: str, request: Request, league: str = DEFAULT_LEAGUE,
         # them (worst regular-season finish, but the wooden-spoon holder forced to
         # the very bottom). A missed team's G/W/L/PPG/High/Low/Margin come from
         # its OWN toilet-bowl games (toilet_bowl's po_* fields) -- its real
-        # postseason record -- rather than being discarded as "—"; "Seed" stays
+        # postseason record -- rather than being discarded as a dash placeholder; "Seed" stays
         # blank since bracket seeding never applied to it.
         _last_nm = _toilet.get("last")
         _missed = sorted(_toilet.get("teams", []),
@@ -1436,13 +1436,16 @@ def tab(name: str, request: Request, league: str = DEFAULT_LEAGUE,
         ctx.update({
             "playoff": p,
             "champion": p.champion or "undecided",
-            "games": played["matchup_id"].nunique(),
-            "top": (f"{top['points']:.1f} · {top['team']}" if top is not None else "—"),
-            "blow": (f"+{blow['margin']:.1f} · {blow['team']}" if blow is not None else "—"),
-            "close": (f"{close['margin']:.1f} · {close['team']}"
-                      if close is not None else "—"),
-            "po_ppg": (f"{ppg_hi['ppg']:.1f} · {ppg_hi['team']}"
-                       if ppg_hi is not None else "—"),
+            # (value text, team) pairs rather than one pre-joined string --
+            # the template renders the team half through idm.who() so these
+            # tiles get a manager portrait too, same as Champion/Toilet bowl.
+            # team is None for the "no games played" empty case, which the
+            # template reads as "no tile value at all", matching the old
+            # bare dash placeholder fallback.
+            "top": (f"{top['points']:.1f}", top['team']) if top is not None else (None, None),
+            "blow": (f"+{blow['margin']:.1f}", blow['team']) if blow is not None else (None, None),
+            "close": (f"{close['margin']:.1f}", close['team']) if close is not None else (None, None),
+            "po_ppg": (f"{ppg_hi['ppg']:.1f}", ppg_hi['team']) if ppg_hi is not None else (None, None),
             "po_ppg_sub": (f"over {int(ppg_hi['games'])} games"
                            if ppg_hi is not None else ""),
             # Weeks 1..reg_weeks is the regular season; the run table cites it so
@@ -1824,8 +1827,9 @@ def _draft_part_standouts(request, s, d, key, ctx):
 @tab_part("draft", "finds")
 def _draft_part_finds(request, s, d, key, ctx):
     ctx.update(draft.draft_extremes(s))
-    # records() scrubs NaN so `{{ r.user_name or "—" }}` fires (NaN is
-    # truthy in Jinja); a churned pickup can have a null primary manager.
+    # records() scrubs NaN so a `{{ r.user_name or <dash placeholder> }}`-style
+    # fallback fires (NaN is truthy in Jinja); a churned pickup can have a null
+    # primary manager.
     ctx["drafted"] = records(draft.drafted_players(s))
     # The Undrafted PANEL shows every real undrafted player (full real-NFL
     # universe, "FA" manager for one nobody in this league ever added) --
@@ -1856,7 +1860,7 @@ def _redraft_board_ctx(s) -> dict:
     for rnd, g in rdb.groupby("round"):
         cells = {int(r["draft_slot"]): {
             "pick_no": int(r["pick_no"]) if pd_notna(r["pick_no"]) else None,
-            "player": r["player_name"] or "—",
+            "player": r["player_name"] or "N/A",
             "player_id": r["player_id"] if pd_notna(r["player_id"]) else None,
             "pos": (r["position"] or "").upper(),
             "pos_rank": int(r["pos_rank"]) if pd_notna(r["pos_rank"]) else None,
@@ -1889,7 +1893,7 @@ def _redraft_board_adp_ctx(s) -> dict:
     for rnd, g in rdb.groupby("round"):
         cells = {int(r["draft_slot"]): {
             "pick_no": int(r["pick_no"]) if pd_notna(r["pick_no"]) else None,
-            "player": r["player_name"] or "—",
+            "player": r["player_name"] or "N/A",
             "player_id": r["player_id"] if pd_notna(r["player_id"]) else None,
             "pos": (r["position"] or "").upper(),
             "pos_rank": int(r["pos_rank"]) if pd_notna(r["pos_rank"]) else None,
@@ -1933,7 +1937,7 @@ def _draft_board_ctx(s) -> dict:
     for rnd, g in db.groupby("round"):
         cells = {int(r["draft_slot"]): {
             "pick_no": int(r["pick_no"]) if pd_notna(r["pick_no"]) else None,
-            "player": r["player_name"] or "—",
+            "player": r["player_name"] or "N/A",
             "player_id": r["player_id"] if pd_notna(r["player_id"]) else None,
             "pos": (r["position"] or "").upper(),
             "pos_rank": int(r["pos_rank"]) if pd_notna(r["pos_rank"]) else None,
@@ -2021,16 +2025,16 @@ def _draft_sim_ctx(s, d, key, ctx: dict, basis: str = "value", suffix: str = "")
     # Drilldown default order is by POSITION (QB/RB/WR/TE/K/DEF), not draft
     # round -- a manager's expanded roster reads as a lineup, not a pick log.
     # `round` stays the secondary key so same-position players keep their
-    # relative pick order; an unset/unrecognized position (the "—" fallback
-    # below) sorts after every real one via the dict's own .get default.
+    # relative pick order; an unset/unrecognized position (the N/A-placeholder
+    # fallback below) sorts after every real one via the dict's own .get default.
     _pos_order = {p: i for i, p in enumerate(metrics.POSITIONS)}
     rdb = rdb.assign(_pos_sort=rdb["position"].map(lambda p: _pos_order.get(p, len(metrics.POSITIONS))))
     rosters: dict[int, list[dict]] = {}
     for r in rdb.sort_values(["roster_id", "_pos_sort", "round"]).itertuples(index=False):
         rosters.setdefault(int(r.roster_id), []).append({
             "player_id": r.player_id if pd_notna(r.player_id) else None,
-            "player_name": r.player_name or "—",
-            "position": r.position or "—",
+            "player_name": r.player_name or "N/A",
+            "position": r.position or "N/A",
             # Simulated season position finish (the SAME true-value ranking
             # the board itself is built from) shown beside each player, next
             # to the plain position tag.
@@ -2140,7 +2144,7 @@ def _report_loader(league: str, season: str | None,
   <div class="box">
     <div class="ring" role="status" aria-label="Building report"></div>
     <h1>Building your season report…</h1>
-    <p>Drawing ~19 charts — this takes a few seconds.</p>
+    <p>Drawing ~19 charts, this takes a few seconds.</p>
   </div>
   <script>location.replace("/report?{q}");</script>
 </body></html>""")

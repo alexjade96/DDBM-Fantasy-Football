@@ -27,7 +27,7 @@
    THIS instance has -- inline custom property, same idiom as
    `.drilltable`'s `--cols` elsewhere. #}
 {% if redraft_rounds_adp %}
-<p class="hint">Same grid, same team ownership &mdash; each slot filled by whoever
+<p class="hint">Same grid, same team ownership: each slot filled by whoever
    the field at large was drafting around that round, per Sleeper's own ADP for
    {{ season }}. Each pick's top-right corner says where that player really went,
    <span class="dv-pos">green</span> when he'd have gone earlier than he really did,
@@ -57,7 +57,7 @@
             <span class="q posrank">{% if c.pos_rank %}{{ c.pos }} #{{ c.pos_rank }}{% endif %}</span>
             <span class="pts">{{ "%.0f"|format(c.total) }} pts</span>
           </div>
-          {% else %}<span class="pk">—</span>{% endif %}
+          {% else %}<span class="pk">N/A</span>{% endif %}
         </td>
         {% endfor %}
       </tr>
@@ -66,6 +66,6 @@
   </table>
 </div>
 {% else %}
-<p class="empty">No ADP data available for {{ season }} &mdash; Sleeper's
+<p class="empty">No ADP data available for {{ season }}. Sleeper's
    undocumented ADP endpoint may be unreachable, or has nothing for this season.</p>
 {% endif %}

@@ -47,7 +47,7 @@
             <span class="pts{% if c.dv %} dv-{{ c.dv }}{% endif %}">{{ "%.0f"|format(c.points) }} pts</span>
             <span class="q">(Total {{ "%.0f"|format(c.total) }})</span>
           </div>
-          {% else %}<span class="pk">—</span>{% endif %}
+          {% else %}<span class="pk">N/A</span>{% endif %}
         </td>
         {% endfor %}
       </tr>

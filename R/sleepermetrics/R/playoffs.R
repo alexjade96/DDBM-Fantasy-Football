@@ -807,7 +807,7 @@ sl_playoff_summary <- function(playoff) {
         } else if (is.null(champ) || !length(champ)) {
           "Still alive"
         } else {
-          "—"
+          "N/A"
         }
       }, .groups = "drop") %>%
     dplyr::arrange(dplyr::desc(wins), dplyr::desc(points))

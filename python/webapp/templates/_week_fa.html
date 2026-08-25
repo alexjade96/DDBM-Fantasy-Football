@@ -66,7 +66,7 @@
     <div class="vs-panel vs-p-actual">
       <p class="hint"><strong>Beats {{ fa_best_team.beats|length }} of {{ fa_best_team.n_teams }}</strong>
         team{{ "" if fa_best_team.n_teams == 1 else "s" }} this week, against what they actually started.
-        Free agents on the left, one real team&rsquo;s actual lineup on the right &mdash;
+        Free agents on the left, one real team&rsquo;s actual lineup on the right;
         switch teams to compare slot by slot (same green/red highlighting as the scoreboard above).</p>
       {{ fa_team_content(fa_best_team.teams, "lineup", "fa_lineup", "points", "gain") }}
     </div>

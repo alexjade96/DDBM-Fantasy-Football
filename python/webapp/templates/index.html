@@ -79,7 +79,7 @@
       // Score, then reload the whole Playoffs tab so it reflects the bracket.
       apply: async function (cfg) {
         var j = await this.score(cfg);
-        if (!j.ok) { this.msg('Not applied — ' + (j.errors || []).join('; '), 'err'); return j; }
+        if (!j.ok) { this.msg('Not applied: ' + (j.errors || []).join('; '), 'err'); return j; }
         this._reloadPlayoffs();
         return j;
       },
@@ -373,7 +373,7 @@
 
   <footer>
     Data: public Sleeper API. Champions come from the stored playoff brackets, not
-    Sleeper&rsquo;s <code>winners_bracket</code> — see <code>playoffs/README.md</code>.
+    Sleeper&rsquo;s <code>winners_bracket</code>; see <code>playoffs/README.md</code>.
   </footer>
 </body>
 </html>

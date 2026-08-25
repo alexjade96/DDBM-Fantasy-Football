@@ -144,7 +144,7 @@ def _manager_narrative(s: Season, manager: str, seasons: dict | None = None) -> 
     ps = [
         f"<strong>{who}</strong> finished {_ordinal(int(r['final_position']))} of {n} "
         f"at {int(r['wins'])}-{int(r['losses'])}, scoring {r['points']:.0f} points. "
-        f"On all-play — every team, every week — they ranked #{int(apr['allplay_rank'])}, "
+        f"On all-play (every team, every week) they ranked #{int(apr['allplay_rank'])}, "
         f"so {luck_txt} ({lk:+.1f} wins vs merit).",
         f"Their ceiling was {best['points']:.1f} in week {int(best['week'])} and their "
         f"floor {worst['points']:.1f} in week {int(worst['week'])}; they set the optimal "
@@ -324,7 +324,7 @@ def _mgr_postseason(s: Season, manager: str, playoffs: dict | None) -> str:
         if g["result"] == "BYE":
             rows.append((
                 [(rnd, False), ("<span class='q'>First-round bye</span>", False),
-                 ("—", True), ("—", True), ("<span class='res'>—</span>", True)],
+                 ("N/A", True), ("N/A", True), ("<span class='res'>N/A</span>", True)],
                 ""))
             continue
         cls = {"W": "w", "L": "l"}.get(str(g["result"]), "")
@@ -672,9 +672,9 @@ def _mgr_transactions(s: Season, manager: str) -> str:
         cls = "w" if net > 0 else "l" if net < 0 else ""
         cells = [
             (str(wk), True),
-            (html.escape(", ".join(others)) or "—", False),
-            (html.escape(", ".join(got["player_name"].astype(str))) or "—", False),
-            (html.escape(", ".join(gave["player_name"].astype(str))) or "—", False),
+            (html.escape(", ".join(others)) or "N/A", False),
+            (html.escape(", ".join(got["player_name"].astype(str))) or "N/A", False),
+            (html.escape(", ".join(gave["player_name"].astype(str))) or "N/A", False),
             (f"<span class='res {cls}'>{net:+.0f}</span>", True)]
         detail = _facts([
             ("Got back", f"<span class='pts'>{mine_ret:.1f}</span> "
@@ -767,7 +767,7 @@ def _mgr_transactions(s: Season, manager: str) -> str:
 
     out = []
     if trade_rows:
-        out.append("<p class='blurb'>Trades — net is what the players they got "
+        out.append("<p class='blurb'>Trades: net is what the players they got "
                    "scored for them, minus what the players they gave up scored "
                    "for the other side.</p>")
         out.append(_drill_table(
@@ -1045,14 +1045,14 @@ def _game_log(s: Season, manager: str) -> str:
     for _, r in mine.iterrows():
         wk = int(r["week"])
         opp = name.get(r["opp"]) if pd.notna(r.get("opp")) else None
-        res = str(r["result"]) if pd.notna(r.get("result")) else "—"
+        res = str(r["result"]) if pd.notna(r.get("result")) else "N/A"
         cls = {"W": "w", "L": "l"}.get(res, "")
         pa = r.get("pa")
-        pa_txt = f"{pa:.1f}" if pd.notna(pa) else "—"
-        mg_txt = f"{r['points'] - pa:+.1f}" if pd.notna(pa) else "—"
+        pa_txt = f"{pa:.1f}" if pd.notna(pa) else "N/A"
+        mg_txt = f"{r['points'] - pa:+.1f}" if pd.notna(pa) else "N/A"
         cells = [
             (str(wk), False),
-            (html.escape(str(opp)) if opp else "— (no game)", False),
+            (html.escape(str(opp)) if opp else "N/A (no game)", False),
             (f"<span class='res {cls}'>{res}</span>", False),
             (f"{r['points']:.1f}", True), (pa_txt, True), (mg_txt, True)]
         # Per-week drill-down: labelled facts plus that week's full starting lineup.
@@ -1229,7 +1229,7 @@ def report_parts(s: Season, seasons: dict | None = None,
 
     Returns the headings, tiles, narrative, lead table and an ordered list of
     sections. Each section carries EITHER pre-built `html` (the manager tables)
-    or a list of `charts` as `(chart_key, caption)` — the standalone file renders
+    or a list of `charts` as `(chart_key, caption)`; the standalone file renders
     those keys to embedded PNGs, the dashboard tab points <img> at /chart/<key>.
     """
     scoped = bool(manager) and (s.standings["user_name"] == manager).any()
@@ -1239,21 +1239,21 @@ def report_parts(s: Season, seasons: dict | None = None,
         # restating the whole-league charts. The one cross-manager view kept is
         # the ranking table (their rank, plus the best/worst team per category).
         sections = [
-            ("Week by week", "Their season game by game — expand a week for its detail.",
+            ("Week by week", "Their season game by game, expand a week for its detail.",
              _game_log(s, manager),
              [("mgr_score_band", "Weekly score against the league's range"),
               ("mgr_optimal", "Started vs optimal, and the running cost of the bench"),
-              ("mgr_margins", "Margin by week — blowouts vs coin flips")]),
+              ("mgr_margins", "Margin by week: blowouts vs coin flips")]),
             ("Where the points came from", "Started points by position for this "
              "roster, and how each ranks in the league.", _position_mix(s, manager), []),
             ("Season standouts", "Who carried the team, and the best moves off the "
              "waiver wire and in trades.", _mgr_standouts(s, manager), []),
-            ("Draft class", "How their draft paid off — steals and reaches.",
+            ("Draft class", "How their draft paid off: steals and reaches.",
              _mgr_draft(s, manager), []),
             ("Trades & the waiver wire", "Every deal they made and every player "
-             "they picked up — expand one for what it returned.",
+             "they picked up, expand one for what it returned.",
              _mgr_transactions(s, manager), []),
-            ("Rivalries", "Their record against the rest of the league — expand one "
+            ("Rivalries", "Their record against the rest of the league, expand one "
              "for every meeting.", _mgr_rivalry(s, manager, seasons), []),
             ("Splits & awards", "The season sliced a few ways.",
              _mgr_splits(s, manager), []),
@@ -1270,7 +1270,7 @@ def report_parts(s: Season, seasons: dict | None = None,
             "tiles": _manager_tiles(s, manager),
             "narrative": _manager_narrative(s, manager, seasons),
             "table_title": "Where they rank",
-            "table_blurb": ("How they place in each category — their rank, and the "
+            "table_blurb": ("How they place in each category: their rank, and the "
                             "league's best and worst."),
             "table_html": _neighborhood(s, manager) + _rank_table(s, manager),
         }
@@ -1317,7 +1317,7 @@ def report_parts(s: Season, seasons: dict | None = None,
             "tiles": _tiles(s),
             "narrative": _md(summaries.summary_season(s)),
             "table_title": "Team by team",
-            "table_blurb": ("The whole season on one line each — record, points for "
+            "table_blurb": ("The whole season on one line each: record, points for "
                             "and against, all-play win %, power rank, lineup "
                             "efficiency, and waiver moves / trades."),
             "table_html": _team_table(s),

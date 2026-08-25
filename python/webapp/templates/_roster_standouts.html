@@ -26,7 +26,7 @@
     <span class="k">{{ t.label }}</span>
     <span class="v">{{ t.value }}</span>
     {# A tile with no single holder omits the identity chip entirely rather
-       than rendering a bare "—" placeholder ahead of the detail text. #}
+       than rendering a bare "N/A" placeholder ahead of the detail text. #}
     <span class="sub">{% if t.holder %}{{ idm.who(t.holder) }}{% if t.detail %} · {% endif %}{% endif %}{{ t.detail }}</span>
   </div>
   {% endfor %}

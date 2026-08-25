@@ -16,7 +16,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{{ league_name }} · Week {{ week }}{% if manager %} · {{ manager }}{% endif %} — Weekly report</title>
+  <title>{{ league_name }} · Week {{ week }}{% if manager %} · {{ manager }}{% endif %}: Weekly report</title>
   <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
   <link rel="stylesheet" href="/static/style.css?v={{ asset_v }}">
 </head>
@@ -50,7 +50,7 @@
     {% for label, kpi, cls in [("Highest score", kpi_top, "gold"), ("Biggest blowout", kpi_blow, ""),
                                ("Closest game", kpi_close, ""), ("Most points benched", kpi_bench, "")] %}
     <div class="stat {{ cls }}">
-      <span class="k">{{ label }}</span><span class="v">{{ kpi.value if kpi else "—" }}</span>
+      <span class="k">{{ label }}</span><span class="v">{{ kpi.value if kpi else "N/A" }}</span>
       {% if kpi %}<span class="sub">{{ idm.who(kpi.user_name) }}</span>{% endif %}
     </div>
     {% endfor %}
@@ -61,7 +61,7 @@
 
   <h2>Week {{ week }} scoreboard</h2>
   <p class="hint">{% if manager %}Their game is expanded below; the rest of the week for context.
-    {%- else %}Every game, biggest shoot-out first &mdash; expand one for both lineups and the
+    {%- else %}Every game, biggest shoot-out first; expand one for both lineups and the
     single legal swap that cost the most.{% endif %}</p>
 
   {# The games chart leads the scoreboard section (rather than trailing it) --
@@ -85,19 +85,19 @@
   <section class="grid">
     {{ ch.chart("mgr_efficiency_trend", week=week, manager=manager,
                 alt="Lineup efficiency this week, vs the league",
-                caption="This week’s lineup efficiency — how their coaching stacked up against the other teams") }}
+                caption="This week’s lineup efficiency, how their coaching stacked up against the other teams") }}
     {{ ch.chart("week_luck", week=week) }}
   </section>
   {% endif %}
 
   <h2>Season so far</h2>
-  <p class="hint">Everything below is capped at week {{ week }} &mdash; the same "don&rsquo;t leak
+  <p class="hint">Everything below is capped at week {{ week }}, the same "don&rsquo;t leak
     future weeks into a past report" rule the tables above follow.</p>
   <section class="grid">
     {% if manager %}
     {{ ch.chart("mgr_sos", week=week, manager=manager,
                 alt="Strength of schedule, this manager highlighted",
-                caption="Strength of schedule so far — is their record earned or schedule-flattered?") }}
+                caption="Strength of schedule so far: is their record earned or schedule-flattered?") }}
     {% else %}
     {{ ch.chart("week_race", week=week) }}
     {% endif %}

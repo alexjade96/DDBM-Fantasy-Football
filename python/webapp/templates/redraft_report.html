@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{{ season }} redraft simulation — {{ league_name }}</title>
+  <title>{{ season }} redraft simulation: {{ league_name }}</title>
   <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
   {# ?v=<mtime> so a CSS edit is never served from a stale browser cache --
      same convention index.html uses. This page has no htmx / X-Asset-V
@@ -15,7 +15,7 @@
   {% import "_ident.html" as idm with context %}
   <main id="panel">
     <p class="hint"><a class="ghost" href="/dashboard?league={{ league|urlencode }}&season={{ season|urlencode }}&tab=draft">&larr; Back to the Draft tab</a></p>
-    <div class="rowhead"><h1>{{ league_name }} — {{ season }} redraft simulation report</h1></div>
+    <div class="rowhead"><h1>{{ league_name }}: {{ season }} redraft simulation report</h1></div>
     {% if not sim %}
     <p class="empty">No draft data for {{ season }} to simulate against.</p>
     {% else %}

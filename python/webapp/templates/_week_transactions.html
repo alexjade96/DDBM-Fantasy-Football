@@ -18,7 +18,7 @@
 {% if week_tx.trades %}
 <p class="hint">{{ week_tx.trades|length }} trade{{ "" if week_tx.trades|length == 1 else "s" }} this
    week. Each side lists who they received, that player&rsquo;s points <strong>this week</strong>,
-   and their points <strong>this season so far</strong> (any roster) &mdash; a trade this fresh
+   and their points <strong>this season so far</strong> (any roster). A trade this fresh
    hasn&rsquo;t had time to prove a winner, so this leaves that read to you.</p>
 <div class="deals">
   {% for d in week_tx.trades %}
@@ -48,7 +48,7 @@
             </div>
           </div>
           {% else %}
-          <span class="q">no players &mdash; picks or FAAB only</span>
+          <span class="q">no players, picks or FAAB only</span>
           {% endfor %}
         </div>
       </div>

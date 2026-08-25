@@ -48,10 +48,10 @@
           <tr>
             <td data-sort="{{ '%07d'|format(r.pick_no) }}">{{ r.pick }}</td>
             <td data-sort="{{ r.player_name }}">{{ idm.headshot(r.player_id) }}{{ r.player_name }}
-                {% if r.pos_rank %}<span class="q">{{ r.position }} #{{ r.pos_rank }}</span>{% else %}<span class="q">{{ r.position or "—" }}</span>{% endif %}
+                {% if r.pos_rank %}<span class="q">{{ r.position }} #{{ r.pos_rank }}</span>{% else %}<span class="q">{{ r.position or "N/A" }}</span>{% endif %}
                 {% if r.mixed %}<span class="tag mixed" title="+/- and Pos-adj disagree in sign -- see the glossary above.">mixed</span>{% endif %}</td>
             <td class="n" data-sort="{{ '%06d'|format(r.pos_pick_rank) }}">{{ r.position }} #{{ r.pos_pick_rank }}</td>
-            <td class="n" data-sort="{{ '%06d'|format(r.pos_rank) if r.pos_rank else '999999' }}">{% if r.pos_rank %}{{ r.position }} #{{ r.pos_rank }}{% else %}&mdash;{% endif %}</td>
+            <td class="n" data-sort="{{ '%06d'|format(r.pos_rank) if r.pos_rank else '999999' }}">{% if r.pos_rank %}{{ r.position }} #{{ r.pos_rank }}{% else %}N/A{% endif %}</td>
             <td class="n"><span class="res {% if r.pos_steal >= 0 %}w{% else %}l{% endif %}">{{ "+" if r.pos_steal >= 0 }}{{ r.pos_steal }}</span></td>
             <td class="n">{{ r.weeks|int }}</td>
             <td class="n">{{ "%.1f"|format(r.ppg) }}</td>
@@ -63,7 +63,7 @@
           {% for t in r.splits %}
           <tr class="detail-row" hidden>
             <td></td><td></td><td></td>
-            <td class="n" data-sort="{{ '%06d'|format(t.pos_rank) if t.pos_rank else '999999' }}">{% if t.pos_rank %}{{ t.position }} #{{ t.pos_rank }}{% else %}&mdash;{% endif %}</td>
+            <td class="n" data-sort="{{ '%06d'|format(t.pos_rank) if t.pos_rank else '999999' }}">{% if t.pos_rank %}{{ t.position }} #{{ t.pos_rank }}{% else %}N/A{% endif %}</td>
             <td class="n">{% if t.pos_steal is not none %}<span class="res {% if t.pos_steal >= 0 %}w{% else %}l{% endif %}">{{ "+" if t.pos_steal >= 0 }}{{ t.pos_steal }}</span>{% endif %}</td>
             <td class="n">{{ t.weeks|int }}</td>
             <td class="n">{{ "%.1f"|format(t.ppg) }}</td>
@@ -95,7 +95,7 @@
                 {% if r.pos_rank %}<span class="q">{{ r.position }} #{{ r.pos_rank }}</span>{% else %}<span class="q">{{ r.position }}</span>{% endif %}
                 {% if r.mixed %}<span class="tag mixed" title="+/- and Pos-adj disagree in sign -- see the glossary above.">mixed</span>{% endif %}</td>
             <td class="n" data-sort="{{ '%06d'|format(r.pos_pick_rank) }}">{{ r.position }} #{{ r.pos_pick_rank }}</td>
-            <td class="n" data-sort="{{ '%06d'|format(r.pos_rank) if r.pos_rank else '999999' }}">{% if r.pos_rank %}{{ r.position }} #{{ r.pos_rank }}{% else %}&mdash;{% endif %}</td>
+            <td class="n" data-sort="{{ '%06d'|format(r.pos_rank) if r.pos_rank else '999999' }}">{% if r.pos_rank %}{{ r.position }} #{{ r.pos_rank }}{% else %}N/A{% endif %}</td>
             <td class="n"><span class="res {% if r.pos_steal >= 0 %}w{% else %}l{% endif %}">{{ "+" if r.pos_steal >= 0 }}{{ r.pos_steal }}</span></td>
             <td class="n">{{ r.weeks|int }}</td>
             <td class="n">{{ "%.1f"|format(r.ppg) }}</td>
@@ -107,7 +107,7 @@
           {% for t in r.splits %}
           <tr class="detail-row" hidden>
             <td></td><td></td><td></td>
-            <td class="n" data-sort="{{ '%06d'|format(t.pos_rank) if t.pos_rank else '999999' }}">{% if t.pos_rank %}{{ t.position }} #{{ t.pos_rank }}{% else %}&mdash;{% endif %}</td>
+            <td class="n" data-sort="{{ '%06d'|format(t.pos_rank) if t.pos_rank else '999999' }}">{% if t.pos_rank %}{{ t.position }} #{{ t.pos_rank }}{% else %}N/A{% endif %}</td>
             <td class="n">{% if t.pos_steal is not none %}<span class="res {% if t.pos_steal >= 0 %}w{% else %}l{% endif %}">{{ "+" if t.pos_steal >= 0 }}{{ t.pos_steal }}</span>{% endif %}</td>
             <td class="n">{{ t.weeks|int }}</td>
             <td class="n">{{ "%.1f"|format(t.ppg) }}</td>
@@ -136,10 +136,10 @@
           <tr>
             <td>UDFA</td>
             <td data-sort="{{ r.player_name }}">{{ idm.headshot(r.player_id) }}{{ r.player_name }}
-                {% if r.pos_rank %}<span class="q">{{ r.position }} #{{ r.pos_rank }}</span>{% else %}<span class="q">{{ r.position or "—" }}</span>{% endif %}
+                {% if r.pos_rank %}<span class="q">{{ r.position }} #{{ r.pos_rank }}</span>{% else %}<span class="q">{{ r.position or "N/A" }}</span>{% endif %}
                 {% if r.mixed %}<span class="tag mixed" title="+/- and Pos-adj disagree in sign -- see the glossary above.">mixed</span>{% endif %}</td>
             <td class="n" data-sort="{{ '%06d'|format(r.pos_pick_rank) }}">{{ r.position }} #{{ r.pos_pick_rank }}</td>
-            <td class="n" data-sort="{{ '%06d'|format(r.pos_rank) if r.pos_rank else '999999' }}">{% if r.pos_rank %}{{ r.position }} #{{ r.pos_rank }}{% else %}&mdash;{% endif %}</td>
+            <td class="n" data-sort="{{ '%06d'|format(r.pos_rank) if r.pos_rank else '999999' }}">{% if r.pos_rank %}{{ r.position }} #{{ r.pos_rank }}{% else %}N/A{% endif %}</td>
             <td class="n"><span class="res {% if r.pos_steal >= 0 %}w{% else %}l{% endif %}">{{ "+" if r.pos_steal >= 0 }}{{ r.pos_steal }}</span></td>
             <td class="n">{{ r.weeks|int }}</td>
             <td class="n">{{ "%.1f"|format(r.ppg) }}</td>
@@ -151,7 +151,7 @@
           {% for t in r.splits %}
           <tr class="detail-row" hidden>
             <td></td><td></td><td></td>
-            <td class="n" data-sort="{{ '%06d'|format(t.pos_rank) if t.pos_rank else '999999' }}">{% if t.pos_rank %}{{ t.position }} #{{ t.pos_rank }}{% else %}&mdash;{% endif %}</td>
+            <td class="n" data-sort="{{ '%06d'|format(t.pos_rank) if t.pos_rank else '999999' }}">{% if t.pos_rank %}{{ t.position }} #{{ t.pos_rank }}{% else %}N/A{% endif %}</td>
             <td class="n">{% if t.pos_steal is not none %}<span class="res {% if t.pos_steal >= 0 %}w{% else %}l{% endif %}">{{ "+" if t.pos_steal >= 0 }}{{ t.pos_steal }}</span>{% endif %}</td>
             <td class="n">{{ t.weeks|int }}</td>
             <td class="n">{{ "%.1f"|format(t.ppg) }}</td>
@@ -183,7 +183,7 @@
               {% if r.pos_rank %}<span class="q">{{ r.position }} #{{ r.pos_rank }}</span>{% else %}<span class="q">{{ r.position }}</span>{% endif %}
               {% if r.mixed %}<span class="tag mixed" title="+/- and Pos-adj disagree in sign -- see the glossary above.">mixed</span>{% endif %}</td>
           <td class="n" data-sort="{{ '%06d'|format(r.pos_pick_rank) }}">{{ r.position }} #{{ r.pos_pick_rank }}</td>
-          <td class="n" data-sort="{{ '%06d'|format(r.pos_rank) if r.pos_rank else '999999' }}">{% if r.pos_rank %}{{ r.position }} #{{ r.pos_rank }}{% else %}&mdash;{% endif %}</td>
+          <td class="n" data-sort="{{ '%06d'|format(r.pos_rank) if r.pos_rank else '999999' }}">{% if r.pos_rank %}{{ r.position }} #{{ r.pos_rank }}{% else %}N/A{% endif %}</td>
           <td class="n"><span class="res {% if r.pos_steal >= 0 %}w{% else %}l{% endif %}">{{ "+" if r.pos_steal >= 0 }}{{ r.pos_steal }}</span></td>
           <td class="n">{{ r.weeks|int }}</td>
           <td class="n">{{ "%.1f"|format(r.ppg) }}</td>
@@ -195,7 +195,7 @@
         {% for t in r.splits %}
         <tr class="detail-row" hidden>
           <td></td><td></td><td></td>
-          <td class="n" data-sort="{{ '%06d'|format(t.pos_rank) if t.pos_rank else '999999' }}">{% if t.pos_rank %}{{ t.position }} #{{ t.pos_rank }}{% else %}&mdash;{% endif %}</td>
+          <td class="n" data-sort="{{ '%06d'|format(t.pos_rank) if t.pos_rank else '999999' }}">{% if t.pos_rank %}{{ t.position }} #{{ t.pos_rank }}{% else %}N/A{% endif %}</td>
           <td class="n">{% if t.pos_steal is not none %}<span class="res {% if t.pos_steal >= 0 %}w{% else %}l{% endif %}">{{ "+" if t.pos_steal >= 0 }}{{ t.pos_steal }}</span>{% endif %}</td>
           <td class="n">{{ t.weeks|int }}</td>
           <td class="n">{{ "%.1f"|format(t.ppg) }}</td>
@@ -227,7 +227,7 @@
               {% if r.pos_rank %}<span class="q">{{ r.position }} #{{ r.pos_rank }}</span>{% else %}<span class="q">{{ r.position }}</span>{% endif %}
               {% if r.mixed %}<span class="tag mixed" title="+/- and Pos-adj disagree in sign -- see the glossary above.">mixed</span>{% endif %}</td>
           <td class="n" data-sort="{{ '%06d'|format(r.pos_pick_rank) }}">{{ r.position }} #{{ r.pos_pick_rank }}</td>
-          <td class="n" data-sort="{{ '%06d'|format(r.pos_rank) if r.pos_rank else '999999' }}">{% if r.pos_rank %}{{ r.position }} #{{ r.pos_rank }}{% else %}&mdash;{% endif %}</td>
+          <td class="n" data-sort="{{ '%06d'|format(r.pos_rank) if r.pos_rank else '999999' }}">{% if r.pos_rank %}{{ r.position }} #{{ r.pos_rank }}{% else %}N/A{% endif %}</td>
           <td class="n"><span class="res {% if r.pos_steal >= 0 %}w{% else %}l{% endif %}">{{ "+" if r.pos_steal >= 0 }}{{ r.pos_steal }}</span></td>
           <td class="n">{{ r.weeks|int }}</td>
           <td class="n">{{ "%.1f"|format(r.ppg) }}</td>
@@ -239,7 +239,7 @@
         {% for t in r.splits %}
         <tr class="detail-row" hidden>
           <td></td><td></td><td></td>
-          <td class="n" data-sort="{{ '%06d'|format(t.pos_rank) if t.pos_rank else '999999' }}">{% if t.pos_rank %}{{ t.position }} #{{ t.pos_rank }}{% else %}&mdash;{% endif %}</td>
+          <td class="n" data-sort="{{ '%06d'|format(t.pos_rank) if t.pos_rank else '999999' }}">{% if t.pos_rank %}{{ t.position }} #{{ t.pos_rank }}{% else %}N/A{% endif %}</td>
           <td class="n">{% if t.pos_steal is not none %}<span class="res {% if t.pos_steal >= 0 %}w{% else %}l{% endif %}">{{ "+" if t.pos_steal >= 0 }}{{ t.pos_steal }}</span>{% endif %}</td>
           <td class="n">{{ t.weeks|int }}</td>
           <td class="n">{{ "%.1f"|format(t.ppg) }}</td>

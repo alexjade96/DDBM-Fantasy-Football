@@ -30,13 +30,13 @@
    that rule would otherwise clobber .grid's own display:grid the same way
    tagging .rowhead/.grid directly once did when this section was still
    inline (see style.css's .sim-view-mode comment). #}
-<div class="rowhead"><h2>{{ season }} redraft simulation &mdash; by {{ "ADP" if sim_basis == "adp" else "true value" }}</h2></div>
+<div class="rowhead"><h2>{{ season }} redraft simulation, by {{ "ADP" if sim_basis == "adp" else "true value" }}</h2></div>
 <p class="hint">The expected outcome of drafting by {{ basis_label }} instead: the same
    schedule (and, where this league's playoff bracket is decided, the same postseason
    games), replayed with every team's roster swapped for its redrafted-by-{{ "ADP" if sim_basis == "adp" else "true-value" }}
    one, and each game's score its best legal lineup drawn from that roster's real
    production. Both sides of every game are simulated, so a team's simulated record is
-   against its opponent's simulated score too &mdash; a self-consistent alternate season,
+   against its opponent's simulated score too, a self-consistent alternate season,
    not one real team dropped into an otherwise-real schedule. <strong>&Delta;</strong>
    compares the simulated outcome against what actually happened; positive means the
    redraft would have done better.</p>
@@ -78,9 +78,9 @@
      champion" could otherwise read as "who a reshuffled bracket crowns". #}
   <div class="dt-facts">
     <div class="fact"><span class="fl">Actual champion</span><span class="fv">
-      {{ idm.who(sim_playoffs.real_champion) if sim_playoffs.real_champion else "—" }}</span></div>
+      {{ idm.who(sim_playoffs.real_champion) if sim_playoffs.real_champion else "N/A" }}</span></div>
     <div class="fact"><span class="fl">Simulated champion</span><span class="fv">
-      {{ idm.who(sim_playoffs.sim_champion) if sim_playoffs.sim_champion else "—" }}</span></div>
+      {{ idm.who(sim_playoffs.sim_champion) if sim_playoffs.sim_champion else "N/A" }}</span></div>
   </div>
   {# Each round is its own .loground block -- same idiom _playoff_round.html
      uses for the real Playoffs tab -- games listed directly under the round
@@ -175,7 +175,7 @@
                   <span class="q posrank">{{ p.position }}{% if p.pos_rank %} #{{ p.pos_rank }}{% endif %}</span></td>
               <td class="n">{{ "%.0f"|format(p.total) }}</td>
               <td class="q">{{ p.orig_pick if p.orig_pick else "undrafted" }}</td>
-              <td>{% if p.kept %}<span class="pts dv-pos" title="This manager originally drafted this player too">&#10003;</span>{% else %}<span class="q">&mdash;</span>{% endif %}</td>
+              <td>{% if p.kept %}<span class="pts dv-pos" title="This manager originally drafted this player too">&#10003;</span>{% else %}<span class="q">N/A</span>{% endif %}</td>
             </tr>
           {% endfor %}
           </tbody>
@@ -199,8 +199,8 @@
     <details class="dt-row">
       <summary>
         <span class="dt-num">{{ wk }}</span>
-        <span>{% if info.high %}{{ idm.who(info.high.user_name) }} <span class="q">{{ "%.1f"|format(info.high.points) }}</span>{% else %}&mdash;{% endif %}</span>
-        <span>{% if info.low %}{{ idm.who(info.low.user_name) }} <span class="q">{{ "%.1f"|format(info.low.points) }}</span>{% else %}&mdash;{% endif %}</span>
+        <span>{% if info.high %}{{ idm.who(info.high.user_name) }} <span class="q">{{ "%.1f"|format(info.high.points) }}</span>{% else %}N/A{% endif %}</span>
+        <span>{% if info.low %}{{ idm.who(info.low.user_name) }} <span class="q">{{ "%.1f"|format(info.low.points) }}</span>{% else %}N/A{% endif %}</span>
       </summary>
       <div class="dt-detail">
         {% set wk_games = info.games %}

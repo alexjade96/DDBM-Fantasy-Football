@@ -16,7 +16,7 @@
 {% macro who(name) -%}
 {%- set nm = name if name is string else None -%}
 {%- set url = avatars.get(nm) if (nm and avatars) else None -%}
-<span class="ident">{% if url %}<img class="face" src="{{ url }}" alt="" loading="lazy" onerror="this.remove()">{% endif %}<span class="idn">{{ nm or "—" }}</span></span>
+<span class="ident">{% if url %}<img class="face" src="{{ url }}" alt="" loading="lazy" onerror="this.remove()">{% endif %}<span class="idn">{{ nm or "N/A" }}</span></span>
 {%- endmacro %}
 
 {% macro headshot(pid) -%}

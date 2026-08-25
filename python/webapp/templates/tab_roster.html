@@ -45,11 +45,11 @@
 {{ lz.lazy("/tab/roster/part/standouts" ~ part_qs, height="140px") }}
 
 {% if manager %}
-<p class="hint">{{ manager }}&rsquo;s own roster this season &mdash; what they carried and how
+<p class="hint">{{ manager }}&rsquo;s own roster this season: what they carried and how
    well they set it. Switch to <strong>Whole league</strong> above for the
    season-wide charts.</p>
 {% else %}
-<p class="hint">What teams <em>rostered</em> and how well they <em>used</em> it &mdash; composition
+<p class="hint">What teams <em>rostered</em> and how well they <em>used</em> it, composition
    and lineup decisions together. Each chart&rsquo;s takeaway is noted beneath it.</p>
 {% endif %}
 {{ rm.chartgrid(charts_top) }}

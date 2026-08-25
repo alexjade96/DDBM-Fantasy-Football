@@ -1116,6 +1116,16 @@ def plot_playoff_bracket(p, ref_scores: dict | None = None):
         ax.add_patch(plt.Rectangle((r["rx"] - 0.43, r["y"] - 0.15), 0.86, 0.30,
                                    facecolor=COL.get(r["result"], "#e6e8ea"),
                                    edgecolor=T["edge"], lw=1.2, zorder=2))
+        # A future round's node can still hold a raw "W:<matchup_id>"/"L:<matchup_id>"
+        # reference (season/README.md's own documented authoring convention: the
+        # commissioner writes it in before the source round resolves, and it's
+        # meant to auto-resolve once that round has a winner). Live mid-bracket,
+        # an unresolved reference reaches here unresolved -- showing it verbatim
+        # ("W:R1M1") reads as a team name, not a placeholder, so it's translated
+        # to "TBD" for display only; `team` itself is untouched everywhere else
+        # (seed/ref-score lookups on the raw string already degrade safely, since
+        # neither dict has a "W:..." key).
+        team_label = "TBD" if str(r["team"]).startswith(("W:", "L:")) else r["team"]
         sd = seed_of.get(r["team"], "")
         if not pd.isna(r["points"]):
             pts = f"{r['points']:.1f}"
@@ -1123,7 +1133,7 @@ def plot_playoff_bracket(p, ref_scores: dict | None = None):
             pts = _ref_label(ref_scores, r["team"], r["weeks"])
         # Node fills (COL) are always light, so their label stays dark on both
         # themes -- following T["ink"] here would vanish on a light node in dark.
-        ax.text(r["rx"], r["y"], f"{sd}  {r['team']}   {pts}".strip(), ha="center",
+        ax.text(r["rx"], r["y"], f"{sd}  {team_label}   {pts}".strip(), ha="center",
                 va="center", fontsize=9, zorder=3,
                 fontweight="bold" if r["result"] == "W" else "normal", color="#242424")
     ax.set_xlim(-0.6, len(rounds) - 0.4)
@@ -1139,14 +1149,14 @@ def plot_playoff_bracket(p, ref_scores: dict | None = None):
     # the axes runs straight through them -- there is no subtitle band here. The
     # champion rides in the title and the explanation goes to the bottom of the
     # figure (same rule as the matrix charts).
-    ax.set_title(f"{p.name} · {p.season} Bracket  —  Champion: "
+    ax.set_title(f"{p.name} · {p.season} Bracket: Champion, "
                  f"{p.champion or 'undecided'}", loc="left", fontsize=16,
                  fontweight="bold", color=T["ink"], pad=26)
     note = ("Every score is computed from the submitted lineups under the "
             "league's own scoring chart.")
     if ref_scores:
         note += ("   (Bracketed) is what a bye/idle team happened to score that "
-                 "week — shown for reference; it decides nothing.")
+                 "week, shown for reference; it decides nothing.")
     fig.text(0.01, 0.015, note, fontsize=9, color=T["muted"], va="bottom")
     fig.tight_layout(rect=(0, 0.055, 1, 1))
     return fig
@@ -1238,16 +1248,25 @@ def plot_playoff_players_splice(seasons: dict, playoffs: dict, n: int = 15, scop
     original chart), so "game 1" means their first career playoff game, not
     game 1 of any single bracket.
 
-    Colour is GAME SLOT (1st game, 2nd game, 3rd...), the same fixed hue at
-    that slot for every player, reusing `_MANAGER_HUES` purely as an ordered
-    categorical set here (same "index by position, not by manager identity"
-    precedent `plot_trade_single_contribution` already uses for its own
-    per-player segments) -- this replaces position-as-color entirely, so
-    position moves into the label instead (same "position as text, not bar
-    color" convention the `_postext` prototype in this same round already
-    established) and there is no swatch legend, since a "game 1/2/3..." key
-    would need as many entries as the deepest career run and still not tell
-    a reader anything a hover/label doesn't already say better -- each
+    Colour is ROUND DEPTH (that season's Round 1, Round 2, Final, ...), NOT
+    raw game slot (2026-08, changed from an earlier "1st game, 2nd game,
+    3rd..." scheme) -- game slot couldn't tell apart two players who each
+    have exactly ONE playoff game on the board: under game slot both were
+    simply "game 1" and got the identical colour, even when one of those
+    games was a Round 1 loss and the other a Final appearance. Depth is
+    read from each season's own `config["rounds"]` list order (already
+    depth-ordered) via a `{(season, round_id): depth}` lookup built once per
+    call -- NOT the `round` display name, which isn't comparable across
+    seasons/leagues (2025's "Round 1 (seeds 5-8)" vs 2022's plain
+    "Round 1"). Reuses `_MANAGER_HUES` purely as an ordered categorical set
+    here (same "index by position, not by manager identity" precedent
+    `plot_trade_single_contribution` already uses for its own per-player
+    segments) -- this replaces position-as-color entirely, so position moves
+    into the label instead (same "position as text, not bar color"
+    convention the `_postext` prototype in this same round already
+    established) and there is no swatch legend, since a "Round 1/2/3..."
+    key would need as many entries as the deepest bracket run and still not
+    tell a reader anything a hover/label doesn't already say better -- each
     slice's own points value is labelled inside it when there's room.
 
     `seasons` ({season_str: Season}, the same dict `plot_clutch` already
@@ -1269,6 +1288,20 @@ def plot_playoff_players_splice(seasons: dict, playoffs: dict, n: int = 15, scop
     perf = playoff_performances(playoffs, scope)
     perf = perf[perf["player_id"].isin(top["player_id"])]
     perf = perf.sort_values(["player_id", "season", "week"])
+    # Round DEPTH (0 = that season's first round, 1 = second, ...), not raw
+    # game count -- a player with exactly one playoff game in the Final and
+    # another with exactly one game in Round 1 need visibly different
+    # colours, which game-slot colouring (this chart's original scheme)
+    # couldn't do: both would be "game 1" and get the same hue. Depth is
+    # read from each season's OWN `config["rounds"]` list order (already
+    # depth-ordered: R1 before R2 before R3...) rather than the `round`
+    # display NAME, which isn't comparable across seasons/leagues (2025's
+    # "Round 1 (seeds 5-8)" vs 2022's plain "Round 1").
+    round_depth: dict = {}
+    for s, p in playoffs.items():
+        rids = [rd["id"] for rd in p.config.get("rounds", [])]
+        for depth, rid in enumerate(rids):
+            round_depth[(str(s), rid)] = depth
     fig, ax = plt.subplots(figsize=(10, 6.4))
     pos_ranks: dict = {}
     for pid, g in perf.groupby("player_id"):
@@ -1282,35 +1315,171 @@ def plot_playoff_players_splice(seasons: dict, playoffs: dict, n: int = 15, scop
             r = None
         if r:
             pos_ranks[pid] = r["rank"]
+    # A player gets a star next to their NAME (not buried mid-bar on whichever
+    # slice happened to be a title-game season) if ANY of their playoff games
+    # were played on that season's champion roster (gold) or runner-up roster
+    # (silver) -- both can apply to the same player (won it one year, lost
+    # the final another), so this is an "ever" flag per colour, not a single
+    # per-player outcome. Scoped to season-level champion/runner-up, not a
+    # whole-career rings tally (that's `plot_playoff_players`'s own, separate
+    # "rings" reading).
+    honors = perf.groupby("player_id")[["champion", "runner_up"]].any()
     labels = []
     for _, r in top.iterrows():
         badge = f" #{pos_ranks[r['player_id']]}" if r["player_id"] in pos_ranks else ""
         labels.append(f"{r['player_name']}  ·  {r['position']}{badge}")
     ax.set_yticks(range(len(top)))
     ax.set_yticklabels(labels, fontsize=8.5)
-    _portraits(ax, labels, top["player_id"], top["position"])
+    # Right-aligned so the label text hugs the bars it names -- text ends
+    # flush at the same x for every row, and a SHORT name (e.g. "Puka
+    # Nacua") is the one that shifts right, not the long ones trailing off
+    # into open space the way a left-aligned column would.
+    #
+    # This can't reuse `_portraits`/`_identity_rows`: that helper hangs
+    # every row's portrait icon at ONE SHARED x offset (sized off the
+    # WIDEST label), which only stays adjacent to the text when every row's
+    # text also starts at that same shared x -- true for a left-aligned
+    # column, false here, where each row's text starts at a DIFFERENT x
+    # depending on that row's own width. Reimplemented inline so each
+    # icon's offset is measured from its OWN row's text, not the shared
+    # column edge.
+    for t in ax.get_yticklabels():
+        t.set_ha("right")
+    # A SMALL fixed pad, not one sized off the widest label -- that was the
+    # actual bug behind an earlier version's huge dead space on the left of
+    # this whole chart. `_identity_rows`'s own `maxw_px`-sized pad exists to
+    # reserve room for LEFT-aligned text, which all starts flush at the tick
+    # position and needs the tick pulled left by the WIDEST row's full width
+    # so nothing collides with the axis. Right-aligned text is the opposite:
+    # every row's text already ENDS at a fixed point regardless of its own
+    # length, so the tick only needs a small fixed clearance (past the tick
+    # mark's own dash), never the longest label's width -- reusing that
+    # left-aligned formula here anchored every row's tick (and therefore
+    # every row's right-aligned text) `maxw_px` points from the axis, which
+    # is why "Puka Nacua" rendered with a huge gap before its own text: the
+    # tick itself, not the text, was pushed that far left.
+    ax.tick_params(axis="y", pad=4)
+    # Portrait icons are placed as the very LAST step in this function (after
+    # bars/xlim/_finish have all settled), not here -- `xlim` isn't final
+    # yet at this point (no bars drawn, no margin computed), so converting a
+    # measured pixel position to DATA coordinates now would be stale the
+    # moment `xlim` changes later. Only the LABEL geometry (ha, tick pad) is
+    # locked in at this point; the icon x-per-row is computed once real
+    # data-space is stable, same principle as the star markers below.
     xmax = float(top["points"].max())
+    # Star markers, when a row earns one, ride right after the row's own
+    # trailing "N total (X ppg)" text -- see the honor_rows loop below.
+    # markersize=11 stars render ~15.3px wide and are CENTRE-anchored, not
+    # left-anchored (measured via get_window_extent(); an earlier
+    # name-column version of this placed a star's centre only 10px past the
+    # text it followed, leaving barely ~2px of true clearance to the star's
+    # own left edge -- close enough to read as sitting on the text, worse in
+    # dark mode where the lower-contrast silver tone made the two harder to
+    # tell apart). STAR_HALF_PX/GAP_PX/STAR_STEP_PX below are sized off that
+    # measured footprint, not the marker's centre coordinate.
+    STAR_HALF_PX = 8.0
+    GAP_PX = 6.0 + STAR_HALF_PX          # text end -> first star's LEFT edge
+    STAR_STEP_PX = 2 * STAR_HALF_PX + 2  # star centre -> next star centre
+    honor_rows = {}
+    for i, (_, r) in enumerate(top.iterrows()):
+        pid = r["player_id"]
+        gold = silver = False
+        if pid in honors.index:
+            gold, silver = bool(honors.loc[pid, "champion"]), bool(honors.loc[pid, "runner_up"])
+        if gold or silver:
+            honor_rows[i] = (gold, silver)
+    label_texts = {}
     for i, r in top.iterrows():
         games = perf[perf["player_id"] == r["player_id"]]
         left = 0.0
-        for j, (_, g) in enumerate(games.iterrows()):
+        for _, g in games.iterrows():
             pts = float(g["points"])
-            color = _MANAGER_HUES[j % len(_MANAGER_HUES)]
+            depth = round_depth.get((g["season"], g["round_id"]), 0)
+            color = _MANAGER_HUES[depth % len(_MANAGER_HUES)]
             ax.barh(i, pts, left=left, height=0.72, color=color,
                     edgecolor=T["bg"], linewidth=1.0, zorder=2)
             if pts >= xmax * 0.045:
                 ax.text(left + pts / 2, i, f"{pts:.0f}", ha="center", va="center",
                         fontsize=7, fontweight="bold", color="white", zorder=3)
             left += pts
-        ax.text(left + xmax * 0.01, i, f"{r['points']:.0f} total  ({r['ppg']:.1f} ppg)",
-                va="center", fontsize=8.5, color=T["ink2"])
-    ax.set_xlim(0, xmax * 1.34)
+        label_texts[i] = ax.text(left + xmax * 0.01, i,
+                                 f"{r['points']:.0f} total  ({r['ppg']:.1f} ppg)",
+                                 va="center", fontsize=8.5, color=T["ink2"])
+    # Right margin is measured EXACTLY off the single widest label-plus-star
+    # requirement (up to 2 stars) rather than a flat guessed fraction of
+    # xmax, which either wasted space on every row or clipped stars on the
+    # longest one depending which way the guess erred -- same "measure the
+    # actual rendered extent, then place relative to it" technique
+    # `plot_playoff_players_medal`'s ring dots already use (there: past the
+    # value text; here: also past the value text, just on this chart's own
+    # trailing "total (ppg)" text instead of a bare points number).
+    if honor_rows:
+        fig.canvas.draw()
+        px_per_data = ax.transData.transform((1, 0))[0] - ax.transData.transform((0, 0))[0]
+        needed_px = 0.0
+        for i in honor_rows:
+            n_stars = sum(honor_rows[i])
+            text_end_px = label_texts[i].get_window_extent().x1
+            star_end_px = (text_end_px + GAP_PX + STAR_HALF_PX
+                           + (n_stars - 1) * STAR_STEP_PX + STAR_HALF_PX)
+            needed_px = max(needed_px, star_end_px)
+        widest_text_end_px = max(t.get_window_extent().x1 for t in label_texts.values())
+        extra_data = max(0.0, (needed_px - widest_text_end_px + 6) / px_per_data)
+        ax.set_xlim(0, xmax * 1.34 + extra_data)
+    else:
+        ax.set_xlim(0, xmax * 1.34)
     sub = "championship path only" if scope == "title" else f"scope: {scope}"
     suffix, span = _po_span(playoffs)
-    return _finish(fig, ax, f"Best Playoff Players{suffix}",
-                   f"Points scored across {span}  ·  {sub}  ·  each slice = one playoff "
-                   "game, earliest first, width = that game's points",
-                   "Playoff Points")
+    fig = _finish(fig, ax, f"Best Playoff Players{suffix}",
+                  f"Points scored across {span}  ·  {sub}  ·  each slice = one playoff "
+                  "game, earliest first, width = that game's points, colour = round "
+                  "reached that season  ·  ★ gold = won a title, silver = runner-up "
+                  "that season",
+                  "Playoff Points")
+
+    # `_finish` calls `tight_layout`, which resizes the axes box within the
+    # figure -- any pixel<->data measurement taken before it is stale by the
+    # time the figure is actually drawn, so both the icons and the stars
+    # below are placed AFTER this point, not before.
+    from matplotlib.offsetbox import AnnotationBbox, OffsetImage
+    fig.canvas.draw()
+    inv = ax.transData.inverted()
+    # Portrait icons, one per row, positioned relative to that row's own
+    # (now right-aligned, so ragged-LEFT) tick-label text -- can't reuse
+    # `_portraits`/`_identity_rows`: that helper hangs every icon at ONE
+    # SHARED x offset sized off the WIDEST label, which only stays adjacent
+    # to the text when every row's text also starts at that same shared x
+    # (true for a left-aligned column, false here, where each row's text
+    # starts at a DIFFERENT x depending on that row's own width).
+    icon_gap_px = 7.4 * fig.dpi / 72.0
+    for i, (pid, pos) in enumerate(zip(top["player_id"], top["position"])):
+        img = headshots.load(pid, pos, size=72)
+        if img is None:
+            continue
+        label_x0_px = ax.get_yticklabels()[i].get_window_extent().x0
+        icon_x_data = inv.transform((label_x0_px - icon_gap_px, 0))[0]
+        ab = AnnotationBbox(OffsetImage(img, zoom=0.30), (icon_x_data, i),
+                            xycoords="data", frameon=False,
+                            box_alignment=(1.0, 0.5), pad=0, annotation_clip=False)
+        ab.set_zorder(5)
+        ax.add_artist(ab)
+
+    # Drawn via marker="*" + white ring -- same convention
+    # `_highlight_eff_extremes` established for a gold star -- rather than a
+    # plain text glyph: a bare colored "★" glyph at silver's shade all but
+    # disappeared against this chart's white background, and the white ring
+    # is what actually fixes that, not a darker fill on its own.
+    for i, (gold, silver) in honor_rows.items():
+        text_end_px = label_texts[i].get_window_extent().x1
+        stars = (["#f1c40f"] if gold else []) + (["#c8cdd0"] if silver else [])
+        for k, star_color in enumerate(stars):
+            star_px = text_end_px + GAP_PX + STAR_HALF_PX + k * STAR_STEP_PX
+            star_x_data = inv.transform((star_px, 0))[0]
+            ax.plot(star_x_data, i, marker="*", markersize=11,
+                    markerfacecolor=star_color, markeredgecolor="white",
+                    markeredgewidth=1.0, zorder=5, linestyle="none",
+                    clip_on=False, transform=ax.transData)
+    return fig
 
 
 def plot_playoff_players_topband(playoffs: dict, n: int = 15, scope: str = "title"):
@@ -1466,6 +1635,13 @@ def plot_clutch(seasons: dict, playoffs: dict, scope: str = "title"):
     # No ax.legend() here -- redundant with the subtitle, which already states
     # the grey/coloured encoding (same fix as plot_mgr_sos/plot_draft_grades_value
     # for the identical redundant-legend pattern).
+    # A negative-clutch label sits to the LEFT of po_ppg (ha="right"), which can
+    # crowd the y-axis/tick labels with no xlim padding -- same collision shape
+    # as plot_efficiency's low-side labels, same fix: pad by 15% of the span.
+    lo = min(d["reg_ppg"].min(), d["po_ppg"].min())
+    hi = max(d["reg_ppg"].max(), d["po_ppg"].max())
+    pad = max((hi - lo) * 0.15, 1.5)
+    ax.set_xlim(lo - pad, hi + pad)
     _, span = _po_span(playoffs)
     return _finish(fig, ax, "Clutch: Playoff vs Regular-Season Scoring",
                    f"Grey dot = regular-season PPG; coloured = playoff PPG  ·  "
@@ -2053,7 +2229,7 @@ def plot_redraft_standings(s: Season, basis: str = "value"):
     ax.set_xlim(0, hi * 1.2)
     ax.xaxis.set_major_locator(MaxNLocator(integer=True))
     basis_label = "ADP" if basis == "adp" else "True Value"
-    return _finish(fig, ax, f"{s.season}: Redraft Simulation — Wins, Real vs. {basis_label}",
+    return _finish(fig, ax, f"{s.season}: Redraft Simulation, Wins Real vs. {basis_label}",
                    "Grey = real wins, green = simulated  ·  green line = gained wins, red = lost",
                    "Wins", caption=_cap(s))
 
@@ -2102,7 +2278,7 @@ def plot_redraft_finish_slope(s: Season, basis: str = "value"):
     ax.set_yticks(range(1, n + 1))
     ax.tick_params(left=False, labelleft=False)
     basis_label = " (by ADP)" if basis == "adp" else ""
-    return _finish(fig, ax, f"{s.season}: Redraft Simulation — Standings Reshuffle{basis_label}",
+    return _finish(fig, ax, f"{s.season}: Redraft Simulation, Standings Reshuffle{basis_label}",
                    "Green = redraft finishes higher, red = lower  ·  1st place at top",
                    caption=_cap(s), grid_axis="y")
 
@@ -2688,7 +2864,7 @@ def plot_week_matchups(s: Season, week: int):
     # Wide margins so the outward labels have somewhere to go.
     ax.set_xlim(lo0 - (hi0 - lo0) * 0.62, hi0 + (hi0 - lo0) * 0.42)
     return _finish(fig, ax, f"Week {week}: The Games",
-                   "Each line is one matchup — green won, orange lost, the line "
+                   "Each line is one matchup: green won, orange lost, the line "
                    "between them is the margin", "Points", caption=_cap(s),
                    grid_axis="x")
 
@@ -2794,7 +2970,7 @@ def plot_week_race(s: Season, week: int):
                    textcoords="offset points", xytext=(12, 0), va="center",
                    fontsize=9, color=col, fontweight="bold", zorder=5)
     return _finish(fig, ax, f"The Race Through Week {week}",
-                   "Table position after each week — crossings are lead changes  ·  "
+                   "Table position after each week; crossings are lead changes  ·  "
                    "gold/silver/bronze = this week's top 3",
                    "Week", "Table position", caption=_cap(s), grid_axis="both")
 

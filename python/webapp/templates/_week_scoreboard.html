@@ -82,11 +82,11 @@
         {%- if a.season_rank %} <span class="q">#{{ a.season_rank }}</span>{% endif %}
         {%- if records and records.get(a.user_name) %} <span class="q">({{ records[a.user_name] }})</span>{% endif %}</span>
       <span class="dt-score-col">
-        {%- if b %}<span class="score {{ 'score-w' if a_res == 'W' else 'score-l' if a_res == 'L' else '' }}">{{ "%.1f"|format(a_pts) if a_pts is not none else "—" }}</span>
+        {%- if b %}<span class="score {{ 'score-w' if a_res == 'W' else 'score-l' if a_res == 'L' else '' }}">{{ "%.1f"|format(a_pts) if a_pts is not none else "N/A" }}</span>
           <span class="q">&ndash;</span>
-          <span class="score {{ 'score-w' if b_res == 'W' else 'score-l' if b_res == 'L' else '' }}">{{ "%.1f"|format(b_pts) if b_pts is not none else "—" }}</span>
+          <span class="score {{ 'score-w' if b_res == 'W' else 'score-l' if b_res == 'L' else '' }}">{{ "%.1f"|format(b_pts) if b_pts is not none else "N/A" }}</span>
           {%- if disp_margin is not none %} <span class="q">({{ "%.1f"|format(disp_margin) }})</span>{% endif %}
-        {%- else %}<span class="score">{{ "%.1f"|format(a_pts) if a_pts is not none else "—" }}</span>{% endif %}</span>
+        {%- else %}<span class="score">{{ "%.1f"|format(a_pts) if a_pts is not none else "N/A" }}</span>{% endif %}</span>
       <span class="dt-name-l">
         {%- if b %}{{ idm.who(b.user_name) }}
         {%- if b.season_rank %} <span class="q">#{{ b.season_rank }}</span>{% endif %}
@@ -108,8 +108,8 @@
       <div class="dt-tables">
         {% for sd in g.sides %}
         {{ lu.lineup_table(
-             idm.who(sd.user_name) ~ " — " ~ (opt_label or "Optimized")|lower,
-             ("%.2f"|format(sd.opt_points) if sd.opt_points is not none else "—"),
+             idm.who(sd.user_name) ~ ": " ~ (opt_label or "Optimized")|lower,
+             ("%.2f"|format(sd.opt_points) if sd.opt_points is not none else "N/A"),
              sd.opt_lineup, bench=sd.opt_bench,
              empty_text="No roster data.") }}
         {% endfor %}
@@ -128,8 +128,8 @@
           <div class="dt-tables">
             {% for sd in g.sides %}
             {{ lu.lineup_table(
-                 idm.who(sd.user_name) ~ (" — won" if sd.result == 'W' else " — lost" if sd.result == 'L' else ""),
-                 ("%.2f"|format(sd.points) if sd.points is not none else "—"), sd.lineup, bench=sd.bench,
+                 idm.who(sd.user_name) ~ (": won" if sd.result == 'W' else ": lost" if sd.result == 'L' else ""),
+                 ("%.2f"|format(sd.points) if sd.points is not none else "N/A"), sd.lineup, bench=sd.bench,
                  bench_flag="would_start",
                  bench_flag_title="Would have outscored a same-position starter",
                  empty_text="No roster data.") }}
@@ -140,8 +140,8 @@
           <div class="dt-tables">
             {% for sd in g.sides %}
             {{ lu.lineup_table(
-                 idm.who(sd.user_name) ~ " — " ~ (opt_label or "Optimized")|lower,
-                 ("%.2f"|format(sd.opt_points) if sd.opt_points is not none else "—"),
+                 idm.who(sd.user_name) ~ ": " ~ (opt_label or "Optimized")|lower,
+                 ("%.2f"|format(sd.opt_points) if sd.opt_points is not none else "N/A"),
                  sd.opt_lineup, bench=sd.opt_bench,
                  bench_flag="was_started",
                  bench_flag_title="Started in the actual lineup, swapped out here",

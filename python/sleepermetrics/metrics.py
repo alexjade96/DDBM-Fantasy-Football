@@ -757,7 +757,7 @@ def _live_tx(s: Season, kinds: list) -> pd.DataFrame:
     return t
 
 
-def _str_or(v, default="—"):
+def _str_or(v, default="N/A"):
     return v if isinstance(v, str) else default
 
 
@@ -806,10 +806,10 @@ def trade_ledger(s: Season) -> pd.DataFrame:
             rows.append({
                 "week": wk, "transaction_id": str(tid),
                 "user_name": names.get(rid, str(rid)),
-                "with": ", ".join(others) or "—",
-                "received": ", ".join(got["player_name"].astype(str)) or "—",
+                "with": ", ".join(others) or "N/A",
+                "received": ", ".join(got["player_name"].astype(str)) or "N/A",
                 "received_players": received_players,
-                "gave": ", ".join(gave["player_name"].astype(str)) or "—",
+                "gave": ", ".join(gave["player_name"].astype(str)) or "N/A",
                 "got_pts": round(got_pts, 1), "gave_pts": round(gave_pts, 1),
                 "net": round(got_pts - gave_pts, 1),
             })

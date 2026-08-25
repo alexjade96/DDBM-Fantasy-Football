@@ -3,7 +3,7 @@
 Two ways to get league analytics into Discord. Both reuse the package's
 metrics/charts, so they stay in sync with the dashboard.
 
-## 1. Weekly stats poster (webhook — simplest, no hosting)
+## 1. Weekly stats poster (webhook, simplest, no hosting)
 
 A one-way poster: computes the latest week's recap (highlights + scoreboard +
 standings/luck charts) and posts it to a channel via an **Incoming Webhook**.
@@ -40,7 +40,7 @@ Setup:
      Rscript inst/discordbot/register.R
    ```
 
-3. Run the endpoint (needs a public **HTTPS** URL — put a reverse proxy,
+3. Run the endpoint (needs a public **HTTPS** URL; put a reverse proxy,
    Cloudflare Tunnel, or ngrok in front):
 
    ```r

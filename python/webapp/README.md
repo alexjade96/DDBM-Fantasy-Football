@@ -10,7 +10,7 @@ python launch.py dashboard --port 8080
 ## Why FastAPI + HTMX
 
 The charts are **already** matplotlib figures in `sleepermetrics/plots.py`. This
-app streams those exact figures as PNG, so it adds **no plotting code at all** —
+app streams those exact figures as PNG, so it adds **no plotting code at all**,
 which means the R↔Python chart mirror and the `verify.py` parity harness keep
 protecting them for free. A Plotly/Dash port would have meant re-implementing all
 22 charts and breaking that mirror.
@@ -28,7 +28,7 @@ re-scoring) with ~14kb of JS, no build step, and no client-side state.
 | `GET /health` | liveness probe (used by the Docker healthcheck) |
 
 Tabs: `overview`, `weekly`, `coaching`, `roster`, `transactions`, `playoffs`,
-`career` — the same seven the Shiny app has.
+`career`, the same seven the Shiny app has.
 
 ## Notes
 
@@ -39,10 +39,10 @@ Tabs: `overview`, `weekly`, `coaching`, `roster`, `transactions`, `playoffs`,
   before re-scoring, so a week still in progress is never served stale points.
   It also cache-busts the chart URLs.
 - **Champions** come from the stored brackets in `season/<league_id>/` (via
-  `apply_playoffs`), not Sleeper's `winners_bracket` — see `season/README.md`.
+  `apply_playoffs`), not Sleeper's `winners_bracket`; see `season/README.md`.
 - **ADP cache.** The Draft tab's redraft-by-ADP simulation reads/writes
   `season/adp/<season>.json`, a fallback snapshot of Sleeper's undocumented
-  ADP endpoint — see `season/README.md`.
+  ADP endpoint; see `season/README.md`.
 
 ## Environment
 

@@ -5,7 +5,7 @@
 {% import "_ident.html" as idm with context %}
 {% if honors or phonors %}
 <h2>Roster honors</h2>
-<p class="hint">Who owned the standout player or lineup most often, week over week &mdash; not
+<p class="hint">Who owned the standout player or lineup most often, week over week, not
    lineup decisions (that&rsquo;s the "Lineup %" columns above), just whose roster kept
    producing the league&rsquo;s best. Expand a row for which weeks and players earned each honor.</p>
 <div class="viewswitch rh-vs-mode">
@@ -43,7 +43,7 @@
                 <td>{{ g.honor }}</td>
                 <td>{% if g.player_name %}{{ idm.headshot(g.player_id) }}{{ g.player_name }}
                     {% if g.position %}<span class="q">{{ g.position }}{% if g.pos_rank %} #{{ g.pos_rank }}{% endif %}</span>{% endif %}
-                    {% else %}<span class="q">&mdash;</span>{% endif %}</td>
+                    {% else %}<span class="q">N/A</span>{% endif %}</td>
                 <td class="n">{{ g.times }}</td>
                 <td><span class="q">{{ g.weeks|join(", ") }}</span></td>
               </tr>

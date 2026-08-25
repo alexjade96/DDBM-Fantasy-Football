@@ -7,9 +7,9 @@
 <h2>Games</h2>
 {% if log %}
 <p class="hint">Every postseason game, grouped by round with its week. Each row is the
-   scoreboard &mdash; open it for both lineups, slot by slot. Byes advanced without playing
-   (their real weekly score is shown for reference). The <strong>toilet bowl</strong> &mdash;
-   games between teams that missed the bracket &mdash; is bracketed here too, as its own group.</p>
+   scoreboard; open it for both lineups, slot by slot. Byes advanced without playing
+   (their real weekly score is shown for reference). The <strong>toilet bowl</strong>
+   (games between teams that missed the bracket) is bracketed here too, as its own group.</p>
 {% for grp in log %}
 {% include "_playoff_round.html" %}
 {% endfor %}

@@ -33,6 +33,7 @@
     {% if grp.kind == 'consolation' %}<span class="tag">consolation</span>
     {%- elif grp.kind == 'toilet' %}<span class="tag">toilet bowl</span>{% endif %}
   </div>
+  {% if grp.blurb %}<p class="lr-blurb">{{ grp.blurb }}</p>{% endif %}
   <div class="tablewrap">
   <div class="drilltable"
        style="--cols: minmax(150px,1.6fr) minmax(150px,1.3fr) minmax(150px,1.6fr)">
@@ -48,12 +49,12 @@
           {{ idm.who(a.team) }}
           {%- if a.season_rank %} <span class="q">#{{ a.season_rank }}</span>{% endif %}</span>
         <span class="dt-score-col">
-          {%- if b %}<span class="score {{ 'score-w' if a.result == 'W' else 'score-l' if a.result == 'L' else '' }}">{{ "%.1f"|format(a.points) if a.points is not none else "—" }}</span>
+          {%- if b %}<span class="score {{ 'score-w' if a.result == 'W' else 'score-l' if a.result == 'L' else '' }}">{{ "%.1f"|format(a.points) if a.points is not none else "N/A" }}</span>
             <span class="q">&ndash;</span>
-            <span class="score {{ 'score-w' if b.result == 'W' else 'score-l' if b.result == 'L' else '' }}">{{ "%.1f"|format(b.points) if b.points is not none else "—" }}</span>
+            <span class="score {{ 'score-w' if b.result == 'W' else 'score-l' if b.result == 'L' else '' }}">{{ "%.1f"|format(b.points) if b.points is not none else "N/A" }}</span>
             {%- if g.margin is not none %} <span class="q">({{ "%.1f"|format(g.margin) }})</span>{% endif %}
             {%- if g.pending %} <span class="q">pending</span>{% endif %}
-          {%- else %}<span class="score">{{ "%.1f"|format(a.points) if a.points is not none else "—" }}</span>{% endif %}</span>
+          {%- else %}<span class="score">{{ "%.1f"|format(a.points) if a.points is not none else "N/A" }}</span>{% endif %}</span>
         <span class="dt-name-l">
           {%- if b %}{{ idm.who(b.team) }}
           {%- if b.season_rank %} <span class="q">#{{ b.season_rank }}</span>{% endif %}
@@ -70,8 +71,8 @@
              week_pos_ranks is only ever populated for the Weekly tab's own
              context -- this tab simply has none to show, no double-rank risk. #}
           {{ lu.lineup_table(
-               sd.team ~ (" — won" if sd.result == 'W' else " — lost" if sd.result == 'L' else ""),
-               ("%.2f"|format(sd.points) if sd.points is not none else "—"),
+               sd.team ~ (": won" if sd.result == 'W' else ": lost" if sd.result == 'L' else ""),
+               ("%.2f"|format(sd.points) if sd.points is not none else "N/A"),
                sd.lineup, bench=sd.bench, empty_text="No lineup submitted yet.") }}
           {% endfor %}
         </div>
@@ -79,7 +80,7 @@
     </details>
     {% endfor %}
     {% if grp.byes %}
-    <div class="dt-byes"><span class="q">Bye &mdash; advanced without playing:</span>
+    <div class="dt-byes"><span class="q">Bye, advanced without playing:</span>
       {% for bye in grp.byes %}{{ idm.who(bye.team) if bye.team else "TBD" }}{% if bye.season_rank %} <span class="q">#{{ bye.season_rank }}</span>{% endif %}{% if bye.points is not none %} <span class="q">({{ "%.1f"|format(bye.points) }})</span>{% endif %}{% if not loop.last %}, {% endif %}{% endfor %}
     </div>
     {% endif %}
