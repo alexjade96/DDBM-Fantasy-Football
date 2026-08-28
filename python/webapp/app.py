@@ -1126,6 +1126,46 @@ def _week_context(s, week: str | int | None = None,
     }
 
 
+def _preseason_rosters(s, board=None) -> list[dict]:
+    """The Weekly tab's Week 0 ("Pre-season") view: each member's roster AS
+    DRAFTED, one entry per manager, ordered by regular-season finish (same
+    order the Roster tab lists managers). Built straight off draft.draft_board()
+    -- one row per pick, already valued -- so it costs nothing beyond the
+    draft_board() call the Weekly branch already makes to gate week 0.
+
+    Returns `[{user_name, picks: [{pick, round, player_name, position,
+    pos_rank, total}], pick_count, total_pts}]`; empty when the season has no
+    draft board.
+    """
+    if board is None:
+        board = draft.draft_board(s)
+    if board.empty:
+        return []
+    order = list(s.standings.sort_values("final_position")["user_name"])
+    b = board.sort_values("pick_no")
+    out = []
+    for name, g in b.groupby("user_name", sort=False):
+        picks = []
+        for _, r in g.iterrows():
+            rnd = int(r["round"]) if pd_notna(r["round"]) else None
+            pir = int(r["pick_in_round"]) if pd_notna(r["pick_in_round"]) else None
+            picks.append({
+                "pick": (f"{rnd}.{pir:02d}" if rnd and pir
+                         else (str(int(r["pick_no"])) if pd_notna(r["pick_no"]) else "-")),
+                "player_name": r["player_name"] if pd_notna(r["player_name"]) else "N/A",
+                "player_id": r["player_id"] if pd_notna(r["player_id"]) else None,
+                "position": (r["position"] or "").upper() if pd_notna(r["position"]) else "",
+                "pos_rank": int(r["pos_rank"]) if pd_notna(r["pos_rank"]) else None,
+                "total": round(float(r["total"]), 1) if pd_notna(r["total"]) else 0.0,
+            })
+        out.append({
+            "user_name": name, "picks": picks, "pick_count": len(picks),
+            "total_pts": round(sum(p["total"] for p in picks), 1),
+        })
+    out.sort(key=lambda e: order.index(e["user_name"]) if e["user_name"] in order else 999)
+    return out
+
+
 def _season_phase(s, d: dict, key: str) -> dict:
     """Which real-world phase this season is in RIGHT NOW: still in its
     regular season, mid-playoffs, or fully complete. Returns at least
@@ -1784,10 +1824,19 @@ def tab(name: str, request: Request, league: str = DEFAULT_LEAGUE,
         # (two API calls, memoized per league:season in draft.py), the same
         # gate the Draft tab uses. When it's the selected week the tab shows
         # the draft instead of a scored-week scoreboard.
-        has_draft = not draft.draft_board(s).empty
+        board = draft.draft_board(s)
+        has_draft = not board.empty
         ctx.update(_week_context(s, week, allow_zero=has_draft))
         ctx["preseason"] = ctx["week"] == 0
-        if not ctx["preseason"]:
+        if ctx["preseason"]:
+            # The pre-season view is a collapsible roster-as-drafted list, one
+            # <details> per member (same shape as the Roster tab's league-scope
+            # manager list) -- plus a plain redirect button to the full Draft
+            # tab, not an embedded copy of its board. Built straight off the
+            # already-fetched draft_board(); no lineup/optimal solve, so it's
+            # fine in the fast response.
+            ctx["preseason_rosters"] = _preseason_rosters(s, board)
+        else:
             ctx["recap"] = _week_recap(s, ctx["week"], metrics.week_stats(s, ctx["week"]))
         return _pushed(tpl.TemplateResponse(request, "tab_weekly.html", ctx), ctx, name)
     elif name == "roster":

@@ -11,7 +11,6 @@
 {% import "_ident.html" as idm with context %}
 {% import "_lazy.html" as lz %}
 {% set part_qs = "?league=" ~ league|urlencode ~ "&season=" ~ season|urlencode ~ "&theme=" ~ theme ~ "&week=" ~ week %}
-{% set draft_qs = "?league=" ~ league|urlencode ~ "&season=" ~ season|urlencode ~ "&theme=" ~ theme %}
 <div class="rowhead">
   <h2>
     {% if preseason %}Pre-season: the draft
@@ -52,16 +51,15 @@
 </nav>
 
 {% if preseason %}
-{# ---- Pre-season: the draft --------------------------------------------------
-   The draft board and its standouts, reusing the Draft tab's own lazy parts
-   (same /tab/draft/part/<name> routes -- no second copy of that logic). The
-   value/grade charts and the full gem/bust tables stay on the Draft tab; this
-   slot is "what the rosters looked like before week 1". #}
-<p class="hint">Before a game was played: how every roster was drafted. The full
-   board below, with each pick&rsquo;s season points and position finish; the draft
-   graded, with the gems and busts called out, is on the <em>Draft</em> tab.</p>
-{{ lz.lazy("/tab/draft/part/standouts" ~ draft_qs, height="110px") }}
-{{ lz.lazy("/tab/draft/part/board" ~ draft_qs, height="520px") }}
+{# ---- Pre-season: rosters as drafted ---------------------------------------
+   A collapsible per-member list of each roster as it was drafted (app.
+   _preseason_rosters -> _preseason_rosters.html), NOT an embedded copy of the
+   Draft tab's board -- the "Full Draft tab" button in the header (above) goes
+   there for the value/grade charts, gem/bust reads and the redraft sim. #}
+<p class="hint">Before a game was played: how every roster was drafted. Expand a
+   manager for their picks in order; the <em>Draft</em> tab grades them and calls
+   out the gems and busts.</p>
+{% include "_preseason_rosters.html" %}
 
 {% else %}
 {% if live and not is_current %}
