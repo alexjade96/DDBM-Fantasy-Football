@@ -8,19 +8,22 @@
 
    Rows are in MANAGER PICK ORDER (draft slot), not regular-season finish.
    The summary row is a slot number, the manager, and one count column per
-   position (how many of that position they drafted). The drilldown lists
-   the picks in draft order -- pre-season, so no ranks and no season points,
-   just Pick / Player / Pos. #}
+   position (how many of that position they drafted). The drilldown lists the
+   picks in draft order -- pre-season, so no ranks and no season points. Two
+   pick columns on purpose: "Pick" is the league's own round.pick notation,
+   "Overall" is the absolute pick number -- which is the one on the SAME
+   SCALE as ADP, so Overall / ADP / +/- read straight across. #}
 {% import "_ident.html" as idm with context %}
 {% if preseason_rosters %}
 {% set has_other = preseason_rosters | selectattr("pos_counts.OTHER", "defined") | list | length > 0 %}
 <h2>Drafted Rosters</h2>
 <p class="hint">Every roster as it was drafted, in draft order. Each position column
    is how many of that position the manager drafted; expand a manager for their
-   picks against Sleeper&rsquo;s pre-season <strong>ADP</strong>, the pick tinted
-   <span class="pts dv-pos">green</span> when the player went later than the
-   field&rsquo;s consensus and <span class="pts dv-neg">red</span> when earlier
-   (a reach). The <strong>Draft</strong> tab grades the picks in full.</p>
+   picks. <strong>Overall</strong> (the absolute pick number, same scale as
+   <strong>ADP</strong>) minus ADP is the <strong>+/-</strong>:
+   <span class="pts dv-pos">green</span> when the player went later than
+   Sleeper&rsquo;s pre-season consensus (a value), <span class="pts dv-neg">red</span>
+   when earlier (a reach). The <strong>Draft</strong> tab grades the picks in full.</p>
 <div class="tablewrap">
 <div class="drilltable"
      style="--cols: 52px minmax(140px,1.4fr) repeat({{ 7 if has_other else 6 }}, minmax(46px,0.6fr))">
@@ -46,20 +49,22 @@
       {% if has_other %}<span class="dt-num">{{ r.pos_counts.get("OTHER", 0) }}</span>{% endif %}
     </summary>
     <div class="dt-detail">
-      {# Pick is tinted vs ADP: green when taken LATER than the field's
-         consensus (a value), red when taken EARLIER (a reach). `vs_adp` is
-         `pick_no - adp` (both overall-pick numbers), so the display
-         `round.pick` and the tint agree even though they look different. #}
+      {# Overall (absolute pick_no) and ADP are the same scale; the +/- is
+         Overall - ADP, tinted green (taken later than consensus = value) /
+         red (earlier = reach). "Pick" keeps the league's round.pick notation
+         for readers who think in rounds, but it is NOT what the +/- compares. #}
       <table class="dt-games">
         <thead>
-          <tr><th>Pick</th><th class="dt-num">ADP</th><th>Pos</th><th>Player</th><th>Team</th></tr>
+          <tr><th>Pick</th><th class="dt-num">Overall</th><th class="dt-num">ADP</th>
+            <th class="dt-num">+/-</th><th>Pos</th><th>Player</th><th>Team</th></tr>
         </thead>
         <tbody>
           {% for p in r.picks %}
           <tr>
-            <td><span class="pts{% if p.vs_adp is not none and p.vs_adp > 0 %} dv-pos{% elif p.vs_adp is not none and p.vs_adp < 0 %} dv-neg{% endif %}"
-              {% if p.vs_adp is not none %}title="ADP {{ '%.1f'|format(p.adp) }}, taken at {{ p.pick_no }} ({{ '%+.1f'|format(p.vs_adp) }})"{% endif %}>{{ p.pick }}</span></td>
+            <td>{{ p.pick }}</td>
+            <td class="dt-num">{{ p.pick_no if p.pick_no is not none else "N/A" }}</td>
             <td class="dt-num">{{ "%.1f"|format(p.adp) if p.adp is not none else "N/A" }}</td>
+            <td class="dt-num">{% if p.vs_adp is not none %}<span class="pts{% if p.vs_adp > 0 %} dv-pos{% elif p.vs_adp < 0 %} dv-neg{% endif %}">{{ "%+.1f"|format(p.vs_adp) }}</span>{% else %}N/A{% endif %}</td>
             <td><span class="q">{{ p.position }}</span></td>
             <td>{{ idm.headshot(p.player_id) }}{{ p.player_name }}</td>
             <td><span class="q">{{ p.team or "N/A" }}</span></td>
