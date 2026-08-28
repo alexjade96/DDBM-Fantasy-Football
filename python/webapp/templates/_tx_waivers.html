@@ -20,17 +20,18 @@
 </section>
 <p class="hint">All {{ n_adds }} waiver and free-agent pickups of {{ season }}, in chronological order.
    One row per manager per player; <strong>&times;n</strong> marks someone picked up more
-   than once. <strong>Starts</strong> against weeks rostered separates a real contributor from a
-   bench stash. <strong>Perf</strong> is the player's real performance across his WHOLE season,
-   priced with the league's scoring chart regardless of who rostered him then, graded green/red
-   against his position's startable (replacement) level, same read as the Draft tab's
-   gems/busts trend. <strong>PPG</strong> is points per week rostered. Click a column header to
-   sort, e.g. by Pts to see who returned the most.</p>
+   than once. <strong>Cost</strong> is the FAAB bid that won the claim (<strong>FA</strong> = a
+   free-agent add, no bid). <strong>Starts</strong> against weeks rostered separates a real
+   contributor from a bench stash. <strong>Perf</strong> is the player's real performance across
+   his WHOLE season, priced with the league's scoring chart regardless of who rostered him then,
+   graded green/red against his position's startable (replacement) level, same read as the Draft
+   tab's gems/busts trend. <strong>PPG</strong> is points per week rostered. Click a column
+   header to sort, e.g. by Pts to see who returned the most.</p>
 <div class="card tablewrap scrolltable">
   <table class="sortable">
     <thead><tr>
       <th class="n">Wk</th><th>Manager</th><th>Player</th>
-      <th>Via</th><th class="trend-col">Perf</th>
+      <th>Cost</th><th class="trend-col">Perf</th>
       <th class="n">PPG</th><th class="n">Starts</th><th class="n">Pts</th>
     </tr></thead>
     <tbody>
@@ -41,7 +42,7 @@
         <td data-sort="{{ r.player_name }}">{{ idm.headshot(r.player_id) }}{{ r.player_name }}{% if r.times > 1 %}
             <span class="q">&times;{{ r.times }}</span>{% endif %}
             {% if r.pos_rank %}<span class="q">{{ r.position }} #{{ r.pos_rank }}</span>{% else %}<span class="q">{{ r.position }}</span>{% endif %}</td>
-        <td><span class="q">{{ r.via }}</span></td>
+        <td data-sort="{{ '%06d'|format(r.faab) if r.faab is not none else '-00001' }}"><span class="q">{{ r.via }}</span></td>
         <td class="trend-col">{{ dm.spark(r.trend_svg) }}</td>
         <td class="n">{{ "%.1f"|format(r.ppg) }}</td>
         <td class="n">{{ r.starts }}<span class="q"> of {{ r.weeks_rostered }}</span></td>

@@ -63,17 +63,18 @@
 
 <h3>Waivers &amp; free agent pickups</h3>
 {% if week_tx.waivers %}
-<p class="hint">Waiver claims and free-agent adds this week. <strong>Trending</strong> is the
-   player's real performance over the last {{ [week, 4]|min }} weeks (through week {{ week }}),
+<p class="hint">Waiver claims and free-agent adds this week. <strong>Cost</strong> is the FAAB
+   bid that won the claim (<strong>FA</strong> = a free-agent add, no bid). <strong>Trending</strong>
+   is the player's real performance over the last {{ [week, 4]|min }} weeks (through week {{ week }}),
    priced with the league's scoring chart regardless of who rostered him then -- same read as the
-   free agents below. <strong>Points this week</strong> is what they scored the week they were
-   picked up. Click a column header to sort or group (e.g. by who picked them up, or Via).</p>
+   free agents below. <strong>This Week</strong> is what they scored the week they were
+   picked up. Click a column header to sort or group (e.g. by who picked them up, or Cost).</p>
 <div class="card tablewrap scrolltable">
   <table class="sortable">
     <thead><tr>
       <th>Player</th><th>Pos</th>
-      <th class="trend-col">Trending</th><th class="n">Points this week</th>
-      <th>Via</th><th>Picked up by</th>
+      <th class="trend-col">Trending</th><th class="n">This Week</th>
+      <th>Cost</th><th>Picked up by</th>
     </tr></thead>
     <tbody>
     {% for r in week_tx.waivers %}
@@ -93,7 +94,7 @@
           {% endif %}
         </td>
         <td class="n">{{ "%.1f"|format(r.week_points) }}</td>
-        <td><span class="q">{{ r.via }}</span></td>
+        <td data-sort="{{ '%06d'|format(r.faab) if r.faab is not none else '-00001' }}"><span class="q">{{ r.via }}</span></td>
         <td>{{ idm.who(r.user_name) }}</td>
       </tr>
     {% endfor %}

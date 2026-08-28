@@ -242,6 +242,48 @@
         });
       });
     }
+    // Draft tab, "Draft finds" panels: the .dffilter position bar-chart above
+    // each panel's table (rendered by _draft_finds.html's pos_filter_bar
+    // macro) filters that panel's rows by position. Each .pblabel chip carries
+    // data-filter-pos. Scoped per .vs-panel so one panel's filter can't touch
+    // another's. Default (no chip active) shows every player; clicking a chip
+    // filters to that position; clicking the active chip clears back to all.
+    // A row is hidden together with its immediately-following .detail-row
+    // siblings (per-team splits) so a filtered-out player takes his drilldown
+    // with him. Guarded by dataset.dfFilterable against a repeat htmx swap.
+    function prepDraftFilters() {
+      document.querySelectorAll('.dffilter').forEach(function (bar) {
+        if (bar.dataset.dfFilterable) return;
+        bar.dataset.dfFilterable = '1';
+        var panel = bar.closest('.vs-panel');
+        var body = panel && panel.querySelector('table.sortable tbody');
+        if (!body) return;
+        var chips = bar.querySelectorAll('[data-filter-pos]');
+        chips.forEach(function (chip) {
+          chip.addEventListener('click', function () {
+            var clear = chip.classList.contains('active');
+            var pos = chip.dataset.filterPos;
+            chips.forEach(function (c) { c.classList.remove('active'); });
+            if (!clear) chip.classList.add('active');
+            Array.prototype.forEach.call(body.rows, function (r) {
+              if (r.classList.contains('detail-row')) {
+                // Changing the filter collapses every drilldown -- simpler and
+                // less surprising than trying to preserve which splits were
+                // open across a row set that just changed. prepFaRows' own
+                // toggle re-opens them on click.
+                r.hidden = true;
+                return;
+              }
+              if (r.classList.contains('has-detail')) {
+                r.classList.remove('open');
+                r.setAttribute('aria-expanded', 'false');
+              }
+              r.hidden = !clear && r.dataset.pos !== pos;
+            });
+          });
+        });
+      });
+    }
     // Row-level drilldown (the Weekly tab's free-agent table, ported from
     // weekly_report.html's own copy of this same function -- the standalone
     // page has no shell to reach, so it keeps its inline original). Clicking
@@ -298,6 +340,7 @@
     document.body.addEventListener('htmx:afterSwap', prepTables);
     document.body.addEventListener('htmx:afterSwap', prepFaRows);
     document.body.addEventListener('htmx:afterSwap', prepRosterFilters);
+    document.body.addEventListener('htmx:afterSwap', prepDraftFilters);
 
     // When the Playoffs tab loads (its editor is present) and no bracket token is
     // active, restore this browser's saved custom bracket by re-POSTing it for a

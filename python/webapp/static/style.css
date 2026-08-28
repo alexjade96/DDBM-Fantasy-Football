@@ -631,10 +631,6 @@ td.mono { font-size: 12px; color: var(--muted); word-break: break-all; }
    good/bad badge, and a scoped rule would leave it silently unstyled there. */
 .res { font-weight: 700; }
 .res.w { color: #2f9e44; } .res.l { color: #e03131; }
-/* Draft gems/busts: Pts +/- and Total +/- disagree in sign -- the verdict
-   depends on which column you read, worth a flag rather than leaving it
-   buried in two side-by-side numbers. */
-.tag.mixed { color: #f08c00; border-color: #f08c00; }
 /* Global for the same reason as .res above: the draft tab reuses this muted
    qualifier, and the report's own uses all sit inside .reportpanel anyway. */
 .q { color: var(--muted); font-size: 12.5px; font-variant-numeric: tabular-nums; }
@@ -802,6 +798,17 @@ td.mono { font-size: 12px; color: var(--muted); word-break: break-all; }
     -1px -1px rgba(0,0,0,.7), 1px -1px rgba(0,0,0,.7),
     -1px 1px rgba(0,0,0,.7), 1px 1px rgba(0,0,0,.7); }
 .pblabel.active { box-shadow: 0 0 0 2px var(--ink); }
+/* Draft tab "Draft finds": a per-panel position filter that IS the Roster
+   tab's `.posbuild` bar chart (see _draft_finds.html's pos_filter_bar macro
+   and index.html's prepDraftFilters). `.dffilter-build` reuses `.posbuild`'s
+   grid wholesale; full panel width so the bars line up with the table below.
+   No "All" chip -- the table defaults to every player, and clicking the
+   active position chip clears back to that. The active chip gets `.pblabel`'s
+   ring (via `.active`). */
+.dffilter { margin: 0 0 12px; }
+/* The position chips keep .pblabel's fixed 34px width (like the Roster
+   tab's), so every bar starts at the same x. */
+.dffilter-build .pblabel { cursor: pointer; }
 /* Height raised 10px -> 14px (2026-08) to fit the in-bar % label added the
    same round (see .pbtrack span below) -- 10px had no room for even a
    9px label without clipping top/bottom.
@@ -893,6 +900,15 @@ table.dt-games { border-collapse: collapse; font-size: 12.5px; width: auto;
    start keeps each table at its own natural height. */
 .dt-tables { display: grid; align-items: start;
   grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 18px 36px; }
+/* "Best of the Week" (_week_best.html) and the standalone report's
+   best-available-free-agent-lineup card (_week_fa.html) both wrap their two
+   lineup tables in .card.fa-best.tablewrap, which already has overflow-x: auto.
+   The generic auto-fit above collapses the pair into one stacked column the
+   moment the card is narrower than 2x250px -- keep Team of the Week and the
+   free-agent lineup side by side and let the card scroll horizontally when
+   the window can't fit both. */
+.fa-best .dt-tables { grid-template-columns: repeat(2, minmax(230px, 1fr));
+  width: max-content; min-width: 100%; }
 /* Roster tab's Efficiency drilldown (Started | Bench, not Started | Optimal):
    a plain "these two groups trade players" cue between the two tables, not a
    per-player connector (the existing gold .bench-impact highlight already
@@ -1149,15 +1165,22 @@ footer code { font-family: ui-monospace, Consolas, monospace; }
 .reportpanel table.sortable thead th.sort-desc::after { content: '\25BC'; }
 
 /* Caps a long table's height instead of letting it push the whole page out --
-   a busy free-agency week can run 20+ rows. Sticky header so the (sortable)
-   column names stay visible while scrolling; harmless no-op when the table is
-   short enough not to need it. `border-collapse: collapse` (the base `table`
-   rule) silently disables `position: sticky` on `th`/`td` in every browser --
-   the header was never actually sticking, anywhere this class was used, until
-   this override. Cells here only ever carry a bottom border (never a full
-   box), so switching to separate borders with zero spacing draws identically. */
+   a busy free-agency week can run 20+ rows. The whole table scrolls inside
+   this box; the header stays visible via `position: sticky` on the `th`s
+   below, and the browser keeps auto-sizing every column to its widest cell.
+
+   The vertical scrollbar runs the full box height, alongside the header row
+   -- same as this app's other scroll tables (`.roster-scroll`, the draft
+   board). Confining it to just the rows needs a body-only-scroll structure
+   that either hardcodes column widths or adds JS width-sync; both were tried
+   and backed out (see .claude-logs/2026-08-28.md 2c-2e). Left as-is.
+
+   `border-collapse: collapse` (the base `table` rule) is kept -- every other
+   scroll table here uses it and pins its header cleanly. An earlier revision
+   had switched this class to `separate` + `border-spacing: 0` on the stale
+   belief that collapse breaks `position: sticky`; `separate` was itself the
+   cause of an inter-cell bleed-through and was reverted. */
 .scrolltable { max-height: 420px; overflow-y: auto; }
-.scrolltable table { border-collapse: separate; border-spacing: 0; }
 /* When .card and .scrolltable land on the same element (the usual pairing),
    .card's own 14px padding sits INSIDE the scrolling box, above the table.
    `position: sticky` computes "top: 0" against that padding edge, so it
@@ -1168,8 +1191,17 @@ footer code { font-family: ui-monospace, Consolas, monospace; }
    paint over what's scrolling underneath. Dropping the padding here removes
    the gap entirely; the table's own per-cell padding already gives it
    breathing room, so it reads the same as a deliberately flush table in a
-   card (the same treatment `.draftboard`/`.drilltable` already use). */
-.card.scrolltable { padding: 0; }
+   card (the same treatment `.draftboard`/`.drilltable` already use).
+
+   `.reportpanel` (the Weekly tab wraps its whole body in it) has its own
+   `.reportpanel .card.tablewrap { padding: 8px }` at (0,3,0), which outranked
+   a bare `.card.scrolltable` and reintroduced exactly this sliver on the
+   Weekly tab's Free-agents table while the Transactions tab's identical
+   Waiver-wire table stayed flush -- the structural inconsistency behind
+   "the FA table still bleeds". Match that selector's specificity so the
+   flush treatment holds in both places. */
+.card.scrolltable,
+.reportpanel .card.tablewrap.scrolltable { padding: 0; }
 
 /* Native radio-driven tab switcher (no JS): the checked radio's matching
    panel shows via the general-sibling selector, :has() flags its label as
@@ -1196,16 +1228,25 @@ footer code { font-family: ui-monospace, Consolas, monospace; }
 .viewswitch:has(#fa-DEF:checked) .vs-tabs label[for="fa-DEF"] {
   background: var(--ink); color: var(--surface); border-color: var(--ink);
 }
-/* !important is load-bearing here, not decorative: every th in a sortable
-   table (i.e. not .nosort) gets role="button" from index.html's JS, and
+/* !important is load-bearing: every th in a sortable table (not .nosort) gets
+   role="button" from index.html's JS, and
    `#panel table:not(.nosort) thead th[role="button"] { position: relative }`
    (the sort-arrow rule, above) carries an #panel id -- higher specificity
-   than this class-based selector -- so it silently overwrote `sticky` back
-   to `relative` regardless of source order. That's the actual reason the
-   header was still scrolling away after the border-collapse fix: there was
-   a real scroll container, but the th was never actually position:sticky. */
-.scrolltable table thead th { position: sticky !important; top: 0; background: var(--surface);
-  z-index: 1; box-shadow: 0 1px 0 var(--line); }
+   than this class-based selector -- so without !important it silently
+   overwrites `sticky` back to `relative` and the header scrolls away.
+
+   The bottom divider is a `::before` pseudo-element, NOT `border-bottom` or
+   `box-shadow`: in a collapsed-border table both of those are dropped on
+   internal cells by Chrome and Firefox (undefined behaviour in the spec), so
+   a plain header border never actually painted. The th is a positioned
+   element (sticky), so an absolutely-positioned pseudo anchors to it and
+   paints in every engine. `::before` (not `::after`) because the
+   sortable-column sort arrow already owns `th.sort-asc::after`. 1px `--line`,
+   matching the body-row hairlines. */
+.scrolltable table thead th { position: sticky !important; top: 0; z-index: 3;
+  background: var(--surface); border-bottom: 0; }
+.scrolltable table thead th::before { content: ""; position: absolute;
+  left: 0; right: 0; bottom: 0; height: 1px; background: var(--line); }
 
 /* Free-agent best team vs one real team: team selection (fat-0, fat-1, ...)
    and the Actual/Optimized mode (fam-actual/fam-opt) are TWO INDEPENDENT

@@ -372,13 +372,14 @@ def _members_with_seasons(s, all_seasons: dict | None) -> list[dict]:
 
 # Tab order: overview/weekly is the landing view (what happened, then week by
 # week), then playoffs/roster/draft sit together right after weekly trends,
-# then transactions, then career/report -- beyond this season, the thing you
-# take away.
+# then transactions, then the season report -- the take-away for this season --
+# and finally History (the league across every season on record), which sits
+# just before the Testing tab.
 TABS = [
     ("overview", "Season overview"), ("weekly", "Weekly trends"),
     ("playoffs", "Playoffs"), ("roster", "Roster"), ("draft", "Draft"),
-    ("transactions", "Transactions"), ("career", "Career"),
-    ("report", "Season report"), ("testing", "Testing"),
+    ("transactions", "Transactions"), ("report", "Season report"),
+    ("career", "History"), ("testing", "Testing"),
 ]
 
 # --- cache ----------------------------------------------------------------
@@ -460,6 +461,104 @@ def pick(league_id: str, season: str | None, fresh: bool = False):
     d = league_data(league_id, fresh)
     key = season if season in d["seasons"] else d["names"][-1]
     return d, d["seasons"][key], key
+
+
+# FAAB bid per waiver transaction. `settings.waiver_bid` rides on every raw
+# Sleeper waiver transaction but is dropped by season._unnest_transactions
+# (which mirrors the R frame -- adding a column there would be a parity change),
+# so it's re-read here, webapp-only, the same precedent draft.py / the Week-0
+# ADP lookup already set for transaction data the parity frame doesn't carry.
+# Memoised per league:season; degrades to {} off-network so the "Cost" column
+# just falls back to "waiver" / "FA" wording.
+_waiver_bid_cache: dict = {}
+
+
+def _waiver_bids(s) -> dict:
+    """`{transaction_id: bid}` for every completed waiver claim in the season.
+    A free-agent add has no entry (it cost nothing)."""
+    ck = f"{s.league_id}:{s.season}"
+    if ck in _waiver_bid_cache:
+        return _waiver_bid_cache[ck]
+    bids: dict = {}
+    try:
+        for wk in range(1, int(s.last_week_all) + 1):
+            for t in sm.sleeper_api(f"/league/{s.league_id}/transactions/{wk}"):
+                if t.get("type") != "waiver" or t.get("status") == "failed":
+                    continue
+                bid = (t.get("settings") or {}).get("waiver_bid")
+                if bid is not None:
+                    bids[str(t.get("transaction_id"))] = int(bid)
+    except Exception:
+        bids = {}
+    _waiver_bid_cache[ck] = bids
+    return bids
+
+
+def _faab_in_standouts(tiles: list[dict], s) -> list[dict]:
+    """`transaction_standouts()`'s "Best pickup" tile spells its detail as
+    "<player> &middot; waiver in wk N". Swap that "waiver" for the FAAB cost
+    when the top waiver-ledger row can be priced, so this tile matches the
+    Cost column below it. Tiles are edited in place, list returned."""
+    grp = _waiver_group_bids(s)
+    if not grp:
+        return tiles
+    wl = metrics.waiver_ledger(s, top_n=1)
+    if wl.empty:
+        return tiles
+    top = wl.iloc[0]
+    total = grp.get((top["user_name"], str(top["player_id"])))
+    if total is None:
+        return tiles
+    for t in tiles:
+        if t.get("label") == "Best pickup" and " · waiver in wk" in str(t.get("detail", "")):
+            t["detail"] = t["detail"].replace(" · waiver in wk", f" · ${total} FAAB in wk")
+    return tiles
+
+
+def _waiver_group_bids(s) -> dict:
+    """`{(user_name, player_id): total_faab}` -- the FAAB spent by a manager
+    acquiring a given player across ALL their waiver claims for him this season,
+    matching the (roster_id, player_id) grain `waiver_ledger` groups on. A pair
+    the manager only ever picked up as a free agent has no entry."""
+    bids = _waiver_bids(s)
+    tx = getattr(s, "transactions", None)
+    out: dict = {}
+    if tx is None or getattr(tx, "empty", True) or not bids:
+        return out
+    names = dict(zip(s.user_map["roster_id"], s.user_map["user_name"]))
+    w = tx[(tx["type"] == "waiver") & (tx["transaction"] == "add")]
+    for row in w.itertuples():
+        b = bids.get(str(row.transaction_id))
+        if b is None:
+            continue
+        key = (names.get(row.roster_id, str(row.roster_id)), str(row.player_id))
+        out[key] = out.get(key, 0) + b
+    return out
+
+
+def _enrich_waiver_cost(rows: list[dict], s) -> list[dict]:
+    """Rewrites each waiver-ledger row's `via` into a FAAB cost string and adds
+    a numeric `faab` (total the manager bid for that player, None for a pure
+    free-agent pickup). `rows` are `records(waiver_ledger(...))` dicts, edited
+    in place and returned for chaining.
+    """
+    grp = _waiver_group_bids(s)
+    for r in rows:
+        was_waiver = "waiver" in str(r.get("via", ""))
+        total = grp.get((r.get("user_name"), str(r.get("player_id"))))
+        if total is not None:
+            r["faab"] = total
+            # A mixed group (a waiver claim AND a later straight FA add of the
+            # same player) keeps a "/ FA" tail so the row still reads honestly.
+            r["via"] = f"${total} FAAB" + (" / FA" if "FA" in str(r.get("via", "")) else "")
+        elif was_waiver:
+            # A waiver claim we couldn't price (off-network, or a $0 league):
+            # leave the wording, no fake $0.
+            r["faab"] = None
+        else:
+            r["faab"] = None
+            r["via"] = "FA"
+    return rows
 
 
 def _base_ctx(league: str, season_key: str, s, theme: str, bracket: str | None,
@@ -1812,6 +1911,7 @@ def _week_extras(s, week: int, manager: str | None = None) -> dict:
     a manager scope -- redundant with their own trades/waivers.
     """
     week_tx = metrics.week_transactions(s, week)
+    _enrich_waiver_cost(week_tx["waivers"], s)   # `via` -> "$N FAAB", + `faab`
     if manager:
         week_tx = {
             "trades": [d for d in week_tx["trades"]
@@ -1881,6 +1981,7 @@ def tab(name: str, request: Request, league: str = DEFAULT_LEAGUE,
         # league+season (see metrics._cached) -- a re-score must not keep
         # serving their pre-refresh numbers for the rest of that cache's TTL.
         metrics.clear_metrics_cache()
+        _waiver_bid_cache.clear()        # a mid-week claim adds a new FAAB bid
     try:
         # A refresh re-assembles the league from the API (fresh=True), not just
         # the scoring cache -- otherwise a live week's matchup points stay frozen
@@ -2063,7 +2164,7 @@ def tab(name: str, request: Request, league: str = DEFAULT_LEAGUE,
         ctx["charts"] = ["tx_volume", "manager_profile"]
         # One card per deal, not one row per team: the ledger's mirror-image
         # rows read as duplicates and print every player's name twice.
-        ctx["standouts"] = metrics.transaction_standouts(s)
+        ctx["standouts"] = _faab_in_standouts(metrics.transaction_standouts(s), s)
         deals = metrics.trade_deals(s)
         ctx["deals"] = deals
         ctx["n_deals"] = len(deals)
@@ -2666,7 +2767,8 @@ def _tx_part_waivers(request, s, d, key, ctx):
     # Displayed chronologically -- waiver_ledger()'s own points-descending
     # order is left alone since transaction_standouts() reads wl.iloc[0] for
     # "Best pickup"; this is a display-only re-sort, not the ledger's default.
-    ctx["waivers"] = records(wl.sort_values("week", kind="stable"))
+    ctx["waivers"] = _enrich_waiver_cost(
+        records(wl.sort_values("week", kind="stable")), s)
     ctx["n_adds"] = len(wl)
     return tpl.TemplateResponse(request, "_tx_waivers.html", ctx)
 
