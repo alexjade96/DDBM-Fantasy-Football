@@ -66,16 +66,30 @@
      hx-target="#panel" hx-swap="innerHTML" hx-include="#league, #season, #theme">Back to the current week &rarr;</a></p>
 {% endif %}
 
+{# Six per-week merged good/bad tiles -- the same `.stat` grid + markup the
+   Season overview's "Regular season" section uses (app._week_insight_rows
+   mirrors _overview_insight_rows's shape), just scoped to this one week
+   (Scoring / Coaching / Luck / Opponent / Margin / Bench) instead of the
+   season. Replaces the old four single-value KPI tiles. #}
+{% if week_insight_rows %}
 <section class="stats">
-  {% for label, kpi, cls in [("Highest score", kpi_top, "gold"), ("Biggest blowout", kpi_blow, ""),
-                             ("Closest game", kpi_close, ""), ("Most points benched", kpi_bench, "")] %}
-  <div class="stat {{ cls }}">
-    <span class="k">{{ label }}</span>
-    <span class="v">{{ kpi.value if kpi else "N/A" }}</span>
-    {% if kpi %}<span class="sub">{{ idm.who(kpi.user_name) }}</span>{% endif %}
+  {% for t in week_insight_rows %}
+  <div class="stat {% if loop.index0 == 0 %}gold{% endif %}">
+    <span class="k">{{ t.label }}</span>
+    <div class="insight-rows">
+      {% for r in t.rows %}
+      <div class="insight-row {{ r.tone }}">
+        <span class="ir-mark">{{ "▲" if r.tone == "good" else "▼" }}</span>
+        <span class="ir-who">{{ idm.who(r.holder) }}</span>
+        <span class="ir-val">{{ r.value }}</span>
+        {% if r.detail %}<span class="ir-det">{{ r.detail }}</span>{% endif %}
+      </div>
+      {% endfor %}
+    </div>
   </div>
   {% endfor %}
 </section>
+{% endif %}
 
 {# reportpanel is a scoping hook, not a layout container (no base CSS rule of
    its own) -- several presentation tweaks in style.css are written as

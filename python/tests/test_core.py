@@ -667,6 +667,38 @@ def test_overview_insight_rows_are_ordered_standout_tiles(season_obj):
     assert _overview_insight_rows(empty) == []
 
 
+def test_week_insight_rows_are_per_week_merged_tiles(season_obj):
+    """The Weekly tab's six per-week tiles are the same merged good/bad shape
+    as the Overview's, scoped to one week (Scoring / Coaching / Luck /
+    Opponent / Margin / Bench). See app._week_insight_rows."""
+    from webapp.app import _week_insight_rows
+
+    tiles = _week_insight_rows(season_obj, 1)
+    assert tiles, "week 1 has two games in the fixture"
+    labels = [t["label"] for t in tiles]
+    # Order mirrors the Overview: scoring first, coaching before luck.
+    assert labels[0] == "Scoring"
+    assert labels.index("Coaching") < labels.index("Luck")
+    # None of the SEASON-only labels leak in.
+    for gone in ("The table", "Consistency", "Schedule", "Points allowed", "Champion"):
+        assert gone not in labels
+    for t in tiles:
+        assert set(t) == {"label", "rows"}
+        assert 1 <= len(t["rows"]) <= 2
+        for r in t["rows"]:
+            assert set(r) == {"tone", "holder", "value", "detail"}
+            assert r["holder"] and isinstance(r["holder"], str) and r["holder"] != "nan"
+            assert r["tone"] in ("good", "bad") and r["value"]
+    # Scoring: high score is the good row, low score the bad one.
+    scoring = next(t for t in tiles if t["label"] == "Scoring")
+    good = next(r for r in scoring["rows"] if r["tone"] == "good")
+    bad = next(r for r in scoring["rows"] if r["tone"] == "bad")
+    assert float(good["value"]) > float(bad["value"])
+
+    # A week with no scored games -> no tiles (template skips the section).
+    assert _week_insight_rows(season_obj, 99) == []
+
+
 def test_member_seasons_are_newest_first_per_persistent_user_id():
     """The Current members table's Seasons column lists every season an account
     (keyed on the persistent user_id) has been in the league, current ->

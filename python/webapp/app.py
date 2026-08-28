@@ -1126,6 +1126,99 @@ def _week_context(s, week: str | int | None = None,
     }
 
 
+def _week_insight_rows(s, wk: int) -> list[dict]:
+    """Per-WEEK analogue of `_overview_insight_rows` -- six merged good/bad
+    tiles, same `{label, rows: [{tone, holder, value, detail}]}` shape and the
+    same template block, but every fact is scoped to one week's games instead
+    of the season. The season tiles that have no single-week meaning
+    (Consistency = week-to-week SD, Schedule = opponents' season average) are
+    replaced by per-week reads (Margin, Bench).
+
+    Order mirrors the Overview: Scoring, Coaching, Luck, Opponent, Margin,
+    Bench. Returns [] when the week has no scored games (the template's
+    `{% if week_insight_rows %}` then skips the section).
+    """
+    import pandas as pd
+
+    ws = metrics.week_stats(s, wk)
+    if not len(ws):
+        return []
+    tiles: list[dict] = []
+
+    def _ok(h):
+        return h is not None and not (isinstance(h, float) and pd.isna(h))
+
+    def merged(label, best, worst):
+        """best/worst are (holder, value, detail) triples; either may be None."""
+        rows = [{"tone": tone, "holder": str(trip[0]), "value": trip[1],
+                 "detail": trip[2]}
+                for tone, trip in (("good", best), ("bad", worst))
+                if trip is not None and _ok(trip[0])]
+        if rows:
+            tiles.append({"label": label, "rows": rows})
+
+    played = ws[ws["points"].notna()]
+    decided = ws[ws["result"].isin(["W", "L", "T"])]
+
+    # 1. Scoring -- highest and lowest team score of the week.
+    if len(played) >= 2:
+        hi, lo = played.iloc[0], played.iloc[-1]        # week_stats() is points-desc
+        merged("Scoring",
+               (hi["user_name"], f"{hi['points']:.1f}", "high score of the week"),
+               (lo["user_name"], f"{lo['points']:.1f}", "low score of the week"))
+
+    # 2. Coaching -- lineup efficiency (started / optimal) this week.
+    effw = played[played["optimal"].notna() & (played["optimal"] > 0)].copy()
+    if len(effw) >= 2:
+        effw["eff"] = (effw["points"] / effw["optimal"] * 100)
+        be, we = effw.loc[effw["eff"].idxmax()], effw.loc[effw["eff"].idxmin()]
+        merged("Coaching",
+               (be["user_name"], f"{be['eff']:.0f}%", "of the optimal lineup started"),
+               (we["user_name"], f"{we['eff']:.0f}%", "of the optimal lineup started"))
+
+    # 3. Luck -- won on a low score / lost on a high score this week (the
+    #    single-week version of all-play luck).
+    if len(decided) >= 2:
+        wins = decided[decided["margin"] > 0]
+        losses = decided[decided["margin"] < 0]
+        lucky = wins.loc[wins["points"].idxmin()] if len(wins) else None
+        unlucky = losses.loc[losses["points"].idxmax()] if len(losses) else None
+        merged("Luck",
+               ((lucky["user_name"], f"{lucky['points']:.1f}", "won with the week's lowest winning score")
+                if lucky is not None else None),
+               ((unlucky["user_name"], f"{unlucky['points']:.1f}", "lost with the week's highest losing score")
+                if unlucky is not None else None))
+
+    # 4. Opponent -- weakest / toughest opponent faced this week (points allowed).
+    opp = decided[decided["opp_points"].notna()]
+    if len(opp) >= 2:
+        soft = opp.loc[opp["opp_points"].idxmin()]
+        hard = opp.loc[opp["opp_points"].idxmax()]
+        merged("Opponent",
+               (soft["user_name"], f"{soft['opp_points']:.1f}", "weakest opponent this week"),
+               (hard["user_name"], f"{hard['opp_points']:.1f}", "toughest opponent this week"))
+
+    # 5. Margin -- biggest blowout / closest game (the winner in each).
+    wins = decided[decided["margin"] > 0]
+    if len(wins) >= 2:
+        blow = wins.loc[wins["margin"].idxmax()]
+        close = wins.loc[wins["margin"].idxmin()]
+        merged("Margin",
+               (blow["user_name"], f"+{blow['margin']:.1f}", "biggest win of the week"),
+               (close["user_name"], f"+{close['margin']:.1f}", "closest game of the week"))
+
+    # 6. Bench -- most / least points left on the bench this week.
+    benchw = played[played["left_on_bench"].notna()]
+    if len(benchw) >= 2:
+        most = benchw.loc[benchw["left_on_bench"].idxmax()]
+        least = benchw.loc[benchw["left_on_bench"].idxmin()]
+        merged("Bench",
+               (least["user_name"], f"{least['left_on_bench']:.1f}", "least left on the bench"),
+               (most["user_name"], f"{most['left_on_bench']:.1f}", "most left on the bench"))
+
+    return tiles
+
+
 # Positions shown as their own count columns in the Week-0 "Drafted Rosters"
 # summary row, in scoreboard order (mirrors sortPosition / SLOT_ORDER).
 _PRESEASON_POS = ["QB", "RB", "WR", "TE", "K", "DEF"]
@@ -1880,6 +1973,10 @@ def tab(name: str, request: Request, league: str = DEFAULT_LEAGUE,
             ctx["preseason_rosters"] = _preseason_rosters(s, board)
         else:
             ctx["recap"] = _week_recap(s, ctx["week"], metrics.week_stats(s, ctx["week"]))
+            # Six per-week merged good/bad tiles, same shape + template block as
+            # the Season overview's "Regular season" section (see
+            # _week_insight_rows / _overview_insight_rows).
+            ctx["week_insight_rows"] = _week_insight_rows(s, ctx["week"])
         return _pushed(tpl.TemplateResponse(request, "tab_weekly.html", ctx), ctx, name)
     elif name == "roster":
         # Fast response: just the manager rail + chart images (already their
