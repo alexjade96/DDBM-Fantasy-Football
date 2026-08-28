@@ -948,27 +948,30 @@ def dashboard(request: Request, league: str = DEFAULT_LEAGUE,
 @app.get("/load", response_class=HTMLResponse)
 def load(request: Request, league: str = DEFAULT_LEAGUE, season: str | None = None,
          theme: str = "light"):
-    """Load a league (or a season of it): overview panel + a refreshed shell.
+    """Load a league (or a season of it): the Overview panel + a refreshed shell.
+
+    This is the in-dashboard header form's target (switch league/season while
+    already on the page). It renders the SAME Overview as the landing-page path
+    (/dashboard -> /tab/overview?boot=1), by delegating to tab("overview",
+    boot=1): tab() builds the full week-lead + insight-tile + phase-aware
+    context and _pushed()'s boot branch prepends the out-of-band shell sync
+    (title + season picker). Before this delegated, /load rendered its own
+    stale `load.html` (a prose summary + tab_charts.html) that had drifted a
+    long way behind the real Overview.
 
     A typo'd or private league id is a normal thing for a user to do, so it
-    answers with a message in the panel rather than a 500 -- the previous league
-    stays on screen and can be typed back.
+    answers with a message in the panel rather than a 500 -- the previous
+    league stays on screen and can be typed back.
     """
     try:
-        d, s, key = pick(league, season)
+        pick(league, season)
     except Exception:
         return HTMLResponse(
             "<p class='empty'>Couldn&rsquo;t load league <code>"
             f"{html_escape(league)}</code>. Check the id is a Sleeper league "
             "that has at least one scored week.</p>")
-    ctx = {"league": league, "season": key, "scope": "title", "bust": 0,
-           "theme": theme, "league_name": s.name,
-           "seasons": list(reversed(d["names"])),
-           "summary": summaries.summary_season(s),
-           "charts": ["standings", "power_rank", "allplay", "luck"]}
-    # tab=overview: matches the client-side JS that already resets the active
-    # tab button to Overview on a league/season switch.
-    return _pushed(tpl.TemplateResponse(request, "load.html", ctx), ctx, "overview")
+    return tab("overview", request, league=league, season=season,
+               theme=theme, boot=1)
 
 
 # --- find leagues by user ------------------------------------------------

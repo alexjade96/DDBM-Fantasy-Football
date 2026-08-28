@@ -3,10 +3,11 @@
    season moves into its postseason, or a season-complete banner -- then
    restates the season-to-date metrics further down (unchanged in every
    phase; those are already regular-season-scoped, not tied to "now").
-   Dedicated template -- Career still uses tab_charts.html, so this lead
-   appears on Overview only. `phase` ("regular"/"playoffs"/"complete") and
-   `overview_tiles` are built by the `overview` branch of the `tab()` route
-   in app.py (see `_season_phase()`). #}
+   Dedicated template, the sole Overview renderer: both the landing-page path
+   (/dashboard -> /tab/overview?boot=1) and the in-dashboard header form
+   (/load, which delegates to tab("overview")) render this. `phase`
+   ("regular"/"playoffs"/"complete") and `overview_tiles` are built by the
+   `overview` branch of the `tab()` route in app.py (see `_season_phase()`). #}
 {% import "_chartmacro.html" as ch with context %}
 {% import "_ident.html" as idm with context %}
 {% import "_lazy.html" as lz %}

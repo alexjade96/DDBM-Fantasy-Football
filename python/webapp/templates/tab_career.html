@@ -1,9 +1,11 @@
 {# Career tab: the league across every season on record. Split out of the
-   generic tab_charts.html (still used, unmodified, by /load's overview-lite
-   shell) so this tab's three heavy cross-season sections can be deferred
-   behind their own lazy fetches without /load's response -- which never sets
+   generic tab_charts.html (which Career still renders, unmodified) so this
+   tab's three heavy cross-season sections can be deferred behind their own
+   lazy fetches without the shared response -- which never sets
    `records`/`po_charts`/`managers` -- growing three placeholders of its own.
-   See app.py's TAB_PARTS. #}
+   See app.py's TAB_PARTS. (Overview no longer uses tab_charts.html: /load
+   now delegates to tab("overview"), so tab_overview.html is the only
+   Overview renderer.) #}
 {% import "_chartmacro.html" as ch with context %}
 {% import "_lazy.html" as lz %}
 {% set part_qs = "?league=" ~ league|urlencode ~ "&season=" ~ season|urlencode ~ "&theme=" ~ theme %}
