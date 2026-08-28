@@ -31,7 +31,7 @@
        slot deliberately leaves out. #}
     <button type="button" class="ghost"
             onclick="[...document.querySelectorAll('.tabs button')].find(b=>b.getAttribute('hx-get')==='/tab/draft').click()">
-      Full Draft tab &rarr;</button>
+      Draft Board &rarr;</button>
     {% else %}
     {# A stand-alone, shareable version of this week -- safe to link out or drop
        in a group chat, unlike this tab which lives inside the dashboard shell. #}
@@ -55,8 +55,8 @@
    A collapsible per-member list of each roster as it was drafted (app.
    _preseason_rosters -> _preseason_rosters.html, which carries its own
    heading + hint), NOT an embedded copy of the Draft tab's board -- the
-   "Full Draft tab" button in the header (above) goes there for the
-   value/grade charts, gem/bust reads and the redraft sim. #}
+   "Draft Board" button in the header (above) goes there for the value/grade
+   charts, gem/bust reads and the redraft sim. #}
 {% include "_preseason_rosters.html" %}
 
 {% else %}

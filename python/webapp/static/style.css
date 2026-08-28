@@ -1545,6 +1545,21 @@ tr.bench-impact td { background: color-mix(in srgb, #d9a441 8%, transparent); }
 #panel .drilltable .dt-row > summary { padding-top: 11px; padding-bottom: 11px; }
 #panel .drilltable .dt-head { padding-bottom: 10px; }
 
+/* Weekly Pre-season "Drafted Rosters" (_preseason_rosters.html). The generic
+   #panel .dt-detail > table.dt-games rule forces width:100% + 28px cell
+   padding, which on this table's 6 short columns (a round.pick string, two
+   small ints, a signed 1-decimal, a name, a 2-3 letter team) spreads them
+   out with big empty gaps. Let this one sit at its natural width with tight,
+   even spacing instead -- overriding the generic rule's (1,2,3) score here
+   with (1,2,3) + a class, later in the file. */
+#panel .preseason-rost .dt-detail > table.dt-games { width: auto; }
+#panel .preseason-rost .dt-detail > table.dt-games thead th,
+#panel .preseason-rost .dt-detail > table.dt-games tbody td { padding-right: 20px; }
+#panel .preseason-rost .dt-detail > table.dt-games thead th:last-child,
+#panel .preseason-rost .dt-detail > table.dt-games tbody td:last-child { padding-right: 0; }
+/* The player column is the one that should take any leftover room. */
+#panel .preseason-rost .dt-detail > table.dt-games td:nth-child(5) { width: 99%; }
+
 /* A drilltable that is NOT inside a .card is its own card: it already draws a
    border and radius, so wrapping it in .card framed it twice (a frame in a
    frame). Give it the surface + shadow instead and wrap it in a plain
