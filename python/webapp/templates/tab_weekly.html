@@ -72,6 +72,7 @@
    (Scoring / Coaching / Luck / Opponent / Margin / Bench) instead of the
    season. Replaces the old four single-value KPI tiles. #}
 {% if week_insight_rows %}
+<h2>Week {{ week }} insights</h2>
 <section class="stats">
   {% for t in week_insight_rows %}
   <div class="stat {% if loop.index0 == 0 %}gold{% endif %}">
@@ -97,7 +98,10 @@
    .deal) are also used unmodified elsewhere (e.g. the Transactions tab's own
    trade cards). Wrapping these included sections the same way tab_report.html
    already wraps its own native report render keeps them visually consistent
-   with the standalone weekly report they're shared with. #}
+   with the standalone weekly report they're shared with. The heading lives
+   HERE, not in the shared _week_narrative.html (the standalone weekly report
+   frames that block its own way). #}
+<h2>Week {{ week }} recap</h2>
 <div class="reportpanel">
   {% include "_week_narrative.html" %}
 </div>

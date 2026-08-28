@@ -1216,56 +1216,51 @@ def _week_insight_rows(s, wk: int) -> list[dict]:
                (least["user_name"], f"{least['left_on_bench']:.1f}", "least left on the bench"),
                (most["user_name"], f"{most['left_on_bench']:.1f}", "most left on the bench"))
 
-    # 7. Optimal result -- matchups whose winner would CHANGE if BOTH teams had
-    #    played their best legal lineup: `my optimal > opp optimal` while
-    #    `my actual < opp actual`. NOT "my optimal beats the opponent's ACTUAL
-    #    score" -- the opponent gets their optimal too. This is the whole-
-    #    lineup, both-sides version of bench_regrets' `flipped` (one legal
-    #    same-position swap, one side). Shown only when at least one matchup
-    #    flips; rows are the would-be winners (the team the loss was stolen
-    #    from), biggest optimal margin first, up to two, all tinted "bad".
+    return tiles
+
+
+def _both_optimal_flips(s, wk: int) -> list[dict]:
+    """Matchups whose winner would CHANGE if BOTH teams had played their best
+    legal lineup: `loser optimal > winner optimal` while `loser actual <
+    winner actual`. Deliberately NOT "my optimal beats the opponent's ACTUAL
+    score" -- the opponent gets their optimal too. The whole-lineup, both-
+    sides counterpart of `bench_regrets.flipped` (one legal same-position
+    swap, one side).
+
+    Returns `[{loser, winner, margin, loser_pts, winner_pts, loser_opt,
+    winner_opt}]`, biggest both-optimal margin first. Used by the Weekly
+    recap's chip list (NOT a top-level insight tile).
+    """
+    import pandas as pd
+
     tw = s.team_wk[s.team_wk["week"] == wk]
     lu = s.lineup[s.lineup["week"] == wk][["user_name", "optimal"]]
-    if {"roster_id", "opp", "user_name", "points", "result"}.issubset(tw.columns) and len(lu):
-        opt_by_name = dict(zip(lu["user_name"], lu["optimal"]))
-        opt_by_rid = {int(r.roster_id): opt_by_name.get(r.user_name)
-                      for r in tw.itertuples() if pd.notna(r.roster_id)}
-        pts_by_rid = {int(r.roster_id): r.points
-                      for r in tw.itertuples() if pd.notna(r.roster_id)}
-        flips = []
-        seen = set()
-        for r in tw.itertuples():
-            if pd.isna(r.opp) or pd.isna(r.roster_id):
-                continue
-            rid, oid = int(r.roster_id), int(r.opp)
-            key2 = tuple(sorted((rid, oid)))
-            if key2 in seen:
-                continue
-            seen.add(key2)
-            my_opt, opp_opt = opt_by_rid.get(rid), opt_by_rid.get(oid)
-            my_pts, opp_pts = pts_by_rid.get(rid), pts_by_rid.get(oid)
-            if None in (my_opt, opp_opt, my_pts, opp_pts):
-                continue
-            # Orient so `a` is the ACTUAL loser of the matchup.
-            if my_pts < opp_pts:
-                loser, l_opt, l_pts, w_opt, w_pts = r.user_name, my_opt, my_pts, opp_opt, opp_pts
-            elif opp_pts < my_pts:
-                w_name = tw[tw["roster_id"] == oid]["user_name"].iloc[0]
-                loser, l_opt, l_pts, w_opt, w_pts = w_name, opp_opt, opp_pts, my_opt, my_pts
-            else:
-                continue
-            if l_opt > w_opt:            # the actual loser wins the both-optimal game
-                flips.append((loser, l_opt - w_opt, l_pts, w_pts, l_opt, w_opt))
-        if flips:
-            flips.sort(key=lambda t: t[1], reverse=True)
-            rows = [{"tone": "bad", "holder": str(n),
-                     "value": f"+{m:.1f}",
-                     "detail": f"lost {lp:.1f}-{wp:.1f}; both-optimal "
-                               f"{lo:.1f}-{wo:.1f} flips it"}
-                    for n, m, lp, wp, lo, wo in flips[:2]]
-            tiles.append({"label": "Optimal result", "rows": rows})
-
-    return tiles
+    if not {"roster_id", "opp", "user_name", "points"}.issubset(tw.columns) or not len(lu):
+        return []
+    opt_by_name = dict(zip(lu["user_name"], lu["optimal"]))
+    by_rid = {int(r.roster_id): (r.user_name, r.points, opt_by_name.get(r.user_name))
+              for r in tw.itertuples() if pd.notna(r.roster_id)}
+    flips, seen = [], set()
+    for r in tw.itertuples():
+        if pd.isna(r.opp) or pd.isna(r.roster_id):
+            continue
+        rid, oid = int(r.roster_id), int(r.opp)
+        pair = tuple(sorted((rid, oid)))
+        if pair in seen or oid not in by_rid:
+            continue
+        seen.add(pair)
+        (an, ap, ao), (bn, bp, bo) = by_rid[rid], by_rid[oid]
+        if None in (ao, bo) or ap == bp:
+            continue
+        loser = (an, ap, ao) if ap < bp else (bn, bp, bo)
+        winner = (bn, bp, bo) if ap < bp else (an, ap, ao)
+        if loser[2] > winner[2]:        # the actual loser wins the both-optimal game
+            flips.append({"loser": loser[0], "winner": winner[0],
+                          "margin": round(loser[2] - winner[2], 1),
+                          "loser_pts": round(loser[1], 1), "winner_pts": round(winner[1], 1),
+                          "loser_opt": round(loser[2], 1), "winner_opt": round(winner[2], 1)})
+    flips.sort(key=lambda f: f["margin"], reverse=True)
+    return flips
 
 
 # Positions shown as their own count columns in the Week-0 "Drafted Rosters"
@@ -1730,6 +1725,13 @@ def _week_recap(s, week: int, ws) -> dict:
         chips.append({"icon": "\U0001F4C9", "label": "Biggest faller",
                       "value": f"{faller['user_name']} down from #{int(faller['table_position_prev'])} "
                                f"to #{int(faller['table_position_cur'])}"})
+    # Both-sides-optimal flip: a matchup whose winner would change if BOTH
+    # teams had started their best legal lineup (see _both_optimal_flips).
+    for f in _both_optimal_flips(s, int(week))[:1]:
+        chips.append({"icon": "\U0001F504", "label": "Optimal result",
+                      "value": f"{f['loser']} lost {f['loser_pts']:.1f}-{f['winner_pts']:.1f} to "
+                               f"{f['winner']}, but wins {f['loser_opt']:.1f}-{f['winner_opt']:.1f} "
+                               f"if both start their best lineup"})
     # Luck: a win despite losing the all-play field, or a loss despite
     # winning it -- the story the (now-removed-from-default-view) beaten-or-
     # unlucky chart used to tell, still worth a line without the chart.
@@ -1764,7 +1766,7 @@ def _week_recap(s, week: int, ws) -> dict:
                 value = (f"{r['user_name']} lost despite outscoring {aw} of {aw + al} teams")
             chips.append({"icon": "\U0001F62B", "label": "Unluckiest loss", "value": value})
 
-    return {"lead": " ".join(lead), "chips": chips[:3]}
+    return {"lead": " ".join(lead), "chips": chips[:4]}
 
 
 def _totw_vs_fa(totw: dict | None, fa_best_team: dict | None) -> dict | None:

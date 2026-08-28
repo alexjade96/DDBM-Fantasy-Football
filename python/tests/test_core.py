@@ -699,13 +699,15 @@ def test_week_insight_rows_are_per_week_merged_tiles(season_obj):
     assert _week_insight_rows(season_obj, 99) == []
 
 
-def test_week_insight_optimal_result_flags_both_sides_optimal_flips(monkeypatch, season_obj):
-    """The "Optimal result" tile appears only when a matchup's winner would
-    CHANGE with BOTH teams on their best lineup (my optimal > opp optimal
-    while my actual < opp actual) -- not when my optimal merely beats the
-    opponent's actual score. See app._week_insight_rows tile 7."""
+def test_both_optimal_flips_is_a_recap_chip_not_a_top_level_tile(monkeypatch, season_obj):
+    """A matchup whose winner would CHANGE with BOTH teams on their best
+    lineup (loser optimal > winner optimal while loser actual < winner
+    actual) is surfaced as a Weekly RECAP chip, never as one of the six
+    top-level insight tiles. Deliberately NOT "my optimal beats the
+    opponent's ACTUAL score". See app._both_optimal_flips / _week_recap."""
     import pandas as pd
-    from webapp.app import _week_insight_rows
+    from webapp.app import _both_optimal_flips, _week_insight_rows, _week_recap
+    from sleepermetrics import metrics
 
     s = season_obj
     # Fixture week 1: Al 100 beats Bo 90 (Cy has no game). Give Bo a big
@@ -717,20 +719,27 @@ def test_week_insight_optimal_result_flags_both_sides_optimal_flips(monkeypatch,
         "optimal":       [105.0, 140.0, 100.0],   # Bo's optimal (140) > Al's (105)
         "left_on_bench": [5.0, 50.0, 20.0],
     })
-    tiles = _week_insight_rows(s, 1)
-    opt = next((t for t in tiles if t["label"] == "Optimal result"), None)
-    assert opt is not None
-    assert len(opt["rows"]) == 1
-    row = opt["rows"][0]
-    assert row["tone"] == "bad" and row["holder"] == "Bo"     # the stolen-from team
-    assert row["value"] == "+35.0"                            # 140.0 - 105.0
-    assert "both-optimal" in row["detail"]
+    flips = _both_optimal_flips(s, 1)
+    assert len(flips) == 1
+    f = flips[0]
+    assert f["loser"] == "Bo" and f["winner"] == "Al"
+    assert f["margin"] == 35.0                                # 140.0 - 105.0
+    assert (f["loser_pts"], f["winner_pts"]) == (90.0, 100.0)
 
-    # Now make Al's optimal the higher one -> the actual winner is ALSO the
-    # both-optimal winner -> no flip -> tile absent.
+    # It rides in the recap's chip list, labelled "Optimal result".
+    rec = _week_recap(s, 1, metrics.week_stats(s, 1))
+    chip = next((c for c in rec["chips"] if c["label"] == "Optimal result"), None)
+    assert chip is not None and "if both start their best lineup" in chip["value"]
+
+    # It is NOT one of the six top-level insight tiles.
+    assert "Optimal result" not in [t["label"] for t in _week_insight_rows(s, 1)]
+
+    # Make Al's optimal the higher one -> actual winner is ALSO the
+    # both-optimal winner -> no flip, no chip.
     s.lineup.loc[s.lineup["user_name"] == "Al", "optimal"] = 200.0
-    tiles = _week_insight_rows(s, 1)
-    assert not any(t["label"] == "Optimal result" for t in tiles)
+    assert _both_optimal_flips(s, 1) == []
+    rec = _week_recap(s, 1, metrics.week_stats(s, 1))
+    assert not any(c["label"] == "Optimal result" for c in rec["chips"])
 
 
 def test_member_seasons_are_newest_first_per_persistent_user_id():
