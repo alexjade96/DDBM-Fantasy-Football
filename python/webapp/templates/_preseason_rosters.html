@@ -46,14 +46,16 @@
     <div class="dt-detail">
       <table class="dt-games">
         <thead>
-          <tr><th>Pick</th><th>Player</th><th>Pos</th></tr>
+          <tr><th>Pick</th><th>Pos</th><th>Player</th><th>Team</th><th class="dt-num">ADP</th></tr>
         </thead>
         <tbody>
           {% for p in r.picks %}
           <tr>
             <td>{{ p.pick }}</td>
-            <td>{{ idm.headshot(p.player_id) }}{{ p.player_name }}</td>
             <td><span class="q">{{ p.position }}</span></td>
+            <td>{{ idm.headshot(p.player_id) }}{{ p.player_name }}</td>
+            <td><span class="q">{{ p.team or "N/A" }}</span></td>
+            <td class="dt-num">{{ "%.1f"|format(p.adp) if p.adp is not none else "N/A" }}</td>
           </tr>
           {% endfor %}
         </tbody>

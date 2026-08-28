@@ -1139,14 +1139,30 @@ def _preseason_rosters(s, board=None) -> list[dict]:
     to gate week 0.
 
     Returns `[{user_name, slot, pos_counts: {QB: n, ...}, picks: [{pick,
-    player_name, player_id, position}]}]`; empty when the season has no draft
-    board. `pos_counts` has a key for every position in `_PRESEASON_POS` (0
-    when none), plus "OTHER" only when something outside that list was drafted.
+    player_name, player_id, position, team, adp}]}]`; empty when the season
+    has no draft board. `pos_counts` has a key for every position in
+    `_PRESEASON_POS` (0 when none), plus "OTHER" only when something outside
+    that list was drafted. `team` (the player's NFL team abbr) comes from the
+    cached player DB; `adp` (Sleeper's published pre-season ADP for the
+    league's own format, or None) from `draft._fetch_adp_raw` -- neither is on
+    draft_board(), which is parity-adjacent. Both degrade to None off-network.
     """
     if board is None:
         board = draft.draft_board(s)
     if board.empty:
         return []
+    try:
+        pinfo = sm.players()
+        team_by_pid = dict(zip(pinfo["player_id"].astype(str), pinfo["team"]))
+    except Exception:
+        team_by_pid = {}
+    try:
+        _adp_field = draft._adp_field_for(s)
+        _adp_raw = draft._fetch_adp_raw(s.season)
+        adp_by_pid = {pid: v.get(_adp_field) for pid, v in _adp_raw.items()
+                      if isinstance(v.get(_adp_field), (int, float)) and v[_adp_field] < 999}
+    except Exception:
+        adp_by_pid = {}
     b = board.sort_values("pick_no")
     out = []
     for name, g in b.groupby("user_name", sort=False):
@@ -1162,12 +1178,17 @@ def _preseason_rosters(s, board=None) -> list[dict]:
                 pos_counts[pos] += 1
             elif pos:
                 pos_counts["OTHER"] = pos_counts.get("OTHER", 0) + 1
+            pid = r["player_id"] if pd_notna(r["player_id"]) else None
+            team = team_by_pid.get(str(pid)) if pid is not None else None
+            adp = adp_by_pid.get(str(pid)) if pid is not None else None
             picks.append({
                 "pick": (f"{rnd}.{pir:02d}" if rnd and pir
                          else (str(int(r["pick_no"])) if pd_notna(r["pick_no"]) else "-")),
                 "player_name": r["player_name"] if pd_notna(r["player_name"]) else "N/A",
-                "player_id": r["player_id"] if pd_notna(r["player_id"]) else None,
+                "player_id": pid,
                 "position": pos,
+                "team": (team.upper() if isinstance(team, str) and team else None),
+                "adp": round(float(adp), 1) if adp is not None else None,
             })
         out.append({"user_name": name, "slot": slot, "pos_counts": pos_counts,
                     "picks": picks})
