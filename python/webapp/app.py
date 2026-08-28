@@ -1741,12 +1741,22 @@ def tab(name: str, request: Request, league: str = DEFAULT_LEAGUE,
             _p = d["playoffs"].get(key)
             _cb = sm.consolation_bracket(s, _p) if _p is not None else {}
             _cons_tail = []
+            # Same subtext the Playoffs tab's consolation tiles carry
+            # (tab_playoffs.html) -- "who they actually are" plus how the
+            # result was derived (an actual final consolation game, or a
+            # regular-season-finish fallback when the bracket has no
+            # coherent consolation game to read).
+            _by_game = _cb.get("basis") == "game"
             if _cb.get("winner"):
                 _cons_tail.append(("Consolation Bracket Winner",
-                                   {"value": _cb["winner"], "user_name": _cb["winner"]}, ""))
+                                   {"value": _cb["winner"], "user_name": _cb["winner"],
+                                    "detail": ("won the consolation bracket" if _by_game
+                                               else "best missed-bracket finish")}, ""))
             if _cb.get("last"):
                 _cons_tail.append(("Biggest Loser",
-                                   {"value": _cb["last"], "user_name": _cb["last"]}, "basement"))
+                                   {"value": _cb["last"], "user_name": _cb["last"],
+                                    "detail": ("first loser in the consolation bracket" if _by_game
+                                               else "worst regular-season finish")}, "basement"))
             ctx["overview_tiles"] = _playoff_tiles(
                 games, champ_tile, tail=_cons_tail, include_margins=False,
                 game_round=_rounds_of(phase["title_rounds"]))
