@@ -1727,8 +1727,10 @@ def _week_recap(s, week: int, ws) -> dict:
                                f"to #{int(faller['table_position_cur'])}"})
     # Both-sides-optimal flip: a matchup whose winner would change if BOTH
     # teams had started their best legal lineup (see _both_optimal_flips).
+    # "Un-optimal result" -- the outcome that stood is the un-optimal one; on
+    # a best-lineup (value) basis the game should have gone the other way.
     for f in _both_optimal_flips(s, int(week))[:1]:
-        chips.append({"icon": "\U0001F504", "label": "Optimal result",
+        chips.append({"icon": "\U0001F504", "label": "Un-optimal result",
                       "value": f"{f['loser']} lost {f['loser_pts']:.1f}-{f['winner_pts']:.1f} to "
                                f"{f['winner']}, but wins {f['loser_opt']:.1f}-{f['winner_opt']:.1f} "
                                f"if both start their best lineup"})
@@ -2028,6 +2030,10 @@ def tab(name: str, request: Request, league: str = DEFAULT_LEAGUE,
             # the Season overview's "Regular season" section (see
             # _week_insight_rows / _overview_insight_rows).
             ctx["week_insight_rows"] = _week_insight_rows(s, ctx["week"])
+            # `weekly_tab` tells _week_narrative.html to drop recap.lead (the
+            # insight tiles above already say it) and render the chips as a
+            # plain line list. The standalone /report/weekly doesn't set it.
+            ctx["weekly_tab"] = True
         return _pushed(tpl.TemplateResponse(request, "tab_weekly.html", ctx), ctx, name)
     elif name == "roster":
         # Fast response: just the manager rail + chart images (already their

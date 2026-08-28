@@ -563,6 +563,14 @@ td.mono { font-size: 12px; color: var(--muted); word-break: break-all; }
   border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px;
   font-size: 13px; line-height: 1.4; }
 .reportpanel .narrative p { margin: 6px 0; }
+/* Weekly TAB recap (`weekly_tab` in _week_narrative.html): a plain line-by-
+   line list, NOT the wrapping chip-card row above -- the "Week N insights"
+   tiles right above it are already the card grid, so the recap reads as a
+   short list of "also worth noting" lines beneath them. */
+.reportpanel .narrative ul.recap-lines { display: block; }
+.reportpanel .narrative ul.recap-lines li { flex: none; display: list-item;
+  list-style: disc; margin-left: 18px; background: none; border: none;
+  border-radius: 0; padding: 3px 0; }
 .reportpanel figcaption { color: var(--faint); font-size: 12px; margin-top: 6px; }
 .reportpanel p.blurb { color: var(--muted); font-size: 13px; margin: 0 0 10px; }
 

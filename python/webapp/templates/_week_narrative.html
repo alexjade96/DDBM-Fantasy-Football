@@ -3,10 +3,26 @@
    (`mgr_narrative`). Shared by the weekly report and the Weekly tab -- see
    _week_scoreboard.html for the sibling pattern this follows. Both context
    vars degrade to Jinja's default-undefined-is-falsy when the caller never
-   sets `manager` (the Weekly tab), so this needs no caller-side branching. #}
+   sets `manager` (the Weekly tab), so this needs no caller-side branching.
+
+   `weekly_tab` (set only by the Weekly TAB, not the standalone report):
+   drops `recap.lead` -- the top-score / toughest-week prose is already said
+   by the "Week N insights" tiles above it there -- and renders the chips as
+   a plain line-by-line list rather than the icon + bold-label chip style.
+   The standalone report keeps the lead (its only prose) and the chip style. #}
 <div class="card narrative">
   {% if manager %}
   <p>{{ mgr_narrative }}</p>
+  {% elif weekly_tab %}
+  {% if recap.chips %}
+  <ul class="recap-lines">
+    {% for c in recap.chips %}
+    <li><strong>{{ c.label }}:</strong> {{ c.value }}</li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <p class="q">Nothing out of the ordinary this week.</p>
+  {% endif %}
   {% else %}
   <p>{{ recap.lead }}</p>
   {% if recap.chips %}

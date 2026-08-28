@@ -726,20 +726,20 @@ def test_both_optimal_flips_is_a_recap_chip_not_a_top_level_tile(monkeypatch, se
     assert f["margin"] == 35.0                                # 140.0 - 105.0
     assert (f["loser_pts"], f["winner_pts"]) == (90.0, 100.0)
 
-    # It rides in the recap's chip list, labelled "Optimal result".
+    # It rides in the recap's chip list, labelled "Un-optimal result".
     rec = _week_recap(s, 1, metrics.week_stats(s, 1))
-    chip = next((c for c in rec["chips"] if c["label"] == "Optimal result"), None)
+    chip = next((c for c in rec["chips"] if c["label"] == "Un-optimal result"), None)
     assert chip is not None and "if both start their best lineup" in chip["value"]
 
     # It is NOT one of the six top-level insight tiles.
-    assert "Optimal result" not in [t["label"] for t in _week_insight_rows(s, 1)]
+    assert "Un-optimal result" not in [t["label"] for t in _week_insight_rows(s, 1)]
 
     # Make Al's optimal the higher one -> actual winner is ALSO the
     # both-optimal winner -> no flip, no chip.
     s.lineup.loc[s.lineup["user_name"] == "Al", "optimal"] = 200.0
     assert _both_optimal_flips(s, 1) == []
     rec = _week_recap(s, 1, metrics.week_stats(s, 1))
-    assert not any(c["label"] == "Optimal result" for c in rec["chips"])
+    assert not any(c["label"] == "Un-optimal result" for c in rec["chips"])
 
 
 def test_member_seasons_are_newest_first_per_persistent_user_id():
