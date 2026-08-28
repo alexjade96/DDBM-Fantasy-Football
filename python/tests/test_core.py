@@ -702,6 +702,36 @@ def test_member_seasons_are_newest_first_per_persistent_user_id():
     assert all(r["member_seasons"] == [] for r in _members_with_seasons(s25, None))
 
 
+def test_weekly_preseason_slot_is_week_zero_and_only_when_allowed(season_obj):
+    """The Weekly tab's synthetic "Pre-season" slot is week 0: it's in the
+    `weeks` list and returns null KPI tiles only when `allow_zero` is set
+    (which the tab passes only for a season that has a draft board). Without
+    it, week 0 is not offered and a `week=0` param clamps up to week 1.
+    See app._resolve_week / app._week_context."""
+    from webapp.app import _resolve_week, _week_context
+
+    s = season_obj                                   # last_week == 2 in the fixture
+
+    # allow_zero off (the default): no week 0 anywhere.
+    assert _resolve_week(s, "0") == 1                 # clamps up to the floor
+    assert _resolve_week(s, None) == s.last_week
+    assert _week_context(s)["weeks"] == [1, 2]
+
+    # allow_zero on: week 0 is a real, selectable slot.
+    assert _resolve_week(s, "0", allow_zero=True) == 0
+    assert _resolve_week(s, "-3", allow_zero=True) == 0
+    assert _resolve_week(s, None, allow_zero=True) == s.last_week   # default unchanged
+    ctx = _week_context(s, "0", allow_zero=True)
+    assert ctx["weeks"] == [0, 1, 2]
+    assert ctx["week"] == 0 and ctx["is_current"] is False
+    assert ctx["kpi_top"] is ctx["kpi_blow"] is ctx["kpi_close"] is ctx["kpi_bench"] is None
+
+    # A normal week still resolves and carries real tiles under allow_zero.
+    ctx1 = _week_context(s, "1", allow_zero=True)
+    assert ctx1["week"] == 1 and ctx1["weeks"] == [0, 1, 2]
+    assert ctx1["kpi_top"] is not None
+
+
 def test_bracket_token_is_stable_and_content_addressed():
     """The webapp keys an ad-hoc bracket by a hash of its config, so identical
     brackets share a token and an unknown token resolves to nothing."""

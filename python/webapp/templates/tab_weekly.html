@@ -3,18 +3,23 @@
    the selected week, and sitting here made the tab answer two questions.
    During a LIVE season this is the "current week" view: it opens on the latest
    scored week (current_week) and badges it live, with a refresh that re-pulls
-   scores; on a finished season `live` is False and it is a plain week browser. #}
+   scores; on a finished season `live` is False and it is a plain week browser.
+   Week 0 ("Pre") is a synthetic slot -- the draft, not a scored week -- only
+   present when the season has a Sleeper draft board; `preseason` is True when
+   it is selected and the whole page becomes a draft view. #}
 {% import "_chartmacro.html" as ch with context %}
 {% import "_ident.html" as idm with context %}
 {% import "_lazy.html" as lz %}
 {% set part_qs = "?league=" ~ league|urlencode ~ "&season=" ~ season|urlencode ~ "&theme=" ~ theme ~ "&week=" ~ week %}
+{% set draft_qs = "?league=" ~ league|urlencode ~ "&season=" ~ season|urlencode ~ "&theme=" ~ theme %}
 <div class="rowhead">
   <h2>
-    {% if live and is_current %}Current week{% else %}Week detail{% endif %}
-    {% if live %}<span class="live-badge">Live</span>{% endif %}
+    {% if preseason %}Pre-season: the draft
+    {% elif live and is_current %}Current week{% else %}Week detail{% endif %}
+    {% if live and not preseason %}<span class="live-badge">Live</span>{% endif %}
   </h2>
   <div class="rowhead-actions">
-    {% if live %}
+    {% if live and not preseason %}
     {# refresh=1 re-assembles the league (fresh scores) and keeps the week you're on. #}
     <button class="ghost"
             hx-get="/tab/weekly?refresh=1&week={{ week }}"
@@ -22,21 +27,43 @@
       Refresh scores
     </button>
     {% endif %}
+    {% if preseason %}
+    {# The full Draft tab has the value/grade charts and gem/bust reads this
+       slot deliberately leaves out. #}
+    <button type="button" class="ghost"
+            onclick="[...document.querySelectorAll('.tabs button')].find(b=>b.getAttribute('hx-get')==='/tab/draft').click()">
+      Full Draft tab &rarr;</button>
+    {% else %}
     {# A stand-alone, shareable version of this week -- safe to link out or drop
        in a group chat, unlike this tab which lives inside the dashboard shell. #}
     <a class="ghost" target="_blank" rel="noopener"
        href="/report/weekly?league={{ league }}&season={{ season }}&week={{ week }}"
        title="A shareable page for this week">Shareable report &#8599;</a>
+    {% endif %}
   </div>
 </div>
 <nav class="rail" hx-target="#panel" hx-swap="innerHTML" hx-include="#league, #season, #theme">
   <span class="k">Week</span>
   {% for w in weeks %}
   <button class="year {% if w == week %}on{% endif %}{% if live and w == current_week %} now{% endif %}"
-          {% if live and w == current_week %}title="Current week"{% endif %}
-          hx-get="/tab/weekly?week={{ w }}">{{ w }}</button>
+          {% if live and w == current_week %}title="Current week"{% elif w == 0 %}title="Pre-season: the draft"{% endif %}
+          hx-get="/tab/weekly?week={{ w }}">{{ "Pre" if w == 0 else w }}</button>
   {% endfor %}
 </nav>
+
+{% if preseason %}
+{# ---- Pre-season: the draft --------------------------------------------------
+   The draft board and its standouts, reusing the Draft tab's own lazy parts
+   (same /tab/draft/part/<name> routes -- no second copy of that logic). The
+   value/grade charts and the full gem/bust tables stay on the Draft tab; this
+   slot is "what the rosters looked like before week 1". #}
+<p class="hint">Before a game was played: how every roster was drafted. The full
+   board below, with each pick&rsquo;s season points and position finish; the draft
+   graded, with the gems and busts called out, is on the <em>Draft</em> tab.</p>
+{{ lz.lazy("/tab/draft/part/standouts" ~ draft_qs, height="110px") }}
+{{ lz.lazy("/tab/draft/part/board" ~ draft_qs, height="520px") }}
+
+{% else %}
 {% if live and not is_current %}
 <p class="hint">Viewing week {{ week }}.
   <a href="#" hx-get="/tab/weekly?week={{ current_week }}"
@@ -92,3 +119,4 @@
 {{ lz.lazy("/tab/weekly/part/best" ~ part_qs, height="220px") }}
 
 {{ lz.lazy("/tab/weekly/part/moves" ~ part_qs, height="320px") }}
+{% endif %}

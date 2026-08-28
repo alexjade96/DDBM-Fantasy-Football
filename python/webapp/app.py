@@ -1047,22 +1047,28 @@ def user_leagues(request: Request, user: str = "", season: str | None = None):
     return tpl.TemplateResponse(request, "_user_leagues.html", ctx)
 
 
-def _resolve_week(s, week: str | int | None) -> int:
+def _resolve_week(s, week: str | int | None, allow_zero: bool = False) -> int:
     """Clamp a possibly-invalid week param into [1, s.last_week], defaulting to
     the latest -- shared by _week_context() and the scoreboard lazy part (see
     @tab_part("overview"/"weekly", "scoreboard")) so both resolve the exact
     same week from the same raw input.
+
+    `allow_zero` lets the lower bound drop to 0, the Weekly tab's synthetic
+    "Pre-season" slot (the draft, not a scored week) -- only passed when the
+    season actually has draft data, so week 0 can't be reached otherwise.
     """
+    lo = 0 if allow_zero else 1
     wk = s.last_week
-    if week:
+    if week is not None and week != "":
         try:
-            wk = max(1, min(int(week), s.last_week))
+            wk = max(lo, min(int(week), s.last_week))
         except (TypeError, ValueError):
             pass
     return wk
 
 
-def _week_context(s, week: str | int | None = None) -> dict:
+def _week_context(s, week: str | int | None = None,
+                  allow_zero: bool = False) -> dict:
     """Everything the current-week view needs EXCEPT the scoreboard itself:
     the selected week (defaulting to the current one) and its KPI tiles.
 
@@ -1074,8 +1080,25 @@ def _week_context(s, week: str | int | None = None) -> dict:
     breakdown for every game -- too heavy to sit in front of this section's own
     headline tiles -- so they're now the "scoreboard" lazy part instead (see
     _week_part_scoreboard() below), computed only once that placeholder fires.
+
+    `allow_zero` adds the Weekly tab's synthetic week 0 ("Pre-season", the
+    draft) to `weeks` and, when it's the selected week, returns null KPI tiles
+    (there is no scored game) -- the template branches on `week == 0` to show
+    the draft instead. Only the Weekly TAB passes it; the Overview lead and the
+    standalone weekly report never do (they are about a played week).
     """
-    wk = _resolve_week(s, week)
+    wk = _resolve_week(s, week, allow_zero=allow_zero)
+    lo = 0 if allow_zero else 1
+    weeks = list(range(lo, s.last_week + 1))
+    if wk == 0:
+        # No scored game in the pre-season slot: every KPI tile is empty and
+        # the template shows the draft board / standouts instead. Skip
+        # week_stats() entirely rather than call it with an out-of-range week.
+        return {
+            "week": 0, "weeks": weeks, "current_week": s.current_week,
+            "live": s.in_progress, "is_current": False,
+            "kpi_top": None, "kpi_blow": None, "kpi_close": None, "kpi_bench": None,
+        }
     ws = metrics.week_stats(s, wk)
     decided = ws[ws["result"].isin(["W", "L", "T"])]
     wins = decided[decided["margin"] > 0]
@@ -1091,7 +1114,7 @@ def _week_context(s, week: str | int | None = None) -> dict:
         return None if row is None else {"value": fmt(row[val]), "user_name": row["user_name"]}
 
     return {
-        "week": wk, "weeks": list(range(1, s.last_week + 1)),
+        "week": wk, "weeks": weeks,
         # Current-week framing: during a live season the view opens on
         # current_week and badges it live; on a finished season `live` is False.
         "current_week": s.current_week, "live": s.in_progress,
@@ -1746,8 +1769,16 @@ def tab(name: str, request: Request, league: str = DEFAULT_LEAGUE,
         # in the fast response -- see the @tab_part("weekly", ...) handlers
         # below. No manager scope here -- that's a separate, bigger feature
         # than bringing the report's league-wide analytics over.
-        ctx.update(_week_context(s, week))
-        ctx["recap"] = _week_recap(s, ctx["week"], metrics.week_stats(s, ctx["week"]))
+        # Week 0 ("Pre-season", the draft) is offered only when the season
+        # actually has a Sleeper draft board -- draft_board() is cheap/cached
+        # (two API calls, memoized per league:season in draft.py), the same
+        # gate the Draft tab uses. When it's the selected week the tab shows
+        # the draft instead of a scored-week scoreboard.
+        has_draft = not draft.draft_board(s).empty
+        ctx.update(_week_context(s, week, allow_zero=has_draft))
+        ctx["preseason"] = ctx["week"] == 0
+        if not ctx["preseason"]:
+            ctx["recap"] = _week_recap(s, ctx["week"], metrics.week_stats(s, ctx["week"]))
         return _pushed(tpl.TemplateResponse(request, "tab_weekly.html", ctx), ctx, name)
     elif name == "roster":
         # Fast response: just the manager rail + chart images (already their
