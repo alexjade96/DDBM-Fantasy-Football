@@ -1,0 +1,114 @@
+{# The league's Sleeper configuration, as its own top-level sections at the
+   bottom of the Overview tab (was a standalone "Season config" tab until
+   2026-08). Each piece is its own <h2>/<details> section. Lazy-loaded via
+   @tab_part("overview", "config"). #}
+{% import "_ident.html" as idm with context %}
+
+<h2>Current members</h2>
+<p class="hint">All {{ members | length }} managers in {{ lg_name }} this season, with their
+   persistent Sleeper user id (stable across seasons even when the display name or team
+   name changes) and every season they have been in the league, newest first.</p>
+<div class="tablewrap card">
+  <table class="cfg-members">
+    <thead>
+      <tr><th>Roster</th><th>Manager</th><th>Team name</th><th>User ID</th><th>Seasons</th></tr>
+    </thead>
+    <tbody>
+      {% for m in members %}
+      <tr>
+        <td>{{ m.roster_id }}</td>
+        <td data-sort="{{ m.user_name or '' }}">{{ idm.who(m.user_name) }}</td>
+        <td>{{ m.team_name or "&mdash;" | safe }}</td>
+        <td class="mono">{{ m.user_id or "&mdash;" | safe }}</td>
+        <td class="cfg-seasons" data-sort="{{ m.member_seasons | length }}">
+          {%- if m.member_seasons -%}
+          {{ m.member_seasons | join(", ") }} <span class="cfg-x">({{ m.member_seasons | length }})</span>
+          {%- else -%}&mdash;{%- endif -%}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<details class="card cfg-sec">
+  <summary>League settings <span class="cfg-count">{{ n_settings }}</span></summary>
+
+  {# Roster positions leads this section -- the lineup shape is the setting
+     people most want, so it sits above the raw settings rows. #}
+  <h4 class="cfg-subhead">Roster positions</h4>
+  <p class="hint">The lineup each team sets every week, plus the bench.
+     {{ roster_starters | length }} starters and {{ roster_bench | length }} bench/reserve
+     &mdash; {{ roster_positions | length }} roster spots per team. Slot order is Sleeper&rsquo;s
+     own, the order the optimal-lineup solver and every roster table read.</p>
+  <div class="cfg-roster">
+    <div class="cfg-roster-col">
+      <h4>Starters <span class="cfg-count">{{ roster_starters | length }}</span></h4>
+      <ul class="cfg-slotlist">
+        {% for slot, n in roster_starter_counts %}
+        <li><span class="cfg-slot">{{ slot }}</span>
+          {% if n > 1 %}<span class="cfg-x">&times;{{ n }}</span>{% endif %}</li>
+        {% endfor %}
+      </ul>
+    </div>
+    <div class="cfg-roster-col">
+      <h4>Bench &amp; reserve <span class="cfg-count">{{ roster_bench | length }}</span></h4>
+      {% if roster_bench_counts %}
+      <ul class="cfg-slotlist">
+        {% for slot, n in roster_bench_counts %}
+        <li><span class="cfg-slot bench">{{ slot }}</span>
+          {% if n > 1 %}<span class="cfg-x">&times;{{ n }}</span>{% endif %}</li>
+        {% endfor %}
+      </ul>
+      {% else %}
+      <p class="cfg-none">none</p>
+      {% endif %}
+    </div>
+  </div>
+
+  <h4 class="cfg-subhead">All settings</h4>
+  <p class="hint">Sleeper&rsquo;s <code>settings</code> for this league, grouped and shown as
+     stored. The raw key is beside each row.</p>
+  {% if settings_groups %}
+  <div class="rulegroups cfg-settinggroups">
+    {% for group, items in settings_groups %}
+    <section class="rulegroup">
+      <h4>{{ group }}</h4>
+      {% for r in items %}
+      <div class="rule">
+        <span class="label">{{ r.label }}</span>
+        <code>{{ r.key }}</code>
+        <span class="n">{{ r.value }}</span>
+      </div>
+      {% endfor %}
+    </section>
+    {% endfor %}
+  </div>
+  {% else %}
+  <p class="empty">No settings on this league.</p>
+  {% endif %}
+</details>
+
+<details class="card cfg-sec">
+  <summary>Point-calculation chart <span class="cfg-count">{{ n_rules }}</span></summary>
+  <p class="hint">Every scoring weight, in plain English. Sleeper&rsquo;s raw stat code is beside
+     each rule. This is the same chart the Playoffs tab uses to score hand-submitted lineups.</p>
+  {% if rules %}
+  <div class="rulegroups">
+    {% for group, items in rules %}
+    <section class="rulegroup">
+      <h4>{{ group }}</h4>
+      {% for r in items %}
+      <div class="rule">
+        <span class="label">{{ r.label }}</span>
+        <code>{{ r.stat }}</code>
+        <span class="n">{{ r.rule }}</span>
+      </div>
+      {% endfor %}
+    </section>
+    {% endfor %}
+  </div>
+  {% else %}
+  <p class="empty">No scoring settings on this league.</p>
+  {% endif %}
+</details>

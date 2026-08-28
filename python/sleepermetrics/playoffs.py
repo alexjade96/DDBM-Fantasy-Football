@@ -124,12 +124,93 @@ def _sleeper_side(t, name_of):
     return name_of.get(t)
 
 
+def _sleeper_seed_map(league_id, season, playoff_start) -> dict:
+    """{seed(int): team name} for a Sleeper bracket -- regular-season seeding.
+
+    Seeds come from the REGULAR season (weeks before `playoff_week_start`), the
+    same rule `seeds()` uses and the same reason: the final standings fold in the
+    playoff weeks and reorder the middle of the field. Best-effort -- any failure
+    building the Season (offline, a stand-in) or a missing `playoff_week_start`
+    returns {}, and every seed-based label downstream degrades to a plain team
+    name.
+    """
+    if not playoff_start:
+        return {}
+    try:
+        from .season import season as _season
+        s = _season(league_id, season)
+        sd = seeds(s, through_week=int(playoff_start) - 1)
+        return {int(r.seed): r.user_name for r in sd.itertuples(index=False)}
+    except Exception:
+        return {}
+
+
+def _sleeper_byes(wb, name_of, seed_map) -> dict:
+    """{team name: entry_round(int)} for teams that sat out early rounds.
+
+    Sleeper's winners_bracket has no explicit bye node: a team on a first-round
+    bye simply isn't listed until the round it enters, where its slot is a raw
+    roster id with NO `t1_from` / `t2_from` provenance ref (a side that came from
+    a prior game always carries one). So a fresh raw-id side first seen in round
+    r >= 2 was idle in rounds 1..r-1.
+
+    Fallback (a malformed bracket with no `_from` refs anywhere, so the
+    structural signal is unusable): the playoff field is `seed_map`; whichever of
+    those seeds never appears in round 1 is presumed to have had a bye, entering
+    at the earliest round where it does appear. Higher seeds sit out longer, so
+    ordering the presumed byes by seed matches how Sleeper actually builds them.
+    """
+    rounds = sorted({m["r"] for m in wb})
+    if not rounds:
+        return {}
+    r1 = min(rounds)
+    # First round each team is seen in, and whether that first sighting was a
+    # "fresh entry" (raw id, no provenance ref).
+    first_round: dict = {}
+    fresh_entry: dict = {}
+    has_from_ref = False
+    for m in sorted(wb, key=lambda x: (x["r"], x["m"])):
+        for slot in ("t1", "t2"):
+            t = m.get(slot)
+            frm = m.get(f"{slot}_from")
+            if frm is not None:
+                has_from_ref = True
+            nm = name_of.get(t) if isinstance(t, int) else _sleeper_side(t, name_of)
+            if not nm or str(nm).startswith(("W:", "L:")):
+                continue
+            if nm not in first_round:
+                first_round[nm] = m["r"]
+                fresh_entry[nm] = frm is None and isinstance(t, int)
+
+    byes: dict = {}
+    for nm, fr in first_round.items():
+        if fr > r1 and fresh_entry.get(nm):
+            byes[nm] = fr
+
+    if not byes and not has_from_ref and seed_map:
+        # Presumption fallback: seeded playoff teams missing from round 1.
+        r1_teams = {name_of.get(m.get(s)) for m in wb if m["r"] == r1
+                    for s in ("t1", "t2") if isinstance(m.get(s), int)}
+        for seed in sorted(seed_map):
+            nm = seed_map[seed]
+            if nm not in r1_teams and nm in first_round and first_round[nm] > r1:
+                byes[nm] = first_round[nm]
+    return byes
+
+
 def sleeper_bracket(league_id, season=None) -> dict:
     """Rebuild Sleeper's own winners_bracket as an engine config.
 
     This is the "default Sleeper bracket" a user rolls back to. Note Sleeper's
     stored bracket can be incoherent (DDBM 2025) or, mid-season, incomplete --
     the config is faithful to whatever Sleeper holds, warts and all.
+
+    First-round byes (a 6-team bracket seeds 1-2 through round 1, an 8-team
+    one likewise) have no node in Sleeper's data; they are inferred here
+    (`_sleeper_byes`) and materialised as `{"bye": team}` matchups in the rounds
+    the team sat out, so the engine's own BYE handling, the bracket chart's bye
+    connectors and the Games-log bye blurbs all light up for a stock Sleeper
+    bracket exactly as they do for a hand-authored one.
     """
     key = f"sleeper:{league_id}:{season}"
     if key in _gen_cache:
@@ -138,7 +219,15 @@ def sleeper_bracket(league_id, season=None) -> dict:
     wb = sleeper_api(f"/league/{lid}/winners_bracket") or []
     start = int((lg.get("settings") or {}).get("playoff_week_start") or 0)
     cfg = _bracket_base(link, lid, lg, f"{lg['name']} {link['season']} (Sleeper bracket)")
-    for r in sorted({m["r"] for m in wb}):
+
+    seed_map = _sleeper_seed_map(league_id, season, start) if wb else {}
+    if seed_map:
+        cfg["_seeds"] = {str(k): v for k, v in seed_map.items()}
+    byes = _sleeper_byes(wb, name_of, seed_map) if wb else {}
+
+    rounds = sorted({m["r"] for m in wb})
+    r1 = min(rounds) if rounds else 1
+    for r in rounds:
         wk = start + r - 1
         starters = _week_starters(lid, wk) if start else {}
         mus = []
@@ -146,13 +235,28 @@ def sleeper_bracket(league_id, season=None) -> dict:
             home, away = _sleeper_side(m.get("t1"), name_of), _sleeper_side(m.get("t2"), name_of)
             if home is None or away is None:
                 continue
+            mid = f"M{m['m']}"
             mus.append({
-                "id": f"M{m['m']}",
+                "id": mid,
                 "home": {"team": home,
                          "starters": starters.get(m.get("t1"), []) if isinstance(m.get("t1"), int) else []},
                 "away": {"team": away,
                          "starters": starters.get(m.get("t2"), []) if isinstance(m.get("t2"), int) else []},
                 "_sleeper_winner": name_of.get(m["w"]) if m.get("w") else None})
+            # Sleeper tags a placement game with the position its WINNER earns
+            # (`p == 3` -> 3rd-place game, `p == 5` -> 5th, ...). Carried onto the
+            # config so the bracket chart can label the consolation tier and the
+            # outcome caption can name the 3rd-place finisher. `p == 1` is the
+            # title game and is already handled by `final`.
+            if m.get("p") and m["p"] != 1:
+                cfg.setdefault("_placements", {})[mid] = int(m["p"])
+        # A team that enters at round `e` sat out every round from r1..e-1; give
+        # it a bye card in each of those. Bye ids are B-numbered to stay clear
+        # of the M-numbered games in the same round.
+        for nm, entry in sorted(byes.items(), key=lambda kv: kv[1]):
+            if r1 <= r < entry:
+                mus.append({"id": f"R{r}B{sum(1 for x in mus if x.get('bye')) + 1}",
+                            "bye": nm})
         cfg["rounds"].append({"id": f"R{r}", "name": f"Round {r}",
                               "weeks": [wk], "matchups": mus})
     title = next((m for m in wb if m.get("p") == 1), None)
@@ -160,6 +264,104 @@ def sleeper_bracket(league_id, season=None) -> dict:
         cfg["final"] = f"M{title['m']}"
     _gen_cache[key] = copy.deepcopy(cfg)
     return cfg
+
+
+def sleeper_losers_bracket(league_id, season=None) -> dict | None:
+    """Rebuild Sleeper's own `losers_bracket` (the consolation / consolation bracket
+    bracket) as an engine config, the counterpart to `sleeper_bracket`.
+
+    Sleeper stores the teams that missed the championship bracket as a proper
+    tree in `/league/<id>/losers_bracket` -- same node shape as the winners
+    bracket (`r`, `m`, `t1`, `t2`, `w`, `l`, `t1_from`, `t2_from`, `p`), with
+    winner/loser advancement refs and first-round byes. `consolation_bracket()` reads
+    the flat weekly matchups instead and so loses this structure; this
+    function recovers it so the consolation bracket CHART can be drawn as a real
+    bracket rather than ragged week columns.
+
+    Returns `None` when the league has no `losers_bracket` (or an empty one),
+    so the caller falls back to the flat week-column rendering. Best-effort:
+    any API failure also returns `None`.
+
+    `final` is set to the game Sleeper marks `p == 1` (the losers bracket's
+    own top placement game); `_placements` carries the rest. `_seeds` IS
+    attached -- for a consolation / consolation bracket the useful number is
+    each team's SEASON RANK (its full regular-season standing, so #9, #11,
+    ... for a 12-team league), which is what the `#N` card badges then show.
+    This is a separate chart from the winners bracket, so there is no
+    ambiguity with the playoff field's 1..N seeds.
+    """
+    key = f"sleeper-losers:{league_id}:{season}"
+    if key in _gen_cache:
+        return copy.deepcopy(_gen_cache[key])
+    try:
+        link, lid, lg, name_of = _bracket_context(league_id, season)
+        lb = sleeper_api(f"/league/{lid}/losers_bracket") or []
+    except Exception:
+        return None
+    if not lb:
+        return None
+    start = int((lg.get("settings") or {}).get("playoff_week_start") or 0)
+    # Plain league name -- `plot_playoff_bracket(variant="consolation")` adds
+    # its own " Consolation Bracket" to the title, so don't double it here.
+    cfg = _bracket_base(link, lid, lg, lg["name"])
+
+    # Season rank per team -- the FULL regular-season standing (`seeds()`
+    # ranks the whole league, not just the playoff field), so consolation
+    # teams read #9 / #11 / ... on their cards. Best-effort: any failure
+    # building the Season leaves `_seeds` unset and the cards fall back to a
+    # plain team name, exactly as before.
+    if start:
+        try:
+            from .season import season as _season
+            _sd = seeds(_season(league_id, season), through_week=int(start) - 1)
+            cfg["_seeds"] = {str(int(r.seed)): r.user_name
+                             for r in _sd.itertuples(index=False)}
+        except Exception:
+            pass
+
+    # Byes reuse the winners-bracket inference: a raw roster id first seen in
+    # round r >= 2 with no `_from` ref sat out rounds 1..r-1. The losers
+    # bracket's own round-2 byes (Coin Flip and FF 2025: roster ids 10 and 11)
+    # match that shape exactly.
+    byes = _sleeper_byes(lb, name_of, {})
+
+    rounds = sorted({m["r"] for m in lb})
+    r1 = min(rounds) if rounds else 1
+    for r in rounds:
+        wk = start + r - 1
+        starters = _week_starters(lid, wk) if start else {}
+        mus = []
+        for m in sorted((x for x in lb if x["r"] == r), key=lambda x: x["m"]):
+            home = _sleeper_side(m.get("t1"), name_of)
+            away = _sleeper_side(m.get("t2"), name_of)
+            if home is None or away is None:
+                continue
+            mid = f"M{m['m']}"
+            mus.append({
+                "id": mid,
+                "home": {"team": home,
+                         "starters": starters.get(m.get("t1"), []) if isinstance(m.get("t1"), int) else []},
+                "away": {"team": away,
+                         "starters": starters.get(m.get("t2"), []) if isinstance(m.get("t2"), int) else []},
+                "_sleeper_winner": name_of.get(m["w"]) if m.get("w") else None})
+            if m.get("p") and m["p"] != 1:
+                cfg.setdefault("_placements", {})[mid] = int(m["p"])
+        for nm, entry in sorted(byes.items(), key=lambda kv: kv[1]):
+            if r1 <= r < entry:
+                mus.append({"id": f"R{r}B{sum(1 for x in mus if x.get('bye')) + 1}",
+                            "bye": nm})
+        if mus:
+            cfg["rounds"].append({"id": f"R{r}", "name": f"Round {r}",
+                                  "weeks": [wk], "matchups": mus})
+    if not cfg["rounds"]:
+        return None
+    fin = next((m for m in lb if m.get("p") == 1), None)
+    if fin:
+        cfg["final"] = f"M{fin['m']}"
+    else:
+        cfg["final"] = cfg["rounds"][-1]["matchups"][-1]["id"]
+    _gen_cache[key] = copy.deepcopy(cfg)
+    return copy.deepcopy(cfg)
 
 
 def scaffold_bracket(league_id, season=None, weeks=None, teams: int = 8) -> dict:
@@ -412,12 +614,18 @@ def playoff(config, rules: dict | None = None, validate: bool = True) -> Playoff
 def _tag_bracket(results: pd.DataFrame, round_order: list) -> pd.DataFrame:
     """Split a bracket into the championship path and everything else.
 
-    Sleeper's winners_bracket stores 3rd-place and placement games alongside the
-    real thing, so counting every game as a "playoff win" inflates records. A
-    game is on the title path only if BOTH teams are still alive going into it;
-    once you lose a title-path game you are out, and anything you play afterwards
-    is consolation. Rounds are walked in order and eliminations applied at the
-    END of a round, so games within a round cannot affect each other.
+    Sleeper's winners_bracket stores 3rd-place and placement games alongside
+    the real thing, so counting every game as a "playoff win" inflates
+    records. A game is on the title path only if BOTH teams are still alive
+    going into it; once you lose a title-path game you are out, and anything
+    you play afterwards is a LOSERS-bracket placement game (3rd/5th place,
+    tagged `bracket == "losers"`). Rounds are walked in order and
+    eliminations applied at the END of a round, so games within a round
+    cannot affect each other.
+
+    Note: this is distinct from the CONSOLATION bracket (`consolation_bracket()`
+    / `bracket == "consolation"`), which is the teams that MISSED the
+    playoffs entirely -- see that function's own docstring.
     """
     results = results.copy()
     results["bracket"] = None
@@ -428,7 +636,7 @@ def _tag_bracket(results: pd.DataFrame, round_order: list) -> pd.DataFrame:
             i = results["matchup_id"] == m
             teams = [t for t in results.loc[i, "team"] if t]
             title = not any(t in elim for t in teams)
-            results.loc[i, "bracket"] = "title" if title else "consolation"
+            results.loc[i, "bracket"] = "title" if title else "losers"
             if title:
                 fresh |= set(results.loc[i & (results["result"] == "L"), "team"])
         elim |= fresh
@@ -436,7 +644,10 @@ def _tag_bracket(results: pd.DataFrame, round_order: list) -> pd.DataFrame:
 
 
 def scope_frame(d: pd.DataFrame, scope: str = "title") -> pd.DataFrame:
-    """Keep the title path (default), the consolation games, or everything."""
+    """Keep the title path (default), the losers-bracket placement games
+    (`scope="losers"`), the missed-playoffs consolation games
+    (`scope="consolation"`, only present once merged in), or everything
+    (`scope="all"`)."""
     if scope == "all" or not len(d) or "bracket" not in d:
         return d
     return d[d["bracket"] == scope]
@@ -542,7 +753,43 @@ def _runner_up(p: "Playoff") -> str | None:
     return lost.iloc[0]["team"] if len(lost) else None
 
 
-def playoff_performances(playoffs: dict, scope: str = "title") -> pd.DataFrame:
+def _consolation_performance_rows(consolation: list, seasons: list) -> pd.DataFrame:
+    """The consolation bracket's started player-weeks in
+    `playoff_performances`' own column shape, tagged `bracket == "consolation"`.
+    `consolation` is a list of `consolation_bracket()` dicts, `seasons` the matching
+    season labels (same order). Used only when a caller asks for the whole
+    postseason (playoffs + consolation bracket) in one frame -- see
+    `playoff_performances`' `consolation=` argument.
+
+    When a dict carries a `week_rounds` map ({week: round name}), each game's
+    `round` name is set from it and `round_id` to a synthetic `"C<week>"` --
+    so the "best postseason" charts can colour the consolation bracket by its
+    OWN rounds instead of one flat block. Absent it (no round structure)
+    every row stays `round = "Consolation bracket"`, `round_id = None`.
+    """
+    rows = []
+    for season, tb in zip(seasons, consolation):
+        wk_rounds = (tb or {}).get("week_rounds") or {}
+        for g in (tb or {}).get("games", []):
+            wk = g.get("week")
+            rname = wk_rounds.get(wk) or wk_rounds.get(str(wk)) or "Consolation bracket"
+            rid = f"C{wk}" if wk_rounds else None
+            for sd in g.get("sides", []):
+                for pl in sd.get("lineup", []):
+                    rows.append({
+                        "season": str(season), "round": rname,
+                        "round_id": rid, "bracket": "consolation",
+                        "matchup_id": None, "team": sd.get("team"),
+                        "player_id": pl.get("player_id"),
+                        "player_name": pl.get("player_name"),
+                        "position": pl.get("position"),
+                        "week": wk, "points": float(pl.get("points") or 0.0),
+                        "champion": False, "runner_up": False})
+    return pd.DataFrame(rows)
+
+
+def playoff_performances(playoffs: dict, scope: str = "title",
+                         consolation: list | None = None) -> pd.DataFrame:
     """Every started player-week across all brackets (the player-metric grain).
 
     `round_id` (e.g. "R1"/"R2"/"R3") is already a column on `p.players`
@@ -557,6 +804,14 @@ def playoff_performances(playoffs: dict, scope: str = "title") -> pd.DataFrame:
     (e.g. 2025's "Round 1 (seeds 5-8)" vs 2022's plain "Round 1") and can't
     be compared as a string across seasons the way `round_id` can be
     compared as a position.
+
+    `consolation` (a list of `consolation_bracket()` dicts, one per season key in
+    `playoffs`, same order) folds the consolation bracket games into the same
+    frame, tagged `bracket == "consolation"` -- for the Postseason view, which
+    wants the WHOLE postseason (bracket + consolation bracket) in one chart. It is
+    only meaningful with `scope == "all"` (any other scope filters the
+    consolation rows straight back out); passing it with `scope == "title"` is a
+    harmless no-op.
     """
     frames = []
     for s, p in playoffs.items():
@@ -567,6 +822,10 @@ def playoff_performances(playoffs: dict, scope: str = "title") -> pd.DataFrame:
         d = d.assign(season=str(s), champion=d["team"] == (p.champion or ""),
                      runner_up=d["team"] == (_runner_up(p) or ""))
         frames.append(d)
+    if consolation is not None:
+        trows = _consolation_performance_rows(list(consolation), [str(k) for k in playoffs])
+        if len(trows):
+            frames.append(trows)
     if not frames:
         return pd.DataFrame()
     d = scope_frame(pd.concat(frames, ignore_index=True), scope)
@@ -577,9 +836,14 @@ def playoff_performances(playoffs: dict, scope: str = "title") -> pd.DataFrame:
     return d[cols].sort_values("points", ascending=False).reset_index(drop=True)
 
 
-def playoff_players(playoffs: dict, scope: str = "title") -> pd.DataFrame:
-    """Career playoff scoring leaders -- who actually produces in January."""
-    d = playoff_performances(playoffs, scope)
+def playoff_players(playoffs: dict, scope: str = "title",
+                    consolation: list | None = None) -> pd.DataFrame:
+    """Career playoff scoring leaders -- who actually produces in January.
+
+    `consolation` (see `playoff_performances`) folds the consolation bracket in for the
+    Postseason view's whole-postseason leaderboard.
+    """
+    d = playoff_performances(playoffs, scope, consolation=consolation)
     if not len(d):
         return d
     # rings = SEASONS won while on the title roster, not champion player-weeks
@@ -655,13 +919,39 @@ def playoff_carry(playoffs: dict, scope: str = "title") -> pd.DataFrame:
             .sort_values("share", ascending=False).reset_index(drop=True))
 
 
-def clutch(seasons: dict, playoffs: dict, scope: str = "title") -> pd.DataFrame:
-    """Playoff PPG vs regular-season PPG -- who raises their game."""
+def clutch(seasons: dict, playoffs: dict, scope: str = "title",
+           consolation: list | None = None) -> pd.DataFrame:
+    """Playoff PPG vs regular-season PPG -- who raises their game.
+
+    `consolation` (a list of `consolation_bracket()` dicts, one per season key in
+    `playoffs`, same order) folds each consolation bracket game in as one more
+    team-week, for the Postseason view's whole-postseason PPG. Only
+    meaningful with `scope == "all"`; a no-op otherwise (the consolation rows
+    carry `bracket == "consolation"` and every other scope filters them out).
+    """
     frames = [scope_frame(p.results, scope).assign(season=str(s))
               for s, p in playoffs.items()]
+    if consolation is not None:
+        trows = []
+        for season, tb in zip([str(k) for k in playoffs], list(consolation)):
+            for g in (tb or {}).get("games", []):
+                for sd in g.get("sides", []):
+                    if sd.get("team") is None or sd.get("points") is None:
+                        continue
+                    trows.append({"season": season, "team": sd["team"],
+                                  "points": float(sd["points"]),
+                                  "result": sd.get("result"),
+                                  "bracket": "consolation"})
+        if trows:
+            frames.append(pd.DataFrame(trows))
     if not frames:
         return pd.DataFrame()
     po = pd.concat(frames, ignore_index=True)
+    # Re-scope after the concat: the per-frame scope above ran BEFORE the
+    # consolation rows were appended, so this second pass is what keeps the
+    # consolation bracket team-weeks only when `scope == "all"` and filters them
+    # out otherwise (idempotent for the bracket rows already scoped once).
+    po = scope_frame(po, scope)
     po = po[po["result"].isin(["W", "L", "T"])]
     if not len(po):
         return pd.DataFrame()
@@ -673,6 +963,90 @@ def clutch(seasons: dict, playoffs: dict, scope: str = "title") -> pd.DataFrame:
     g = g.rename(columns={"team": "user_name"}).merge(reg, on="user_name", how="left")
     g["clutch"] = g["po_ppg"] - g["reg_ppg"]
     return (g[["user_name", "reg_ppg", "po_ppg", "clutch", "games"]]
+            .sort_values("clutch", ascending=False).reset_index(drop=True))
+
+
+# --- consolation bracket analytics ------------------------------------------------
+# These mirror `playoff_performances` / `playoff_players` / `clutch` above, but
+# read the consolation bracket's own games (from `consolation_bracket()`'s `games` list) rather
+# than a bracket's `p.players` / `p.results`. The consolation bracket is a set of plain
+# Sleeper matchups with no sub-brackets, so there is no `scope` parameter and no
+# career span -- it is always one season. Webapp-only; no R counterpart, not in
+# the parity export.
+
+def consolation_performances(tb: dict) -> pd.DataFrame:
+    """Every STARTED player-week across the consolation bracket -- the player-metric
+    grain, the counterpart to `playoff_performances` for the missed-bracket
+    games. One row per starter per consolation bracket game.
+
+    `tb` is a `consolation_bracket()` result dict. Returns columns: `week`, `team`,
+    `player_id`, `player_name`, `position`, `points`. Empty frame when the
+    season has no consolation bracket.
+    """
+    rows = []
+    for g in (tb or {}).get("games", []):
+        wk = g.get("week")
+        for sd in g.get("sides", []):
+            team = sd.get("team")
+            for pl in sd.get("lineup", []):
+                rows.append({
+                    "week": wk, "team": team,
+                    "player_id": pl.get("player_id"),
+                    "player_name": pl.get("player_name"),
+                    "position": pl.get("position"),
+                    "points": float(pl.get("points") or 0.0)})
+    if not rows:
+        return pd.DataFrame(
+            columns=["week", "team", "player_id", "player_name", "position", "points"])
+    return (pd.DataFrame(rows)
+            .sort_values("points", ascending=False).reset_index(drop=True))
+
+
+def consolation_players(tb: dict) -> pd.DataFrame:
+    """Consolation bracket scoring leaders -- who actually produced in the games nobody
+    wanted to be playing. The counterpart to `playoff_players`, minus `rings`
+    (there is no title to win here) and `seasons` (always one).
+
+    Columns: `player_id`, `player_name`, `position`, `games`, `points`,
+    `best`, `ppg`.
+    """
+    d = consolation_performances(tb)
+    if not len(d):
+        return pd.DataFrame(
+            columns=["player_id", "player_name", "position", "games",
+                     "points", "best", "ppg"])
+    g = d.groupby(["player_id", "player_name", "position"], as_index=False).agg(
+        games=("points", "size"), points=("points", "sum"), best=("points", "max"))
+    g["ppg"] = g["points"] / g["games"]
+    return g.sort_values("points", ascending=False).reset_index(drop=True)
+
+
+def consolation_clutch(s, tb: dict) -> pd.DataFrame:
+    """Consolation bracket PPG set against each manager's regular-season PPG -- the
+    counterpart to `clutch` for the missed-bracket teams. A positive `clutch`
+    means the team scored MORE once the games stopped mattering.
+
+    Columns: `user_name`, `reg_ppg`, `to_ppg`, `clutch`, `games`.
+    """
+    games = (tb or {}).get("games", [])
+    rows = []
+    for g in games:
+        for sd in g.get("sides", []):
+            if sd.get("team") is not None and sd.get("points") is not None:
+                rows.append({"user_name": sd["team"], "points": float(sd["points"])})
+    if not rows:
+        return pd.DataFrame(columns=["user_name", "reg_ppg", "to_ppg", "clutch", "games"])
+    to = pd.DataFrame(rows).groupby("user_name", as_index=False).agg(
+        games=("points", "size"), to_ppg=("points", "mean"))
+    reg = getattr(s, "team_wk", None)
+    if reg is not None and len(reg) and "user_name" in reg.columns:
+        reg = reg.groupby("user_name", as_index=False)["points"].mean().rename(
+            columns={"points": "reg_ppg"})
+        to = to.merge(reg, on="user_name", how="left")
+    else:
+        to["reg_ppg"] = pd.NA
+    to["clutch"] = to["to_ppg"] - to["reg_ppg"]
+    return (to[["user_name", "reg_ppg", "to_ppg", "clutch", "games"]]
             .sort_values("clutch", ascending=False).reset_index(drop=True))
 
 
@@ -976,13 +1350,13 @@ def _week_nums(v) -> list[int]:
 def _lineup_of(s, roster_id, week: int, ranks=None) -> list[dict]:
     """The starters a roster fielded that week, in scoreboard slot order.
 
-    The toilet bowl is a plain Sleeper matchup, so its lineups live in `pl_wk`,
+    The consolation bracket is a plain Sleeper matchup, so its lineups live in `pl_wk`,
     not in the bracket engine's `players`. Ordering goes through `assign_slots`
     so the drill reads QB, RB1, RB2, WR1, WR2, TE, FLEX, K, DEF like every other
     roster table, rather than in whatever order the frame happens to hold.
 
     `ranks` is optional, same shape/purpose as `_lineup_from_players`' own --
-    stamped onto each row as `pos_rank` so the toilet bowl's own matchup
+    stamped onto each row as `pos_rank` so the consolation bracket's own matchup
     drilldown carries the same season-rank decoration as the bracket's.
     """
     import pandas as pd
@@ -1012,7 +1386,7 @@ def _bench_of(s, roster_id, week: int, ranks=None) -> list[dict]:
     """The bench a roster carried that week -- the counterpart to
     `_lineup_of`'s starters, everyone else on the roster that week.
     Unlike a bracket game (commissioner-submitted starters only, no bench
-    concept exists), the toilet bowl is a plain Sleeper matchup with real
+    concept exists), the consolation bracket is a plain Sleeper matchup with real
     `pl_wk` roster data, so its own bench is genuinely knowable. No slot
     (bench isn't scoreboard-ordered), same shape `_redraft_side_score`'s
     own bench rows use.
@@ -1035,13 +1409,13 @@ def _bench_of(s, roster_id, week: int, ranks=None) -> list[dict]:
             for r in d.itertuples(index=False)]
 
 
-def toilet_bowl(s, p=None) -> dict:
+def consolation_bracket(s, p=None) -> dict:
     """The race at the bottom -- who finished last, and the game that decided it.
 
-    The toilet bowl is the teams that **missed the championship bracket** and the
+    The consolation bracket is the teams that **missed the championship bracket** and the
     games they played once the postseason started -- ordinary Sleeper matchups
     that never appear in the bracket config, so reading the config alone reports
-    no toilet bowl at all (2025: sparky1335 beat rezzu in wk15).
+    no consolation bracket at all (2025: sparky1335 beat rezzu in wk15).
 
     The config's **consolation games are deliberately NOT counted here.** In this
     league they are placement games between teams already in the bracket -- a
@@ -1050,10 +1424,14 @@ def toilet_bowl(s, p=None) -> dict:
     *first* in the regular season. Reporting that as last place is simply wrong.
     Those games remain visible, correctly labelled, in the bracket walk.
 
-    Last place goes to the **loser** of the final toilet-bowl game. With no game
-    to decide it, the worst regular-season finish stands in -- and that fallback
-    is labelled as such rather than presented as a result. A season where every
-    team reached the bracket has no toilet bowl, and says so.
+    `winner` = the winner of the consolation bracket's FINAL game.  `last` =
+    the team FIRST OUT of the consolation bracket -- the one whose run there
+    ended earliest (fewest rounds survived), NOT the loser of the final game
+    (that team went the deepest on the losers' side and finishes nearer
+    mid-table).  With no game to decide either end, the best/worst
+    regular-season finish among the missed teams stands in -- labelled as
+    such rather than presented as a result.  A season where every team
+    reached the championship bracket has no consolation bracket, and says so.
 
     Each game's `lineup` rows carry `pos_rank` (each starter's FINAL
     season-long position finish), best-effort -- same "never blocks
@@ -1066,11 +1444,11 @@ def toilet_bowl(s, p=None) -> dict:
     import pandas as pd
 
     st = getattr(s, "standings", None)
-    # Postseason weeks: the toilet bowl lives outside the regular season.
+    # Postseason weeks: the consolation bracket lives outside the regular season.
     tw = getattr(s, "team_wk_all", None)
     in_bracket, po_start, games = set(), None, []
     # `season_rank` -- a MANAGER's own final regular-season standing, shown
-    # next to their name in the toilet bowl's own matchup rows, same as the
+    # next to their name in the consolation bracket's own matchup rows, same as the
     # bracket's (see `game_log`).
     rank_by_team: dict = {}
     if st is not None and len(st):
@@ -1085,7 +1463,7 @@ def toilet_bowl(s, p=None) -> dict:
         po_start = min(wks) if wks else None
 
     # Teams the bracket never included -- their postseason games are plain
-    # matchups in team_wk, which is the only place a 2025-shaped toilet bowl lives.
+    # matchups in team_wk, which is the only place a 2025-shaped consolation bracket lives.
     missed = []
     if st is not None and len(st):
         missed = [n for n in st["user_name"] if n not in in_bracket]
@@ -1117,16 +1495,60 @@ def toilet_bowl(s, p=None) -> dict:
         return max(n) if n else 0
 
     games.sort(key=wk_of)
-    last, basis = None, None
+    last, winner, basis = None, None, None
     decided = [g for g in games if g["loser"]]
     if decided:
-        last, basis = max(decided, key=wk_of)["loser"], "game"
+        # WINNER tops the consolation bracket: the winner of its FINAL game.
+        winner = max(decided, key=wk_of)["winner"]
+        basis = "game"
+        # LAST PLACE is the team FIRST OUT of the consolation bracket -- the
+        # one who finished WORST there, not the loser of the final game (that
+        # team went the DEEPEST on the losers' side, so it is nearer
+        # mid-table). Preferred signal: Sleeper's real `losers_bracket`, where
+        # the loser of the highest-`p` placement game (`p == 5` in a 6-team
+        # field decides 5th/6th) is dead last. Fallback (no coherent losers
+        # bracket): the team whose consolation run ended earliest (smallest
+        # last-week-played), ties broken by worse regular-season finish.
+        lg_id = getattr(s, "league_id", None)
+        ssn = getattr(s, "season", None)
+        try:
+            _lc = sleeper_losers_bracket(lg_id, ssn) if lg_id else None
+            _pl = _lc.get("_placements") if _lc else None
+        except Exception:
+            _lc, _pl = None, None
+        if _lc and _pl:
+            worst_mid = max(_pl, key=lambda m: int(_pl[m]))     # highest place number
+            for rd in _lc.get("rounds", []):
+                for mu in rd.get("matchups", []):
+                    if str(mu.get("id")) != str(worst_mid):
+                        continue
+                    w = mu.get("_sleeper_winner")
+                    sides = [mu.get("home", {}).get("team"), mu.get("away", {}).get("team")]
+                    last = next((t for t in sides if t and t != w), None)
+        if last is None:
+            last_wk_of: dict = {}
+            for g in games:
+                w = wk_of(g)
+                for sd in g["sides"]:
+                    nm = sd.get("team")
+                    if nm:
+                        last_wk_of[nm] = max(last_wk_of.get(nm, 0), w)
+            fp_of = {}
+            if st is not None and "final_position" in st:
+                fp_of = {r.user_name: getattr(r, "final_position", 0)
+                         for r in st.itertuples(index=False)}
+            if last_wk_of:
+                last = min(last_wk_of,
+                           key=lambda nm: (last_wk_of[nm], -(fp_of.get(nm) or 0)))
+        if last is None:
+            basis = None
     elif missed and st is not None and "final_position" in st:
-        pool = st[st["user_name"].isin(missed)]
+        pool = st[st["user_name"].isin(missed)].sort_values("final_position")
         if len(pool):
-            last, basis = pool.sort_values("final_position").iloc[-1]["user_name"], "standings"
+            last, basis = pool.iloc[-1]["user_name"], "standings"
+            winner = pool.iloc[0]["user_name"]
 
-    # Each missed team's OWN postseason record -- rate stats from the toilet-bowl
+    # Each missed team's OWN postseason record -- rate stats from the consolation bracket
     # games they actually played (`games` above), the same shape playoff_summary
     # gives a bracket team, so the two can share one combined board rather than
     # one side going blank. `wins`/`losses`/`points` alongside them stay the
@@ -1160,7 +1582,7 @@ def toilet_bowl(s, p=None) -> dict:
                           "final_position": int(getattr(r, "final_position", 0) or 0),
                           "wins": int(r.wins), "losses": int(r.losses),
                           "points": float(r.points),
-                          # None (not 0) when the team never had a toilet game --
+                          # None (not 0) when the team never had a consolation game --
                           # keeps every po_* field blank together in the combined
                           # board rather than a stray "0" beside a dash placeholder.
                           "po_games": rec["games"] if rec else None,
@@ -1173,8 +1595,8 @@ def toilet_bowl(s, p=None) -> dict:
                           "po_avg_margin": (sum(rec["margins"]) / len(rec["margins"]))
                                            if rec and rec["margins"] else None})
     teams.sort(key=lambda t: t["final_position"])
-    return {"games": games, "teams": teams, "last": last, "basis": basis,
-            "missed": missed}
+    return {"games": games, "teams": teams, "last": last, "winner": winner,
+            "basis": basis, "missed": missed}
 
 
 
@@ -1201,7 +1623,7 @@ def postseason_weeks(s, p=None) -> list[dict]:
     somewhere -- this is that view, and it belongs with the postseason. Each
     team's score is shown with WHAT IT WAS FOR, which is the whole point: in a
     league whose playoff runs outside Sleeper, a postseason week holds bracket
-    games, byes, toilet-bowl games and teams simply not playing, all at once,
+    games, byes, consolation bracket games and teams simply not playing, all at once,
     and an unlabelled column of points cannot be told apart.
 
     `bracket_points` come from the engine (the commissioner's submitted lineups,
@@ -1295,7 +1717,7 @@ def _stamp_slot_cmp(sides) -> None:
     place with `cmp` ('up'/'down'/'even'), matching a slot against the
     OTHER side's same slot. Same idiom `draft.redraft_playoff` already uses
     for its own opt_lineup rows, so a matchup drilldown reads the same way
-    whether it's a real bracket game, the toilet bowl, or the redraft sim.
+    whether it's a real bracket game, the consolation bracket, or the redraft sim.
 
     Only meaningful for exactly two sides -- a bye or a game missing its
     opponent leaves rows unstamped (`cmp` stays absent, same as
@@ -1347,12 +1769,12 @@ def _lineup_from_players(players, s, mid, team, ranks=None) -> list[dict]:
             for r in d.itertuples(index=False)]
 
 
-def game_log(s, p, toilet=None) -> list[dict]:
+def game_log(s, p, consolation=None) -> list[dict]:
     """The whole postseason as ONE game log: bracket games grouped by round, each
-    expandable to both submitted lineups, with byes and the toilet bowl folded in.
+    expandable to both submitted lineups, with byes and the consolation bracket folded in.
 
     This is the single scoreboard->lineups drilldown the Playoffs tab reads from --
-    the same idiom the Weekly tab and toilet bowl already use -- replacing the old
+    the same idiom the Weekly tab and consolation bracket already use -- replacing the old
     trio (the bracket walk, the per-matchup chart, and a separate week table) that
     each re-drew the same games. The bracket graphic stays as the visual map; this
     is the readable log beneath it.
@@ -1360,6 +1782,12 @@ def game_log(s, p, toilet=None) -> list[dict]:
     Returns a list of round groups in bracket order:
       {key, label, weeks, kind, games:[{id, bracket, weeks, sides, winner, margin,
        pending}], byes:[{team, points, pending}]}
+    `label` is the bolded round title WITH its seeded matchups folded in, e.g.
+    "Round 1 (#5 vs #8, #6 vs #7)"; `blurb`, when present, no longer restates
+    those matchups -- it's the bye callout ("Seeds 1-4 on a bye.") plus, for a
+    "choose-your-opponent" round (one whose display name says "pick", this
+    league's own 2025 custom bracket), a sentence naming who picked whom
+    ("Seed 3 chooses #8, leaving seed 4 to take on #7.").
     where each side is {team, points, result, season_rank, lineup:[{slot,
     player_id, player_name, position, points, pos_rank, cmp}]}. `pos_rank`
     is each starter's FINAL season-long position finish (best-effort -- a
@@ -1369,11 +1797,11 @@ def game_log(s, p, toilet=None) -> list[dict]:
     ('up'/'down'/'even') is that slot's own win/loss against the OTHER
     side's same slot (see `_stamp_slot_cmp`); a bracket game's lineup has
     no `bench` (the commissioner's config only ever records starters), but
-    a toilet-bowl game's does (real `pl_wk` roster data). The toilet-bowl /
-    outside-bracket games are appended as a final `kind == "toilet"` group
-    so a league whose playoff runs outside Sleeper is bracketed here too,
-    not stranded in a
-    separate section.
+    a consolation bracket game's does (real `pl_wk` roster data). The consolation bracket /
+    outside-bracket games are appended as trailing `kind == "consolation"` groups,
+    one per postseason week (so the section reads round-by-round like the
+    bracket above it), so a league whose playoff runs outside Sleeper is
+    bracketed here too, not stranded in a separate section.
     """
     import pandas as pd
 
@@ -1416,45 +1844,114 @@ def game_log(s, p, toilet=None) -> list[dict]:
             return round(abs(sides[0]["points"] - sides[1]["points"]), 2)
         return None
 
-    def _round_blurb(games, byes, kind, is_final, wk_lbl):
-        # Generalized from the round's own shape (game/bye counts, kind, and
-        # whether it's the championship round) rather than the round's display
-        # name -- names vary by league/season (plain "Round 1" vs "Round 1
-        # (seeds 5-8)"), same reasoning `plot_playoff_players_splice` already
-        # applies to round coloring (see CLAUDE.md).
-        n_games = len(games)
-        n_byes = len(byes)
-        wk_word = f"week {wk_lbl}" if wk_lbl and "," not in wk_lbl else f"weeks {wk_lbl}" if wk_lbl else None
-        if is_final:
-            # The championship: always the most detail, regardless of shape.
-            parts = ["The championship game, winner takes the title"
-                     if n_games == 1 else "The championship round"]
-            if wk_word:
-                parts.append(f"played in {wk_word}")
-            if n_byes:
-                parts.append(f"with {n_byes} team{'s' if n_byes != 1 else ''} "
-                              "already through on a bye")
-            return ", ".join(parts) + "."
-        bits = []
-        if n_games:
-            bits.append(f"{n_games} game{'s' if n_games != 1 else ''}")
-        if n_byes:
-            bits.append(f"{n_byes} team{'s' if n_byes != 1 else ''} on a bye")
-        if not bits:
+    def _matchup_label(game):
+        # "#3 vs #8" from each side's own final regular-season seed; a side
+        # with no resolvable seed (a TBD/pending slot) drops its own "#N" but
+        # keeps the "vs" pairing, so a still-unresolved game still reads as a
+        # game rather than being silently skipped.
+        sides = game.get("sides") or []
+        if len(sides) != 2:
             return None
-        lead = " and ".join(bits) if len(bits) <= 2 else ", ".join(bits[:-1]) + f", and {bits[-1]}"
-        sentence = f"{lead[0].upper()}{lead[1:]} this round"
-        if wk_word:
-            sentence += f", {wk_word}"
-        if kind == "consolation":
-            sentence += ", placement games, not part of the title path"
-        elif kind == "mixed":
-            sentence += ", a mix of title-path and consolation games"
-        return sentence + "."
+        a, b = sides
+        a_lbl = f"#{a['season_rank']}" if a.get("season_rank") else "TBD"
+        b_lbl = f"#{b['season_rank']}" if b.get("season_rank") else "TBD"
+        return f"{a_lbl} vs {b_lbl}"
+
+    def _round_title(rd_num, name, games, is_final):
+        # The bolded round header: "Round N (#5 vs #8, #6 vs #7)". Matchups
+        # are named by seed ("#1 vs #4") rather than just counted, generalized
+        # from the round's own shape rather than its display name -- names
+        # vary by league/season (plain "Round 1" vs "Round 1 (seeds 5-8)"),
+        # same reasoning `plot_playoff_players_splice` already applies to
+        # round coloring (see CLAUDE.md). The week itself stays a separate
+        # field (`grp.weeks`), rendered next to this title, not folded in here.
+        # Any existing "(...)" suffix on the config's own display name (this
+        # league's "Round 1 (seeds 5-8)" / "Round 2 (seeds 3-4 pick)") is
+        # stripped here -- it's now redundant with the seeded matchups this
+        # function appends, and the "pick" half is covered by `_pick_blurb`'s
+        # own sentence instead. `_pick_blurb` still reads the UNSTRIPPED name
+        # for its "pick" detection, so only the title display is affected.
+        base = re.sub(r"\s*\([^)]*\)\s*$", "", name).strip() if name else ""
+        base = base or f"Round {rd_num}"
+        matchups = [m for m in (_matchup_label(g) for g in games) if m]
+        if not matchups:
+            return base
+        return f"{base} ({', '.join(matchups)})"
+
+    def _seed_ranges(seeds):
+        # [1,2,3,4] -> "1-4"; [1,3,4] -> "1, 3-4"; [2] -> "2". Consecutive
+        # integer seeds collapse into a range so a full top-seed bye block
+        # reads as "Seeds 1-4" instead of "Seeds 1, 2, 3, 4".
+        seeds = sorted(set(seeds))
+        if not seeds:
+            return ""
+        parts, start, prev = [], seeds[0], seeds[0]
+        for n in seeds[1:]:
+            if n == prev + 1:
+                prev = n
+                continue
+            parts.append(f"{start}-{prev}" if start != prev else f"{start}")
+            start = prev = n
+        parts.append(f"{start}-{prev}" if start != prev else f"{start}")
+        return ", ".join(parts)
+
+    def _bye_blurb(byes):
+        # Just the bye callout now that matchups live in the round title --
+        # "Seeds 1-4 on a bye." A bye with no resolvable seed is dropped from
+        # the seed list but still counted, so the sentence never silently
+        # disappears just because one team's rank couldn't be resolved.
+        if not byes:
+            return None
+        seeds = [b["season_rank"] for b in byes if b.get("season_rank")]
+        n_unseeded = sum(1 for b in byes if not b.get("season_rank"))
+        bits = []
+        if seeds:
+            label = "Seed" if len(seeds) == 1 else "Seeds"
+            bits.append(f"{label} {_seed_ranges(seeds)}")
+        if n_unseeded:
+            bits.append(f"{n_unseeded} more team{'s' if n_unseeded != 1 else ''}")
+        return " and ".join(bits) + " on a bye."
+
+    def _pick_blurb(name, games):
+        # "Choose-your-opponent" rounds (this league's own 2025 custom
+        # bracket: "Round 2 (seeds 3-4 pick)", "Round 3 (seeds 1-2 pick)")
+        # aren't detectable from game shape alone -- a pick round and a
+        # normal round both look like "N games, no byes" -- so this reads
+        # the SAME signal the round's own display name already carries
+        # ("pick" in the name), rather than inventing a second config field.
+        # Within a pick round the higher seed (lower season_rank number) in
+        # each game is the chooser; games are read out chooser-seed-first
+        # ("best seed picks first"). Every pick but the last is a real choice
+        # ("Seed 3 chooses #8"); the last pick seed has nothing left to
+        # choose from, so it's stated as the automatic leftover ("leaving
+        # seed 4 to take on #7") rather than a second "chooses". A game
+        # where either side's seed can't be resolved is skipped -- there's
+        # no chooser to name.
+        if not name or "pick" not in name.lower():
+            return None
+        picks = []
+        for g in games:
+            sides = g.get("sides") or []
+            if len(sides) != 2:
+                continue
+            a, b = sides
+            ra, rb = a.get("season_rank"), b.get("season_rank")
+            if not ra or not rb:
+                continue
+            chooser, other = (a, b) if ra < rb else (b, a)
+            picks.append((chooser["season_rank"], other["season_rank"]))
+        if not picks:
+            return None
+        picks.sort()
+        bits = [f"Seed {c} chooses #{o}" for c, o in picks[:-1]]
+        last_c, last_o = picks[-1]
+        bits.append(f"leaving seed {last_c} to take on #{last_o}"
+                    if len(picks) > 1 else f"Seed {last_c} chooses #{last_o}")
+        return ", ".join(bits) + "."
 
     if results is not None and len(results):
         by_mid = {mid: g for mid, g in results.groupby("matchup_id")}
-        for rd in cfg.get("rounds", []):
+        for rd_num, rd in enumerate(cfg.get("rounds", []), start=1):
             try:
                 weeks = [int(w) for w in rd.get("weeks", [])]
             except (TypeError, ValueError):
@@ -1508,19 +2005,28 @@ def game_log(s, p, toilet=None) -> list[dict]:
                 kind = brs.pop() if len(brs) == 1 else ("mixed" if brs else "title")
                 is_final = final_id is not None and any(
                     gm["id"] == final_id for gm in games)
+                base_name = rd.get("name") or rd.get("id") or f"Round {rd_num}"
+                blurb_bits = [b for b in
+                             (_pick_blurb(base_name, games), _bye_blurb(byes)) if b]
                 groups.append({
-                    "key": rd.get("id"), "label": rd.get("name") or rd.get("id"),
+                    "key": rd.get("id"),
+                    "label": _round_title(rd_num, base_name, games, is_final),
                     "weeks": wk_lbl, "kind": kind, "games": games, "byes": byes,
                     "is_final": is_final,
-                    "blurb": _round_blurb(games, byes, kind, is_final, wk_lbl)})
+                    "blurb": " ".join(blurb_bits) if blurb_bits else None})
 
-    # Toilet bowl / outside-bracket games as their own trailing group.
-    tb = toilet if toilet is not None else toilet_bowl(s, p)
+    # Consolation bracket / outside-bracket games, split into one group PER WEEK so the
+    # section reads with the same round-by-round shape as the bracket above it,
+    # rather than one lump holding every week. Each week's group is a "round":
+    # its label folds in the seeded matchups (`_matchup_label`, same as
+    # `_round_title`), it carries that week's number in `weeks`, and it keeps
+    # `kind == "consolation"` so the tag still renders.
+    tb = consolation if consolation is not None else consolation_bracket(s, p)
     tgames = (tb or {}).get("games") or []
     if tgames:
-        out_games, wks = [], set()
+        by_week: dict = {}
         for gm in tgames:
-            wks.add(gm.get("week"))
+            wk = gm.get("week")
             sides = [{
                 "team": sd.get("team"),
                 "points": float(sd["points"]) if sd.get("points") is not None else None,
@@ -1531,26 +2037,40 @@ def game_log(s, p, toilet=None) -> list[dict]:
             winner = next((x["team"] for x in sides if x["result"] == "W"), None)
             margin = _margin(sides)
             _sort_sides(sides)
-            out_games.append({"id": None, "bracket": "toilet",
-                              "weeks": str(gm.get("week")), "sides": sides,
-                              "winner": winner, "margin": margin, "pending": False})
-        wlbl = ", ".join(str(w) for w in sorted(x for x in wks if x is not None))
-        # Extra detail here since the toilet bowl is easy to misread as just
-        # more bracket games -- these are the teams that MISSED the bracket
-        # entirely, and (per `toilet_bowl`'s own basis) last place goes to the
-        # loser of the LAST such game, not any game in this group.
-        n_tgames = len(out_games)
-        blurb = (f"{n_tgames} game{'s' if n_tgames != 1 else ''} between the "
-                 "teams that missed the championship bracket, ordinary "
-                 "matchups played once the postseason started, not part of "
-                 "the bracket above. ")
+            by_week.setdefault(wk, []).append(
+                {"id": None, "bracket": "consolation",
+                 "weeks": str(wk) if wk is not None else "", "sides": sides,
+                 "winner": winner, "margin": margin, "pending": False})
+        ordered_weeks = sorted(by_week, key=lambda w: (w is None, w))
+        n_weeks = len(ordered_weeks)
+        # Last place goes to the loser of the LAST consolation bracket game, so that
+        # callout rides on the final week's group only. The "games between the
+        # teams that missed the bracket" framing sits on the first group.
         last_team = (tb or {}).get("last")
-        if last_team and (tb or {}).get("basis") == "game":
-            blurb += f"The loser of the final one, {last_team}, finishes last."
-        else:
-            blurb += "The loser of the final one finishes last."
-        groups.append({"key": "toilet", "label": "Toilet bowl", "weeks": wlbl,
-                       "kind": "toilet", "games": out_games, "byes": [],
-                       "blurb": blurb})
+        for rd_i, wk in enumerate(ordered_weeks, start=1):
+            wk_games = by_week[wk]
+            wk_lbl = str(wk) if wk is not None else ""
+            matchups = [m for m in (_matchup_label(g) for g in wk_games) if m]
+            label = f"Consolation bracket, Round {rd_i}"
+            if matchups:
+                label += f" ({', '.join(matchups)})"
+            blurb_bits = []
+            if rd_i == 1:
+                n_all = len(tgames)
+                blurb_bits.append(
+                    f"{n_all} game{'s' if n_all != 1 else ''} between the teams "
+                    "that missed the championship bracket.")
+            if rd_i == n_weeks:
+                if last_team and (tb or {}).get("basis") == "game":
+                    blurb_bits.append(f"{last_team} lost the final game and finishes last.")
+                elif last_team:
+                    blurb_bits.append(f"{last_team} finishes last.")
+                else:
+                    blurb_bits.append("Whoever loses the final game finishes last.")
+            groups.append({
+                "key": f"consolation-w{wk}", "label": label, "weeks": wk_lbl,
+                "kind": "consolation", "games": wk_games, "byes": [],
+                "is_final": rd_i == n_weeks,
+                "blurb": " ".join(blurb_bits) if blurb_bits else None})
 
     return groups

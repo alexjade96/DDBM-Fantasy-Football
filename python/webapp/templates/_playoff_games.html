@@ -1,18 +1,43 @@
-{# "Games" section: the whole postseason as one round-grouped game log, each
-   game expanding to both submitted lineups. Deferred behind
-   /tab/playoffs/part/games (see app.py's TAB_PARTS) since sm.game_log()
-   builds that full lineup breakdown for every postseason game -- see
-   tab_playoffs.html, which renders this fragment's placeholder. #}
+{# Postseason game log as round-grouped scoreboard rows, each expanding to both
+   submitted lineups. Deferred behind /tab/playoffs/part/games (see app.py's
+   TAB_PARTS) since sm.game_log() builds that full lineup breakdown for every
+   postseason game -- see tab_playoffs.html, which renders this fragment's
+   placeholder inside its Playoffs / Consolation bracket view-switch panels.
+
+   `log_only` (from the route's `only=` param) says which slice this is:
+   "bracket" -> just the bracket rounds, "consolation" -> just the consolation bracket
+   rounds, None -> the whole log. Only the heading + hint copy change with it;
+   the round loop is identical either way (game_log() already tags every group
+   by `kind`, and the route filters the list). #}
 {% import "_ident.html" as idm with context %}
+{% if log_only == 'consolation' %}
+<h3>Consolation bracket games</h3>
+{% if log %}
+<p class="hint">Every consolation bracket game (teams that missed the championship bracket), grouped
+   by round with its week. Each row is the scoreboard; open it for both lineups, slot by slot.</p>
+{% endif %}
+{% elif log_only == 'bracket' %}
+<h3>Playoff games</h3>
+{% if log %}
+<p class="hint">Every championship-bracket game, grouped by round with its week. Each row is
+   the scoreboard; open it for both lineups, slot by slot. Byes advanced without playing
+   (their real weekly score is shown for reference).</p>
+{% endif %}
+{% else %}
 <h2>Games</h2>
 {% if log %}
 <p class="hint">Every postseason game, grouped by round with its week. Each row is the
    scoreboard; open it for both lineups, slot by slot. Byes advanced without playing
-   (their real weekly score is shown for reference). The <strong>toilet bowl</strong>
-   (games between teams that missed the bracket) is bracketed here too, as its own group.</p>
+   (their real weekly score is shown for reference). The <strong>consolation bracket</strong>
+   (games between teams that missed the bracket) is bracketed here too, one round per week.</p>
+{% endif %}
+{% endif %}
+{% if log %}
 {% for grp in log %}
 {% include "_playoff_round.html" %}
 {% endfor %}
+{% elif log_only == 'consolation' %}
+<p class="empty">No consolation bracket this season: every team reached the championship bracket.</p>
 {% else %}
 <p class="empty">No games have been played in this bracket yet.</p>
 {% endif %}

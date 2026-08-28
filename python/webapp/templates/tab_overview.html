@@ -78,7 +78,7 @@
   {% for label, kpi, cls in overview_tiles %}
   <div class="stat {{ cls }}">
     <span class="k">{{ label }}</span><span class="v">{{ kpi.value if kpi else "N/A" }}</span>
-    {% if kpi and kpi.user_name %}<span class="sub">{{ idm.who(kpi.user_name) }}</span>{% endif %}
+    {% if kpi and kpi.user_name %}<span class="sub">{{ idm.who(kpi.user_name) }}{% if kpi.detail %} · {{ kpi.detail }}{% endif %}</span>{% endif %}
   </div>
   {% endfor %}
 </section>
@@ -118,24 +118,49 @@
    Season.current_week / Season.last_week in season.py) rather than reading as
    "the whole season". #}
 <h2>Regular season{% if current_week %}: through week {{ current_week }}{% endif %}</h2>
-{% if summary %}
-<section class="card prose">
-  {{ summary | md }}
+{% if insight_rows %}
+{# Regular-season takeaways as standout TILES (app.py's
+   _overview_insight_rows) -- the same `.stat` grid every other tab's
+   standouts section uses, ordered most important first (the record, then
+   coaching, luck, points allowed, consistency, schedule). The record is a
+   single tile; every opposed metric is ONE merged tile with a best and a
+   worst mini row stacked inside it (`t.rows`). The champion is NOT here --
+   it leads the season-complete tiles up top. Supersedes the old
+   `summary | md` / `extra_insights | md` prose cards; summary_season() is
+   untouched (still parity-mirrored, still used by the reports). #}
+<p class="hint">The regular season beyond any one week, at a glance -- most
+   telling first.</p>
+<section class="stats">
+  {% for t in insight_rows %}
+  <div class="stat {% if loop.index0 == 0 %}gold{% endif %}">
+    <span class="k">{{ t.label }}</span>
+    {% if t.rows %}
+    <div class="insight-rows">
+      {% for r in t.rows %}
+      <div class="insight-row {{ r.tone }}">
+        <span class="ir-mark">{{ "▲" if r.tone == "good" else "▼" }}</span>
+        <span class="ir-who">{{ idm.who(r.holder) }}</span>
+        <span class="ir-val">{{ r.value }}</span>
+        {% if r.detail %}<span class="ir-det">{{ r.detail }}</span>{% endif %}
+      </div>
+      {% endfor %}
+    </div>
+    {% else %}
+    <span class="v">{{ t.value }}</span>
+    <span class="sub">{{ idm.who(t.holder) }}{% if t.detail %} &middot; <span class="insight-detail {{ t.tone }}">{{ t.detail }}</span>{% endif %}</span>
+    {% endif %}
+  </div>
+  {% endfor %}
 </section>
 {% endif %}
-{% if extra_insights %}
-{# Webapp-only bullets (app.py's _overview_insights) covering schedule
-   fairness / points against / table-position movement -- the takeaways the
-   charts demoted into "More season charts" below used to carry visually.
-   A separate card, not folded into the `summary` prose above: that markdown
-   is parity-mirrored with R and shared with the season/weekly report, so it
-   isn't where a webapp-only addition belongs. #}
-<section class="card prose">
-  {{ extra_insights | md }}
-</section>
-{% endif %}
-<p class="hint">The regular season beyond any one week: standing and merit at a
-   glance. Each chart below carries the takeaway underneath.</p>
+<p class="hint">The charts below carry the takeaway underneath each one.</p>
 <section class="grid">
   {% for c in charts %}{{ ch.chart(c) }}{% endfor %}
 </section>
+
+{# ---- Season config ------------------------------------------------------
+   The league's own Sleeper settings, roster/scoring setup and member list
+   (with user ids) -- each its own section, at the bottom of the tab.
+   Deferred (its own sm.league() call) rather than blocking first paint.
+   Was its own tab until 2026-08. #}
+{{ lz.lazy("/tab/overview/part/config?league=" ~ league|urlencode ~ "&season=" ~ season|urlencode ~ "&theme=" ~ theme, height="300px") }}

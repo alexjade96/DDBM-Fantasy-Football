@@ -162,7 +162,7 @@ class Season:
     status: str | None = None
     playoff_week_start: int | None = None
     # Every scored week, postseason included. `team_wk`/`pl_wk` are the REGULAR
-    # season; these are for the postseason features only (toilet bowl, bracket
+    # season; these are for the postseason features only (consolation bracket, bracket
     # reference scores, playoff-week lineups). Default to the scoped frames so a
     # hand-built Season (tests, fixtures) still behaves.
     team_wk_all: pd.DataFrame | None = None
@@ -430,7 +430,7 @@ def assemble_season(link: dict) -> Season:
     # keeps R and Python in step -- the mirror does the same, so every derived
     # metric stays identical without either side special-casing anything.
     # The *_all frames keep every scored week for the postseason features
-    # (toilet bowl, bracket reference scores, playoff-week lineups).
+    # (consolation bracket, bracket reference scores, playoff-week lineups).
     tw_all, pl_all = tw.copy(), pl.copy()
     lw_all = lw
     if pws:

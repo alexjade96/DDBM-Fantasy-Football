@@ -3,7 +3,10 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Sleeper League Analytics</title>
+  {# The shell paints before the real league name is known (league_name is
+     just the id at that point -- see dashboard()); _shell_sync.html swaps
+     this <title> out-of-band once league_data() has run. #}
+  <title>{% if league_name and league_name != league %}{{ league_name }} Fantasy Football{% else %}Sleeper League Analytics{% endif %}</title>
   <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
   {# ?v=<mtime> so a CSS edit is never served from a stale browser cache #}
   <link rel="stylesheet" href="/static/style.css?v={{ asset_v }}">
@@ -336,24 +339,73 @@
       </div>
     </div>
 
-    <!-- Switching league must also refresh the season list and the title, not
-         just the panel: /load swaps those back out-of-band. Changing only the
-         season is a plain tab reload -- the shell is already correct. -->
-    <form class="controls" hx-get="/load" hx-target="#panel" hx-swap="innerHTML"
+    <!-- One lookup control with a League / User mode toggle.
+         League mode -> GET /load (swaps #panel, and /load also re-syncs the
+         title + season list out-of-band). User mode -> GET /user-leagues,
+         rendering the "which of this account's leagues?" list into #panel;
+         picking one there navigates to /league=<id> (a full load), which
+         corrects #league/#season for the tab nav's hx-include. #league and
+         #season stay the canonical state fields either way -- the tabs
+         nav includes them by id, so their names/ids must not change.
+         Endpoint + submit target are switched per-mode in htmx:configRequest
+         below. `change from:#season` reloads the current league on a season
+         switch (League mode only; ignored in User mode). -->
+    <form id="lookup" class="controls" hx-get="/load" hx-target="#panel" hx-swap="innerHTML"
           hx-include="#theme" hx-trigger="change from:#season, submit" hx-push-url="true"
           hx-on="htmx:afterRequest: document.querySelectorAll('.tabs button').forEach((b,i)=>b.classList.toggle('active', i===0))">
+      <div class="lookup-mode" role="radiogroup" aria-label="Look up by">
+        <label><input type="radio" name="mode" value="league" checked> League</label>
+        <label><input type="radio" name="mode" value="user"> User</label>
+      </div>
       <label>
-        <span>League ID</span>
-        <input type="text" name="league" id="league" value="{{ league }}">
+        <span id="lookup-label">League ID</span>
+        <input type="text" name="league" id="league" value="{{ league }}"
+               autocomplete="off" spellcheck="false"
+               data-ph-league="Sleeper league ID" data-ph-user="Sleeper username or user ID">
       </label>
       <label>
         <span>Season</span>
         {% include "_seasons.html" %}
       </label>
-      <button type="submit">Load</button>
+      <button type="submit" id="lookup-go">Load</button>
     </form>
 
   </header>
+
+  <script>
+    // League / User lookup toggle for the header form (#lookup).
+    // - swaps the submit endpoint + the field's label/placeholder/name
+    // - in User mode the id box carries name="user" (League mode: name="league")
+    //   so one box serves both; the request path is rewritten just-in-time.
+    (function () {
+      var form = document.getElementById('lookup');
+      if (!form) return;
+      var box = document.getElementById('league');
+      var lbl = document.getElementById('lookup-label');
+      var go = document.getElementById('lookup-go');
+      var modeOf = function () {
+        var r = form.querySelector('input[name="mode"]:checked');
+        return r ? r.value : 'league';
+      };
+      var syncUI = function () {
+        var user = modeOf() === 'user';
+        lbl.textContent = user ? 'Username / user ID' : 'League ID';
+        box.name = user ? 'user' : 'league';
+        box.placeholder = box.dataset[user ? 'phUser' : 'phLeague'] || '';
+        go.textContent = user ? 'Find' : 'Load';
+      };
+      form.querySelectorAll('input[name="mode"]').forEach(function (r) {
+        r.addEventListener('change', syncUI);
+      });
+      // Point the request at the right endpoint for the current mode. htmx
+      // reads path from the triggering element's hx-get by default; overriding
+      // it here keeps a single form instead of two.
+      form.addEventListener('htmx:configRequest', function (e) {
+        e.detail.path = modeOf() === 'user' ? '/user-leagues' : '/load';
+      });
+      syncUI();
+    })();
+  </script>
 
   <nav class="tabs" role="tablist" hx-push-url="true"
        hx-target="#panel" hx-swap="innerHTML" hx-include="#league, #season, #theme, #bracket">

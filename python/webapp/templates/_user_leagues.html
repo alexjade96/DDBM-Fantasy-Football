@@ -1,0 +1,55 @@
+{# Results of a "look up by User" lookup from the dashboard header (renders
+   into #panel). Each league row links to /league=<id>, a full dashboard
+   load for that league -- which also corrects the header's #league/#season
+   state fields. Also reused as a plain fragment on the landing page. #}
+<section class="card user-results">
+{% if error %}
+  <p class="ul-error">{{ error }}</p>
+{% else %}
+  <div class="ul-user">
+    {% if user.avatar %}<img src="{{ user.avatar }}" alt="" class="ul-avatar" width="32" height="32">{% endif %}
+    <div>
+      <strong>{{ user.display_name }}</strong>
+      {% if user.username and user.username != user.display_name %}
+        <span class="ul-muted">@{{ user.username }}</span>
+      {% endif %}
+      <span class="ul-muted">· id {{ user.user_id }}</span>
+    </div>
+  </div>
+
+  <form class="ul-season" hx-get="/user-leagues" hx-target="closest .user-results"
+        hx-swap="outerHTML" hx-trigger="change from:select">
+    <input type="hidden" name="user" value="{{ handle }}">
+    <label>
+      <span>Season</span>
+      <select name="season">
+        {% for y in seasons %}
+        <option value="{{ y }}" {% if y == season %}selected{% endif %}>{{ y }}</option>
+        {% endfor %}
+      </select>
+    </label>
+  </form>
+
+  {% if leagues %}
+  <p class="hint">{{ leagues | length }} league{{ '' if leagues|length == 1 else 's' }} in {{ season }}. Pick one to open its dashboard.</p>
+  <ul class="ul-list">
+    {% for lg in leagues %}
+    <li>
+      <a href="/league={{ lg.league_id }}" class="ul-league">
+        {% if lg.avatar %}<img src="{{ lg.avatar }}" alt="" width="28" height="28">{% endif %}
+        <span class="ul-name">{{ lg.name }}</span>
+        <span class="ul-meta">
+          {{ lg.season }}
+          {%- if lg.total_rosters %} · {{ lg.total_rosters }} teams{% endif -%}
+          {%- if lg.status %} · {{ lg.status }}{% endif -%}
+        </span>
+        <span class="ul-go">Open &rarr;</span>
+      </a>
+    </li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <p class="ul-error">No leagues for this user in {{ season }}.</p>
+  {% endif %}
+{% endif %}
+</section>

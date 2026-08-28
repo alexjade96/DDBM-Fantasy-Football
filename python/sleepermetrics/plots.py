@@ -1,6 +1,7 @@
 """Charts (matplotlib; mirrors R plots.R theme, palette + flair)."""
 from __future__ import annotations
 
+import re
 import textwrap
 
 import matplotlib
@@ -358,14 +359,13 @@ def plot_standings(s: Season):
     ax.set_yticklabels(d["user_name"])
     _row_avatars(ax, d["user_name"], s)
     xmax = d["points"].max()
-    _medals(ax, d, "final_position", xmax * 0.035)
     for i, (_, r) in enumerate(d.iterrows()):
         star = "  ★" if r["champion"] else ""
         ax.text(r["points"] + xmax * 0.01, i, f"{r['wins']}-{r['losses']}{star}",
                 va="center", fontsize=9, color=T["ink2"])
     ax.set_xlim(0, xmax * 1.16)
     return _finish(fig, ax, f"{s.season} Standings",
-                   "Bars = total points, in standing order  ·  1-2-3 podium  ·  ★ champion",
+                   "Bars = total points, in standing order  ·  ★ champion",
                    "Season Points", caption=_cap(s))
 
 
@@ -572,9 +572,6 @@ def plot_power_rank(s: Season):
     ax.set_yticklabels(d["user_name"])
     _row_avatars(ax, d["user_name"], s)
     span = d["power"].max() - d["power"].min()
-    # d is already in bar order (power ascending); _medals positions by row index,
-    # so it must NOT be re-sorted or the medals land on the wrong rows.
-    _medals(ax, d, "power_rank", d["power"].min() - span * 0.04)
     for i, (_, r) in enumerate(d.iterrows()):
         off = span * 0.012
         ha = "left" if r["power"] > 0 else "right"
@@ -1077,10 +1074,51 @@ def _ref_label(ref_scores: dict | None, team, weeks) -> str:
     return f"({sum(vals):.1f})" if vals else "–"
 
 
-def plot_playoff_bracket(p, ref_scores: dict | None = None):
-    """Rounds left to right; winner filled, loser grey, bye amber, pending hollow.
+# Shared footprint for the Playoffs-tab pair (`plot_playoff_bracket` and
+# `plot_consolation_bracket`) so they render the same size beside each other. Neither
+# chart's title/caption text is allowed to change these dimensions -- long
+# strings wrap or truncate instead of stretching the figure.
+_PLAYOFF_FIG = (8.5, 5.2)
+_PLAYOFF_CAPTION_BAND = 0.14        # fraction of the figure height kept for the caption
 
-    `ref_scores` is `{(manager, week): points}` (see `reference_scores`). A node
+
+def plot_playoff_bracket(p, ref_scores: dict | None = None, consolation: dict | None = None,
+                         variant: str = "championship"):
+    """Rounds left to right; winner green, loser reddish, bye grey, champion gold.
+
+    Each slot is a two-line card (seed + name above, score below).
+    Connectors are horizontal-first right angles (a short stub out of the
+    source card, the turn near it, then the run into the target at the
+    target's row -- the printed-bracket look, two winners converging making
+    the "]" join). A game WIN is a solid green line (gold on the champion's
+    path); a BYE is a thin grey dotted one (matching the bye card), drawn
+    from the team's LAST idle card into the very next round -- never hauled
+    back to its first idle round. A LOSS is a thin reddish dashed line, but
+    only when that loser actually plays again next round (a placement /
+    consolation game), so a beaten team can be followed down into the
+    losers' side rather than just disappearing. This league's "pick your
+    opponent" format leaves the top seeds idle for a round or two, each
+    idle round its own card.
+
+    The **whole bracket is drawn, not just the title path**: the
+    losers-bracket placement games (`bracket == "losers"`) sit in their
+    round columns like any other game but on a muted fill, tagged with the
+    place they decide (`config["_placements"]`: `{matchup_id: 3}` ->
+    "3rd-place game"), and wrapped in a faint band so the tier reads at a
+    glance.
+
+    The one card the bracket points at -- the CHAMPION (winner of the
+    `config["final"]` game) -- gets a gold fill + heavier gold border + a
+    "*" on its name; every other winner gets a green fill + a firmer green
+    border + bold name; losers stay flat grey. The bottom band carries a
+    single gold "CHAMPION <name>" pill; 3rd/last place are deliberately NOT
+    shown -- the graphic is about the winner. `variant="consolation"`
+    switches the title word to "Consolation" and the pill to a blue
+    "WINNER <name>" (best consolation finish).
+
+    `consolation` is accepted for call-site compatibility but no longer read.
+
+    `ref_scores` is `{(manager, week): points}` (see `reference_scores`). A card
     with no bracket score of its own -- a bye, or a team waiting out a round --
     shows what it **actually scored** that week in parentheses instead of a bare
     dash, which reads as missing data when the number is right there in the
@@ -1090,8 +1128,56 @@ def plot_playoff_bracket(p, ref_scores: dict | None = None):
     import pandas as pd
     d = p.results.copy()
     rounds = list(dict.fromkeys(d["round_id"]))
+    _ridx = {r: i for i, r in enumerate(rounds)}
     seeds = (p.config.get("_seeds") or {})
     seed_of = {v: k for k, v in seeds.items()}
+    # {matchup_id: place} for the placement games -- Sleeper tags each with the
+    # position its winner earns (`_placements`, set in `sleeper_bracket`). A
+    # hand-authored config without one still gets the generic "Consolation" tag
+    # off the `bracket` column, just no rank number.
+    placements = {str(k): int(v) for k, v in (p.config.get("_placements") or {}).items()}
+    _bracket_of = (d.drop_duplicates("matchup_id").set_index("matchup_id")["bracket"].to_dict()
+                   if "bracket" in d else {})
+
+    def _ord(pl):
+        suf = {1: "st", 2: "nd", 3: "rd"}.get(pl if not 10 <= pl % 100 <= 20 else 0, "th")
+        return f"{pl}{suf}"
+
+    def _place_tag(mid):
+        pl = placements.get(str(mid))
+        if pl:
+            return f"{_ord(pl)}-place game"
+        return "Placement game" if _bracket_of.get(mid) == "losers" else None
+
+    # A TERMINAL matchup decides two consecutive finishing places: its winner
+    # takes `place`, its loser `place + 1`. The `final` game is place 1 (so
+    # 1st / 2nd); each `_placements` game is its tagged place (3rd / 4th,
+    # 5th / 6th, ...). `_place_of(mid, result)` -> the int place, or None for
+    # any non-terminal matchup. Shown as a colour-tiered chip inside BOTH
+    # cards so a bracket reader can see every settled placement at a glance,
+    # not just the champion.
+    _final_mid = str(p.config.get("final")) if p.config.get("final") is not None else None
+
+    def _place_of(mid, result):
+        base = 1 if str(mid) == _final_mid else placements.get(str(mid))
+        if base is None or result not in ("W", "L", "T"):
+            return None
+        return base if result == "W" else base + 1
+
+    # place -> (chip fill, chip text colour). Deliberately SATURATED hues, not
+    # a metal-grey ramp: a "silver" 2nd and a grey 4th+ read as the neutral
+    # bye card (`#d1d4d8`). 1st gold, 2nd cool blue, 3rd bronze/orange, 4th+
+    # violet -- each clearly distinct from the bye grey, the win green and the
+    # loss pink, and from each other. White chip text on the darker fills.
+    _PLACE_CHIP = {1: ("#f1c40f", "#242424"), 2: ("#4f86c6", "#ffffff"),
+                   3: ("#c9752e", "#ffffff")}
+    _PLACE_CHIP_DEFAULT = ("#8f6fc0", "#ffffff")
+
+    # Every BYE row is kept and drawn -- an idle "pick" seed that sits out
+    # two rounds shows a card in each. The connectors then chain one column
+    # at a time (bye -> bye -> the game it re-enters), so LuckyHarm and
+    # SimonSmith still appear in Round 1 even though their live connector
+    # starts from their Round 2 card.
     mu = d.drop_duplicates("matchup_id")[["round_id", "matchup_id"]].copy()
     mu["j"] = mu.groupby("round_id").cumcount() + 1
     mu["n"] = mu.groupby("round_id")["matchup_id"].transform("size")
@@ -1101,21 +1187,356 @@ def plot_playoff_bracket(p, ref_scores: dict | None = None):
     d = d.merge(mu[["matchup_id", "rx", "cy"]], on="matchup_id", how="left")
     d["side"] = d.groupby("matchup_id").cumcount()
     d["sides"] = d.groupby("matchup_id")["team"].transform("size")
-    d["y"] = d["cy"] + (d["sides"] > 1) * (d["side"] * 0.38 - 0.19)
+    # The two cards of a matchup sit CARD_GAP apart, one above `cy` and one
+    # below. CARD_GAP (0.62) > CARD_H (0.42) leaves a visible band of
+    # background between the pair so they read as two cards, not a split
+    # block, and LANE (0.78) opens a clear gutter between adjacent matchups
+    # so each pair reads as one unit -- widened per request for legibility.
+    CARD_H = 0.42                       # full card height, data units
+    CARD_HH = CARD_H / 2               # half, for centring the rectangle on `y`
+    CARD_GAP = 0.62                    # vertical centre-to-centre of a matchup's two cards
+    LANE = 0.78                        # min centre-to-centre of adjacent cards in a column
+    PAIR_STEP = CARD_GAP + LANE        # a 2-card matchup's own footprint, centre to centre
+    HALF_W = 0.45                      # card half-width, data units (card is HALF_W*2 wide)
+    PAD_X = 0.085                      # inner text margin from a card's left/right edge
 
-    COL = {"W": "#a5d6a7", "L": "#e6e8ea", "BYE": "#ffe0a3", "PENDING": "#f4f6f8", "T": "#e6e8ea"}
-    fig, ax = plt.subplots(figsize=(12.5, max(5.5, span * 1.05)))
-    # connectors: each advancing team flows into the next matchup that holds it
-    for _, a in d[d["result"].isin(["W", "BYE"])].iterrows():
-        nxt = d[(d["team"] == a["team"]) & (d["rx"] > a["rx"])].sort_values("rx")
-        if len(nxt):
-            n = nxt.iloc[0]
-            ax.plot([a["rx"] + 0.44, n["rx"] - 0.44], [a["cy"], n["y"]],
-                    color=T["rule"], lw=1, zorder=1)
+    # ---- Vertical layout. Each UNIT is a full matchup (two cards locked
+    # CARD_GAP apart) or one idle "pick"-seed card. The arrangement:
+    #   * In every column the real MATCHUPS form one contiguous, centred
+    #     block, evenly spaced -- so a bracket always reads as a bracket.
+    #   * The idle "pick" seed cards sit OUTSIDE that block, split above and
+    #     below it, ordered so the one whose team re-enters HIGHEST is
+    #     nearest the top of the block (and likewise below) -- their dotted
+    #     connectors then reach straight in with no crossing.
+    #   * Later-round matchup blocks are recentred on the mean of their
+    #     feeders, then the whole column is despaced, so the columns line
+    #     up round to round.
+    def _prior_unit(team, rx):
+        # The card this team came from in the immediately preceding column
+        # (a game it played, or an idle/bye card if it was still waiting).
+        pr = d[(d["team"] == team) & (d["rx"] == rx - 1)]
+        return pr.iloc[0]["matchup_id"] if len(pr) else None
+
+    def _next_unit(team, rx):
+        nx = d[(d["team"] == team) & (d["rx"] == rx + 1)]
+        return nx.iloc[0]["matchup_id"] if len(nx) else None
+
+    unit_ids = {u: list(g.index) for u, g in d.groupby("matchup_id")}
+    unit_rx = {u: int(d.loc[ix[0], "rx"]) for u, ix in unit_ids.items()}
+    unit_is_game = {u: len(ix) == 2 for u, ix in unit_ids.items()}
+    unit_y = {u: float(d.loc[ix, "cy"].iloc[0]) for u, ix in unit_ids.items()}
+    unit_feed = {}                                  # unit -> feeder units (prior round)
+    for u, ix in unit_ids.items():
+        fs = set()
+        for i in ix:
+            v = _prior_unit(d.loc[i, "team"], d.loc[i, "rx"])
+            if v is not None and v != u:
+                fs.add(v)
+        unit_feed[u] = fs
+
+    # Placement priority for the vertical ordering: when the bracket carries
+    # ranked placement games (`_placements`, i.e. a default Sleeper bracket),
+    # the games in a column are stacked BEST PLACEMENT AT THE TOP -- the
+    # title path (championship, unplaced title-path games) first, then the
+    # 3rd-place game, then 5th, 7th, ... Custom brackets with no `_placements`
+    # get `0` for every unit, so this is a no-op and the original config /
+    # feeder ordering stands unchanged.
+    _final_cfg = str(p.config.get("final")) if p.config.get("final") is not None else None
+
+    def _unit_place_rank(u):
+        if not placements:
+            return 0
+        pl = placements.get(str(u))
+        if pl:
+            return pl                        # 3rd-place game -> 3, 5th -> 5, ...
+        if str(u) == _final_cfg:
+            return 0                         # the title game rides at the very top
+        return 0 if _bracket_of.get(u) != "losers" else 1_000
+    unit_place_rank = {u: _unit_place_rank(u) for u in unit_ids}
+
+    cols = {}
+    for u, rx in unit_rx.items():
+        cols.setdefault(rx, []).append(u)
+
+    def _despace(us):
+        order = sorted(us, key=lambda u: unit_y[u])
+        for a, b in zip(order, order[1:]):
+            gap = (PAIR_STEP if unit_is_game[a] and unit_is_game[b]
+                   else (CARD_GAP / 2 + LANE if unit_is_game[a] or unit_is_game[b]
+                         else LANE))
+            if unit_y[b] - unit_y[a] < gap:
+                unit_y[b] = unit_y[a] + gap
+
+    # Pass 1: place every column's real-MATCHUP block -- contiguous, centred,
+    # evenly spaced -- ordered top-to-bottom by placement rank first (title
+    # path above 3rd-place above 5th-place ...; a no-op unless the bracket
+    # has `_placements`), then within a rank by config order (round 1) or
+    # feeder mean (later rounds).
+    #
+    # For a DEFAULT SLEEPER bracket (one carrying `_placements`) the block's
+    # STEP grows with the round: round r spaces its games
+    # `PAIR_STEP * TREE_FAN**r` apart. A tournament tree has fewer games each
+    # round, each at the midpoint of its two feeders, so successive rounds
+    # are drawn progressively FURTHER apart -- this reproduces that widening
+    # fan even for Sleeper's "pick your opponent" brackets whose feeder graph
+    # is really 2-2-2-1 rather than 8-4-2-1. A custom / hand-authored bracket
+    # (no `_placements`, e.g. DDBM 2025) keeps the flat PAIR_STEP it always
+    # had -- those configs are laid out deliberately and are left alone.
+    TREE_FAN = 1.55 if placements else 1.0
+    _last_cx = max(cols) if cols else 0
+    for cx in sorted(cols):
+        games = [u for u in cols[cx] if unit_is_game[u]]
+        if cx == 0:
+            games.sort(key=lambda u: (unit_place_rank[u], min(unit_ids[u])))
+        else:
+            games.sort(key=lambda u: (unit_place_rank[u],
+                                      sum(unit_y[f] for f in unit_feed[u])
+                                      / max(len(unit_feed[u]), 1)))
+        step = PAIR_STEP * min(TREE_FAN ** cx, 4.0)
+        for k, u in enumerate(games):
+            unit_y[u] = span / 2 + (k - (len(games) - 1) / 2) * step
+        # For a fanned default bracket, pull the FINAL round's single title
+        # game onto the mean of its own feeders -- the classic tree apex,
+        # instead of the placement-rank sink leaving it stranded above its
+        # two semifinals with the champion connector doubling back up.
+        if placements and cx == _last_cx and cx > 0:
+            for u in games:
+                if unit_place_rank[u] == 0 and unit_feed[u]:
+                    unit_y[u] = sum(unit_y[f] for f in unit_feed[u]) / len(unit_feed[u])
+            _despace(games)
+
+    # Pass 2: hang each column's idle "pick" cards OUTSIDE its matchup block
+    # -- half above, half below -- ordered so the one whose team's NEXT card
+    # sits highest is nearest the top of this block (and mirror below), so
+    # every dotted hop into the next column is short and un-crossed. Done
+    # RIGHT TO LEFT so a bye's next card (a game, or another bye) already
+    # has its y when we place this one.
+    def _next_card_y(u):
+        i = unit_ids[u][0]
+        v = _next_unit(d.loc[i, "team"], d.loc[i, "rx"])
+        return unit_y.get(v, 1e9)
+
+    for cx in sorted(cols, reverse=True):
+        games = [u for u in cols[cx] if unit_is_game[u]]
+        byes = [u for u in cols[cx] if not unit_is_game[u]]
+        if not byes:
+            continue
+        gc = span / 2 if not games else sum(unit_y[u] for u in games) / len(games)
+        block_top = min((unit_y[u] for u in games), default=gc) - CARD_GAP / 2
+        block_bot = max((unit_y[u] for u in games), default=gc) + CARD_GAP / 2
+        byes.sort(key=_next_card_y)
+        half = (len(byes) + 1) // 2
+        above, below = byes[:half][::-1], byes[half:]
+        for k, u in enumerate(above):
+            unit_y[u] = block_top - (k + 1) * LANE
+        for k, u in enumerate(below):
+            unit_y[u] = block_bot + (k + 1) * LANE
+        _despace(cols[cx])
+
+    # A couple of gentle relaxation sweeps so a deep bracket's later blocks
+    # settle onto their feeders without breaking the block structure.
+    for _ in range(6):
+        for cx in sorted(cols):
+            if cx == 0:
+                continue
+            games = [u for u in cols[cx] if unit_is_game[u]]
+            if not games:
+                continue
+            want = sum(sum(unit_y[f] for f in unit_feed[u]) / max(len(unit_feed[u]), 1)
+                       for u in games) / len(games)
+            have = sum(unit_y[u] for u in games) / len(games)
+            for u in cols[cx]:
+                unit_y[u] += want - have
+            _despace(cols[cx])
+
+    # Column by column, left to right: place each unit's card(s), and within
+    # a matchup put the team whose FEEDER card sits higher on top so the two
+    # connectors into that matchup don't cross. Feeders in the previous
+    # column already have their y by the time we reach this one.
+    #
+    # A TERMINAL matchup is the exception: its WINNER card is floated to the
+    # top of the pair regardless of feeder order, so the better finisher
+    # always sits above the worse one -- the champion above the runner-up in
+    # the final, the 3rd above the 4th in the 3rd-place game, and so on for
+    # every placement game.
+    _terminal_mids = {_final_cfg} | {str(k) for k in placements}
+    d["y"] = float("nan")
+    for cx in sorted(cols):
+        for u in cols[cx]:
+            ix = unit_ids[u]
+            if len(ix) == 2:
+                a, b = ix
+                if str(u) in _terminal_mids and set(d.loc[ix, "result"]) & {"W"}:
+                    # Winner on top.
+                    if d.loc[a, "result"] != "W":
+                        a, b = b, a
+                else:
+                    pa = d[(d["team"] == d.loc[a, "team"]) & (d["rx"] == cx - 1)]
+                    pb = d[(d["team"] == d.loc[b, "team"]) & (d["rx"] == cx - 1)]
+                    fa = float(pa.iloc[0]["y"]) if len(pa) else None
+                    fb = float(pb.iloc[0]["y"]) if len(pb) else None
+                    if fa is not None and fb is not None and fb < fa:
+                        a, b = b, a                    # b fed from higher -> b on top
+                d.loc[a, "y"] = unit_y[u] - CARD_GAP / 2
+                d.loc[b, "y"] = unit_y[u] + CARD_GAP / 2
+            else:
+                d.loc[ix[0], "y"] = unit_y[u]
+    d["side"] = (d.groupby("matchup_id")["y"].rank(method="first").astype(int) - 1)
+    y_lo, y_hi = float(d["y"].min()), float(d["y"].max())
+    d["y"] -= (y_lo + y_hi) / 2 - span / 2
+    y_span_lo = float(d["y"].min()) - 0.30
+    y_span_hi = float(d["y"].max()) + 0.30
+    # Floor the drawn y-extent at ~4 matchup-rows so a shallow bracket (a
+    # 1- or 2-game consolation bracket, e.g. DDBM 2025) keeps normal card
+    # proportions with honest empty space rather than 2 cards stretched to
+    # fill the fixed figure height. A deep bracket is already past this.
+    _MIN_SPAN = 5.4
+    if (y_span_hi - y_span_lo) < _MIN_SPAN:
+        pad = (_MIN_SPAN - (y_span_hi - y_span_lo)) / 2
+        y_span_lo -= pad
+        y_span_hi += pad
+
+    # Card palette. Win = green, loss = a soft warm pink (reads as "lost"
+    # without shouting), bye = a neutral dark-ish grey -- deliberately NOT
+    # amber (would blend with the CHAMPION gold) and NOT the pink loss (a bye
+    # is not a loss). Tie = the loss fill.
+    COL = {"W": "#a5d6a7", "L": "#f0dede", "BYE": "#d1d4d8",
+           "PENDING": "#f4f6f8", "T": "#f0dede"}
+    # Losers-bracket placement games render on the SAME shapes but a muted
+    # (desaturated) version of each fill, so they read as a lower tier
+    # without leaving the grid.
+    COL_CONS = {"W": "#d6e8d6", "L": "#f4ecec", "BYE": "#e2e4e6",
+                "PENDING": "#f4f6f8", "T": "#f4ecec"}
+    cons_mids = {m for m in d["matchup_id"].unique()
+                 if str(m) in placements or _bracket_of.get(m) == "losers"}
+    # Fixed footprint (`_PLAYOFF_FIG` = 8.5 x 5.2) so this and the companion
+    # `plot_consolation_bracket` are the same size side by side in one `.grid` row on
+    # the Playoffs tab. The bracket's data-coordinate `ylim` (set below from the
+    # relaxed y-extent) maps onto that fixed axes height, so a taller bracket
+    # just packs its rows denser rather than growing the figure.
+    fig, ax = plt.subplots(figsize=_PLAYOFF_FIG)
+    # Connectors trace how each team reached its NEXT game. Every one meets a
+    # card FLUSH AT THE ROW OF THE TEAM IT BELONGS TO at both ends: it leaves
+    # the source card's right edge at that team's y, turns at a vertical leg
+    # ~40% across the gutter between the two columns, and runs into the
+    # target card's left edge at that team's y. Which of a matchup's two
+    # teams sits on top was chosen above so these feeders cross as little as
+    # possible (fed-from-higher on top).
+    # Every connector spans exactly ONE round: source column to the very
+    # next column. For each team's card, find its own card in the NEXT
+    # column (a game it plays, or another idle/bye card if it sits out
+    # again) and connect the two. A win-sourced connector is solid green
+    # (gold on the champion's path); a bye-sourced one is grey dotted
+    # (matching the grey bye card); a LOSS-sourced one is a thin reddish
+    # dashed line -- drawn only when that loser actually plays on next round
+    # (a placement / consolation game), so the eye can follow a beaten team
+    # down into the losers' side instead of it just vanishing.
+    feeds: dict = {}   # (rx, y) of target card -> [(src rx, src y, kind, team), ...]
+    for _, a in d.iterrows():
+        if a["result"] not in ("W", "BYE", "L", "T"):
+            continue
+        nxt = d[(d["team"] == a["team"]) & (d["rx"] == a["rx"] + 1)]
+        if not len(nxt):
+            continue
+        n = nxt.iloc[0]
+        kind = ("bye" if a["result"] == "BYE"
+                else "win" if a["result"] == "W"
+                else "loss")
+        feeds.setdefault((float(n["rx"]), float(n["y"])), []).append(
+            (float(a["rx"]), float(a["y"]), kind, a["team"]))
+    # Every connector is a horizontal-first right angle that meets a card
+    # FLUSH AT THE ROW OF THE TEAM IT BELONGS TO at both ends: it leaves the
+    # source card's right edge at that team's y, a short vertical leg turns
+    # in the gutter between the two columns, then it runs into the target
+    # card's left edge at that team's y. The turn sits ~40% across the gap
+    # so the leg clears both cards' rounded corners.
+    #
+    # Connectors are COLOUR-CODED to match the cards they link:
+    #   the CHAMPION's whole path -- gold, thicker.
+    #   any other WIN -- green.
+    #   a BYE -- thin grey dotted (matching the grey bye card).
+    #   a LOSS that plays on -- thin reddish dashed (matching the loss card).
+    BYE_LINE = "#8b9096"
+    WIN_LINE, GOLD_LINE, LOSS_LINE = "#8bbf8f", "#e6b800", "#d99b9b"
+    _champ_name = p.champion
+    for (nrx, ny), fs in feeds.items():
+        x_in = nrx - HALF_W                           # target card's left edge, at ny
+        for frx, fy, kind, team in fs:
+            x_out = frx + HALF_W                      # source card's right edge, at fy
+            x_turn = x_out + (x_in - x_out) * 0.4     # vertical leg, in the gutter
+            if kind == "bye":
+                kw = dict(color=BYE_LINE, lw=1.4, linestyle=(0, (1, 2)))
+            elif kind == "loss":
+                kw = dict(color=LOSS_LINE, lw=1.5, linestyle=(0, (4, 2)))
+            elif _champ_name and team == _champ_name:
+                kw = dict(color=GOLD_LINE, lw=2.6)
+            else:
+                kw = dict(color=WIN_LINE, lw=2.2)
+            ax.plot([x_out, x_turn, x_turn, x_in], [fy, fy, ny, ny],
+                    zorder=1 if kind != "loss" else 0,
+                    solid_capstyle="round", solid_joinstyle="round", **kw)
+    from matplotlib.patches import FancyBboxPatch, Rectangle
+    # Faint band behind each consolation matchup's y-range, with a tier label at
+    # its left, so the placement games read as their own tier even though the
+    # layout engine interleaves them into the round columns by feeder position.
+    # A faint tint behind each consolation matchup so the placement tier reads
+    # at a glance; the per-matchup "Nth-place game" tag below carries the label.
+    for _mid in cons_mids:
+        _rows = d[d["matchup_id"] == _mid]
+        if not len(_rows):
+            continue
+        lo = float(_rows["y"].min()) - CARD_HH - 0.14
+        hi = float(_rows["y"].max()) + CARD_HH + 0.14
+        rx0 = float(_rows["rx"].iloc[0])
+        ax.add_patch(FancyBboxPatch(
+            (rx0 - HALF_W - 0.16, lo), HALF_W * 2 + 0.30, hi - lo,
+            boxstyle="round,pad=0.004,rounding_size=0.04",
+            facecolor=T["rule"], alpha=0.11, edgecolor="none", zorder=0))
+    # The overall CHAMPION (winner of the `final` game) is the one card the
+    # bracket exists to point at: gold fill + a heavier gold border + a star.
+    # Everything else: winner = green fill + a firmer green border; bye = a
+    # blue fill + blue border; loser = the reddish fill + a soft red border.
+    _final_id = p.config.get("final")
+    champ_key = None
+    if _final_id is not None:
+        _fw = d[(d["matchup_id"] == _final_id) & (d["result"] == "W")]
+        if len(_fw):
+            champ_key = (str(_fw.iloc[0]["matchup_id"]), _fw.iloc[0]["team"])
+    GOLD_FILL, GOLD_EDGE = "#ffe9a8", "#d9a400"
+    WIN_EDGE, BYE_EDGE, LOSS_EDGE = "#5fae63", "#8b9096", "#d99b9b"
     for _, r in d.iterrows():
-        ax.add_patch(plt.Rectangle((r["rx"] - 0.43, r["y"] - 0.15), 0.86, 0.30,
-                                   facecolor=COL.get(r["result"], "#e6e8ea"),
-                                   edgecolor=T["edge"], lw=1.2, zorder=2))
+        res = r["result"]
+        win = res == "W"
+        is_bye = res == "BYE"
+        is_cons = r["matchup_id"] in cons_mids
+        is_champ = champ_key is not None and (str(r["matchup_id"]), r["team"]) == champ_key
+        pal = COL_CONS if is_cons else COL
+        if is_champ:
+            fc, ec, elw = GOLD_FILL, GOLD_EDGE, 1.8
+        elif is_bye:
+            fc, ec, elw = pal.get("BYE"), BYE_EDGE, 1.2
+        elif win:
+            fc, ec, elw = pal.get("W"), (WIN_EDGE if not is_cons else T["edge"]), 1.5
+        else:
+            fc, ec, elw = pal.get(res, "#f0dede"), LOSS_EDGE, 1.1
+        ax.add_patch(FancyBboxPatch(
+            (r["rx"] - HALF_W, r["y"] - CARD_HH), HALF_W * 2, CARD_H,
+            boxstyle="round,pad=0.006,rounding_size=0.05",
+            facecolor=fc, edgecolor=ec, lw=elw, zorder=2))
+        # Placement tag ("3rd-place game" / "Consolation") once per matchup,
+        # HORIZONTAL and IN-LINE with the cards -- left-aligned to the card's
+        # own left edge, sitting just above the matchup's top card. The wider
+        # LANE gutter opened above leaves room for it there without colliding
+        # with the matchup above. (Replaces a rotated 6pt label jammed into
+        # the connector gutter that was effectively unreadable.)
+        if is_cons and r["side"] == 0:
+            tag = _place_tag(r["matchup_id"])
+            if tag:
+                _pair = d[d["matchup_id"] == r["matchup_id"]]
+                _top = float(_pair["y"].min())
+                ax.text(r["rx"] - HALF_W + PAD_X, _top - CARD_HH - 0.13, tag,
+                        ha="left", va="center", fontsize=6.5, style="italic",
+                        color=T["muted"], zorder=3)
         # A future round's node can still hold a raw "W:<matchup_id>"/"L:<matchup_id>"
         # reference (season/README.md's own documented authoring convention: the
         # commissioner writes it in before the source round resolves, and it's
@@ -1131,35 +1552,497 @@ def plot_playoff_bracket(p, ref_scores: dict | None = None):
             pts = f"{r['points']:.1f}"
         else:
             pts = _ref_label(ref_scores, r["team"], r["weeks"])
-        # Node fills (COL) are always light, so their label stays dark on both
-        # themes -- following T["ink"] here would vanish on a light node in dark.
-        ax.text(r["rx"], r["y"], f"{sd}  {team_label}   {pts}".strip(), ha="center",
-                va="center", fontsize=9, zorder=3,
-                fontweight="bold" if r["result"] == "W" else "normal", color="#242424")
+        # Two bands inside the card, split SYMMETRICALLY around the card
+        # centre: "#seed  Team" on the upper band (left-aligned, bold for the
+        # winner), the score on the lower band (right-aligned, monospace so
+        # decimals line up). Equal +/- offsets (0.26 * CARD_H) give the card
+        # visible top and bottom margins and a clean gap between the lines.
+        # A tiny gold "*" prefixes the champion's name. Fills are always
+        # light, so text is a dark literal on both themes.
+        badge = f"#{sd}  " if sd else ""
+        star = "★ " if is_champ else ""
+        band = CARD_H * 0.26
+        ax.text(r["rx"] - HALF_W + PAD_X, r["y"] - band, f"{star}{badge}{team_label}",
+                ha="left", va="center", fontsize=7.5, zorder=3,
+                fontweight="bold" if (win or is_champ) else "normal",
+                color="#242424")
+        ax.text(r["rx"] + HALF_W - PAD_X, r["y"] + band, pts,
+                ha="right", va="center", fontsize=7.5, zorder=3,
+                family="monospace",
+                color="#242424" if (win or is_champ) else "#5a5a5a")
+        # Finishing-place chip on the upper band's right edge, for a
+        # TERMINAL matchup only (the final, and each placement game). Both
+        # the winner and the loser get one -- "1st"/"2nd", "3rd"/"4th",
+        # ... -- colour-tiered (gold/silver/bronze/slate) so every settled
+        # placement in the bracket is legible, not just the champion.
+        _place = _place_of(r["matchup_id"], res)
+        if _place is not None:
+            _cfill, _ctext = _PLACE_CHIP.get(_place, _PLACE_CHIP_DEFAULT)
+            ax.text(r["rx"] + HALF_W - PAD_X, r["y"] - band, _ord(_place),
+                    ha="right", va="center", fontsize=6.5, zorder=4,
+                    fontweight="bold", color=_ctext,
+                    bbox=dict(boxstyle="round,pad=0.28", facecolor=_cfill,
+                              edgecolor="none"))
     ax.set_xlim(-0.6, len(rounds) - 0.4)
-    ax.set_ylim(span + 0.25, -0.25)
+    ax.set_ylim(y_span_hi, y_span_lo)          # inverted: row 0 at top
     ax.set_xticks(range(len(rounds)))
-    ax.set_xticklabels(list(dict.fromkeys(d["round"])), fontweight="bold")
+    # Round headers carry the week(s) that round was played: "Round 1  |
+    # Week 15", "Final  |  Weeks 17-18". Weeks come from the `weeks` column
+    # (a scalar or a list per row); a round with no week data just shows its
+    # name. Two lines so a long round name ("Round 2 (seeds 3-4 pick)")
+    # doesn't crowd the week against its neighbour.
+    def _round_header(rid):
+        rows = d[d["round_id"] == rid]
+        name = str(rows["round"].iloc[0]) if len(rows) else str(rid)
+        wks: set = set()
+        for v in rows.get("weeks", []):
+            for w in (v if isinstance(v, (list, tuple, set)) else [v]):
+                try:
+                    wks.add(int(w))
+                except (TypeError, ValueError):
+                    pass
+        if not wks:
+            return name
+        ws = sorted(wks)
+        wk_txt = f"Week {ws[0]}" if len(ws) == 1 else f"Weeks {ws[0]}-{ws[-1]}"
+        return f"{name}\n{wk_txt}"
+    ax.set_xticklabels([_round_header(r) for r in rounds],
+                       fontweight="bold", fontsize=8.5)
     ax.xaxis.set_ticks_position("top")
     ax.set_yticks([])
     for sp in ax.spines.values():
         sp.set_visible(False)
     ax.tick_params(length=0, colors=T["tick"])
-    # The round names are TOP-axis tick labels, so ANY text between the title and
-    # the axes runs straight through them -- there is no subtitle band here. The
-    # champion rides in the title and the explanation goes to the bottom of the
-    # figure (same rule as the matrix charts).
-    ax.set_title(f"{p.name} · {p.season} Bracket: Champion, "
-                 f"{p.champion or 'undecided'}", loc="left", fontsize=16,
-                 fontweight="bold", color=T["ink"], pad=26)
-    note = ("Every score is computed from the submitted lineups under the "
-            "league's own scoring chart.")
+    # The round names are TOP-axis tick labels, so ANY text between the title
+    # and the axes runs straight through them -- there is no subtitle band. The
+    # title is kept SIMPLE ("<League> <Season> Playoff Bracket" /
+    # "<League> <Season> Consolation Bracket"); the winner is already the visual
+    # focus of the graphic itself (gold champion card), so it is not repeated
+    # in the title. `variant` only switches "Playoff" <-> "Consolation".
+    is_cons_variant = variant == "consolation"
+    kind_word = "Consolation" if is_cons_variant else "Playoff"
+    # Simple title: "<League> <Season> Playoff Bracket". `p.name` can carry a
+    # generator suffix like " (Sleeper bracket)" / " (consolation bracket)"
+    # and may already include the season -- strip the suffix, dedupe the year.
+    import re as _re
+    _nm = _re.sub(r"\s*\([^)]*\bbracket\b[^)]*\)\s*$", "", p.name or "").strip()
+    _season = str(p.season)
+    lead = _nm if _season and _season in _nm else f"{_nm} {_season}".strip()
+    ax.set_title(f"{lead} {kind_word} Bracket", loc="left", fontsize=12,
+                 fontweight="bold", color=T["ink"], pad=18)
+
+    # Bottom band: ONE pill, the winner the bracket points at -- gold
+    # CHAMPION for a playoff bracket, green WINNER for a consolation bracket
+    # (there its "champion" is the best consolation finish; green matches its
+    # winner cards and stays clear of the grey bye colour). No 3rd/last
+    # pills: the graphic is about the winner.
+    winner = p.champion
+    if is_cons_variant:
+        badge, fc, tc = "WINNER", "#4f9a54", "#ffffff"
+    else:
+        badge, fc, tc = "CHAMPION", "#f1c40f", "#242424"
+    note = ("Scores from submitted lineups.  "
+            + ("Green = win, red dashed = loser plays on, grey dotted = bye."
+               if is_cons_variant else
+               "Gold = champion, green = win, red dashed = loser plays on, "
+               "grey dotted = bye, muted cards = placement games."))
     if ref_scores:
-        note += ("   (Bracketed) is what a bye/idle team happened to score that "
-                 "week, shown for reference; it decides nothing.")
-    fig.text(0.01, 0.015, note, fontsize=9, color=T["muted"], va="bottom")
-    fig.tight_layout(rect=(0, 0.055, 1, 1))
+        note += "  (Bracketed) = a bye team's own score that week."
+
+    bot = _PLAYOFF_CAPTION_BAND
+    fig.tight_layout(rect=(0, bot, 1, 1))
+    fig.canvas.draw()
+    y_badge = bot * 0.60
+    if winner:
+        tb = fig.text(0.012, y_badge, f" {badge} ", fontsize=7, fontweight="bold",
+                      color=tc, va="center", ha="left",
+                      bbox=dict(boxstyle="round,pad=0.34", facecolor=fc,
+                                edgecolor="none"))
+        fig.canvas.draw()
+        x_after = fig.transFigure.inverted().transform(
+            (tb.get_window_extent().x1, 0))[0]
+        fig.text(x_after + 0.008, y_badge, winner, fontsize=8.5,
+                 fontweight="bold", color=T["ink2"], va="center", ha="left")
+    fig.text(0.012, bot * 0.16, note, fontsize=6.5, color=T["muted"],
+             va="bottom", wrap=True)
     return fig
+
+
+def plot_consolation_bracket(p, consolation: dict, ref_scores: dict | None = None,
+                     losers_bracket=None):
+    """The consolation bracket: the teams that MISSED the championship bracket.
+
+    A companion to `plot_playoff_bracket` (rendered beside it on the Playoffs
+    tab).
+
+    **Preferred rendering** -- when `losers_bracket` is a resolved `Playoff`
+    (from `sm.playoff(sm.sleeper_losers_bracket(...))`), the consolation
+    bracket is drawn as a real tree via `plot_playoff_bracket(..., variant=
+    "consolation")`: clean left-to-right rounds, winner/bye connectors, the
+    same card style as the championship bracket. Sleeper stores this bracket
+    for most leagues, and it is the honest structure (winners advance, byes,
+    placement games).
+
+    **Fallback** -- when there is no coherent `losers_bracket` (a custom /
+    incoherent one, or a season Sleeper never scored), the flat weekly
+    layout below is used: week COLUMNS, each stacking that week's games, with
+    the missed teams' byes shown as blue cards. Less structured, but it
+    always works from `consolation["games"]` alone.
+
+    `consolation` is `sm.consolation_bracket(s, p)`. `p` supplies the season label (and, in
+    the fallback, the `_seeds` map for `#N` badges).
+    """
+    if losers_bracket is not None and len(getattr(losers_bracket, "results", [])):
+        fig = plot_playoff_bracket(losers_bracket, ref_scores,
+                                   consolation=consolation, variant="consolation")
+        return fig
+
+    from matplotlib.patches import FancyBboxPatch, Rectangle
+    games = sorted((consolation or {}).get("games") or [], key=lambda g: g.get("week", 0))
+    by_wk: dict = {}
+    for g in games:
+        by_wk.setdefault(g.get("week"), []).append(g)
+    wks = sorted(by_wk)
+    seeds = (getattr(p, "config", {}) or {}).get("_seeds") or {}
+    seed_of = {v: k for k, v in seeds.items()}
+    last_team = (consolation or {}).get("last")
+    basis = (consolation or {}).get("basis")
+    missed = set((consolation or {}).get("missed") or [])
+    ref = ref_scores or {}
+
+    # Byes: a missed-bracket team that DID NOT play a consolation bracket game a given
+    # week sat that week out (Coin Flip and FF 2025: 6 missed teams, 4 play
+    # each of weeks 15 and 17). Its own real weekly score is shown in
+    # parentheses, exactly as the bracket shows a bye team's score.
+    byes_by_wk: dict = {wk: [] for wk in wks}
+    for wk in wks:
+        played = {sd.get("team") for g in by_wk[wk] for sd in g.get("sides", [])}
+        for t in sorted(missed - played):
+            byes_by_wk[wk].append(t)
+
+    # Card geometry matched to `plot_playoff_bracket` (CARD_H 0.40, the same
+    # 0.88-wide card via +/-0.44). The bracket makes a matchup read as one
+    # unit by locking its two cards close together with a WIDER gap before the
+    # next -- so the consolation bracket does the same: PAIR_GAP holds a game's two
+    # cards nearly touching, GAME_STEP puts a real gutter between games,
+    # BYE_STEP stacks the (single-card) bye nodes below the games.
+    CARD_H = 0.40
+    CARD_HH = CARD_H / 2
+    PAIR_GAP = 0.44                    # the two cards of ONE game, centre to centre
+    GAME_STEP = PAIR_GAP + 0.52       # game to game in a week -- a visible gutter
+    BYE_STEP = 0.56                    # bye card to bye card (single cards, tighter than a game)
+    GAME_TO_BYE = 0.62                # last game's lower card -> first bye card
+
+    # Same fixed footprint as `plot_playoff_bracket` so the two sit as an
+    # equal-size pair.
+    fig, ax = plt.subplots(figsize=_PLAYOFF_FIG)
+    if not games:
+        ax.text(0.5, 0.5, "No consolation bracket this season\n(every team reached the "
+                "bracket)", ha="center", va="center", fontsize=10,
+                color=T["muted"], transform=ax.transAxes)
+        ax.set_axis_off()
+        fig.tight_layout()
+        return fig
+
+    # Match the bracket's palette: win green, loss a soft reddish, bye a
+    # neutral dark-ish grey (not amber, not the pink loss), last place its
+    # own deeper red.
+    COL_W, COL_L, COL_BYE = "#a5d6a7", "#f0dede", "#d1d4d8"
+    COL_LAST = "#e7cfcc"
+    WIN_EDGE, LOSS_EDGE, BYE_EDGE, LAST_EDGE = "#5fae63", "#d99b9b", "#8b9096", "#9b4a3f"
+    BYE_LINE = "#8b9096"
+
+    # ---- Vertical layout, per week column. A column is: its games (each a
+    # tight card pair) stacked with GAME_STEP, then its bye cards stacked
+    # below with BYE_STEP. The whole column's content is CENTRED in the
+    # figure's y-extent so weeks with different game/bye counts sit balanced
+    # rather than top-anchored and ragged -- mirroring the bracket, whose
+    # matchup block is centred in each round column. `col_centre_span` is the
+    # distance between the FIRST and LAST card centres in a column; the full
+    # pixel extent is that plus 2*CARD_HH.
+    def _centre_span(wk):
+        ng, nb = len(by_wk[wk]), len(byes_by_wk[wk])
+        s = (ng - 1) * GAME_STEP + PAIR_GAP if ng else 0.0
+        if nb:
+            s += (GAME_TO_BYE if ng else 0.0) + (nb - 1) * BYE_STEP
+        return s
+    col_centre_span = {wi: _centre_span(wk) for wi, wk in enumerate(wks)}
+    tallest = max(col_centre_span.values(), default=0.0)
+    # Fixed y-extent. Floored at ~4.4 data units so the cards render at the
+    # SAME pixel size as the bracket's (whose own y-span for a full 4-round
+    # bracket is ~4.5), rather than the consolation's smaller stack being blown up
+    # to fill the panel. A sparse consolation bracket just gets empty space below,
+    # exactly as a shallow bracket round does beside a deep one.
+    span = max(tallest + 2 * CARD_HH, 4.4)
+    y_lo = -0.36
+    y_hi = span + 0.36
+    mid = (y_lo + y_hi) / 2
+
+    card_y: dict = {}                  # (team, week) -> y of that team's card
+    game_spans: list = []             # (wi, top_sy, bot_sy) per game, for the join bracket
+
+    for wi, wk in enumerate(wks):
+        top = mid - col_centre_span[wi] / 2       # first card's centre
+        cur = top
+        for g in by_wk[wk]:
+            sides = g.get("sides") or []
+            n = len(sides[:2])
+            g_top, g_bot = cur - CARD_HH, cur + (n - 1) * PAIR_GAP + CARD_HH
+            game_spans.append((wi, cur, cur + (n - 1) * PAIR_GAP))
+            ax.add_patch(Rectangle((wi - 0.5, g_top - 0.05), 1.0,
+                                   (g_bot - g_top) + 0.10,
+                                   facecolor=T["rule"], alpha=0.05,
+                                   edgecolor="none", zorder=0))
+            for si, sd in enumerate(sides[:2]):
+                sy = cur + si * PAIR_GAP
+                nm = sd.get("team", "")
+                card_y[(nm, wk)] = sy
+                is_last = (nm == last_team and wk == wks[-1]
+                           and sd.get("result") == "L" and basis == "game")
+                win = sd.get("result") == "W"
+                pts = sd.get("points")
+                _fc, _ec = ((COL_LAST, LAST_EDGE) if is_last
+                            else (COL_W, WIN_EDGE) if win
+                            else (COL_L, LOSS_EDGE))
+                ax.add_patch(FancyBboxPatch(
+                    (wi - 0.44, sy - CARD_HH), 0.88, CARD_H,
+                    boxstyle="round,pad=0.006,rounding_size=0.05",
+                    facecolor=_fc, edgecolor=_ec, lw=1.3 if (win or is_last) else 1.1,
+                    zorder=2))
+                sr = seed_of.get(nm, "")
+                badge = f"#{sr}  " if sr else ""
+                ax.text(wi - 0.40, sy - CARD_HH * 0.30, f"{badge}{nm}", ha="left",
+                        va="center", fontsize=7.5, zorder=3,
+                        fontweight="bold" if (win or is_last) else "normal",
+                        color="#242424")
+                ax.text(wi + 0.40, sy + CARD_HH * 0.42,
+                        f"{pts:.1f}" if isinstance(pts, (int, float)) else "–",
+                        ha="right", va="center", fontsize=7, family="monospace",
+                        color="#3a3a3a", zorder=3)
+                if is_last:
+                    ax.text(wi + 0.48, sy, "◄ last place", ha="left",
+                            va="center", fontsize=7, style="italic",
+                            fontweight="bold", color="#9b4a3f", zorder=3)
+            cur += (n - 1) * PAIR_GAP + GAME_STEP
+        # Bye cards below the games -- single cards, grey, the team's own
+        # weekly score parenthesised (same convention as the bracket).
+        if byes_by_wk[wk]:
+            cur += (GAME_TO_BYE - GAME_STEP) if by_wk[wk] else 0.0
+            for bt in byes_by_wk[wk]:
+                card_y[(bt, wk)] = cur
+                ax.add_patch(FancyBboxPatch(
+                    (wi - 0.44, cur - CARD_HH), 0.88, CARD_H,
+                    boxstyle="round,pad=0.006,rounding_size=0.05",
+                    facecolor=COL_BYE, edgecolor=BYE_EDGE, lw=1.2, zorder=2))
+                sr = seed_of.get(bt, "")
+                badge = f"#{sr}  " if sr else ""
+                ax.text(wi - 0.40, cur - CARD_HH * 0.30, f"{badge}{bt}", ha="left",
+                        va="center", fontsize=7.5, zorder=3, color="#242424")
+                bp = ref.get((bt, wk))
+                ax.text(wi + 0.40, cur + CARD_HH * 0.42,
+                        f"({bp:.1f})" if isinstance(bp, (int, float)) else "bye",
+                        ha="right", va="center", fontsize=7, family="monospace",
+                        color="#5a5f66", zorder=3, style="italic")
+                cur += BYE_STEP
+
+    # Join bracket: a small "[" on the LEFT edge of each game, tying its two
+    # cards -- the explicit "these two played each other" mark.
+    for wi, top_sy, bot_sy in game_spans:
+        if abs(bot_sy - top_sy) < 1e-6:
+            continue
+        xb = wi - 0.47
+        ax.plot([xb + 0.04, xb, xb, xb + 0.04],
+                [top_sy, top_sy, bot_sy, bot_sy],
+                color=T["tick"], lw=1.4, zorder=1,
+                solid_capstyle="round", solid_joinstyle="round")
+
+    # Advance connectors, colour-coded to match the cards: a bye = blue
+    # dotted; the consolation bracket WINNER's path = gold; any other week's winner
+    # advancing = green.
+    _tb_winner = None
+    # The overall consolation winner is whoever wins the LAST game.
+    if games:
+        _lastg = max(games, key=lambda g: g.get("week", 0))
+        _tb_winner = next((sd.get("team") for sd in _lastg.get("sides", [])
+                           if sd.get("result") == "W"), None)
+    WIN_LINE, GOLD_LINE = "#8bbf8f", "#e6b800"
+
+    def _connect(team, wk, dotted):
+        try:
+            nxt = wks[wks.index(wk) + 1]
+        except (ValueError, IndexError):
+            return
+        src, dst = card_y.get((team, wk)), card_y.get((team, nxt))
+        if src is None or dst is None:
+            return
+        wi = wks.index(wk)
+        x_out, x_in = wi + 0.44, wi + 1 - 0.44
+        x_turn = x_out + (x_in - x_out) * 0.4
+        if dotted:
+            kw = dict(color=BYE_LINE, lw=1.4, linestyle=(0, (1, 2)))
+        elif _tb_winner and team == _tb_winner:
+            kw = dict(color=GOLD_LINE, lw=2.6)
+        else:
+            kw = dict(color=WIN_LINE, lw=2.2)
+        ax.plot([x_out, x_turn, x_turn, x_in], [src, src, dst, dst], zorder=1,
+                solid_capstyle="round", solid_joinstyle="round", **kw)
+
+    for g in games:
+        wk = g.get("week")
+        w_team = next((sd.get("team") for sd in g.get("sides", [])
+                       if sd.get("result") == "W"), None)
+        if w_team is not None:
+            _connect(w_team, wk, dotted=False)
+    for wk in wks:
+        for bt in byes_by_wk[wk]:
+            _connect(bt, wk, dotted=True)
+
+    # Faint vertical splitters between week columns.
+    for wi in range(len(wks) - 1):
+        ax.plot([wi + 0.5, wi + 0.5], [y_lo + 0.15, y_hi - 0.15],
+                color=T["grid"], lw=1.0, zorder=0)
+
+    # A minimum x-span so a one- or two-week consolation bracket doesn't render its
+    # cards blown up to fill the fixed-width panel; extra weeks pack tighter.
+    ax.set_xlim(-0.6, max(len(wks) - 0.4, 2.6))
+    ax.set_ylim(y_hi, y_lo)                    # inverted: week labels on top
+    # Week columns as TOP-axis tick labels -- the same treatment the bracket
+    # gives its "Round 1 / Round 2 / ..." headers, so the two charts' column
+    # headings sit at the same place and in the same style.
+    ax.set_xticks(range(len(wks)))
+    ax.set_xticklabels([f"Week {w}" for w in wks], fontweight="bold", fontsize=8.5)
+    ax.xaxis.set_ticks_position("top")
+    ax.set_yticks([])
+    for sp in ax.spines.values():
+        sp.set_visible(False)
+    ax.tick_params(length=0, colors=T["tick"])
+    # Title in the bracket's own shape ("<league> · <season> <thing>: <headline>")
+    # and size, so the pair reads as one family.
+    _last_txt = last_team or "undecided"
+    ax.set_title(f"{getattr(p, 'name', 'Consolation bracket')} · {getattr(p, 'season', '')} "
+                 f"Consolation bracket: Last place, {_last_txt}", loc="left",
+                 fontsize=11.5, fontweight="bold", color=T["ink"], pad=18)
+    any_byes = any(byes_by_wk[wk] for wk in wks)
+    bye_note = "  Grey = a week off (score in parentheses)." if any_byes else ""
+    if last_team and basis == "game":
+        outcome = f"Last place: {last_team}"
+        note = ("Scores from submitted lineups.  Green = win, red = loss." + bye_note +
+                f"  {last_team} lost the final game.")
+    elif last_team:
+        outcome = f"Last place: {last_team}"
+        note = ("Worst regular-season finish among the teams that missed the "
+                "bracket; no game decided it." + bye_note)
+    else:
+        outcome = "Last place: undecided"
+        note = "Teams that missed the championship bracket." + bye_note
+    # Same two-line fixed caption band as the bracket (bold outcome line, muted
+    # note under it), so the text sits at the same height and can't resize the
+    # figure.
+    bot = _PLAYOFF_CAPTION_BAND
+    fig.text(0.012, bot * 0.62, outcome, fontsize=8, fontweight="bold",
+             color=T["ink2"], va="bottom")
+    fig.text(0.012, bot * 0.18, note, fontsize=6.5, color=T["muted"],
+             va="bottom", wrap=True)
+    fig.tight_layout(rect=(0, bot, 1, 1))
+    return fig
+
+
+def plot_consolation_players_splice(tb: dict, n: int = 15):
+    """Best Consolation bracket Players: each player's total consolation bracket points drawn
+    as one SEGMENT PER GAME (earliest week at left), so a total reads as the
+    games that built it -- the consolation bracket counterpart to
+    `plot_playoff_players_splice`. Single season, no rings, no round depth
+    (the consolation bracket has no sub-brackets), so segment colour is just the game
+    slot (1st consolation game, 2nd, ...), using `_MANAGER_HUES` as an ordered
+    categorical set the same way the bracket splice chart keys its own
+    segments by round depth. Position rides in the row label. Best-effort:
+    an empty consolation bracket degrades to a titled blank panel.
+    """
+    from .playoffs import consolation_performances, consolation_players
+    top = consolation_players(tb).head(n).iloc[::-1].reset_index(drop=True)
+    if top.empty:
+        return _no_data("No consolation bracket games this season.")
+    perf = consolation_performances(tb)
+    perf = perf[perf["player_id"].isin(top["player_id"])].sort_values(
+        ["player_id", "week"])
+    # Game slot per player (0 = their first consolation bracket game by week), the
+    # colour key -- the consolation bracket has no rounds to colour by.
+    perf = perf.assign(slot=perf.groupby("player_id").cumcount())
+    fig, ax = plt.subplots(figsize=(10, 6.4))
+    labels = [f"{r['player_name']}  ·  {r['position']}" for _, r in top.iterrows()]
+    ax.set_yticks(range(len(top)))
+    ax.set_yticklabels(labels, fontsize=8.5)
+    for t in ax.get_yticklabels():
+        t.set_ha("right")
+    ax.tick_params(axis="y", pad=4)
+    _portraits(ax, labels, top["player_id"], top["position"], zoom=0.30)
+    xmax = float(top["points"].max())
+    seen_slots: set = set()
+    for i, r in top.iterrows():
+        games = perf[perf["player_id"] == r["player_id"]]
+        left = 0.0
+        for _, g in games.iterrows():
+            pts = float(g["points"])
+            slot = int(g["slot"])
+            seen_slots.add(slot)
+            color = _MANAGER_HUES[slot % len(_MANAGER_HUES)]
+            ax.barh(i, pts, left=left, height=0.72, color=color,
+                    edgecolor=T["bg"], linewidth=1.0, zorder=2)
+            if pts >= xmax * 0.045:
+                ax.text(left + pts / 2, i, f"{pts:.0f}", ha="center", va="center",
+                        fontsize=7, fontweight="bold", color="white", zorder=3)
+            left += pts
+        ax.text(left + xmax * 0.01, i, f"{r['points']:.0f} total  ({r['ppg']:.1f} ppg)",
+                va="center", fontsize=8.5, color=T["ink2"])
+    ax.set_xlim(0, xmax * 1.34)
+    from matplotlib.patches import Patch
+    handles = [Patch(facecolor=_MANAGER_HUES[sl % len(_MANAGER_HUES)],
+                     label=f"Game {sl + 1}") for sl in sorted(seen_slots)]
+    if handles:
+        ax.legend(handles=handles, loc="lower right", frameon=True,
+                  framealpha=0.92, edgecolor=T["grid"], facecolor=T["bg"],
+                  fontsize=7.5, title="Consolation bracket game", title_fontsize=7.5,
+                  borderpad=0.7, labelspacing=0.5)
+    yrs = sorted({str(g.get("week")) for g in tb.get("games", [])})
+    span = "the consolation bracket"
+    return _finish(fig, ax, "Best Consolation bracket Players",
+                   f"Points across {span}  ·  each slice is one game, earliest at "
+                   "left, width = that game's points", "Consolation bracket Points")
+
+
+def plot_consolation_clutch(s, tb: dict):
+    """Consolation bracket PPG vs Regular-Season PPG -- did a team score more once it
+    was out of the running? The consolation bracket counterpart to `plot_clutch`
+    (one season, missed-bracket teams). Best-effort: no consolation games degrades
+    to a titled blank panel.
+    """
+    from .playoffs import consolation_clutch
+    d = consolation_clutch(s, tb)
+    # Ordered by consolation bracket scoring itself (the coloured dot), highest at the
+    # top -- matches plot_clutch, which sorts by its own postseason PPG.
+    d = d[d["reg_ppg"].notna()].sort_values("to_ppg").reset_index(drop=True)
+    if d.empty:
+        return _no_data("No consolation bracket games this season.")
+    fig, ax = plt.subplots(figsize=(10, 6))
+    cols = ["#2ca02c" if v > 0 else "#d62728" for v in d["clutch"]]
+    for i, r in d.iterrows():
+        ax.plot([r["reg_ppg"], r["to_ppg"]], [i, i], color=cols[i], lw=2.5,
+                alpha=0.5, zorder=1)
+    ax.scatter(d["reg_ppg"], range(len(d)), color="#a6a6a6", s=65, zorder=2)
+    ax.scatter(d["to_ppg"], range(len(d)), color=cols, s=95, zorder=3)
+    for i, r in d.iterrows():
+        off, ha = (2, "left") if r["clutch"] > 0 else (-2, "right")
+        ax.text(r["to_ppg"] + off, i, f"{r['clutch']:+.1f}", va="center", ha=ha,
+                fontsize=8, fontweight="bold", color=cols[i])
+    ax.set_yticks(range(len(d)))
+    ax.set_yticklabels(d["user_name"])
+    lo = min(d["reg_ppg"].min(), d["to_ppg"].min())
+    hi = max(d["reg_ppg"].max(), d["to_ppg"].max())
+    pad = max((hi - lo) * 0.15, 1.5)
+    ax.set_xlim(lo - pad, hi + pad)
+    return _finish(fig, ax, "Clutch: Consolation bracket vs Regular-Season Scoring",
+                   "Grey dot = regular-season PPG; coloured = consolation bracket PPG  ·  "
+                   "the consolation bracket", "Points per Game")
 
 
 def _po_span(playoffs: dict) -> tuple:
@@ -1226,7 +2109,9 @@ def plot_playoff_players(playoffs: dict, n: int = 15, scope: str = "title"):
                    "Playoff Points")
 
 
-def plot_playoff_players_splice(seasons: dict, playoffs: dict, n: int = 15, scope: str = "title"):
+def plot_playoff_players_splice(seasons: dict, playoffs: dict, n: int = 15,
+                                scope: str = "title", consolation: list | None = None,
+                                consolation_label: str = "Consolation bracket"):
     """Best Playoff Players, spliced-bar version (2026-08, promoted out of the
     Testing tab onto the Playoffs tab itself, replacing `plot_playoff_players`
     there -- that function stays as-is for the Career tab's `_all` scope,
@@ -1264,10 +2149,13 @@ def plot_playoff_players_splice(seasons: dict, playoffs: dict, n: int = 15, scop
     segments) -- this replaces position-as-color entirely, so position moves
     into the label instead (same "position as text, not bar color"
     convention the `_postext` prototype in this same round already
-    established) and there is no swatch legend, since a "Round 1/2/3..."
-    key would need as many entries as the deepest bracket run and still not
-    tell a reader anything a hover/label doesn't already say better -- each
-    slice's own points value is labelled inside it when there's room.
+    established). A compact legend keys the colours: one swatch per round
+    DEPTH that actually appears in the charted data (not every possible
+    depth), labelled by the round's own display name with any parenthetical
+    seeding qualifier stripped ("Round 1 (seeds 5-8)" -> "Round 1"), or a
+    generic "Round N" if seasons disagree on the bare name; the two star
+    colours (title / runner-up) are folded into the same box. Each slice's
+    own points value is still labelled inside it when there's room.
 
     `seasons` ({season_str: Season}, the same dict `plot_clutch` already
     takes) is needed for the label's `pos_rank` badge -- that rank is a
@@ -1282,10 +2170,13 @@ def plot_playoff_players_splice(seasons: dict, playoffs: dict, n: int = 15, scop
     """
     import pandas as pd
     from .playoffs import playoff_performances, playoff_players
-    top = playoff_players(playoffs, scope).head(n).iloc[::-1].reset_index(drop=True)
+    # `consolation` (a list of consolation_bracket() dicts) folds the consolation bracket into the
+    # same leaderboard for the Postseason view -- see playoff_performances'
+    # own `consolation=` argument. Only pooled when scope == "all".
+    top = playoff_players(playoffs, scope, consolation=consolation).head(n).iloc[::-1].reset_index(drop=True)
     if top.empty:
         return _no_data("No playoff performances recorded.")
-    perf = playoff_performances(playoffs, scope)
+    perf = playoff_performances(playoffs, scope, consolation=consolation)
     perf = perf[perf["player_id"].isin(top["player_id"])]
     perf = perf.sort_values(["player_id", "season", "week"])
     # Round DEPTH (0 = that season's first round, 1 = second, ...), not raw
@@ -1298,10 +2189,44 @@ def plot_playoff_players_splice(seasons: dict, playoffs: dict, n: int = 15, scop
     # display NAME, which isn't comparable across seasons/leagues (2025's
     # "Round 1 (seeds 5-8)" vs 2022's plain "Round 1").
     round_depth: dict = {}
+    depth_names: dict = {}   # depth -> set of display names seen at that depth
+    max_depth = -1
     for s, p in playoffs.items():
         rids = [rd["id"] for rd in p.config.get("rounds", [])]
         for depth, rid in enumerate(rids):
             round_depth[(str(s), rid)] = depth
+            max_depth = max(max_depth, depth)
+            nm = next((rd.get("name") for rd in p.config.get("rounds", [])
+                       if rd["id"] == rid), None)
+            if nm:
+                depth_names.setdefault(depth, set()).add(str(nm))
+    # Postseason segments outside the championship bracket, present only when
+    # `consolation=` was passed and scope == "all". Two shapes:
+    #   * a genuine missed-teams CONSOLATION BRACKET -- no bracket structure, every
+    #     row `round_id is None`: one flat depth past the deepest real round,
+    #     one legend entry (`consolation_label`, "Consolation bracket").
+    #   * a real CONSOLATION BRACKET (Sleeper's `losers_bracket`, resolved by
+    #     the webapp) -- rows carry `round_id == "C<week>"`: each consolation
+    #     round gets its OWN depth (past the real rounds, in week order) and
+    #     its own legend entry ("<consolation_label> R1", ...), so the graphic
+    #     shows the consolation bracket's rounds, not one lump.
+    _cons_rids = sorted({rid for rid in perf["round_id"].dropna().unique()
+                         if str(rid).startswith("C")},
+                        key=lambda r: int(str(r)[1:]))
+    consolation_flat_depth = max_depth + 1                    # flat consolation bracket only
+    cons_depth: dict = {}                           # "C<week>" -> depth
+    for k, rid in enumerate(_cons_rids):
+        cons_depth[rid] = max_depth + 1 + k
+        # Legend label: "Consolation Round 1", "Consolation Round 2", ... when
+        # the consolation bracket has multiple rounds; a bare "Consolation
+        # bracket" when it is a single game.
+        if len(_cons_rids) > 1:
+            lbl = f"Consolation Round {k + 1}"
+        else:
+            lbl = consolation_label
+        depth_names.setdefault(cons_depth[rid], set()).add(lbl)
+    if not perf.empty and perf["round_id"].isna().any():
+        depth_names.setdefault(consolation_flat_depth, set()).add(consolation_label)
     fig, ax = plt.subplots(figsize=(10, 6.4))
     pos_ranks: dict = {}
     for pid, g in perf.groupby("player_id"):
@@ -1389,12 +2314,20 @@ def plot_playoff_players_splice(seasons: dict, playoffs: dict, n: int = 15, scop
         if gold or silver:
             honor_rows[i] = (gold, silver)
     label_texts = {}
+    seen_depths: set = set()
     for i, r in top.iterrows():
         games = perf[perf["player_id"] == r["player_id"]]
         left = 0.0
         for _, g in games.iterrows():
             pts = float(g["points"])
-            depth = round_depth.get((g["season"], g["round_id"]), 0)
+            _rid = g["round_id"]
+            if pd.isna(_rid):
+                depth = consolation_flat_depth
+            elif str(_rid).startswith("C"):
+                depth = cons_depth.get(_rid, consolation_flat_depth)
+            else:
+                depth = round_depth.get((g["season"], _rid), 0)
+            seen_depths.add(depth)
             color = _MANAGER_HUES[depth % len(_MANAGER_HUES)]
             ax.barh(i, pts, left=left, height=0.72, color=color,
                     edgecolor=T["bg"], linewidth=1.0, zorder=2)
@@ -1410,9 +2343,8 @@ def plot_playoff_players_splice(seasons: dict, playoffs: dict, n: int = 15, scop
     # xmax, which either wasted space on every row or clipped stars on the
     # longest one depending which way the guess erred -- same "measure the
     # actual rendered extent, then place relative to it" technique
-    # `plot_playoff_players_medal`'s ring dots already use (there: past the
-    # value text; here: also past the value text, just on this chart's own
-    # trailing "total (ppg)" text instead of a bare points number).
+    # `_identity_rows`' portrait placement already uses (there: left of the
+    # label; here: past the trailing "total (ppg)" text).
     if honor_rows:
         fig.canvas.draw()
         px_per_data = ax.transData.transform((1, 0))[0] - ax.transData.transform((0, 0))[0]
@@ -1428,14 +2360,50 @@ def plot_playoff_players_splice(seasons: dict, playoffs: dict, n: int = 15, scop
         ax.set_xlim(0, xmax * 1.34 + extra_data)
     else:
         ax.set_xlim(0, xmax * 1.34)
-    sub = "championship path only" if scope == "title" else f"scope: {scope}"
+    if consolation is not None:
+        sub = "playoffs + consolation bracket"
+        title_word, axis_word = "Postseason", "Postseason"
+    elif scope == "title":
+        sub = "championship path"
+        title_word = axis_word = "Playoff"
+    else:
+        sub = f"scope: {scope}"
+        title_word = axis_word = "Playoff"
     suffix, span = _po_span(playoffs)
-    fig = _finish(fig, ax, f"Best Playoff Players{suffix}",
-                  f"Points scored across {span}  ·  {sub}  ·  each slice = one playoff "
-                  "game, earliest first, width = that game's points, colour = round "
-                  "reached that season  ·  ★ gold = won a title, silver = runner-up "
-                  "that season",
-                  "Playoff Points")
+    fig = _finish(fig, ax, f"Best {title_word} Players{suffix}",
+                  f"{sub}  ·  one slice per game, earliest at left",
+                  f"{axis_word} Points")
+
+    # Colour key: one entry per round DEPTH that actually shows up in the
+    # drawn segments, plus the two star meanings -- folded into a single
+    # legend box rather than spelled out in the subtitle. The legend only
+    # needs to say WHICH ROUND a slice's points came from, so the label is
+    # the round's own display name with any parenthetical seeding qualifier
+    # ("Round 1 (seeds 5-8)" -> "Round 1") stripped; if seasons disagree on
+    # the bare name it falls back to a generic "Round N".
+    from matplotlib.lines import Line2D
+    from matplotlib.patches import Patch
+    def _depth_label(depth: int) -> str:
+        bare = {re.sub(r"\s*\(.*\)\s*$", "", nm).strip()
+                for nm in (depth_names.get(depth) or set())}
+        return next(iter(bare)) if len(bare) == 1 else f"Round {depth + 1}"
+    handles = [Patch(facecolor=_MANAGER_HUES[dp % len(_MANAGER_HUES)],
+                     label=_depth_label(dp)) for dp in sorted(seen_depths)]
+    if honor_rows:
+        any_gold = any(g for g, _ in honor_rows.values())
+        any_silver = any(s for _, s in honor_rows.values())
+        star = lambda c, lbl: Line2D([0], [0], marker="*", linestyle="none",
+                                     markerfacecolor=c, markeredgecolor="white",
+                                     markeredgewidth=1.0, markersize=11, label=lbl)
+        if any_gold:
+            handles.append(star("#f1c40f", "★ = on a title team"))
+        if any_silver:
+            handles.append(star("#c8cdd0", "★ = on a runner-up"))
+    if handles:
+        ax.legend(handles=handles, loc="lower right", frameon=True,
+                  framealpha=0.92, edgecolor=T["grid"], facecolor=T["bg"],
+                  fontsize=7.5, title="Round", title_fontsize=7.5,
+                  borderpad=0.7, labelspacing=0.5)
 
     # `_finish` calls `tight_layout`, which resizes the axes box within the
     # figure -- any pixel<->data measurement taken before it is stale by the
@@ -1482,143 +2450,274 @@ def plot_playoff_players_splice(seasons: dict, playoffs: dict, n: int = 15, scop
     return fig
 
 
-def plot_playoff_players_topband(playoffs: dict, n: int = 15, scope: str = "title"):
-    """Best Playoff Players (PROTOTYPE), legend variant: the position-color key
-    moves to a horizontal strip ABOVE the axes (bbox_to_anchor) instead of
-    `loc="lower right"` sitting in-axes -- the original's legend currently
-    clears the shortest bars by luck (15 real players), not by any
-    guarantee, and is the exact collision shape already fixed on `plot_mgr_sos`/
-    `plot_clutch`/`plot_draft_grades_value` this session. Everything else
-    (rings, portraits, labels) is untouched, so this is a single isolated
-    variable to judge.
+# --- Playoff bracket appearance prototypes (Testing tab) ---------------------
+# Four proposed restylings of `plot_playoff_bracket`, each an isolated variable
+# to judge before any of it lands in the real chart. They share `_bracket_geom`
+# (the same node layout the production function builds inline) so only the
+# DRAWING differs between them. All obey the production chart's own rule:
+# nothing between the title and the top-axis round labels -- the champion rides
+# in the title, and any explanation goes to the bottom via `fig.text`.
+
+def _bracket_geom(p):
+    """Node layout for a bracket chart: one row per team-per-matchup, with
+    `rx` (round column), `y` (row within the figure), `cy` (matchup centre)
+    and `side`. Lifted from `plot_playoff_bracket` (including its side-order
+    pass that keeps feeder connectors from crossing) so the appearance
+    prototypes don't each re-derive it. Returns `(d, rounds, span, seed_of)`.
     """
-    from .playoffs import playoff_players
-    d = playoff_players(playoffs, scope).head(n).iloc[::-1].reset_index(drop=True)
-    fig, ax = plt.subplots(figsize=(10, 6.4))
-    ax.barh(range(len(d)), d["points"], height=0.72,
-            color=[POS_COLORS.get(str(p), "#999999") for p in d["position"]])
-    labels = [f"{n}  ·  {p}" for n, p in zip(d["player_name"], d["position"])]
-    ax.set_yticks(range(len(d)))
-    ax.set_yticklabels(labels, fontsize=8.5)
-    _portraits(ax, labels, d["player_id"], d["position"])
-    xmax = float(d["points"].max())
-    for i, r in d.iterrows():
-        rings = "★" * int(r["rings"])
-        ax.text(r["points"] + xmax * 0.01, i,
-                f"{r['points']:.0f}  ({r['ppg']:.1f} ppg)  {rings}",
-                va="center", fontsize=8.5, color=T["ink2"])
-    ax.set_xlim(0, xmax * 1.34)
-    sub = "championship path only" if scope == "title" else f"scope: {scope}"
-    seen = [p for p in POSITIONS if p in set(d["position"])]
-    handles = [plt.Rectangle((0, 0), 1, 1, color=POS_COLORS[p]) for p in seen]
-    ax.legend(handles, seen, loc="lower left", frameon=False, fontsize=8, ncol=6,
-              bbox_to_anchor=(0.0, 1.02))
-    suffix, span = _po_span(playoffs)
-    return _finish(fig, ax, f"Best Playoff Players{suffix} (PROTOTYPE: top legend)",
-                   f"Points scored across {span}  ·  {sub}  ·  ★ per title",
-                   "Playoff Points")
+    import pandas as pd
+    GAP = 0.46
+    d = p.results.copy()
+    rounds = list(dict.fromkeys(d["round_id"]))
+    seeds = (p.config.get("_seeds") or {})
+    seed_of = {v: k for k, v in seeds.items()}
+    mu = d.drop_duplicates("matchup_id")[["round_id", "matchup_id"]].copy()
+    mu["j"] = mu.groupby("round_id").cumcount() + 1
+    mu["n"] = mu.groupby("round_id")["matchup_id"].transform("size")
+    span = int(mu["n"].max())
+    mu["rx"] = mu["round_id"].map({r: i for i, r in enumerate(rounds)})
+    mu["cy"] = (mu["j"] - 0.5) * span / mu["n"]
+    d = d.merge(mu[["matchup_id", "rx", "cy"]], on="matchup_id", how="left")
+    d["side"] = d.groupby("matchup_id").cumcount()
+    d["sides"] = d.groupby("matchup_id")["team"].transform("size")
+    d["y"] = d["cy"] + (d["sides"] > 1) * (d["side"] * GAP - GAP / 2)
+
+    def _src_y(team, rx, placed):
+        prior = placed[(placed["team"] == team) & (placed["rx"] < rx)]
+        if not len(prior):
+            return None
+        wins = prior[prior["result"] == "W"]
+        row = wins.iloc[-1] if len(wins) else prior.sort_values("rx").iloc[0]
+        return float(row["y"])
+
+    for ri in range(1, len(rounds)):
+        placed = d[d["rx"] < ri]
+        for _, grp in d[d["rx"] == ri].groupby("matchup_id"):
+            if len(grp) != 2:
+                continue
+            (i0, r0), (i1, r1) = list(grp.iterrows())
+            s0, s1 = _src_y(r0["team"], ri, placed), _src_y(r1["team"], ri, placed)
+            if s0 is None or s1 is None or s0 == s1:
+                continue
+            want_top = i0 if s0 < s1 else i1
+            top_now = i0 if r0["side"] == 0 else i1
+            if want_top != top_now:
+                d.loc[[i0, i1], "side"] = d.loc[[i1, i0], "side"].values
+                d.loc[[i0, i1], "y"] = d.loc[[i1, i0], "y"].values
+    return d, rounds, span, seed_of
 
 
-def plot_playoff_players_postext(playoffs: dict, n: int = 15, scope: str = "title"):
-    """Best Playoff Players (PROTOTYPE), no-legend variant: position is
-    plain text next to each player's name instead of encoded in bar color --
-    every bar is one neutral color, so there is no legend to place (and
-    therefore no collision risk at all, the most direct fix of the three
-    prototypes here) and no need to cross-reference a color swatch back to a
-    position name. Trade-off: scanning "which rows are RBs" at a glance is
-    slower than reading bar color -- judge whether that's a real loss or not.
+def _bracket_axes(fig, ax, p, rounds, d, span, note):
+    """Shared frame for the bracket prototypes: hide spines/ticks, round names
+    on the TOP axis, champion in the title, explanation at the figure bottom.
     """
-    from .playoffs import playoff_players
-    d = playoff_players(playoffs, scope).head(n).iloc[::-1].reset_index(drop=True)
-    fig, ax = plt.subplots(figsize=(10, 6.4))
-    ax.barh(range(len(d)), d["points"], height=0.72, color=T["neutral"])
-    labels = list(d["player_name"])
-    ax.set_yticks(range(len(d)))
-    ax.set_yticklabels(labels, fontsize=8.5)
-    _portraits(ax, labels, d["player_id"], d["position"])
-    xmax = float(d["points"].max())
-    for i, r in d.iterrows():
-        rings = "★" * int(r["rings"])
-        ax.text(r["points"] + xmax * 0.01, i,
-                f"{r['position']}  ·  {r['points']:.0f}  ({r['ppg']:.1f} ppg)  {rings}",
-                va="center", fontsize=8.5, color=T["ink2"])
-    ax.set_xlim(0, xmax * 1.42)
-    sub = "championship path only" if scope == "title" else f"scope: {scope}"
-    suffix, span = _po_span(playoffs)
-    return _finish(fig, ax, f"Best Playoff Players{suffix} (PROTOTYPE: no legend)",
-                   f"Points scored across {span}  ·  {sub}  ·  ★ per title  ·  "
-                   "position shown as text, not bar color",
-                   "Playoff Points")
+    ax.set_xlim(-0.6, len(rounds) - 0.4)
+    ax.set_ylim(span + 0.25, -0.25)
+    ax.set_xticks(range(len(rounds)))
+    ax.set_xticklabels(list(dict.fromkeys(d["round"])), fontweight="bold")
+    ax.xaxis.set_ticks_position("top")
+    ax.set_yticks([])
+    for sp in ax.spines.values():
+        sp.set_visible(False)
+    ax.tick_params(length=0, colors=T["tick"])
+    ax.set_title(f"{p.name} · {p.season} Bracket: Champion, "
+                 f"{p.champion or 'undecided'}", loc="left", fontsize=16,
+                 fontweight="bold", color=T["ink"], pad=26)
+    fig.text(0.01, 0.015, note, fontsize=9, color=T["muted"], va="bottom")
+    fig.tight_layout(rect=(0, 0.055, 1, 1))
 
 
-def plot_playoff_players_medal(playoffs: dict, n: int = 15, scope: str = "title"):
-    """Best Playoff Players (PROTOTYPE), medal variant: ring count pulled OUT
-    of the trailing text label into its own medal-colored badge (reusing the
-    same MEDAL gold/silver/bronze palette this file already validates
-    elsewhere), planted right after the value text -- a repeat champion is
-    now visible without reading all the way to a trailing "★★★" at the very
-    end of the row. 1 ring = gold circle, 2 = gold+silver, 3+ =
-    gold+silver+bronze (caps at 3 markers regardless of ring count, labelled
-    with the real count past that so a 5-time champion doesn't need 5 drawn
-    circles to be legible).
+def _bracket_team_label(team):
+    return "TBD" if str(team).startswith(("W:", "L:")) else team
 
-    Dot x-position is measured from the value text's OWN rendered width
-    (draw once, read `get_window_extent()`, same "measure, don't guess"
-    technique `_identity_rows`' portrait placement already uses) rather than
-    a fixed axis-fraction offset -- a fixed offset broke on the first real
-    render here: it placed the dots in DATA coordinates near the y-axis
-    origin, which overlapped the player-name tick labels `_portraits`
-    already occupies that space with, instead of sitting in the open space
-    after each bar's own value text where they were intended to go.
-    """
-    from .playoffs import playoff_players
-    d = playoff_players(playoffs, scope).head(n).iloc[::-1].reset_index(drop=True)
-    fig, ax = plt.subplots(figsize=(10, 6.4))
-    ax.barh(range(len(d)), d["points"], height=0.72,
-            color=[POS_COLORS.get(str(p), "#999999") for p in d["position"]])
-    labels = [f"{n}  ·  {p}" for n, p in zip(d["player_name"], d["position"])]
-    ax.set_yticks(range(len(d)))
-    ax.set_yticklabels(labels, fontsize=8.5)
-    _portraits(ax, labels, d["player_id"], d["position"])
-    xmax = float(d["points"].max())
-    ax.set_xlim(0, xmax * 1.55)  # wider than the original 1.34: room for medal dots past the value text
-    fig.canvas.draw()  # realise text extents before measuring below
-    inv = ax.transData.inverted()
-    for i, r in d.iterrows():
-        rings = int(r["rings"])
-        txt = ax.text(r["points"] + xmax * 0.01, i,
-                       f"{r['points']:.0f}  ({r['ppg']:.1f} ppg)",
-                       va="center", fontsize=8.5, color=T["ink2"])
-        if not rings:
+
+def _bracket_node_pts(r, ref_scores):
+    import pandas as pd
+    if not pd.isna(r["points"]):
+        return f"{r['points']:.1f}"
+    return _ref_label(ref_scores, r["team"], r["weeks"])
+
+
+# The production `plot_playoff_bracket` now ships items 1 (elbow connectors)
+# and 2 (two-line node cards), so the two prototypes below build on THAT
+# baseline -- same geometry, same elbows, same cards -- and isolate only what
+# they still propose changing on top of it.
+#
+# `_accent`: item 3 -- drop the green-for-every-winner fill (a Round 1 game
+#   reads as loud as the Final) for one neutral fill plus a short accent bar
+#   marking the side that advanced, and a gold champion card.
+# `_full`  : `_accent` PLUS the two smaller ideas from the suggestion list --
+#   alternating faint column bands so the eye tracks rounds, and byes drawn
+#   as a lighter borderless pill rather than a full matchup card.
+
+_BRK_H = 0.40            # card height, matching the live chart's CARD_H
+_BRK_HH = _BRK_H / 2
+_BRK_GAP = 0.46          # matchup card centre-to-centre, matching CARD_GAP
+
+
+def _bracket_elbows(ax, d):
+    """The live chart's connectors, factored out for the prototypes: both a
+    horizontal-first right angle (turn near the source). A game WIN is a
+    thick solid grey line; a BYE is a thin amber dotted one from the team's
+    LAST idle card into the very next round only. Kept in sync with
+    `plot_playoff_bracket`'s own connector block."""
+    import pandas as pd
+    played = d[d["result"].isin(["W", "L", "T"])]
+    srcs = d[d["result"] == "W"][["team", "rx", "y", "result"]].copy()
+    byes = d[d["result"] == "BYE"].sort_values("rx").drop_duplicates("team", keep="last")
+    srcs = pd.concat([srcs, byes[["team", "rx", "y", "result"]]], ignore_index=True)
+    feeds: dict = {}
+    for _, a in srcs.iterrows():
+        after = played[(played["team"] == a["team"]) & (played["rx"] > a["rx"])].sort_values("rx")
+        if not len(after):
             continue
-        # Right edge of the text just drawn, converted back to data x, plus a
-        # small gap -- so the first dot always starts clear of the text
-        # regardless of how wide the PPG number happens to render.
-        text_right = inv.transform((txt.get_window_extent(fig.canvas.get_renderer()).x1, 0))[0]
-        start = text_right + xmax * 0.02
-        shown = min(rings, 3)
-        for j in range(shown):
-            ax.scatter(start + j * xmax * 0.035, i, s=60,
-                       color=MEDAL[j], edgecolors=T["edge"], linewidths=0.6,
-                       zorder=4, clip_on=False)
-        if rings > 3:
-            ax.text(start + shown * xmax * 0.035, i, f"+{rings - 3}",
-                    va="center", fontsize=7.5, color=T["muted"])
-    sub = "championship path only" if scope == "title" else f"scope: {scope}"
-    seen = [p for p in POSITIONS if p in set(d["position"])]
-    handles = [plt.Rectangle((0, 0), 1, 1, color=POS_COLORS[p]) for p in seen]
-    ax.legend(handles, seen, loc="lower right", frameon=False, fontsize=8, ncol=3)
-    suffix, span = _po_span(playoffs)
-    return _finish(fig, ax, f"Best Playoff Players{suffix} (PROTOTYPE: medal markers)",
-                   f"Points scored across {span}  ·  {sub}  ·  "
-                   "gold/silver/bronze dots = ring count",
-                   "Playoff Points")
+        n = after.iloc[0]
+        if a["result"] == "BYE" and int(n["rx"]) != int(a["rx"]) + 1:
+            continue
+        feeds.setdefault((float(n["rx"]), float(n["y"])), []).append(
+            (float(a["rx"]), float(a["y"]), a["result"] == "BYE"))
+    BYE_LINE = "#e0a53a"
+    for (nrx, ny), fs in feeds.items():
+        x_in = nrx - 0.44
+        for frx, fy, is_bye in fs:
+            x_out = frx + 0.44
+            x_turn = x_out + (x_in - x_out) * 0.4
+            kw = (dict(color=BYE_LINE, lw=1.3, linestyle=(0, (1, 2))) if is_bye
+                  else dict(color=T["rule"], lw=2.2))
+            ax.plot([x_out, x_turn, x_turn, x_in], [fy, fy, ny, ny], zorder=1,
+                    solid_capstyle="round", solid_joinstyle="round", **kw)
 
 
-def plot_clutch(seasons: dict, playoffs: dict, scope: str = "title"):
-    """Playoff PPG vs regular-season PPG -- who raises their game."""
+def _bracket_card_text(ax, r, seed_of, ref_scores, bold, star=False):
+    """The live chart's two-line card text (badge+name upper-left, score
+    lower-right), factored out so a prototype only overrides the fill.
+    `star` appends a gold ★ after the name (the champion card)."""
+    sd = seed_of.get(r["team"], "")
+    badge = f"#{sd}  " if sd else ""
+    name = _bracket_team_label(r["team"]) + ("  ★" if star else "")
+    ax.text(r["rx"] - 0.40, r["y"] - _BRK_HH * 0.30, f"{badge}{name}",
+            ha="left", va="center", fontsize=9, zorder=4,
+            fontweight="bold" if bold else "normal", color="#242424")
+    ax.text(r["rx"] + 0.40, r["y"] + _BRK_HH * 0.42, _bracket_node_pts(r, ref_scores),
+            ha="right", va="center", fontsize=8.5, zorder=4,
+            family="monospace", color="#3a3a3a")
+
+
+def plot_playoff_bracket_accent(p, ref_scores: dict | None = None):
+    """PROTOTYPE (item 3) -- neutral fill + accent bar, gold champion, on top
+    of the now-live elbow + card baseline. Resolved matchups no longer fill
+    green for every winner (which makes a Round 1 game as loud as the
+    Final): every decided card sits on ONE neutral surface, and the side
+    that advanced is marked by a short green accent bar down its left edge
+    plus bold text. Byes keep the amber card. The tournament winner's card
+    fills gold with a ★ and a "Champion" caption to its right -- the one
+    place strong colour earns its keep.
+    """
+    from matplotlib.patches import FancyBboxPatch
+    d, rounds, span, seed_of = _bracket_geom(p)
+    NEUTRAL, BYE, GOLD, ACCENT = "#eef0f2", "#ffe0a3", "#f6d365", "#4caf50"
+    champ = p.champion
+    final_rx = len(rounds) - 1
+    fig, ax = plt.subplots(figsize=(12.5, max(5.8, span * 1.22)))
+    _bracket_elbows(ax, d)
+    for _, r in d.iterrows():
+        win = r["result"] == "W"
+        is_champ = bool(champ) and r["team"] == champ and r["rx"] == final_rx
+        fill = BYE if r["result"] == "BYE" else GOLD if is_champ else NEUTRAL
+        ax.add_patch(FancyBboxPatch(
+            (r["rx"] - 0.44, r["y"] - _BRK_HH), 0.88, _BRK_H,
+            boxstyle="round,pad=0.006,rounding_size=0.05",
+            facecolor=fill, edgecolor=T["edge"], lw=1.2, zorder=2))
+        if win and not is_champ:
+            ax.add_patch(FancyBboxPatch(
+                (r["rx"] - 0.44, r["y"] - _BRK_HH), 0.055, _BRK_H,
+                boxstyle="round,pad=0,rounding_size=0.0",
+                facecolor=ACCENT, edgecolor="none", zorder=3))
+        _bracket_card_text(ax, r, seed_of, ref_scores, bold=win or is_champ,
+                           star=is_champ)
+    if champ:
+        crow = d[(d["team"] == champ) & (d["rx"] == final_rx)]
+        if len(crow):
+            ax.text(final_rx + 0.5, float(crow.iloc[0]["y"]), "Champion",
+                    ha="left", va="center", fontsize=9, fontweight="bold",
+                    color="#b8860b", zorder=4)
+    note = ("Every score is computed from the submitted lineups under the "
+            "league's own scoring chart.  PROTOTYPE: neutral card fill, a "
+            "green accent bar marks the side that advanced, gold card = champion.")
+    _bracket_axes(fig, ax, p, rounds, d, span, note)
+    return fig
+
+
+def plot_playoff_bracket_full(p, ref_scores: dict | None = None):
+    """PROTOTYPE -- `_accent` plus the two smaller list items: alternating
+    faint column bands behind the rounds so the eye tracks columns, and
+    byes drawn as a lighter, narrower borderless pill rather than a full
+    matchup card (a bye has no opponent, so it should not read as a game).
+    """
+    from matplotlib.patches import FancyBboxPatch
+    d, rounds, span, seed_of = _bracket_geom(p)
+    NEUTRAL, GOLD, ACCENT = "#eef0f2", "#f6d365", "#4caf50"
+    champ = p.champion
+    final_rx = len(rounds) - 1
+    fig, ax = plt.subplots(figsize=(12.8, max(5.8, span * 1.22)))
+    for i in range(len(rounds)):
+        if i % 2 == 1:
+            ax.axvspan(i - 0.5, i + 0.5, color=T["grid"], alpha=0.45, zorder=0)
+    _bracket_elbows(ax, d)
+    for _, r in d.iterrows():
+        win = r["result"] == "W"
+        is_champ = bool(champ) and r["team"] == champ and r["rx"] == final_rx
+        if r["result"] == "BYE":
+            name = _bracket_team_label(r["team"])
+            sd = seed_of.get(r["team"], "")
+            pts = _bracket_node_pts(r, ref_scores)  # already parenthesised
+            ax.add_patch(FancyBboxPatch(
+                (r["rx"] - 0.30, r["y"] - _BRK_HH * 0.62), 0.60, _BRK_H * 0.62,
+                boxstyle="round,pad=0.004,rounding_size=0.06",
+                facecolor="#fff2d9", edgecolor="none", zorder=2))
+            ax.text(r["rx"], r["y"], f"{('#' + sd + '  ') if sd else ''}{name}"
+                    f"  ·  bye  {pts}", ha="center", va="center", fontsize=8.5,
+                    zorder=3, color="#7a5c1e")
+            continue
+        fill = GOLD if is_champ else NEUTRAL
+        ax.add_patch(FancyBboxPatch(
+            (r["rx"] - 0.44, r["y"] - _BRK_HH), 0.88, _BRK_H,
+            boxstyle="round,pad=0.006,rounding_size=0.05",
+            facecolor=fill, edgecolor=T["edge"], lw=1.2, zorder=2))
+        if win and not is_champ:
+            ax.add_patch(FancyBboxPatch(
+                (r["rx"] - 0.44, r["y"] - _BRK_HH), 0.055, _BRK_H,
+                boxstyle="round,pad=0,rounding_size=0.0",
+                facecolor=ACCENT, edgecolor="none", zorder=3))
+        _bracket_card_text(ax, r, seed_of, ref_scores, bold=win or is_champ,
+                           star=is_champ)
+    if champ:
+        crow = d[(d["team"] == champ) & (d["rx"] == final_rx)]
+        if len(crow):
+            ax.text(final_rx + 0.5, float(crow.iloc[0]["y"]), "Champion",
+                    ha="left", va="center", fontsize=9, fontweight="bold",
+                    color="#b8860b", zorder=4)
+    note = ("Every score is computed from the submitted lineups under the "
+            "league's own scoring chart.  PROTOTYPE: `_accent` plus round "
+            "column bands and byes drawn as a lighter pill.")
+    _bracket_axes(fig, ax, p, rounds, d, span, note)
+    return fig
+
+
+def plot_clutch(seasons: dict, playoffs: dict, scope: str = "title",
+                consolation: list | None = None):
+    """Playoff PPG vs regular-season PPG -- who raises their game.
+
+    `consolation` (a list of consolation_bracket() dicts) folds the consolation bracket games into
+    the postseason PPG for the Postseason view -- see `playoffs.clutch`'s own
+    `consolation=` argument. Only pooled when scope == "all".
+    """
     from .playoffs import clutch as _clutch
-    d = _clutch(seasons, playoffs, scope).sort_values("clutch").reset_index(drop=True)
+    # Ordered by postseason scoring itself (the coloured dot), highest at the
+    # top -- the "who actually put up points when it counted" read -- rather
+    # than by the clutch delta.
+    d = _clutch(seasons, playoffs, scope, consolation=consolation).sort_values(
+        "po_ppg").reset_index(drop=True)
     fig, ax = plt.subplots(figsize=(10, 6))
     cols = ["#2ca02c" if v > 0 else "#d62728" for v in d["clutch"]]
     for i, r in d.iterrows():
@@ -1643,8 +2742,11 @@ def plot_clutch(seasons: dict, playoffs: dict, scope: str = "title"):
     pad = max((hi - lo) * 0.15, 1.5)
     ax.set_xlim(lo - pad, hi + pad)
     _, span = _po_span(playoffs)
+    # With `consolation` merged in the coloured dot is the WHOLE postseason
+    # (bracket + consolation bracket), so the subtitle says so.
+    po_label = "postseason PPG" if consolation is not None else "playoff PPG"
     return _finish(fig, ax, "Clutch: Playoff vs Regular-Season Scoring",
-                   f"Grey dot = regular-season PPG; coloured = playoff PPG  ·  "
+                   f"Grey dot = regular-season PPG; coloured = {po_label}  ·  "
                    f"{span}", "Points per Game")
 
 

@@ -172,7 +172,9 @@ if (nzchar(Sys.getenv("DDBM_SEASON"))) targetSeason <- Sys.getenv("DDBM_SEASON")
 buildLeagueChain <- function(headId) {
   chain <- list()
   id <- headId
-  while (!is.null(id) && !is.na(id) && nzchar(id)) {
+  # Sleeper ends the chain with either NULL or the string "0" depending on the
+  # league; "0" would otherwise issue GET /league/0 and 404 the whole walk.
+  while (!is.null(id) && !is.na(id) && nzchar(id) && id != "0") {
     lg <- callSleeper(paste0("/league/", id))
     chain[[lg$season]] <- list(
       league_id       = lg$league_id,

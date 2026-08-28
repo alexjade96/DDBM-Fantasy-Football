@@ -21,17 +21,17 @@
    lineup row's own `cmp` (that slot's win/loss against the other side's
    same slot) highlights automatically, same as any other lineup_table
    caller. `sd.bench`, when present, adds a Bench section below the main
-   table -- only the toilet bowl's sides carry one (real `pl_wk` roster
-   data); a bracket game's commissioner-submitted lineup has no bench
-   concept at all, so `bench=sd.bench` there resolves to nothing and the
-   section is simply absent. #}
+   table -- only the consolation bracket's sides carry one (real `pl_wk`
+   roster data); a playoff-bracket game's commissioner-submitted lineup has
+   no bench concept at all, so `bench=sd.bench` there resolves to nothing
+   and the section is simply absent. #}
 {% import "_lineupmacro.html" as lu with context %}
 <div class="loground">
   <div class="loground-head">
     <span class="lr-name">{{ grp.label }}</span>
     {% if grp.weeks %}<span class="lr-wk">week {{ grp.weeks }}</span>{% endif %}
-    {% if grp.kind == 'consolation' %}<span class="tag">consolation</span>
-    {%- elif grp.kind == 'toilet' %}<span class="tag">toilet bowl</span>{% endif %}
+    {% if grp.kind == 'losers' %}<span class="tag">placement</span>
+    {%- elif grp.kind == 'consolation' %}<span class="tag">consolation bracket</span>{% endif %}
   </div>
   {% if grp.blurb %}<p class="lr-blurb">{{ grp.blurb }}</p>{% endif %}
   <div class="tablewrap">

@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import io
 import os
+import re
 import threading
 import time
 from html import escape as html_escape
@@ -182,6 +183,193 @@ def _grouped_rules(settings: dict) -> list[tuple[str, list[dict]]]:
     d = sm.scoring_readable(settings)
     return [(g, records(rows)) for g, rows in d.groupby("group", sort=False)]
 
+
+# The Season config section (a collapsed drilldown on the Overview tab) shows
+# Sleeper's raw `settings` dict, mostly as-is (it IS the league's
+# configuration -- a config view that paraphrases it away is worse than one
+# that shows it straight). These are just nicer labels for the
+# keys that have an obvious plain-English name; anything not here renders with
+# its raw key, title-cased, so a new Sleeper setting still shows up rather than
+# being silently dropped.
+_SETTING_LABELS = {
+    "num_teams": "Teams",
+    "playoff_teams": "Playoff teams",
+    "playoff_week_start": "Playoff start week",
+    "playoff_round_type": "Playoff round type",
+    "playoff_seed_type": "Playoff reseeding",
+    "playoff_type": "Playoff type",
+    "last_scored_leg": "Last scored week",
+    "leg": "Current week (leg)",
+    "start_week": "Start week",
+    "trade_deadline": "Trade deadline (week)",
+    "trade_review_days": "Trade review (days)",
+    "disable_trades": "Trades disabled",
+    "waiver_type": "Waiver type",
+    "waiver_day_of_week": "Waiver day",
+    "waiver_clear_days": "Waiver clear (days)",
+    "waiver_budget": "FAAB budget",
+    "daily_waivers": "Daily waivers",
+    "daily_waivers_hour": "Daily waiver hour",
+    "type": "League type",
+    "max_keepers": "Max keepers",
+    "draft_rounds": "Draft rounds",
+    "reserve_slots": "IR slots",
+    "taxi_slots": "Taxi slots",
+    "taxi_years": "Taxi years",
+    "taxi_allow_vets": "Taxi allows veterans",
+    "bench_lock": "Bench lock",
+    "offseason_adds": "Offseason adds",
+    "pick_trading": "Draft-pick trading",
+    "capacity_override": "Roster capacity override",
+    "divisions": "Divisions",
+    "best_ball": "Best ball",
+}
+# A handful of Sleeper's settings values are 0/1 flags -- show those as Yes/No
+# rather than a bare digit.
+_SETTING_BOOLS = {
+    "disable_trades", "daily_waivers", "taxi_allow_vets", "bench_lock",
+    "offseason_adds", "pick_trading", "best_ball", "disable_adds",
+    "commissioner_direct_invite", "veto_show_votes", "reserve_allow_out",
+    "reserve_allow_doubtful", "reserve_allow_sus", "reserve_allow_cov",
+    "reserve_allow_dnr", "reserve_allow_na", "league_average_match",
+}
+# Which group each setting key belongs to, so the settings render as grouped
+# columns (like the point-calculation chart) rather than one long A-Z list.
+# Order here is the display order; a key not listed lands in "Other".
+_SETTING_GROUPS: list[tuple[str, tuple[str, ...]]] = [
+    ("League", ("num_teams", "type", "best_ball", "start_week", "leg",
+                "last_scored_leg", "last_report", "divisions",
+                "league_average_match", "commissioner_direct_invite",
+                "capacity_override")),
+    ("Playoffs", ("playoff_teams", "playoff_week_start", "playoff_round_type",
+                  "playoff_seed_type", "playoff_type")),
+    ("Waivers & FA", ("waiver_type", "waiver_day_of_week", "waiver_clear_days",
+                      "waiver_budget", "waiver_bid_min", "daily_waivers",
+                      "daily_waivers_hour", "daily_waivers_days",
+                      "daily_waivers_last_ran", "disable_adds", "offseason_adds")),
+    ("Trades", ("disable_trades", "trade_deadline", "trade_review_days",
+                "pick_trading", "veto_votes_needed", "veto_auto_poll",
+                "veto_show_votes")),
+    ("Roster & keepers", ("max_keepers", "draft_rounds", "bench_lock",
+                          "reserve_slots", "taxi_slots", "taxi_years",
+                          "taxi_deadline", "taxi_allow_vets")),
+    ("IR eligibility", ("reserve_allow_out", "reserve_allow_doubtful",
+                        "reserve_allow_sus", "reserve_allow_cov",
+                        "reserve_allow_dnr", "reserve_allow_na")),
+]
+_SETTING_GROUP_OF = {k: g for g, keys in _SETTING_GROUPS for k in keys}
+
+
+def _league_settings_groups(raw: dict) -> list[tuple[str, list[dict]]]:
+    """Sleeper's league `settings` dict as [(group, [{label, key, value}])].
+
+    Grouped (League / Playoffs / Waivers / ...) and rendered as columns like
+    the point-calculation chart, rather than one long alphabetical table.
+    Values are shown as stored (this is a configuration view) except the
+    known 0/1 flags, which read Yes/No. Any key not in _SETTING_GROUPS lands
+    in a trailing "Other" group so a new Sleeper setting still shows.
+    """
+    settings = (raw or {}).get("settings") or {}
+    buckets: dict[str, list[dict]] = {}
+    for k, v in settings.items():
+        if k in _SETTING_BOOLS:
+            v = "Yes" if v else "No"
+        row = {"label": _SETTING_LABELS.get(k, k.replace("_", " ").title()),
+               "key": k, "value": v}
+        buckets.setdefault(_SETTING_GROUP_OF.get(k, "Other"), []).append(row)
+    out: list[tuple[str, list[dict]]] = []
+    for g, _ in _SETTING_GROUPS:
+        if buckets.get(g):
+            out.append((g, sorted(buckets[g], key=lambda r: r["label"].lower())))
+    if buckets.get("Other"):
+        out.append(("Other", sorted(buckets["Other"], key=lambda r: r["label"].lower())))
+    return out
+
+
+def _slot_counts(seq) -> list[tuple[str, int]]:
+    """['RB','RB','WR'] -> [('RB', 2), ('WR', 1)], in first-seen order."""
+    out: list[list] = []
+    seen: dict[str, list] = {}
+    for p in seq:
+        if p in seen:
+            seen[p][1] += 1
+        else:
+            seen[p] = [p, 1]
+            out.append(seen[p])
+    return [(p, n) for p, n in out]
+
+
+def _member_seasons(all_seasons: dict | None) -> dict:
+    """`{user_id: [season, ...]}` -- every season each account appears in,
+    newest first. Keyed on the persistent `user_id` (stable across seasons
+    even when the display/team name changes), read from each season's
+    `accounts` frame. `{}` when the chain isn't available.
+    """
+    if not all_seasons:
+        return {}
+    out: dict[str, list[str]] = {}
+    # all_seasons is oldest-first (league_chain order); walk newest-first so
+    # each list comes out current -> earliest without a re-sort.
+    for seas in reversed(list(all_seasons)):
+        acc = getattr(all_seasons[seas], "accounts", None)
+        if acc is None or getattr(acc, "empty", True) or "user_id" not in acc:
+            continue
+        for uid in acc["user_id"]:
+            if uid is None or (isinstance(uid, float) and uid != uid):   # NaN
+                continue
+            out.setdefault(str(uid), []).append(str(seas))
+    return out
+
+
+def _config_ctx(s, key: str, all_seasons: dict | None = None) -> dict:
+    """Everything the Season config sections (at the bottom of the Overview
+    tab -- see @tab_part("overview", "config")) need: the league's grouped
+    Sleeper settings, roster setup, scoring chart, and every member + user id
+    (with the seasons that account has been in the league, newest first, when
+    the full season chain is passed as `all_seasons`).
+
+    The raw league object is NOT retained on the Season (only a few of its
+    fields are lifted into the season link), so it is fetched here -- one
+    extra call, only when the section's lazy placeholder fires.
+    """
+    try:
+        raw = sm.league(s.league_id)
+    except Exception:
+        raw = {}
+    rpos = raw.get("roster_positions") or list(s.slots)
+    starters = [p for p in rpos if p not in ("BN", "IR", "TAXI")]
+    bench = [p for p in rpos if p in ("BN", "IR", "TAXI")]
+    scoring = raw.get("scoring_settings") or {}
+    return {
+        "lg_name": raw.get("name") or s.name,
+        "lg_season": raw.get("season") or key,
+        "roster_positions": rpos,
+        "roster_starters": starters,
+        "roster_bench": bench,
+        # Roster slots as [(slot, count)] in first-seen order, split
+        # starters/bench, for a clearer labelled display than a flat pill row.
+        "roster_starter_counts": _slot_counts(starters),
+        "roster_bench_counts": _slot_counts(bench),
+        "settings_groups": _league_settings_groups(raw),
+        "n_settings": len((raw or {}).get("settings") or {}),
+        "rules": _grouped_rules(scoring),
+        "n_rules": len(scoring),
+        "members": _members_with_seasons(s, all_seasons),
+    }
+
+
+def _members_with_seasons(s, all_seasons: dict | None) -> list[dict]:
+    """The current-season member rows, each stamped with `member_seasons` --
+    the list of seasons that account has been in the league, newest first
+    (empty when the chain isn't available)."""
+    if s.accounts.empty:
+        return []
+    by_uid = _member_seasons(all_seasons)
+    rows = records(s.accounts.sort_values("roster_id"))
+    for r in rows:
+        r["member_seasons"] = by_uid.get(str(r.get("user_id")), [])
+    return rows
+
 # Tab order: overview/weekly is the landing view (what happened, then week by
 # week), then playoffs/roster/draft sit together right after weekly trends,
 # then transactions, then career/report -- beyond this season, the thing you
@@ -244,8 +432,26 @@ def league_data(league_id: str, fresh: bool = False) -> dict:
     # to the number 2025, so another league must not inherit DDBM's playoffs.
     playoffs = sm.load_playoffs(
         SEASON_DIR, league_ids=[s.league_id for s in seasons.values()])
+    # Which seasons have a stored (committed) bracket config.
+    source = {k: "committed" for k in playoffs}
+    # For every OTHER season, fall back to Sleeper's own winners_bracket so the
+    # Playoffs tab shows a real bracket instead of the "no bracket yet" prompt.
+    # A stored config always wins (e.g. DDBM 2025's custom bracket); a league
+    # with none (Coin Flip and FF 2025) gets Sleeper's. Best-effort: if Sleeper
+    # holds no coherent bracket for that season, it stays absent and the tab
+    # falls back to the prompt exactly as before.
+    for k, s in seasons.items():
+        if k in playoffs:
+            continue
+        try:
+            cfg = sm.sleeper_bracket(league_id, k)
+            if cfg.get("rounds"):
+                playoffs[k] = sm.playoff(cfg, validate=False)
+                source[k] = "sleeper"
+        except Exception:
+            pass
     d = {"at": time.time(), "seasons": seasons, "playoffs": playoffs,
-         "names": list(seasons)}
+         "playoff_source": source, "names": list(seasons)}
     _cache[league_id] = d
     return d
 
@@ -457,10 +663,12 @@ CHART_META = {
     "position_scoring": {"cap": "Started points by position and each slot's share of the total."},
     "roster_counts": {"cap": "The average roster shape each manager carried."},
     "season_optimal": {"cap": "Started vs the best legal lineup, averaged across every manager, by week."},
-    "playoff_players_topband": {"cap": "PROTOTYPE: Best Playoff Players, legend moved above the axes instead of in-axes lower-right."},
-    "playoff_players_postext": {"cap": "PROTOTYPE: Best Playoff Players, position shown as text instead of bar color, no legend needed."},
-    "playoff_players_medal": {"cap": "PROTOTYPE: Best Playoff Players, ring count as gold/silver/bronze dots instead of trailing stars."},
+    "bracket_accent": {"cap": "PROTOTYPE: on the live elbow+card bracket, one neutral card fill with a green accent bar marking the side that advanced, gold champion card."},
+    "bracket_full": {"cap": "PROTOTYPE: bracket_accent plus alternating round column bands and byes drawn as a lighter pill."},
     "playoff_players_splice": {"cap": "Each bar split into one slice per playoff game, earliest first: a total shown as the games that built it."},
+    "consolation_bracket": {"cap": "The teams that missed the championship bracket, week by week, and who finished last."},
+    "consolation_players_splice": {"cap": "Best scorers in the consolation bracket, each bar split into one slice per game."},
+    "consolation_clutch": {"cap": "Consolation bracket PPG against regular-season PPG: who kept scoring once they were out."},
     "roster_heatmap": {"cap": "How deep each team built at every position: weeks rostered, by manager."},
     "flex_usage": {"cap": "Which position (RB, WR or TE) fills the flex spot most often, by manager."},
     "position_box": {"cap": "The scoring spread at each position: good weeks against bad."},
@@ -505,12 +713,14 @@ tpl.env.globals["CHART_META"] = CHART_META
 # nothing else needs touching. Remove the key (and the chart function/dispatch
 # line, if it's been rejected) once a prototype's fate is decided.
 TESTING_CHARTS = [
-    ("Best Playoff Players, three legend/label alternatives: the position-color "
-     "legend moved above the axes instead of risking a lower-right collision with "
-     "the shortest bars, position shown as plain text instead of bar color (so "
-     "there's no legend at all), and ring count pulled out into gold/silver/bronze "
-     "medal dots instead of trailing stars buried at the end of each row's label", [
-        "playoff_players_topband", "playoff_players_postext", "playoff_players_medal",
+    ("Playoff bracket restylings, on top of the now-live baseline (elbow connectors "
+     "and two-line node cards, adopted from this round's prototypes). Two remain "
+     "under review: (1) drop the green-for-every-winner card fill for a single "
+     "neutral fill plus a short green accent bar marking the side that advanced (so "
+     "a Round 1 game isn't as loud as the Final), with a gold champion card; (2) the "
+     "same, plus alternating faint round column bands and byes drawn as a lighter, "
+     "narrower pill rather than a full matchup card", [
+        "bracket_accent", "bracket_full",
     ]),
 ]
 
@@ -587,16 +797,55 @@ def chart(name: str, league: str = DEFAULT_LEAGUE, season: str | None = None,
             return png(plots.plot_playoff_stats(po, scope))
         if name == "playoff_players":
             return png(plots.plot_playoff_players(po, scope=scope))
-        if name == "playoff_players_topband":
-            return png(plots.plot_playoff_players_topband(po, scope=scope))
-        if name == "playoff_players_postext":
-            return png(plots.plot_playoff_players_postext(po, scope=scope))
-        if name == "playoff_players_medal":
-            return png(plots.plot_playoff_players_medal(po, scope=scope))
-        if name == "playoff_players_splice":
-            return png(plots.plot_playoff_players_splice({key: d["seasons"][key]}, po, scope=scope))
-        if name == "clutch":
-            return png(plots.plot_clutch({key: d["seasons"][key]}, po, scope))
+        if name in ("bracket_accent", "bracket_full"):
+            # Same inputs as the `bracket` branch below (a resolved p_season +
+            # this season's reference scores for bye/idle nodes); these are the
+            # Testing-tab restyling prototypes still under review on top of the
+            # now-live elbow+card bracket.
+            if p_season is None:
+                return Response(status_code=404)
+            _bracket_proto = {
+                "bracket_accent": plots.plot_playoff_bracket_accent,
+                "bracket_full": plots.plot_playoff_bracket_full,
+            }[name]
+            return png(_bracket_proto(p_season, sm.reference_scores(s)))
+        if name in ("playoff_players_splice", "clutch"):
+            # The Playoffs tab passes `scope=title` (championship path only);
+            # the Postseason tab passes `scope=postseason`, which means "the
+            # WHOLE postseason": bracket games (title + consolation) PLUS the
+            # consolation bracket, folded into one chart. `postseason` maps to the
+            # underlying `all` bracket scope with the consolation bracket merged in
+            # via `consolation=` (see playoffs.playoff_performances / clutch).
+            _sc = "all" if scope == "postseason" else scope
+            _cb = _clabel = None
+            if scope == "postseason" and p_season is not None:
+                _cbd = sm.consolation_bracket(s, p_season)
+                # If Sleeper's real losers_bracket resolves, this competition
+                # is a CONSOLATION BRACKET (rounds, advancement) -- name it
+                # that and hand the splice chart a {week: round name} map so
+                # it colours the consolation rounds distinctly. Otherwise it
+                # is a genuine missed-teams CONSOLATION BRACKET (flat weekly games).
+                _clabel = "Consolation bracket"
+                try:
+                    _lcfg = sm.sleeper_losers_bracket(s.league_id, key)
+                    _lp = sm.playoff(_lcfg, validate=False) if _lcfg else None
+                    if _lp is not None and len(getattr(_lp, "results", [])):
+                        _clabel = "Consolation bracket"
+                        _wr = {}
+                        for _rd in _lp.config.get("rounds", []):
+                            for _w in (_rd.get("weeks") or []):
+                                _wr[int(_w)] = _rd.get("name") or _rd["id"]
+                        if _wr:
+                            _cbd = dict(_cbd, week_rounds=_wr)
+                except Exception:
+                    pass
+                _cb = [_cbd]
+            _ssn = {key: d["seasons"][key]}
+            if name == "playoff_players_splice":
+                return png(plots.plot_playoff_players_splice(
+                    _ssn, po, scope=_sc, consolation=_cb,
+                    consolation_label=_clabel or "Consolation bracket"))
+            return png(plots.plot_clutch(_ssn, po, scope=_sc, consolation=_cb))
         if name == "playoff_stats_all":
             return png(plots.plot_playoff_stats(d["playoffs"], scope))
         if name == "playoff_players_all":
@@ -607,8 +856,39 @@ def chart(name: str, league: str = DEFAULT_LEAGUE, season: str | None = None,
             if p_season is None:
                 return Response(status_code=404)
             # Bye/idle nodes carry the team's real weekly score for reference,
-            # so they read as a number rather than a dash.
-            return png(plots.plot_playoff_bracket(p_season, sm.reference_scores(s)))
+            # so they read as a number rather than a dash. `consolation_bracket` supplies
+            # the last-place name for the outcome caption (its own games render in
+            # the separate `consolation_bracket` chart beside this one).
+            return png(plots.plot_playoff_bracket(
+                p_season, sm.reference_scores(s), sm.consolation_bracket(s, p_season)))
+        if name == "consolation_bracket":
+            if p_season is None:
+                return Response(status_code=404)
+            # Prefer Sleeper's real losers_bracket (a proper consolation tree)
+            # so the consolation bracket draws as a bracket, not ragged week columns.
+            # Falls back to the flat weekly layout when there is no coherent
+            # losers_bracket (a custom/incoherent one, an unscored season).
+            _lb = None
+            try:
+                _lcfg = sm.sleeper_losers_bracket(s.league_id, key)
+                if _lcfg:
+                    _lb = sm.playoff(_lcfg, validate=False)
+            except Exception:
+                _lb = None
+            return png(plots.plot_consolation_bracket(
+                p_season, sm.consolation_bracket(s, p_season), sm.reference_scores(s),
+                losers_bracket=_lb))
+        if name in ("consolation_players_splice", "consolation_clutch"):
+            # Consolation bracket analytics: the missed-bracket counterparts to
+            # playoff_players_splice / clutch. No `scope` (the consolation bracket
+            # has no sub-brackets), single season. A season with no consolation
+            # bowl draws its own "no games" panel rather than 404ing.
+            if p_season is None:
+                return Response(status_code=404)
+            _cb = sm.consolation_bracket(s, p_season)
+            if name == "consolation_players_splice":
+                return png(plots.plot_consolation_players_splice(_cb))
+            return png(plots.plot_consolation_clutch(s, _cb))
         if name == "playoff_matchup":
             if p_season is None:
                 return Response(status_code=404)
@@ -691,6 +971,79 @@ def load(request: Request, league: str = DEFAULT_LEAGUE, season: str | None = No
     return _pushed(tpl.TemplateResponse(request, "load.html", ctx), ctx, "overview")
 
 
+# --- find leagues by user ------------------------------------------------
+# A prototype way in that doesn't need the user to already know a league id:
+# type a Sleeper username (or numeric user_id), get back every league that
+# account is in for a season, and click one to jump to its dashboard (the
+# links are the same /league=<id> route the landing form leads to). Sleeper's
+# user-leagues endpoint is season-scoped, so `season` is a real control here;
+# it defaults to whatever season leagues are currently being played for.
+_SLEEPER_CDN = "https://sleepercdn.com/avatars/thumbs/"
+
+
+def _current_nfl_season() -> str:
+    """The season Sleeper considers current (stable through the offseason,
+    unlike the week counter). Falls back to a fixed recent year if
+    `/state/nfl` can't be reached, so the lookup form still renders."""
+    try:
+        st = sm.nfl_state() or {}
+        return str(st.get("league_season") or st.get("season") or "2025")
+    except Exception:
+        return "2025"
+
+
+@app.get("/user-leagues", response_class=HTMLResponse)
+def user_leagues(request: Request, user: str = "", season: str | None = None):
+    """List the leagues a Sleeper user belongs to for a season (HTMX fragment).
+
+    A blank/unknown handle or a private account is a normal thing to hit, so
+    every failure path answers with a message in the results area rather than
+    a 500 -- the form stays usable and the query can be retried.
+    """
+    handle = (user or "").strip()
+    if not handle:
+        return tpl.TemplateResponse(request, "_user_leagues.html", {
+            "error": "Enter a Sleeper username or user ID.", "handle": handle})
+    sea = str(season).strip() if season else _current_nfl_season()
+    try:
+        u = sm.user(handle)
+    except Exception:
+        u = None
+    if not u or not u.get("user_id"):
+        return tpl.TemplateResponse(request, "_user_leagues.html", {
+            "error": f"No Sleeper user found for “{handle}”.",
+            "handle": handle, "season": sea})
+    try:
+        raw = sm.user_leagues(u["user_id"], sea)
+    except Exception:
+        return tpl.TemplateResponse(request, "_user_leagues.html", {
+            "error": "Couldn’t load this user’s leagues right now. Try again.",
+            "handle": handle, "season": sea, "user": u})
+    leagues = [{
+        "league_id": lg.get("league_id"),
+        "name": lg.get("name") or "(unnamed league)",
+        "season": lg.get("season") or sea,
+        "status": (lg.get("status") or "").replace("_", " "),
+        "total_rosters": lg.get("total_rosters"),
+        "avatar": (_SLEEPER_CDN + lg["avatar"]) if lg.get("avatar") else None,
+    } for lg in raw if lg.get("league_id")]
+    uav = u.get("avatar")
+    ctx = {
+        "handle": handle, "season": sea,
+        "user": {
+            "user_id": u["user_id"],
+            "display_name": u.get("display_name") or u.get("username") or handle,
+            "username": u.get("username"),
+            "avatar": (_SLEEPER_CDN + uav) if uav else None,
+        },
+        "leagues": leagues,
+        # A few seasons back from the current one, newest first, for the picker.
+        "seasons": [str(y) for y in range(int(_current_nfl_season()),
+                                          int(_current_nfl_season()) - 8, -1)],
+    }
+    return tpl.TemplateResponse(request, "_user_leagues.html", ctx)
+
+
 def _resolve_week(s, week: str | int | None) -> int:
     """Clamp a possibly-invalid week param into [1, s.last_week], defaulting to
     the latest -- shared by _week_context() and the scoreboard lazy part (see
@@ -757,111 +1110,215 @@ def _season_phase(s, d: dict, key: str) -> dict:
     regular-season metric -- so they can't distinguish "mid-playoffs" from
     "regular season just ended." This reads the SAME playoff data the
     Playoffs tab already resolves (`d["playoffs"]`, `sleepermetrics.
-    game_log`/`toilet_bowl`) instead of touching `Season` at all.
+    game_log`/`consolation_bracket`) instead of touching `Season` at all, then
+    keeps only the rounds that have actually been played (see below) so a
+    configured-but-not-started bracket still reads as "regular".
     """
     p = d["playoffs"].get(key)
-    title_rounds = []
+    title_rounds, played_rounds = [], []
     if p is not None:
-        log = sm.game_log(s, p, toilet=sm.toilet_bowl(s, p))
-        # game_log() only appends a round once it has games or byes (see its
-        # docstring), so title/mixed-kind groups here are exactly the rounds
-        # that have actually been played -- a round with no data yet simply
-        # isn't in `log`, so a season whose playoffs haven't started falls
-        # through to "regular" with no special-casing needed.
+        log = sm.game_log(s, p, consolation=sm.consolation_bracket(s, p))
+        # `game_log()` appends a group for EVERY configured round, not just the
+        # ones that have been played: `playoff()` emits a PENDING result row for
+        # every matchup in every round (with the team set to its "W:<id>"
+        # advancement ref), `_tag_bracket()` still tags those future rounds
+        # `title`, and `game_log()` treats the ref string as a valid side. So a
+        # bare bracket config alone would make every round a `title` group and
+        # `title_rounds[-1]` would always be the final -- reading as "the
+        # playoffs are on, championship round" during the regular season or
+        # while round 1 is still being played.
         title_rounds = [g for g in log if g["kind"] in ("title", "mixed")]
+        # A round has actually been PLAYED once it has a decided GAME (one whose
+        # score is in, so `pending` is False). Byes don't count: a first-round
+        # bye resolves structurally from the seeding the moment the bracket is
+        # configured, with nothing played. This is what distinguishes "regular
+        # season, bracket merely configured" from "postseason under way".
+        played_rounds = [
+            g for g in title_rounds
+            if any(not gm["pending"] for gm in g["games"])]
     if s.status == "complete":
-        # `title_rounds` (ALL played rounds, not just the last) lets the
-        # complete-phase lead recap the whole postseason run instead of
-        # freezing on whatever the last regular-season week happened to be.
+        # `title_rounds` (ALL rounds, not just the last) lets the complete-phase
+        # lead recap the whole postseason run instead of freezing on whatever
+        # the last regular-season week happened to be.
         return {"phase": "complete", "playoff": p,
                 "champion": (p.champion or None) if p else None,
                 "title_rounds": title_rounds}
-    if title_rounds:
-        # The LAST group is the most advanced round -- whether mid-round
-        # (some games still `pending`) or just finished.
-        return {"phase": "playoffs", "playoff": p, "current_round": title_rounds[-1]}
+    if played_rounds:
+        # The last PLAYED round -- the one just completed (or, if a later round's
+        # lineups are in but nobody has been scored yet, still the last one with
+        # real results). The user-facing contract for this lead is "last
+        # completed week analysis", so it deliberately does not jump ahead to a
+        # round that exists only as PENDING placeholders.
+        return {"phase": "playoffs", "playoff": p, "current_round": played_rounds[-1]}
     return {"phase": "regular"}
 
 
-def _playoff_tiles(games: list[dict], fourth: tuple) -> list[tuple]:
+def _playoff_tiles(games: list[dict], lead: tuple | None = None,
+                   tail: list[tuple] | None = None,
+                   include_margins: bool = True,
+                   game_round: dict | None = None) -> list[tuple]:
     """Highest score / Biggest blowout / Closest game tiles from a set of
-    `game_log()` games, plus one caller-supplied 4th tile -- shared between
-    the playoffs-phase (current round only) and complete-phase (every played
-    round) Overview leads. Same `{value, user_name}` shape `_week_context`'s
-    kpi() tiles use, so the template's tile loop stays one generic block.
+    `game_log()` games -- shared between the playoffs-phase (current round only)
+    and complete-phase (every played round) Overview leads. Same
+    `{value, user_name, detail}` shape `_week_context`'s kpi() tiles use, so
+    the template's tile loop stays one generic block.
+
+    Every tile here is a genuine superlative. `lead`, if given, is one more
+    caller-supplied standout tile placed FIRST (the complete-phase lead passes
+    the champion -- the single most important fact once the season is over).
+    `tail` is caller-supplied tiles appended AFTER; `include_margins=False`
+    drops Biggest blowout / Closest game (the complete-phase lead swaps them
+    for consolation-bracket standouts). `game_round` is `{id(game): "Round N"}`
+    -- when given, the Highest-score / Biggest-blowout tiles name the round
+    the record fell in (via the tile's `detail` field). A caller with nothing
+    to add omits it all.
     """
     decided = [g for g in games if not g["pending"]]
+    gr = game_round or {}
 
     def _winner(g):
         return next((sd for sd in g["sides"] if sd["result"] == "W"), g["sides"][0])
 
     scored = [(sd, g) for g in games for sd in g["sides"] if sd.get("points") is not None]
     top = max(scored, key=lambda t: t[0]["points"]) if scored else None
-    margined = [g for g in decided if g.get("margin") is not None]
-    blow = max(margined, key=lambda g: g["margin"]) if margined else None
-    close = min(margined, key=lambda g: g["margin"]) if margined else None
-    return [
+    tiles = [
         ("Highest score",
-         {"value": f"{top[0]['points']:.1f}", "user_name": top[0]["team"]} if top else None, "gold"),
-        ("Biggest blowout",
-         {"value": f"+{blow['margin']:.1f}", "user_name": _winner(blow)["team"]} if blow else None, ""),
-        ("Closest game",
-         {"value": f"+{close['margin']:.1f}", "user_name": _winner(close)["team"]} if close else None, ""),
-        fourth,
+         {"value": f"{top[0]['points']:.1f}", "user_name": top[0]["team"],
+          "detail": gr.get(id(top[1]))} if top else None,
+         "" if lead is not None else "gold"),
     ]
+    if include_margins:
+        margined = [g for g in decided if g.get("margin") is not None]
+        blow = max(margined, key=lambda g: g["margin"]) if margined else None
+        close = min(margined, key=lambda g: g["margin"]) if margined else None
+        tiles += [
+            ("Biggest blowout",
+             {"value": f"+{blow['margin']:.1f}", "user_name": _winner(blow)["team"],
+              "detail": gr.get(id(blow))} if blow else None, ""),
+            ("Closest game",
+             {"value": f"+{close['margin']:.1f}", "user_name": _winner(close)["team"],
+              "detail": gr.get(id(close))} if close else None, ""),
+        ]
+    if lead is not None:
+        tiles.insert(0, lead)
+    if tail:
+        tiles += tail
+    return tiles
 
 
-def _overview_insights(s) -> str | None:
-    """Extra Overview-only narrative bullets (as a markdown string, same
-    shape as summaries.summary_season() so the template's `| md` filter
-    renders both the same way) covering what the demoted schedule/scoring
-    charts (sos, pf_pa, week_race) show visually, so cutting them from the
-    default view doesn't lose the takeaway, just the graphic.
+def _overview_insight_rows(s) -> list[dict]:
+    """The regular-season takeaways as STANDOUT TILES for the Overview tab --
+    the same `.stat` grid every other tab's "standouts" section uses, not one
+    run-on markdown sentence per fact and not one wide table.
 
-    Deliberately separate from summary_season() itself -- that markdown is
-    parity-mirrored with R and reused by the season report and weekly report,
-    so it isn't the place for a webapp-only addition (same precedent as
-    boom_bust/strength_of_schedule being Python-only extras layered on top of
-    the parity-checked metrics rather than folded into a shared contract).
-    Returns None (not an empty string) when there's nothing to say, so the
-    template's `{% if extra_insights %}` skips the section cleanly.
+    Two tile shapes:
+      * a SINGLE tile `{label, value, holder, detail, tone}` (just the table
+        leader), and
+      * a MERGED tile `{label, rows: [{tone, holder, value, detail}, ...]}` for
+        each opposed metric (coaching, luck, points allowed, consistency,
+        schedule strength) -- the best and worst halves stacked as two mini
+        rows inside one tile rather than two separate tiles.
+
+    Tiles are ordered MOST IMPORTANT FIRST: the table leader, then skill
+    (coaching), luck, defence, consistency, and schedule. The CHAMPION is
+    deliberately NOT here -- it belongs to the season-complete
+    postseason-recap tiles up in the lead (see `_playoff_tiles`), not to a
+    regular-season summary. The weekly-high-score-crowns and biggest-mover
+    tiles were dropped by request.
+
+    Covers the union of the facts that used to be split between
+    summaries.summary_season() (rendered here as `| md` prose) and the old
+    webapp-only `_overview_insights()` string. summary_season() itself is
+    UNTOUCHED -- still parity-mirrored with R and reused by the season /
+    weekly reports.
+
+    Returns [] when there's nothing to say (empty/one-week season), so the
+    template's `{% if insight_rows %}` skips the section cleanly.
     """
-    bullets = []
+    import pandas as pd
+
+    tiles: list[dict] = []
+
+    def _ok(holder):
+        return holder is not None and not (isinstance(holder, float) and pd.isna(holder))
+
+    def tile(label, value, holder, detail, tone=""):
+        if _ok(holder):
+            tiles.append({"label": label, "value": value, "holder": str(holder),
+                          "detail": detail, "tone": tone})
+
+    def merged(label, best, worst):
+        """best/worst are (holder, value, detail) triples; either may be None."""
+        rows = [{"tone": tone, "holder": str(h), "value": v, "detail": d}
+                for tone, trip in (("good", best), ("bad", worst))
+                if trip is not None and _ok((h := trip[0]))
+                for v, d in [(trip[1], trip[2])]]
+        if rows:
+            tiles.append({"label": label, "rows": rows})
+
+    st = getattr(s, "standings", None)
+    if st is None or not len(st):
+        return tiles
+
+    # 1. The table -- leader and last place (the record at both ends).
+    lead = st.iloc[0]
+    tail = st.iloc[-1]
+    merged("The table",
+           (lead["user_name"], f"{int(lead['wins'])}-{int(lead['losses'])}",
+            f"top of the table, {round(lead['points'])} pts for"),
+           (tail["user_name"], f"{int(tail['wins'])}-{int(tail['losses'])}",
+            f"bottom of the table, {round(tail['points'])} pts for")
+           if len(st) >= 2 else None)
+
+    # 2. Coaching -- skill: how much of the optimal lineup each team started.
+    eff = metrics.efficiency(s)
+    if len(eff) >= 2:
+        best_c, worst_c = eff.iloc[0], eff.iloc[-1]
+        merged("Coaching",
+               (best_c["user_name"], f"{best_c['eff']:.1f}%", "of the optimal lineup started"),
+               (worst_c["user_name"], f"{worst_c['eff']:.1f}%", "of the optimal lineup started"))
+    elif len(eff) == 1:
+        best_c = eff.iloc[0]
+        merged("Coaching",
+               (best_c["user_name"], f"{best_c['eff']:.1f}%", "of the optimal lineup started"),
+               None)
+
+    # 3. Luck -- wins above/below all-play expectation.
+    lk = metrics.luck(s)
+    if len(lk) >= 2:
+        lucky, unlucky = lk.iloc[0], lk.iloc[-1]
+        merged("Luck",
+               (lucky["user_name"], f"{lucky['luck']:+.1f}", "wins vs. all-play expectation"),
+               (unlucky["user_name"], f"{unlucky['luck']:+.1f}", "wins vs. all-play expectation"))
+
+    # 4. Defence -- points allowed.
+    pfa = metrics.points_for_against(s)
+    if len(pfa) >= 2:
+        stingy = pfa.loc[pfa["pa"].idxmin()]
+        leaky = pfa.loc[pfa["pa"].idxmax()]
+        merged("Points allowed",
+               (stingy["user_name"], f"{round(stingy['pa'])}", "fewest conceded all season"),
+               (leaky["user_name"], f"{round(leaky['pa'])}", "most conceded all season"))
+
+    # 5. Consistency -- week-to-week scoring SD.
+    cons = metrics.consistency(s)
+    if len(cons) >= 2:
+        steady, swingy = cons.iloc[0], cons.iloc[-1]
+        merged("Consistency",
+               (steady["user_name"], f"SD {round(steady['sd'])}", "smallest week-to-week swing"),
+               (swingy["user_name"], f"SD {round(swingy['sd'])}", "biggest week-to-week swing"))
+
+    # 6. Schedule strength -- opponents' average scoring. Easiest slate reads
+    #    as the "good" half here, matching the pre-merge tile tones (a tough
+    #    schedule was tinted bad, like being unlucky).
     sos = metrics.strength_of_schedule(s)
-    if len(sos):
+    if len(sos) >= 2:
         hard = sos.loc[sos["sos"].idxmax()]
         easy = sos.loc[sos["sos"].idxmin()]
-        bullets.append(
-            f"**Toughest schedule:** **{hard['user_name']}** averaged "
-            f"{hard['sos']:.1f} opponent points a week; **easiest:** "
-            f"**{easy['user_name']}** ({easy['sos']:.1f}).")
-    pfa = metrics.points_for_against(s)
-    if len(pfa):
-        stingy = pfa.loc[pfa["pa"].idxmin()]
-        bullets.append(
-            f"**Fewest points allowed:** **{stingy['user_name']}** "
-            f"({round(stingy['pa'])} against).")
-    tp = metrics.table_position(s)
-    if len(tp):
-        wk1, wkN = tp["week"].min(), tp["week"].max()
-        if wk1 != wkN:
-            a = tp[tp["week"] == wk1].set_index("user_name")["table_position"]
-            b = tp[tp["week"] == wkN].set_index("user_name")["table_position"]
-            common = a.index.intersection(b.index)
-            if len(common):
-                # Positive = climbed (a lower position number is better), so
-                # the max of (week-1 position - current position) is the
-                # biggest riser; a season with zero movement (or only one
-                # scored week) has no positive swing and says nothing rather
-                # than crediting a non-existent move.
-                swing = a[common] - b[common]
-                mover = swing.idxmax()
-                if swing[mover] > 0:
-                    n = int(swing[mover])
-                    bullets.append(
-                        f"**Biggest mover:** **{mover}** climbed {n} spot"
-                        f"{'' if n == 1 else 's'} in the table since week {int(wk1)}.")
-    return "\n".join(f"- {b}" for b in bullets) if bullets else None
+        merged("Schedule",
+               (easy["user_name"], f"{easy['sos']:.1f}", "easiest, opponent pts/week faced"),
+               (hard["user_name"], f"{hard['sos']:.1f}", "toughest, opponent pts/week faced"))
+    return tiles
 
 
 def _week_manager_context(s, week: int, manager: str, wk_games: list[dict]) -> dict:
@@ -1196,33 +1653,43 @@ def tab(name: str, request: Request, league: str = DEFAULT_LEAGUE,
         # the two week-analytics charts -- then restate the season-to-date metrics
         # below. The week lead is the same computation the Weekly tab uses.
         ctx.update(_week_context(s))
-        ctx["summary"] = summaries.summary_season(s)
         # Only the two charts that answer "who's actually good" at a glance
         # stay on this page -- standings (the record) and power_rank (the
         # composite merit blend). Overview is a landing page, not a wall of
         # graphics or a click-to-expand gallery, so everything else that used
         # to render here (week_race, allplay, sos, schedule_swap, pf_pa,
         # team_points) is gone rather than tucked behind a disclosure; their
-        # headline takeaways are narrated instead via _overview_insights().
+        # headline takeaways are surfaced instead as the structured
+        # `insight_rows` (portrait + label + metric per manager) below.
         # week_race is still reachable on the Weekly tab; the other four are
         # only reachable via their raw /chart/<key> URL for now. `luck` stays
-        # dropped too: it's the same all-play computation as `allplay`'s
-        # rank_delta, already restated in the season prose's "Luckiest"
-        # bullet -- a third repetition of one fact added nothing.
+        # dropped as a chart: it's the same all-play computation as `allplay`'s
+        # rank_delta, already surfaced in the "Luck" insight row.
         ctx["charts"] = ["standings", "power_rank"]
-        ctx["extra_insights"] = _overview_insights(s)
+        ctx["insight_rows"] = _overview_insight_rows(s)
         # Which real-world phase the season is in RIGHT NOW decides what the
-        # lead above "Season so far" shows -- see _season_phase's docstring
+        # lead above "Regular season" shows -- see _season_phase's docstring
         # for why this can't be read off Season.current_week alone.
         phase = _season_phase(s, d, key)
         ctx["phase"] = phase["phase"]
+        # {id(game): "Round N"} so the Highest-score / Biggest-blowout tiles
+        # can name where the record fell -- the group's own label with the
+        # "(#5 vs #8, ...)" matchup suffix trimmed off.
+        def _rounds_of(groups):
+            m = {}
+            for grp in groups:
+                nm = re.sub(r"\s*\(.*\)\s*$", "", str(grp.get("label") or "")).strip()
+                for g in grp.get("games", []):
+                    m[id(g)] = nm or None
+            return m
+
         if ctx["phase"] == "playoffs":
             grp = phase["current_round"]
             ctx["current_round"] = grp
-            games = grp["games"]
-            decided_ct = sum(1 for g in games if not g["pending"])
+            # Three superlatives for the round just completed -- no "N of M
+            # decided" progress tile (not a standout).
             ctx["overview_tiles"] = _playoff_tiles(
-                games, ("Games decided", {"value": f"{decided_ct} of {len(games)}"}, ""))
+                grp["games"], game_round=_rounds_of([grp]))
         elif ctx["phase"] == "complete" and phase.get("title_rounds"):
             # A finished season with a played bracket recaps the WHOLE
             # postseason here (bracket chart + its combined stats) instead of
@@ -1233,8 +1700,30 @@ def tab(name: str, request: Request, league: str = DEFAULT_LEAGUE,
             ctx["playoff_recap"] = True
             ctx["champion"] = phase.get("champion")
             games = [g for grp in phase["title_rounds"] for g in grp["games"]]
+            # The champion leads the postseason-recap tiles -- the single most
+            # important fact once the season is over, not a game count. Trophy
+            # glyph as the value, portrait + name in the sub, gold accent --
+            # the same value/sub shape every other tile in this row uses.
+            champ_tile = (("Champion",
+                           {"value": "\U0001F3C6", "user_name": phase["champion"]},
+                           "gold")
+                          if phase.get("champion") else None)
+            # The two ends of the CONSOLATION bracket replace Biggest blowout /
+            # Closest game here -- once the season is over, "who won the race
+            # at the bottom / who was the first loser there" is the standout,
+            # not which postseason game was tight.
+            _p = d["playoffs"].get(key)
+            _cb = sm.consolation_bracket(s, _p) if _p is not None else {}
+            _cons_tail = []
+            if _cb.get("winner"):
+                _cons_tail.append(("Consolation Bracket Winner",
+                                   {"value": _cb["winner"], "user_name": _cb["winner"]}, ""))
+            if _cb.get("last"):
+                _cons_tail.append(("Biggest Loser",
+                                   {"value": _cb["last"], "user_name": _cb["last"]}, "basement"))
             ctx["overview_tiles"] = _playoff_tiles(
-                games, ("Postseason games", {"value": str(len(games))}, ""))
+                games, champ_tile, tail=_cons_tail, include_margins=False,
+                game_round=_rounds_of(phase["title_rounds"]))
         else:
             ctx["overview_tiles"] = [
                 ("Highest score", ctx["kpi_top"], "gold"),
@@ -1342,12 +1831,23 @@ def tab(name: str, request: Request, league: str = DEFAULT_LEAGUE,
         # chooses the season, and a second in-tab switcher let the postseason
         # show 2022-2024 data while the rest of the page was on 2025.
         ctx["seasons"] = list(reversed(d["names"]))
-        # A custom / rolled-back bracket (token) takes precedence over the
-        # committed one; `custom` tells the template which source is live.
+        # A custom / rolled-back bracket (token) takes precedence over whatever
+        # d["playoffs"] holds for this season, which is now one of: a stored
+        # config ("committed"), Sleeper's own winners_bracket used as the
+        # default ("sleeper" -- see league_data()), or nothing.
         pov = _bracket_from_token(bracket)
         p = pov or d["playoffs"].get(key)
+        src = d.get("playoff_source", {}).get(key)
         ctx["custom_bracket"] = pov is not None
-        ctx["has_committed"] = d["playoffs"].get(key) is not None
+        # `has_committed` must stay TRUE only for a genuinely stored config --
+        # a Sleeper-derived default is not one, so the tab still invites the
+        # user to insert a custom bracket over it.
+        ctx["has_committed"] = src == "committed"
+        # What the header tag / bracket-source line should say.
+        ctx["bracket_source"] = (
+            "custom" if pov is not None
+            else src if src in ("committed", "sleeper")
+            else None)
         if p is None:
             ctx["missing"] = key
             return _pushed(tpl.TemplateResponse(request, "tab_playoffs.html", ctx), ctx, name)
@@ -1355,6 +1855,12 @@ def tab(name: str, request: Request, league: str = DEFAULT_LEAGUE,
         played = r[r["result"].isin(["W", "L", "T"])]
         top = played.loc[played["points"].idxmax()] if len(played) else None
         blow = played.loc[played["margin"].idxmax()] if len(played) else None
+
+        def _round_short(row):
+            # The round a result row belongs to, without the "(seeds 5-8)"
+            # qualifier -- "Round 2", "Final", ...
+            nm = str(row.get("round") or "").strip()
+            return re.sub(r"\s*\(.*\)\s*$", "", nm) or None
         # Closest game: smallest winning margin, so read it off the winners --
         # every game appears twice, once with the margin negated.
         _won = played[played["margin"] > 0]
@@ -1370,9 +1876,9 @@ def tab(name: str, request: Request, league: str = DEFAULT_LEAGUE,
 
         # The whole postseason as one round-grouped game log (each game expands to
         # both submitted lineups) -- this single drilldown replaces the old bracket
-        # walk, the per-matchup chart and the separate week table. Toilet bowl is
+        # walk, the per-matchup chart and the separate week table. Consolation bracket is
         # computed once and folded into the log as its own group.
-        _toilet = sm.toilet_bowl(s, p)
+        _consolation = sm.consolation_bracket(s, p)
         # The run table reads as a finish order: Champion, then Runner-up, then
         # eliminations from the DEEPEST round outward (lost in the Final before
         # lost in Round 1), points breaking ties. playoff_summary sorts by
@@ -1396,29 +1902,57 @@ def tab(name: str, request: Request, league: str = DEFAULT_LEAGUE,
         _summary = records(sm.playoff_summary(p))
         _summary.sort(key=_outcome_key)
         # One "Postseason results" board, champion -> last place: the outcome-
-        # ordered bracket teams, then the teams that missed the bracket beneath
-        # them (worst regular-season finish, but the wooden-spoon holder forced to
-        # the very bottom). A missed team's G/W/L/PPG/High/Low/Margin come from
-        # its OWN toilet-bowl games (toilet_bowl's po_* fields) -- its real
-        # postseason record -- rather than being discarded as a dash placeholder; "Seed" stays
-        # blank since bracket seeding never applied to it.
-        _last_nm = _toilet.get("last")
-        _missed = sorted(_toilet.get("teams", []),
+        # ordered bracket teams, then the teams that missed the championship
+        # bracket beneath them. Among the missed teams the CONSOLATION-BRACKET
+        # WINNER (`_consolation["winner"]` -- the actual winner of the final
+        # consolation game) sits first and the LAST-PLACE team
+        # (`_consolation["last"]` -- its loser) is forced to the very bottom;
+        # everyone else by regular-season finish. A missed team's
+        # G/W/L/PPG/High/Low/Margin come from its OWN consolation-bracket
+        # games (consolation_bracket's po_* fields), not a dash placeholder;
+        # "Seed" stays blank since bracket seeding never applied to it.
+        _last_nm = _consolation.get("last")
+        _winner_nm = _consolation.get("winner")
+        _by_game = _consolation.get("basis") == "game"
+        # Each missed team's consolation-bracket elimination round: the round
+        # (1-indexed over the consolation weeks) of its LAST loss there. The
+        # winner never lost, so has no elimination round.
+        _cons_weeks = sorted({g["week"] for g in _consolation.get("games", [])
+                              if g.get("week") is not None})
+        _wk_round = {w: i + 1 for i, w in enumerate(_cons_weeks)}
+        _elim_round: dict = {}
+        for g in _consolation.get("games", []):
+            rnd = _wk_round.get(g.get("week"))
+            if rnd is None:
+                continue
+            for sd in g.get("sides", []):
+                if sd.get("result") == "L":
+                    nm = sd.get("team")
+                    _elim_round[nm] = max(_elim_round.get(nm, 0), rnd)
+        _missed = sorted(_consolation.get("teams", []),
                          key=lambda t: (t["user_name"] == _last_nm,
+                                        t["user_name"] != _winner_nm,
                                         t.get("final_position", 0)))
         _results = [{**r, "in_bracket": True, "is_last": False, "sep_before": False}
                     for r in _summary]
         for i, t in enumerate(_missed):
-            is_last = t["user_name"] == _last_nm
-            if is_last and _toilet.get("basis") == "game":
-                # An actual toilet-bowl game decided it -- crown it (ironically)
-                # rather than just labelling the team "missed the bracket".
-                outcome = "Toilet bowl champion"
+            nm = t["user_name"]
+            is_last = nm == _last_nm
+            is_winner = nm == _winner_nm and not is_last
+            _er = _elim_round.get(nm)
+            if is_winner and _by_game:
+                # Won the final consolation-bracket game -> tops the field.
+                outcome = "Consolation bracket champion"
+            elif is_winner:
+                outcome = "Best missed-bracket finish"
+            elif is_last and _by_game:
+                outcome = "Biggest loser (Consolation)"
             elif is_last:
-                # No decisive game (nobody missed the bracket, or too few did
-                # to play one) -- the worst regular-season finish stands in, so
-                # say so rather than implying a game that never happened.
-                outcome = "Missed the bracket (worst finish)"
+                outcome = "Biggest loser (worst finish)"
+            elif _er:
+                # Same "Lost in Round X" shape the bracket teams use, tagged
+                # so it reads as the consolation bracket, not the playoffs.
+                outcome = f"Lost in Round {_er} (Consolation)"
             else:
                 outcome = "Missed the bracket"
             _results.append({
@@ -1433,17 +1967,31 @@ def tab(name: str, request: Request, league: str = DEFAULT_LEAGUE,
                 "sep_before": i == 0})
         for i, row in enumerate(_results):
             row["finish"] = i + 1
+        # The Playoffs tab's lower half is a 3-way view switch (Postseason /
+        # Playoffs / Consolation bracket -- see tab_playoffs.html): Postseason shows
+        # the whole board, the other two show just their own half of it. Split
+        # here so each panel's table is a plain row list with no per-row
+        # filtering in the template. `sep_before` is only meaningful in the
+        # combined board, so the split copies clear it.
+        _results_bracket = [{**row, "sep_before": False}
+                            for row in _results if row["in_bracket"]]
+        _results_consolation = [{**row, "sep_before": False}
+                           for row in _results if not row["in_bracket"]]
+        for i, row in enumerate(_results_bracket):
+            row["finish"] = i + 1
+        for i, row in enumerate(_results_consolation):
+            row["finish"] = i + 1
         ctx.update({
             "playoff": p,
             "champion": p.champion or "undecided",
             # (value text, team) pairs rather than one pre-joined string --
             # the template renders the team half through idm.who() so these
-            # tiles get a manager portrait too, same as Champion/Toilet bowl.
+            # tiles get a manager portrait too, same as Champion/Consolation bracket.
             # team is None for the "no games played" empty case, which the
             # template reads as "no tile value at all", matching the old
             # bare dash placeholder fallback.
-            "top": (f"{top['points']:.1f}", top['team']) if top is not None else (None, None),
-            "blow": (f"+{blow['margin']:.1f}", blow['team']) if blow is not None else (None, None),
+            "top": (f"{top['points']:.1f}", top['team'], _round_short(top)) if top is not None else (None, None, None),
+            "blow": (f"+{blow['margin']:.1f}", blow['team'], _round_short(blow)) if blow is not None else (None, None, None),
             "close": (f"{close['margin']:.1f}", close['team']) if close is not None else (None, None),
             "po_ppg": (f"{ppg_hi['ppg']:.1f}", ppg_hi['team']) if ppg_hi is not None else (None, None),
             "po_ppg_sub": (f"over {int(ppg_hi['games'])} games"
@@ -1456,15 +2004,13 @@ def tab(name: str, request: Request, league: str = DEFAULT_LEAGUE,
             # builds a full lineup expansion per postseason game and
             # shouldn't block this section's own headline tiles/results table.
             # One combined finish board (bracket teams + missed teams), champion
-            # to last place; see _results above.
+            # to last place; see _results above. `results_bracket` /
+            # `results_consolation` are that same board split for the Playoffs /
+            # Consolation bracket view-switch panels.
             "results": _results,
-            "toilet": _toilet,
-            # No consolation games means the scope selector has nothing to
-            # include or exclude -- offering it would be a dead control.
-            "has_conso": bool((r.get("bracket") == "consolation").any())
-            if "bracket" in r else False,
-            "rules": _grouped_rules(p.config.get("scoring_settings", {})),
-            "n_rules": len(p.config.get("scoring_settings", {})),
+            "results_bracket": _results_bracket,
+            "results_consolation": _results_consolation,
+            "consolation": _consolation,
         })
         return _pushed(tpl.TemplateResponse(request, "tab_playoffs.html", ctx), ctx, name)
     elif name == "testing":
@@ -1506,6 +2052,17 @@ def _week_part_scoreboard(request, s, d, key, ctx):
     return tpl.TemplateResponse(request, "_week_scoreboard.html", ctx)
 
 
+@tab_part("overview", "config")
+def _overview_part_config(request, s, d, key, ctx):
+    """The Season config section: the league's raw Sleeper settings, roster/
+    scoring setup, and every member + user id, as one collapsed <details>
+    at the bottom of the Overview tab. Deferred + collapsed because it costs
+    an extra sm.league() call and is reference material, not headline data --
+    it used to be its own tab (removed 2026-08)."""
+    ctx.update(_config_ctx(s, key, d.get("seasons")))
+    return tpl.TemplateResponse(request, "_overview_config.html", ctx)
+
+
 @tab_part("weekly", "best")
 def _weekly_part_best(request, s, d, key, ctx):
     """"Best of the Week": Team of the Week vs. the best-available
@@ -1544,7 +2101,21 @@ def _playoffs_part_games(request, s, d, key, ctx):
     p = pov or d["playoffs"].get(key)
     if p is None:
         return HTMLResponse("")
-    ctx["log"] = sm.game_log(s, p, toilet=sm.toilet_bowl(s, p))
+    log = sm.game_log(s, p, consolation=sm.consolation_bracket(s, p))
+    # The Playoffs tab renders this fragment inside its Playoffs / Consolation
+    # bracket view-switch panels, one call each: `only=bracket` keeps the
+    # playoff-bracket rounds (title / mixed / losers-placement),
+    # `only=consolation` keeps just the missed-playoffs consolation-bracket
+    # rounds. `game_log()` already tags every group by `kind`, so
+    # the split is a filter here, not a second traversal. No `only` (or any
+    # other value) renders the whole log, as it did before the split.
+    only = (request.query_params.get("only") or "").strip()
+    if only == "bracket":
+        log = [g for g in log if g["kind"] != "consolation"]
+    elif only == "consolation":
+        log = [g for g in log if g["kind"] == "consolation"]
+    ctx["log"] = log
+    ctx["log_only"] = only or None
     return tpl.TemplateResponse(request, "_playoff_games.html", ctx)
 
 

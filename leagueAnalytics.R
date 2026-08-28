@@ -38,7 +38,9 @@ ensure_cols <- function(df, cols) {
 # Walk previous_league_id -> season -> {league_id, last_scored_leg}
 buildLeagueChain <- function(headId) {
   chain <- list(); id <- headId
-  while (!is.null(id) && !is.na(id) && nzchar(id)) {
+  # Sleeper ends the chain with NULL or the string "0" (league-dependent);
+  # "0" would issue GET /league/0 and 404 the whole walk.
+  while (!is.null(id) && !is.na(id) && nzchar(id) && id != "0") {
     lg <- callSleeper(paste0("/league/", id))
     chain[[lg$season]] <- list(league_id = lg$league_id, season = lg$season,
                                last_scored_leg = lg$settings$last_scored_leg)

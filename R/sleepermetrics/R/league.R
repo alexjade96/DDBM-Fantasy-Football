@@ -26,7 +26,10 @@ sl_league <- function(league_id) {
 sl_league_chain <- function(league_id) {
   chain <- list()
   id <- as.character(league_id)
-  while (!is.null(id) && !is.na(id) && nzchar(id)) {
+  # Sleeper marks "no previous season" as either NULL or the string "0"
+  # depending on the league; "0" would otherwise issue GET /league/0, which
+  # 404s and takes the whole chain walk down with it.
+  while (!is.null(id) && !is.na(id) && nzchar(id) && id != "0") {
     lg <- sl_league(id)
     chain[[lg$season]] <- list(
       league_id = lg$league_id,

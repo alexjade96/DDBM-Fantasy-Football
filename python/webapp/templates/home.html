@@ -7,6 +7,7 @@
   <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
   {# ?v=<mtime> so a CSS edit is never served from a stale browser cache #}
   <link rel="stylesheet" href="/static/style.css?v={{ asset_v }}">
+  <script src="https://unpkg.com/htmx.org@1.9.12" defer></script>
 </head>
 <body>
   <main class="landing">
@@ -32,6 +33,22 @@
         <button type="submit">View analytics &rarr;</button>
       </form>
       <p class="landing-hint">Pre-filled with the Dank Soupers league.</p>
+
+      {# Don't know a league id? Look the account up instead: type a Sleeper
+         username or user id, get the leagues it's in, click through to one. #}
+      <div class="landing-or"><span>or</span></div>
+      <form class="landing-form" hx-get="/user-leagues" hx-target="#user-results"
+            hx-swap="outerHTML" hx-trigger="submit">
+        <label>
+          <span>Sleeper username or user ID</span>
+          <input type="text" name="user" autocomplete="off" spellcheck="false"
+                 placeholder="e.g. sleeperbot" required>
+        </label>
+        <button type="submit">Find leagues</button>
+      </form>
+      {# The fragment returns its own <section class="user-results">, which
+         replaces this placeholder (hx-swap="outerHTML"). #}
+      <div id="user-results"></div>
     </div>
   </main>
 

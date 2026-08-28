@@ -6,7 +6,8 @@ Parallel port of the R package. Same design: compute (metrics) / render (plots)
 from . import (discord_bot, headshots, metrics, playoffs, plots, scoring,
                statnames, summaries, weekly)
 from .api import sleeper_api
-from .league import league, league_chain, root_league_id, starter_slots
+from .league import (league, league_chain, nfl_state, root_league_id,
+                     starter_slots, user, user_leagues)
 from .players import players
 from .playoffs import (Playoff, apply_playoffs, clutch, load_playoffs, playoff,
                        playoff_all_stars, playoff_allplay, playoff_best_games,
@@ -16,7 +17,9 @@ from .playoffs import (Playoff, apply_playoffs, clutch, load_playoffs, playoff,
                        playoff_seeding, playoff_stats, playoff_summary,
                        game_log, postseason_weeks, reference_scores,
                        scaffold_bracket, scope_frame, seeds,
-                       sleeper_bracket, toilet_bowl, validate_config)
+                       sleeper_bracket, sleeper_losers_bracket, consolation_bracket,
+                       consolation_performances, consolation_players, consolation_clutch,
+                       validate_config)
 from .report import season_report
 from .scoring import score_lineup, scoring_chart
 from .season import (Season, assemble_season, avatar_url, league_accounts,
@@ -26,7 +29,8 @@ from .summaries import summary_career, summary_season
 from .weekly import summary_week
 
 __all__ = [
-    "sleeper_api", "league", "league_chain", "root_league_id", "starter_slots", "players",
+    "sleeper_api", "league", "league_chain", "root_league_id", "starter_slots",
+    "nfl_state", "user", "user_leagues", "players",
     "Season", "assemble_season", "optimal_points", "season", "seasons",
     "league_accounts", "avatar_url",
     "metrics", "plots", "summaries", "weekly", "discord_bot",
@@ -36,12 +40,14 @@ __all__ = [
     "headshots", "season_report",
     "playoffs", "playoff", "playoff_config", "playoff_summary", "Playoff",
     "apply_playoffs", "load_playoffs", "playoff_stats",
-    "scope_frame", "seeds", "clutch", "toilet_bowl", "reference_scores", "postseason_weeks",
+    "scope_frame", "seeds", "clutch", "consolation_bracket", "reference_scores", "postseason_weeks",
+    "consolation_performances", "consolation_players", "consolation_clutch",
     "game_log",
     "playoff_performances", "playoff_players", "playoff_all_stars",
     "playoff_best_games", "playoff_busts", "playoff_finals", "playoff_carry",
     "playoff_margins", "playoff_path", "playoff_allplay", "playoff_seeding",
-    "playoff_replay", "sleeper_bracket", "scaffold_bracket", "validate_config",
+    "playoff_replay", "sleeper_bracket", "sleeper_losers_bracket",
+    "scaffold_bracket", "validate_config",
 ]
 
 __version__ = "0.1.0"

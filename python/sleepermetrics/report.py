@@ -1219,7 +1219,21 @@ def _chart_args(kind, s, seasons=None, playoffs=None, manager=None):
         return (s, manager) if manager else None
     if kind == "playoff":
         p = (playoffs or {}).get(s.season)
-        return (p,) if p is not None else None
+        if p is None:
+            return None
+        # The bracket chart also takes reference scores (for bye/idle nodes) and
+        # the consolation bracket (its own games render in a separate chart; here it just
+        # supplies the last-place name for the outcome caption); both best-effort.
+        try:
+            from .playoffs import reference_scores, consolation_bracket
+            ref = reference_scores(s)
+        except Exception:
+            ref, consolation_bracket = None, None
+        try:
+            tb = consolation_bracket(s, p) if consolation_bracket else None
+        except Exception:
+            tb = None
+        return (p, ref, tb)
     return None
 
 

@@ -508,6 +508,200 @@ def test_validate_config_catches_structural_errors():
     assert any("!= current league 999" in w for w in warns)
 
 
+def test_season_phase_leads_with_the_last_completed_round(monkeypatch):
+    """Overview's lead must show the last COMPLETED postseason round, not
+    whatever round `game_log()` last emitted a group for. `game_log()` appends
+    a group for every configured round (future rounds carry only PENDING
+    placeholder games), so a bare bracket config alone must still read as
+    'regular', and a bracket with round 1 played must lead with round 1, not
+    the final. See app._season_phase."""
+    from webapp import app
+
+    s = make_season()
+    monkeypatch.setattr(app.sm, "consolation_bracket", lambda *a, **k: {})
+
+    def phase_for(log):
+        monkeypatch.setattr(app.sm, "game_log", lambda *a, **k: log)
+        # `s.status` is None on the fixture (not "complete"), so this exercises
+        # the mid-season branch; the `p` object is only passed through.
+        return app._season_phase(s, {"playoffs": {"2025": object()}}, "2025")
+
+    def rnd(key, played_games, pending_games=0, byes_resolved=0, byes_pending=0):
+        games = ([{"pending": False}] * played_games
+                 + [{"pending": True}] * pending_games)
+        byes = ([{"pending": False}] * byes_resolved
+                + [{"pending": True}] * byes_pending)
+        return {"key": key, "kind": "title", "games": games, "byes": byes}
+
+    # Bracket configured, nothing played: every round is a PENDING-only group,
+    # plus a first-round bye that resolves structurally. Still "regular".
+    ph = phase_for([rnd("R1", 0, pending_games=2, byes_resolved=1),
+                    rnd("R2", 0, pending_games=1),
+                    rnd("R3", 0, pending_games=1)])
+    assert ph["phase"] == "regular"
+    assert "current_round" not in ph
+
+    # Round 1 decided, rounds 2-3 still PENDING: lead with round 1.
+    ph = phase_for([rnd("R1", 2, byes_resolved=1),
+                    rnd("R2", 0, pending_games=1),
+                    rnd("R3", 0, pending_games=1)])
+    assert ph["phase"] == "playoffs"
+    assert ph["current_round"]["key"] == "R1"
+
+    # Rounds 1-2 decided, round 3 PENDING: lead with round 2.
+    ph = phase_for([rnd("R1", 2), rnd("R2", 1), rnd("R3", 0, pending_games=1)])
+    assert ph["phase"] == "playoffs"
+    assert ph["current_round"]["key"] == "R2"
+
+    # No bracket resolved for this season at all -> regular, no game_log call.
+    monkeypatch.setattr(app.sm, "game_log",
+                        lambda *a, **k: (_ for _ in ()).throw(AssertionError()))
+    assert app._season_phase(s, {"playoffs": {}}, "2025")["phase"] == "regular"
+
+
+def test_season_phase_complete_recaps_every_round(monkeypatch):
+    """A finished season's Overview lead recaps the WHOLE postseason run, so
+    `title_rounds` there stays the full round list (not just the played
+    subset), even for rounds `game_log()` only has PENDING placeholders for."""
+    from webapp import app
+
+    s = make_season()                      # status None...
+    monkeypatch.setattr(s, "status", "complete", raising=False)
+    monkeypatch.setattr(app.sm, "consolation_bracket", lambda *a, **k: {})
+    log = [
+        {"key": "R1", "kind": "title", "games": [{"pending": False}], "byes": []},
+        {"key": "R2", "kind": "title", "games": [{"pending": False}], "byes": []},
+        {"key": "R3", "kind": "title", "games": [{"pending": True}], "byes": []},
+    ]
+    monkeypatch.setattr(app.sm, "game_log", lambda *a, **k: log)
+
+    class _P:
+        champion = "Al"
+    ph = app._season_phase(s, {"playoffs": {"2025": _P()}}, "2025")
+    assert ph["phase"] == "complete"
+    assert [g["key"] for g in ph["title_rounds"]] == ["R1", "R2", "R3"]
+    assert ph["champion"] == "Al"
+
+
+def test_playoff_tiles_are_all_superlatives_no_game_count():
+    """The Overview postseason lead's tiles must each be a genuine standout --
+    no 'N of M games decided' progress tile, no bare 'postseason games' count.
+    A `lead` tile, when given (the complete-phase lead passes the champion), is
+    placed FIRST and takes the gold accent. See app._playoff_tiles."""
+    from webapp.app import _playoff_tiles
+
+    def game(a, ap, b, bp, pending=False):
+        sides = [{"team": a, "points": ap, "result": None if pending else ("W" if ap > bp else "L")},
+                 {"team": b, "points": bp, "result": None if pending else ("W" if bp > ap else "L")}]
+        return {"pending": pending, "margin": None if pending else abs(ap - bp), "sides": sides}
+
+    games = [game("Al", 130, "Bo", 70), game("Cy", 99, "Di", 96)]
+    tiles = _playoff_tiles(games)
+    assert [t[0] for t in tiles] == ["Highest score", "Biggest blowout", "Closest game"]
+    assert not any("decided" in t[0].lower() or "games" in t[0].lower() for t in tiles)
+    # Each score tile is `{value, user_name, detail}` -- `detail` (the round
+    # the record fell in) is None when no `game_round` map is passed.
+    assert tiles[0] == ("Highest score",
+                        {"value": "130.0", "user_name": "Al", "detail": None}, "gold")
+    assert tiles[1][1] == {"value": "+60.0", "user_name": "Al", "detail": None}
+    assert tiles[2][1] == {"value": "+3.0", "user_name": "Cy", "detail": None}
+
+    # game_round names the round on the score tiles.
+    gr = {id(games[0]): "Final", id(games[1]): "Round 1"}
+    trd = _playoff_tiles(games, game_round=gr)
+    assert trd[0][1]["detail"] == "Final" and trd[1][1]["detail"] == "Final"
+    assert trd[2][1]["detail"] == "Round 1"
+
+    # Champion leads and carries gold; the score tiles keep no accent then.
+    champ = ("Champion", {"value": "\U0001F3C6", "user_name": "Al"}, "gold")
+    tiles4 = _playoff_tiles(games, champ)
+    assert tiles4[0] == champ
+    assert [t[0] for t in tiles4] == ["Champion", "Highest score", "Biggest blowout", "Closest game"]
+    assert tiles4[1][2] == ""          # "Highest score" no longer gold
+
+
+def test_overview_insight_rows_are_ordered_standout_tiles(season_obj):
+    """The regular-season takeaways come back as `.stat`-shaped standout
+    tiles, ordered most important first. Every opposed metric (the table
+    itself included) is ONE merged tile (label / rows) whose `rows` stack a
+    good and a bad mini row; a flat single tile (label / value / holder /
+    detail / tone) is still a valid shape. No wide table, no run-on markdown.
+    The CHAMPION is NOT here (it belongs to the season-complete lead tiles).
+    See app._overview_insight_rows."""
+    from webapp.app import _overview_insight_rows
+
+    tiles = _overview_insight_rows(season_obj)
+    assert tiles, "expected at least the standings-derived tiles"
+    for t in tiles:
+        if "rows" in t:
+            assert set(t) == {"label", "rows"}
+            assert 1 <= len(t["rows"]) <= 2
+            for r in t["rows"]:
+                assert set(r) == {"tone", "holder", "value", "detail"}
+                assert r["holder"] and isinstance(r["holder"], str)
+                assert r["value"] and "**" not in r["detail"]     # no markdown bolding
+                assert r["tone"] in ("good", "bad")
+        else:
+            assert set(t) == {"label", "value", "holder", "detail", "tone"}
+            assert t["holder"] and isinstance(t["holder"], str)
+            assert t["value"] and "**" not in t["detail"]
+            assert t["tone"] in ("", "good", "bad")
+
+    labels = [t["label"] for t in tiles]
+    # The table leads, coaching comes before luck, opposed metrics are merged.
+    assert labels[0] == "The table"
+    assert "Champion" not in labels                        # belongs to the lead tiles
+    assert labels.index("Coaching") < labels.index("Luck")
+    # Dropped by request.
+    for gone in ("Weekly high-score crowns", "Biggest mover", "Top of the table",
+                 "Most left on the bench", "Luckiest", "Unluckiest"):
+        assert gone not in labels
+    # The table + Luck tiles each carry both a good and a bad mini row.
+    for lbl in ("The table", "Luck"):
+        t = next(x for x in tiles if x["label"] == lbl)
+        assert {r["tone"] for r in t["rows"]} == {"good", "bad"}
+
+    # Empty / degenerate season -> no tiles (template skips the section).
+    empty = make_season()
+    empty.standings = empty.standings.iloc[0:0]
+    assert _overview_insight_rows(empty) == []
+
+
+def test_member_seasons_are_newest_first_per_persistent_user_id():
+    """The Current members table's Seasons column lists every season an account
+    (keyed on the persistent user_id) has been in the league, current ->
+    earliest. See app._member_seasons / _members_with_seasons."""
+    from webapp.app import _member_seasons, _members_with_seasons
+
+    def acc(pairs):
+        return pd.DataFrame(
+            [{"roster_id": i + 1, "user_id": uid, "user_name": nm,
+              "team_name": None, "team": nm, "avatar_url": None, "team_avatar_url": None}
+             for i, (uid, nm) in enumerate(pairs)])
+
+    s22 = make_season("2022"); s22.accounts = acc([("u1", "Al"), ("u2", "Bo")])
+    s23 = make_season("2023"); s23.accounts = acc([("u1", "Al"), ("u3", "Cy")])
+    s25 = make_season("2025"); s25.accounts = acc([("u1", "Alan"), ("u3", "Cy"), ("u4", "Di")])
+    # league_chain order: oldest first.
+    chain = {"2022": s22, "2023": s23, "2025": s25}
+
+    by_uid = _member_seasons(chain)
+    assert by_uid["u1"] == ["2025", "2023", "2022"]     # newest first, all three
+    assert by_uid["u3"] == ["2025", "2023"]
+    assert by_uid["u4"] == ["2025"]
+    assert "u2" in by_uid and by_uid["u2"] == ["2022"]
+
+    # Attached to the current season's rows, keyed on user_id (name changed
+    # u1 Al -> Alan across seasons; still one identity).
+    rows = _members_with_seasons(s25, chain)
+    got = {r["user_name"]: r["member_seasons"] for r in rows}
+    assert got["Alan"] == ["2025", "2023", "2022"]
+    assert got["Di"] == ["2025"]
+
+    # No chain -> empty lists, not a crash.
+    assert all(r["member_seasons"] == [] for r in _members_with_seasons(s25, None))
+
+
 def test_bracket_token_is_stable_and_content_addressed():
     """The webapp keys an ad-hoc bracket by a hash of its config, so identical
     brackets share a token and an unknown token resolves to nothing."""

@@ -9,6 +9,37 @@ def league(league_id):
     return sleeper_api(f"/league/{league_id}")
 
 
+def nfl_state() -> dict:
+    """Sleeper's `/state/nfl` object: current phase + season.
+
+    `league_season` is the season leagues are currently being played/drafted
+    for (stays put through the offseason, unlike `week`), which is what the
+    user-league lookup below defaults to.
+    """
+    return sleeper_api("/state/nfl")
+
+
+def user(handle):
+    """Resolve a Sleeper user by numeric user_id OR by username.
+
+    Sleeper's `/user/<x>` endpoint accepts either form and returns the same
+    object (`user_id`, `username`, `display_name`, `avatar`). Returns None if
+    no such user (Sleeper answers 200 with a null body in that case).
+    """
+    return sleeper_api(f"/user/{handle}")
+
+
+def user_leagues(user_id, season, sport: str = "nfl") -> list:
+    """Every league `user_id` is a member of for a given season.
+
+    One Sleeper call per season (the endpoint is season-scoped), each league
+    object carrying `league_id`, `name`, `season`, `status`, `total_rosters`,
+    `avatar`, `previous_league_id`. Order is Sleeper's own (roughly most
+    recently active first).
+    """
+    return sleeper_api(f"/user/{user_id}/leagues/{sport}/{season}") or []
+
+
 def league_chain(league_id) -> dict:
     """Walk previous_league_id -> {season: link}, oldest first.
 
@@ -18,7 +49,12 @@ def league_chain(league_id) -> dict:
     """
     chain: dict = {}
     lid = str(league_id)
-    while lid and lid not in ("None", "none"):
+    # Sleeper marks "no previous season" two different ways depending on the
+    # league: `null` on some, the string "0" on others (seen on a 2024 season
+    # whose chain otherwise loaded fine). Both must stop the walk -- otherwise
+    # this issues GET /league/0, which 404s and takes the whole season load
+    # down with it.
+    while lid and lid not in ("None", "none", "0"):
         lg = sleeper_api(f"/league/{lid}")
         chain[lg["season"]] = {
             "league_id": lg["league_id"],

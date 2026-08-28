@@ -74,6 +74,45 @@ a.ghost:hover { filter: brightness(1.06); }
 .landing-form button { padding: 8px 16px; }
 .landing-hint { color: var(--faint); font-size: 12px; margin: 12px 0 0; }
 
+/* "or" divider between the two landing forms. */
+.landing-or { display: flex; align-items: center; gap: 10px; margin: 22px 0 16px;
+  color: var(--faint); font-size: 11px; letter-spacing: .08em; text-transform: uppercase; }
+.landing-or::before, .landing-or::after { content: ""; flex: 1; height: 1px; background: var(--line); }
+
+/* Header lookup: League / User mode toggle, a small segmented pill sitting
+   left of the id box in the .controls form. */
+.lookup-mode { display: inline-flex; align-self: flex-end; border: 1px solid var(--line);
+  border-radius: 8px; overflow: hidden; }
+.lookup-mode label { display: flex; align-items: center; gap: 0; padding: 7px 12px;
+  font-size: 12px; font-weight: 600; color: var(--muted); cursor: pointer; }
+.lookup-mode label + label { border-left: 1px solid var(--line); }
+.lookup-mode input { position: absolute; opacity: 0; pointer-events: none; }
+.lookup-mode label:has(input:checked) { background: var(--ink); color: var(--surface); }
+
+/* Find-leagues-by-user results (shared by the landing page and the header
+   lookup, where it renders into #panel). One row per league, the whole row a
+   link to /league=<id>. */
+.user-results { margin-top: 14px; }
+.user-results:empty { margin-top: 0; display: none; }
+.ul-error { color: var(--muted); font-size: 13px; margin: 8px 0 0; }
+.ul-user { display: flex; align-items: center; gap: 10px; font-size: 13px; margin-bottom: 10px; }
+.ul-avatar { border-radius: 50%; }
+.ul-muted { color: var(--faint); }
+.ul-season { margin: 0 0 10px; }
+.ul-season label { display: flex; flex-direction: column; gap: 4px; }
+.ul-season span { font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: var(--faint); }
+.ul-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.ul-league {
+  display: grid; grid-template-columns: auto 1fr auto; align-items: center;
+  gap: 4px 10px; padding: 8px 12px; text-decoration: none; color: var(--ink);
+  background: var(--surface); border: 1px solid var(--line); border-radius: 10px;
+}
+.ul-league:hover { border-color: var(--turf); filter: brightness(1.02); }
+.ul-league img { border-radius: 6px; grid-row: 1 / span 2; }
+.ul-name { font-weight: 600; font-size: 14px; }
+.ul-meta { grid-column: 2; color: var(--faint); font-size: 12px; }
+.ul-go { grid-column: 3; grid-row: 1 / span 2; color: var(--turf); font-size: 12px; font-weight: 600; white-space: nowrap; }
+
 .tabs {
   display: flex; gap: 4px; overflow-x: auto; padding: 0 clamp(16px, 4vw, 40px);
   max-width: 1440px; margin: 0 auto; border-bottom: 1px solid var(--line);
@@ -109,7 +148,7 @@ h3 { font-size: 15px; margin: 0 0 2px; }
 .rowhead h2 { margin-bottom: 12px; }
 .rowhead-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 
-/* Final placements: the championship run and the toilet bowl read as ONE ordered
+/* Final placements: the championship run and the consolation bracket read as ONE ordered
    board (champion at top, basement at bottom), not two gapped sections. The h3
    sub-heads sit close under the shared h2 so it's one block, not a page split. */
 .finalplace > h2 { margin-bottom: 2px; }
@@ -247,6 +286,10 @@ img { display: block; width: 100%; height: auto; border-radius: 7px; }
 .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(460px, 1fr));
   gap: 16px; align-items: start; }
 .grid.two { grid-template-columns: repeat(auto-fit, minmax(380px, 1fr)); }
+/* Playoffs tab, Postseason panel: the bracket and its companion consolation bracket
+   chart sit as an even two-up. A lone bracket (a season with no consolation bracket)
+   takes the whole row instead of a half-width column. */
+.grid.bracket-row > .card.chart:only-child { grid-column: 1 / -1; }
 /* A wide-aspect chart (e.g. stacked weekly points, starter-vs-bench) spans the
    whole grid row instead of being crushed into a half-width column. */
 .grid .card.chart.wide { grid-column: 1 / -1; }
@@ -269,6 +312,29 @@ img { display: block; width: 100%; height: auto; border-radius: 7px; }
 .stat .k { font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: var(--faint); }
 .stat .v { font-size: 19px; font-weight: 600; font-variant-numeric: tabular-nums; }
 .stat .sub { font-size: 12px; color: var(--muted); }
+
+/* Season-to-date insight tiles (Overview tab) reuse the shared .stat grid
+   above; .insight-detail is the trailing metric phrase inside a tile's .sub,
+   tinted good/bad for the "best"/"worst" half of an opposed pair. */
+.stat .sub .insight-detail { color: var(--muted); }
+.stat .sub .insight-detail.good { color: #2f9e44; }
+.stat .sub .insight-detail.bad { color: #e03131; }
+
+/* A merged insight tile (coaching, luck, points allowed, consistency,
+   schedule) stacks its best and worst halves as two mini rows under one
+   label instead of taking two tiles. */
+.stat .insight-rows { display: flex; flex-direction: column; gap: 8px; margin-top: 4px; }
+.stat .insight-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center; column-gap: 8px;
+}
+.stat .insight-row .ir-mark { font-size: 11px; line-height: 1; }
+.stat .insight-row.good .ir-mark { color: #2f9e44; }
+.stat .insight-row.bad .ir-mark { color: #e03131; }
+.stat .insight-row .ir-who { min-width: 0; font-size: 13px; font-weight: 600; }
+.stat .insight-row .ir-val { font-size: 14px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.stat .insight-row .ir-det { grid-column: 2 / -1; font-size: 11px; color: var(--muted); }
 
 .tablewrap { overflow-x: auto; }
 table { width: 100%; border-collapse: collapse; font-size: 14px; }
@@ -301,7 +367,7 @@ th { font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: v
 tbody tr:last-child td { border-bottom: 0; }
 .chip { background: color-mix(in srgb, var(--gold) 22%, transparent); border-radius: 20px;
         padding: 1px 8px; font-weight: 600; }
-.chip.toilet { background: color-mix(in srgb, #a8743a 22%, transparent); }   /* basement's answer to gold */
+.chip.consolation { background: color-mix(in srgb, #a8743a 22%, transparent); }   /* basement's answer to gold */
 
 details.card { margin-top: 18px; }
 details summary { cursor: pointer; font-weight: 600; }
@@ -354,7 +420,7 @@ details summary { cursor: pointer; font-weight: 600; }
            color: var(--muted); background: color-mix(in srgb, var(--turf) 3%, transparent); }
 .dt-byes .q { color: var(--faint); }
 
-/* .tag is a GLOBAL component -- the deal cards, the toilet bowl rows, the game
+/* .tag is a GLOBAL component -- the deal cards, the consolation bracket rows, the game
    log and the sidelined table all use it. It was scoped once and a second caller
    needed a duplicate rule to un-break itself, so the base lives here and any
    scoped rules below only adjust it. */
@@ -401,6 +467,50 @@ details summary { cursor: pointer; font-weight: 600; }
              color: var(--faint); }
 .rule .n { font-variant-numeric: tabular-nums; font-weight: 600; white-space: nowrap;
            min-width: 8.5em; text-align: right; }
+
+/* Season config sections at the bottom of the Overview tab (Members,
+   Roster positions, League settings, Point-calculation chart). */
+.mono { font-family: ui-monospace, Consolas, monospace; }
+td.mono { font-size: 12px; color: var(--muted); word-break: break-all; }
+
+/* League settings / Point-calculation chart: each a collapsed
+   <details class="card"> so it can be opened on demand. */
+.cfg-sec > summary { font-size: 14px; }
+.cfg-sec[open] > summary { margin-bottom: 10px; }
+.cfg-members td { vertical-align: middle; }
+/* Sub-section headings inside the League settings <details> (Roster positions
+   / All settings). */
+.cfg-subhead { font-size: 12px; letter-spacing: .05em; text-transform: uppercase;
+  color: var(--muted); font-weight: 600; margin: 0 0 6px; }
+.cfg-subhead + .hint { margin-top: 0; }
+.cfg-roster + .cfg-subhead { margin-top: 18px; padding-top: 14px;
+  border-top: 1px solid var(--line); }
+
+/* Roster positions: three labelled columns (Starters / Bench / Full order). */
+.cfg-roster { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 14px 24px; margin-top: 10px; align-items: start; }
+.cfg-roster h4 { font-size: 11px; letter-spacing: .06em; text-transform: uppercase;
+  color: var(--faint); font-weight: 600; margin: 0 0 8px; }
+.cfg-slotlist { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column;
+  gap: 5px; }
+.cfg-slotlist li { display: flex; align-items: center; gap: 8px; }
+.cfg-x { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.cfg-none { color: var(--faint); font-size: 13px; margin: 0; }
+.cfg-slots { display: flex; flex-wrap: wrap; gap: 6px; }
+.cfg-slot { display: inline-block; min-width: 34px; text-align: center; padding: 3px 10px;
+  border-radius: 6px; font-size: 12px; font-weight: 600;
+  background: rgba(47,158,68,.14); color: var(--turf); }
+.cfg-slot.bench { background: var(--surface); border: 1px solid var(--line);
+  color: var(--muted); font-weight: 500; }
+.cfg-count { display: inline-block; margin-left: 4px; padding: 0 7px; border-radius: 20px;
+  background: var(--surface); border: 1px solid var(--line); font-size: 11px;
+  font-weight: 600; color: var(--muted); }
+.cfg-seasons { font-variant-numeric: tabular-nums; white-space: normal; min-width: 8em; }
+
+/* League settings: the same grouped-column layout as the scoring chart
+   (.rulegroups/.rulegroup/.rule), value right-aligned. */
+.cfg-settinggroups .rule .n { min-width: 4.5em; }
+.cfg-settinggroups .rule code { word-break: break-all; }
 
 /* General-purpose pill link/button: the season report's Download link
    (inside its .rail) and the Draft tab's "View Simulated Draft" CTA (a bare
@@ -1301,6 +1411,35 @@ footer code { font-family: ui-monospace, Consolas, monospace; }
 .sim-view-mode > .vs-panel { margin-top: 10px; }
 
 .fa-vs-mode > .vs-panel { margin-top: 10px; }
+
+/* Playoffs tab: the Postseason / Playoffs / Consolation bracket view switch. Three
+   genuinely different sections (whole finish board + scoped analytics / the
+   bracket teams + bracket game log / the missed-bracket teams + consolation game
+   log), the same top-level N-panel idiom as .sim-view-mode above -- each
+   .vs-p-po-* is a direct sibling of the radios holding its own complete
+   section. POSITIONAL (:nth-of-type), matching .sim-view-mode's own reasoning,
+   though this template is only ever rendered once. The Games log inside the
+   Playoffs / Consolation bracket panels is a lazy .lazy-part; hidden panels never
+   trigger its fetch until the tab is first shown (htmx :revealed), so the
+   consolation log only loads when someone opens that tab. */
+.po-view-mode .vs-radio:nth-of-type(1):checked ~ .vs-p-po-postseason,
+.po-view-mode .vs-radio:nth-of-type(2):checked ~ .vs-p-po-playoffs,
+.po-view-mode .vs-radio:nth-of-type(3):checked ~ .vs-p-po-consolation { display: block; }
+.po-view-mode:has(.vs-radio:nth-of-type(1):checked) .vs-tabs label:nth-of-type(1),
+.po-view-mode:has(.vs-radio:nth-of-type(2):checked) .vs-tabs label:nth-of-type(2),
+.po-view-mode:has(.vs-radio:nth-of-type(3):checked) .vs-tabs label:nth-of-type(3) {
+  background: var(--ink); color: var(--surface); border-color: var(--ink); }
+.po-view-mode > .vs-panel { margin-top: 12px; }
+/* First heading in a panel sits flush -- the panel itself already carries the
+   top margin. The Playoffs panel leads with a .rowhead wrapping its h2; the
+   other two lead with a bare h2. */
+.po-view-mode > .vs-panel > h2:first-child,
+.po-view-mode > .vs-panel > .rowhead:first-child { margin-top: 0; }
+.po-view-mode > .vs-panel > .rowhead:first-child h2 { margin-top: 0; }
+/* Later h2s inside a panel (Results / Playoff analytics / ...) get real space
+   above them so the sections read as distinct blocks. */
+.po-view-mode > .vs-panel > h2 { margin-top: 26px; }
+.po-view-mode > .vs-panel > h2:first-child { margin-top: 0; }
 
 /* Bars sized in Python (pct, floored at 6 so a scoreless week still shows a
    sliver) -- height:0 on an empty bar would otherwise vanish entirely.
