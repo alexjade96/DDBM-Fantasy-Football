@@ -1181,14 +1181,24 @@ def _preseason_rosters(s, board=None) -> list[dict]:
             pid = r["player_id"] if pd_notna(r["player_id"]) else None
             team = team_by_pid.get(str(pid)) if pid is not None else None
             adp = adp_by_pid.get(str(pid)) if pid is not None else None
+            pick_no = int(r["pick_no"]) if pd_notna(r["pick_no"]) else None
+            # vs_adp: OVERALL pick number minus ADP -- ADP is an overall-pick
+            # figure, so it must be compared against pick_no, not the
+            # "round.pick" display string. Negative = taken EARLIER than the
+            # field's consensus (a reach), positive = later (a value). Rounded
+            # so a fraction-of-a-pick difference doesn't read as a reach.
+            vs_adp = (round(pick_no - adp, 1)
+                      if (adp is not None and pick_no is not None) else None)
             picks.append({
                 "pick": (f"{rnd}.{pir:02d}" if rnd and pir
-                         else (str(int(r["pick_no"])) if pd_notna(r["pick_no"]) else "-")),
+                         else (str(pick_no) if pick_no is not None else "-")),
+                "pick_no": pick_no,
                 "player_name": r["player_name"] if pd_notna(r["player_name"]) else "N/A",
                 "player_id": pid,
                 "position": pos,
                 "team": (team.upper() if isinstance(team, str) and team else None),
                 "adp": round(float(adp), 1) if adp is not None else None,
+                "vs_adp": vs_adp,
             })
         out.append({"user_name": name, "slot": slot, "pos_counts": pos_counts,
                     "picks": picks})

@@ -735,8 +735,11 @@ def test_weekly_preseason_slot_is_week_zero_and_only_when_allowed(season_obj):
 def test_preseason_rosters_are_in_pick_order_with_per_position_counts(season_obj, monkeypatch):
     """The Weekly Week-0 view is one entry per member, ordered by DRAFT SLOT
     (manager pick order), each carrying a per-position drafted count and the
-    picks in draft order (pick / pos / player / team / adp). No ranks, no
-    season points -- it's pre-season. See app._preseason_rosters."""
+    picks in draft order (pick / adp / pos / player / team). `vs_adp` is the
+    OVERALL pick number minus ADP (negative = a reach, positive = a value),
+    so the tint compares the right two numbers even though the pick displays
+    as "round.pick". No ranks, no season points -- it's pre-season. See
+    app._preseason_rosters."""
     import pandas as pd
     from webapp import app
     from webapp.app import _preseason_rosters
@@ -746,7 +749,7 @@ def test_preseason_rosters_are_in_pick_order_with_per_position_counts(season_obj
         {"player_id": ["p1", "p2"], "team": ["PHI", "kc"]}))
     monkeypatch.setattr(app.draft, "_adp_field_for", lambda s: "adp_ppr")
     monkeypatch.setattr(app.draft, "_fetch_adp_raw", lambda season: {
-        "p1": {"adp_ppr": 3.4}, "p3": {"adp_ppr": 999.0}})
+        "p1": {"adp_ppr": 3.4}, "p2": {"adp_ppr": 1.5}, "p3": {"adp_ppr": 999.0}})
 
     s = season_obj
     # Empty board -> no rows, not a crash.
@@ -773,10 +776,11 @@ def test_preseason_rosters_are_in_pick_order_with_per_position_counts(season_obj
                                 "K": 0, "DEF": 0, "OTHER": 1}       # rb + dst
     assert [p["pick"] for p in cy["picks"]] == ["1.01", "2.03"]
     assert cy["picks"][0] == {
-        "pick": "1.01", "player_name": "C one", "player_id": "p1",
-        "position": "RB", "team": "PHI", "adp": 3.4}
-    # p6 has no team / adp entry -> both None; p3's 999 sentinel is dropped.
+        "pick": "1.01", "pick_no": 1, "player_name": "C one", "player_id": "p1",
+        "position": "RB", "team": "PHI", "adp": 3.4, "vs_adp": -2.4}   # pick 1 vs adp 3.4 -> reach
+    # p6 has no team / adp entry -> both None, and vs_adp None (no compare).
     assert cy["picks"][1]["team"] is None and cy["picks"][1]["adp"] is None
+    assert cy["picks"][1]["vs_adp"] is None
     # No leftover rank / points fields on a pick.
     assert "pos_rank" not in cy["picks"][0] and "total" not in cy["picks"][0]
 
@@ -784,6 +788,7 @@ def test_preseason_rosters_are_in_pick_order_with_per_position_counts(season_obj
     assert al["pos_counts"]["WR"] == 1 and al["pos_counts"]["RB"] == 1
     assert "OTHER" not in al["pos_counts"]                          # only added when used
     assert al["picks"][0]["team"] == "KC"                          # upper-cased
+    assert al["picks"][0]["vs_adp"] == 0.5                          # pick 2 vs adp 1.5 -> value
 
 
 def test_bracket_token_is_stable_and_content_addressed():
