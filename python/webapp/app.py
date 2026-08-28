@@ -1167,16 +1167,26 @@ def _week_insight_rows(s, wk: int) -> list[dict]:
                (hi["user_name"], f"{hi['points']:.1f}", "high score of the week"),
                (lo["user_name"], f"{lo['points']:.1f}", "low score of the week"))
 
-    # 2. Coaching -- lineup efficiency (started / optimal) this week.
+    # 2. Efficiency -- lineup efficiency (started / optimal) this week.
     effw = played[played["optimal"].notna() & (played["optimal"] > 0)].copy()
     if len(effw) >= 2:
         effw["eff"] = (effw["points"] / effw["optimal"] * 100)
         be, we = effw.loc[effw["eff"].idxmax()], effw.loc[effw["eff"].idxmin()]
-        merged("Coaching",
+        merged("Efficiency",
                (be["user_name"], f"{be['eff']:.0f}%", "of the optimal lineup started"),
                (we["user_name"], f"{we['eff']:.0f}%", "of the optimal lineup started"))
 
-    # 3. Luck -- won on a low score / lost on a high score this week (the
+    # 3. Bench -- least / most points on the bench this week. Sits right after
+    #    Efficiency (the two lineup-quality reads together) rather than last.
+    benchw = played[played["left_on_bench"].notna()]
+    if len(benchw) >= 2:
+        most = benchw.loc[benchw["left_on_bench"].idxmax()]
+        least = benchw.loc[benchw["left_on_bench"].idxmin()]
+        merged("Bench",
+               (least["user_name"], f"{least['left_on_bench']:.1f}", "points on the bench, fewest"),
+               (most["user_name"], f"{most['left_on_bench']:.1f}", "points on the bench, most"))
+
+    # 4. Luck -- won on a low score / lost on a high score this week (the
     #    single-week version of all-play luck).
     if len(decided) >= 2:
         wins = decided[decided["margin"] > 0]
@@ -1189,7 +1199,7 @@ def _week_insight_rows(s, wk: int) -> list[dict]:
                ((unlucky["user_name"], f"{unlucky['points']:.1f}", "lost with the week's highest losing score")
                 if unlucky is not None else None))
 
-    # 4. Opponent -- weakest / toughest opponent faced this week (points allowed).
+    # 5. Opponent -- weakest / toughest opponent faced this week (points allowed).
     opp = decided[decided["opp_points"].notna()]
     if len(opp) >= 2:
         soft = opp.loc[opp["opp_points"].idxmin()]
@@ -1198,7 +1208,7 @@ def _week_insight_rows(s, wk: int) -> list[dict]:
                (soft["user_name"], f"{soft['opp_points']:.1f}", "weakest opponent this week"),
                (hard["user_name"], f"{hard['opp_points']:.1f}", "toughest opponent this week"))
 
-    # 5. Margin -- biggest blowout / closest game (the winner in each).
+    # 6. Margin -- biggest blowout / closest game (the winner in each).
     wins = decided[decided["margin"] > 0]
     if len(wins) >= 2:
         blow = wins.loc[wins["margin"].idxmax()]
@@ -1206,15 +1216,6 @@ def _week_insight_rows(s, wk: int) -> list[dict]:
         merged("Margin",
                (blow["user_name"], f"+{blow['margin']:.1f}", "biggest win of the week"),
                (close["user_name"], f"+{close['margin']:.1f}", "closest game of the week"))
-
-    # 6. Bench -- most / least points left on the bench this week.
-    benchw = played[played["left_on_bench"].notna()]
-    if len(benchw) >= 2:
-        most = benchw.loc[benchw["left_on_bench"].idxmax()]
-        least = benchw.loc[benchw["left_on_bench"].idxmin()]
-        merged("Bench",
-               (least["user_name"], f"{least['left_on_bench']:.1f}", "least left on the bench"),
-               (most["user_name"], f"{most['left_on_bench']:.1f}", "most left on the bench"))
 
     return tiles
 
@@ -1713,27 +1714,30 @@ def _week_recap(s, week: int, ws) -> dict:
     elif worst_facts:
         lead.append(f"{worst_name} {worst_facts[0]}.")
 
+    # Chip values are kept SHORT -- the Weekly tab renders them as a plain
+    # line list (see _week_narrative.html's `weekly_tab` branch), so each
+    # should fit one line at a normal width; the standalone report's chip
+    # cards wrap fine either way.
     chips = []
     if low["user_name"] != worst_name:
         chips.append({"icon": "\U0001F4C9", "label": "Low score",
                       "value": f"{low['user_name']} ({low['points']:.1f})"})
     if riser is not None and riser["user_name"] != worst_name:
         chips.append({"icon": "\U0001F4C8", "label": "Biggest riser",
-                      "value": f"{riser['user_name']} up from #{int(riser['table_position_prev'])} "
-                               f"to #{int(riser['table_position_cur'])}"})
+                      "value": f"{riser['user_name']} #{int(riser['table_position_prev'])} "
+                               f"→ #{int(riser['table_position_cur'])}"})
     if faller is not None and faller["user_name"] != worst_name:
         chips.append({"icon": "\U0001F4C9", "label": "Biggest faller",
-                      "value": f"{faller['user_name']} down from #{int(faller['table_position_prev'])} "
-                               f"to #{int(faller['table_position_cur'])}"})
+                      "value": f"{faller['user_name']} #{int(faller['table_position_prev'])} "
+                               f"→ #{int(faller['table_position_cur'])}"})
     # Both-sides-optimal flip: a matchup whose winner would change if BOTH
     # teams had started their best legal lineup (see _both_optimal_flips).
     # "Un-optimal result" -- the outcome that stood is the un-optimal one; on
     # a best-lineup (value) basis the game should have gone the other way.
     for f in _both_optimal_flips(s, int(week))[:1]:
         chips.append({"icon": "\U0001F504", "label": "Un-optimal result",
-                      "value": f"{f['loser']} lost {f['loser_pts']:.1f}-{f['winner_pts']:.1f} to "
-                               f"{f['winner']}, but wins {f['loser_opt']:.1f}-{f['winner_opt']:.1f} "
-                               f"if both start their best lineup"})
+                      "value": f"{f['loser']} lost {f['loser_pts']:.1f}-{f['winner_pts']:.1f}, "
+                               f"but best-lineup wins {f['loser_opt']:.1f}-{f['winner_opt']:.1f}"})
     # Luck: a win despite losing the all-play field, or a loss despite
     # winning it -- the story the (now-removed-from-default-view) beaten-or-
     # unlucky chart used to tell, still worth a line without the chart.
@@ -1746,26 +1750,21 @@ def _week_recap(s, week: int, ws) -> dict:
         if len(lucky):
             r = lucky.iloc[0]
             aw, al = int(r["allplay_w"]), int(r["allplay_l"])
-            # aw == 1 is the extreme case -- their score beat only the single
-            # worst lineup in the league that week, i.e. they were a hair from
-            # having the league's worst score themselves, and won anyway
-            # because their actual opponent happened to be that team.
-            if aw == 1:
-                value = (f"{r['user_name']} won with almost the league's worst score this "
-                         f"week; only their opponent scored less")
-            else:
-                value = (f"{r['user_name']} won despite outscoring only {aw} of {aw + al} teams")
+            # aw == 1: their score beat only the single worst lineup in the
+            # league that week and they won anyway because that was their
+            # actual opponent.
+            value = (f"{r['user_name']} won on a bottom-{aw} score"
+                     if aw == 1 else
+                     f"{r['user_name']} won outscoring only {aw} of {aw + al}")
             chips.append({"icon": "\U0001F340", "label": "Luckiest win", "value": value})
         elif len(unlucky):
             r = unlucky.iloc[0]
             aw, al = int(r["allplay_w"]), int(r["allplay_l"])
-            # al == 1 is the mirror extreme -- only ONE team in the league
-            # outscored them, and it happened to be the one they had to play.
-            if al == 1:
-                value = (f"{r['user_name']} lost despite having the league's best score this "
-                         f"week except for the one team they had to play")
-            else:
-                value = (f"{r['user_name']} lost despite outscoring {aw} of {aw + al} teams")
+            # al == 1: only one team outscored them, and it was the one they
+            # had to play.
+            value = (f"{r['user_name']} lost on the week's 2nd-best score"
+                     if al == 1 else
+                     f"{r['user_name']} lost outscoring {aw} of {aw + al}")
             chips.append({"icon": "\U0001F62B", "label": "Unluckiest loss", "value": value})
 
     return {"lead": " ".join(lead), "chips": chips[:4]}

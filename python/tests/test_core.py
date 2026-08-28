@@ -676,9 +676,11 @@ def test_week_insight_rows_are_per_week_merged_tiles(season_obj):
     tiles = _week_insight_rows(season_obj, 1)
     assert tiles, "week 1 has two games in the fixture"
     labels = [t["label"] for t in tiles]
-    # Order mirrors the Overview: scoring first, coaching before luck.
+    # Scoring first; the two lineup-quality reads (Efficiency, Bench) sit
+    # together right after it, before Luck.
     assert labels[0] == "Scoring"
-    assert labels.index("Coaching") < labels.index("Luck")
+    assert labels[1:3] == ["Efficiency", "Bench"]
+    assert labels.index("Efficiency") < labels.index("Luck")
     # None of the SEASON-only labels leak in.
     for gone in ("The table", "Consistency", "Schedule", "Points allowed", "Champion"):
         assert gone not in labels
@@ -729,7 +731,8 @@ def test_both_optimal_flips_is_a_recap_chip_not_a_top_level_tile(monkeypatch, se
     # It rides in the recap's chip list, labelled "Un-optimal result".
     rec = _week_recap(s, 1, metrics.week_stats(s, 1))
     chip = next((c for c in rec["chips"] if c["label"] == "Un-optimal result"), None)
-    assert chip is not None and "if both start their best lineup" in chip["value"]
+    assert chip is not None
+    assert "90.0-100.0" in chip["value"] and "best-lineup wins 140.0-105.0" in chip["value"]
 
     # It is NOT one of the six top-level insight tiles.
     assert "Un-optimal result" not in [t["label"] for t in _week_insight_rows(s, 1)]
