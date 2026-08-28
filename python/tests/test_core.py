@@ -699,6 +699,40 @@ def test_week_insight_rows_are_per_week_merged_tiles(season_obj):
     assert _week_insight_rows(season_obj, 99) == []
 
 
+def test_week_insight_optimal_result_flags_both_sides_optimal_flips(monkeypatch, season_obj):
+    """The "Optimal result" tile appears only when a matchup's winner would
+    CHANGE with BOTH teams on their best lineup (my optimal > opp optimal
+    while my actual < opp actual) -- not when my optimal merely beats the
+    opponent's actual score. See app._week_insight_rows tile 7."""
+    import pandas as pd
+    from webapp.app import _week_insight_rows
+
+    s = season_obj
+    # Fixture week 1: Al 100 beats Bo 90 (Cy has no game). Give Bo a big
+    # optimal and Al a small one so BOTH-optimal flips the Al/Bo game.
+    s.lineup = pd.DataFrame({
+        "user_name":     ["Al", "Bo", "Cy"],
+        "week":          [1, 1, 1],
+        "actual":        [100.0, 90.0, 80.0],
+        "optimal":       [105.0, 140.0, 100.0],   # Bo's optimal (140) > Al's (105)
+        "left_on_bench": [5.0, 50.0, 20.0],
+    })
+    tiles = _week_insight_rows(s, 1)
+    opt = next((t for t in tiles if t["label"] == "Optimal result"), None)
+    assert opt is not None
+    assert len(opt["rows"]) == 1
+    row = opt["rows"][0]
+    assert row["tone"] == "bad" and row["holder"] == "Bo"     # the stolen-from team
+    assert row["value"] == "+35.0"                            # 140.0 - 105.0
+    assert "both-optimal" in row["detail"]
+
+    # Now make Al's optimal the higher one -> the actual winner is ALSO the
+    # both-optimal winner -> no flip -> tile absent.
+    s.lineup.loc[s.lineup["user_name"] == "Al", "optimal"] = 200.0
+    tiles = _week_insight_rows(s, 1)
+    assert not any(t["label"] == "Optimal result" for t in tiles)
+
+
 def test_member_seasons_are_newest_first_per_persistent_user_id():
     """The Current members table's Seasons column lists every season an account
     (keyed on the persistent user_id) has been in the league, current ->

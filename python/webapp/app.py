@@ -1216,6 +1216,55 @@ def _week_insight_rows(s, wk: int) -> list[dict]:
                (least["user_name"], f"{least['left_on_bench']:.1f}", "least left on the bench"),
                (most["user_name"], f"{most['left_on_bench']:.1f}", "most left on the bench"))
 
+    # 7. Optimal result -- matchups whose winner would CHANGE if BOTH teams had
+    #    played their best legal lineup: `my optimal > opp optimal` while
+    #    `my actual < opp actual`. NOT "my optimal beats the opponent's ACTUAL
+    #    score" -- the opponent gets their optimal too. This is the whole-
+    #    lineup, both-sides version of bench_regrets' `flipped` (one legal
+    #    same-position swap, one side). Shown only when at least one matchup
+    #    flips; rows are the would-be winners (the team the loss was stolen
+    #    from), biggest optimal margin first, up to two, all tinted "bad".
+    tw = s.team_wk[s.team_wk["week"] == wk]
+    lu = s.lineup[s.lineup["week"] == wk][["user_name", "optimal"]]
+    if {"roster_id", "opp", "user_name", "points", "result"}.issubset(tw.columns) and len(lu):
+        opt_by_name = dict(zip(lu["user_name"], lu["optimal"]))
+        opt_by_rid = {int(r.roster_id): opt_by_name.get(r.user_name)
+                      for r in tw.itertuples() if pd.notna(r.roster_id)}
+        pts_by_rid = {int(r.roster_id): r.points
+                      for r in tw.itertuples() if pd.notna(r.roster_id)}
+        flips = []
+        seen = set()
+        for r in tw.itertuples():
+            if pd.isna(r.opp) or pd.isna(r.roster_id):
+                continue
+            rid, oid = int(r.roster_id), int(r.opp)
+            key2 = tuple(sorted((rid, oid)))
+            if key2 in seen:
+                continue
+            seen.add(key2)
+            my_opt, opp_opt = opt_by_rid.get(rid), opt_by_rid.get(oid)
+            my_pts, opp_pts = pts_by_rid.get(rid), pts_by_rid.get(oid)
+            if None in (my_opt, opp_opt, my_pts, opp_pts):
+                continue
+            # Orient so `a` is the ACTUAL loser of the matchup.
+            if my_pts < opp_pts:
+                loser, l_opt, l_pts, w_opt, w_pts = r.user_name, my_opt, my_pts, opp_opt, opp_pts
+            elif opp_pts < my_pts:
+                w_name = tw[tw["roster_id"] == oid]["user_name"].iloc[0]
+                loser, l_opt, l_pts, w_opt, w_pts = w_name, opp_opt, opp_pts, my_opt, my_pts
+            else:
+                continue
+            if l_opt > w_opt:            # the actual loser wins the both-optimal game
+                flips.append((loser, l_opt - w_opt, l_pts, w_pts, l_opt, w_opt))
+        if flips:
+            flips.sort(key=lambda t: t[1], reverse=True)
+            rows = [{"tone": "bad", "holder": str(n),
+                     "value": f"+{m:.1f}",
+                     "detail": f"lost {lp:.1f}-{wp:.1f}; both-optimal "
+                               f"{lo:.1f}-{wo:.1f} flips it"}
+                    for n, m, lp, wp, lo, wo in flips[:2]]
+            tiles.append({"label": "Optimal result", "rows": rows})
+
     return tiles
 
 
