@@ -51,14 +51,12 @@
 </nav>
 
 {% if preseason %}
-{# ---- Pre-season: rosters as drafted ---------------------------------------
+{# ---- Pre-season: drafted rosters ----------------------------------------
    A collapsible per-member list of each roster as it was drafted (app.
-   _preseason_rosters -> _preseason_rosters.html), NOT an embedded copy of the
-   Draft tab's board -- the "Full Draft tab" button in the header (above) goes
-   there for the value/grade charts, gem/bust reads and the redraft sim. #}
-<p class="hint">Before a game was played: how every roster was drafted. Expand a
-   manager for their picks in order; the <em>Draft</em> tab grades them and calls
-   out the gems and busts.</p>
+   _preseason_rosters -> _preseason_rosters.html, which carries its own
+   heading + hint), NOT an embedded copy of the Draft tab's board -- the
+   "Full Draft tab" button in the header (above) goes there for the
+   value/grade charts, gem/bust reads and the redraft sim. #}
 {% include "_preseason_rosters.html" %}
 
 {% else %}

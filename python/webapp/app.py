@@ -1126,43 +1126,54 @@ def _week_context(s, week: str | int | None = None,
     }
 
 
+# Positions shown as their own count columns in the Week-0 "Drafted Rosters"
+# summary row, in scoreboard order (mirrors sortPosition / SLOT_ORDER).
+_PRESEASON_POS = ["QB", "RB", "WR", "TE", "K", "DEF"]
+
+
 def _preseason_rosters(s, board=None) -> list[dict]:
     """The Weekly tab's Week 0 ("Pre-season") view: each member's roster AS
-    DRAFTED, one entry per manager, ordered by regular-season finish (same
-    order the Roster tab lists managers). Built straight off draft.draft_board()
-    -- one row per pick, already valued -- so it costs nothing beyond the
-    draft_board() call the Weekly branch already makes to gate week 0.
+    DRAFTED, one entry per manager, ordered by DRAFT SLOT (manager pick order,
+    1..N). Built straight off draft.draft_board() -- one row per pick -- so it
+    costs nothing beyond the draft_board() call the Weekly branch already makes
+    to gate week 0.
 
-    Returns `[{user_name, picks: [{pick, round, player_name, position,
-    pos_rank, total}], pick_count, total_pts}]`; empty when the season has no
-    draft board.
+    Returns `[{user_name, slot, pos_counts: {QB: n, ...}, picks: [{pick,
+    player_name, player_id, position}]}]`; empty when the season has no draft
+    board. `pos_counts` has a key for every position in `_PRESEASON_POS` (0
+    when none), plus "OTHER" only when something outside that list was drafted.
     """
     if board is None:
         board = draft.draft_board(s)
     if board.empty:
         return []
-    order = list(s.standings.sort_values("final_position")["user_name"])
     b = board.sort_values("pick_no")
     out = []
     for name, g in b.groupby("user_name", sort=False):
-        picks = []
+        picks, pos_counts = [], {p: 0 for p in _PRESEASON_POS}
+        slot = None
         for _, r in g.iterrows():
+            if slot is None and pd_notna(r.get("draft_slot")):
+                slot = int(r["draft_slot"])
             rnd = int(r["round"]) if pd_notna(r["round"]) else None
             pir = int(r["pick_in_round"]) if pd_notna(r["pick_in_round"]) else None
+            pos = (r["position"] or "").upper() if pd_notna(r["position"]) else ""
+            if pos in pos_counts:
+                pos_counts[pos] += 1
+            elif pos:
+                pos_counts["OTHER"] = pos_counts.get("OTHER", 0) + 1
             picks.append({
                 "pick": (f"{rnd}.{pir:02d}" if rnd and pir
                          else (str(int(r["pick_no"])) if pd_notna(r["pick_no"]) else "-")),
                 "player_name": r["player_name"] if pd_notna(r["player_name"]) else "N/A",
                 "player_id": r["player_id"] if pd_notna(r["player_id"]) else None,
-                "position": (r["position"] or "").upper() if pd_notna(r["position"]) else "",
-                "pos_rank": int(r["pos_rank"]) if pd_notna(r["pos_rank"]) else None,
-                "total": round(float(r["total"]), 1) if pd_notna(r["total"]) else 0.0,
+                "position": pos,
             })
-        out.append({
-            "user_name": name, "picks": picks, "pick_count": len(picks),
-            "total_pts": round(sum(p["total"] for p in picks), 1),
-        })
-    out.sort(key=lambda e: order.index(e["user_name"]) if e["user_name"] in order else 999)
+        out.append({"user_name": name, "slot": slot, "pos_counts": pos_counts,
+                    "picks": picks})
+    # Manager pick order: by draft slot ascending; a manager with no resolvable
+    # slot (shouldn't happen for a real Sleeper draft) sinks to the bottom.
+    out.sort(key=lambda e: e["slot"] if e["slot"] is not None else 999)
     return out
 
 

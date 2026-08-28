@@ -732,37 +732,46 @@ def test_weekly_preseason_slot_is_week_zero_and_only_when_allowed(season_obj):
     assert ctx1["kpi_top"] is not None
 
 
-def test_preseason_rosters_group_by_member_in_finish_order(season_obj):
-    """The Weekly Week-0 view is one entry per member, their draft picks in
-    draft order, members ordered by regular-season finish (the same order the
-    Roster tab lists managers). See app._preseason_rosters."""
+def test_preseason_rosters_are_in_pick_order_with_per_position_counts(season_obj):
+    """The Weekly Week-0 view is one entry per member, ordered by DRAFT SLOT
+    (manager pick order), each carrying a per-position drafted count and the
+    picks in draft order. No ranks, no season points -- it's pre-season.
+    See app._preseason_rosters."""
     import pandas as pd
     from webapp.app import _preseason_rosters
 
-    s = season_obj                                   # standings: Al 1st, Cy 2nd, Bo 3rd
+    s = season_obj
     # Empty board -> no rows, not a crash.
     assert _preseason_rosters(s, pd.DataFrame()) == []
 
-    # A 2-round, 3-team board. Bo's row is here but must sort last (finish 3).
+    # A 2-round, 3-team snake. Cy has slot 1, Al slot 2, Bo slot 3 -- the
+    # output must be in that slot order regardless of standings.
     board = pd.DataFrame({
         "pick_no":       [1, 2, 3, 4, 5, 6],
         "round":         [1, 1, 1, 2, 2, 2],
         "pick_in_round": [1, 2, 3, 1, 2, 3],
-        "user_name":     ["Al", "Bo", "Cy", "Cy", "Bo", "Al"],
+        "draft_slot":    [1, 2, 3, 3, 2, 1],
+        "user_name":     ["Cy", "Al", "Bo", "Bo", "Al", "Cy"],
         "player_id":     ["p1", "p2", "p3", "p4", "p5", "p6"],
-        "player_name":   ["A one", "B one", "C one", "C two", "B two", "A two"],
-        "position":      ["rb", "wr", "qb", "te", "rb", "wr"],
-        "pos_rank":      [1, 5, 2, 9, 12, 20],
-        "total":         [300.0, 120.0, 250.0, 40.0, 90.0, 150.0],
+        "player_name":   ["C one", "A one", "B one", "B two", "A two", "C two"],
+        "position":      ["rb", "wr", "qb", "te", "rb", "dst"],   # "dst" -> OTHER
     })
     out = _preseason_rosters(s, board)
-    assert [e["user_name"] for e in out] == ["Al", "Cy", "Bo"]      # finish order
-    al = out[0]
-    assert al["pick_count"] == 2 and al["total_pts"] == 450.0
-    assert [p["pick"] for p in al["picks"]] == ["1.01", "2.03"]     # draft order, round.pick
-    assert al["picks"][0] == {
-        "pick": "1.01", "player_name": "A one", "player_id": "p1",
-        "position": "RB", "pos_rank": 1, "total": 300.0}
+    assert [e["user_name"] for e in out] == ["Cy", "Al", "Bo"]     # slot order
+    assert [e["slot"] for e in out] == [1, 2, 3]
+
+    cy = out[0]
+    assert cy["pos_counts"] == {"QB": 0, "RB": 1, "WR": 0, "TE": 0,
+                                "K": 0, "DEF": 0, "OTHER": 1}       # rb + dst
+    assert [p["pick"] for p in cy["picks"]] == ["1.01", "2.03"]
+    assert cy["picks"][0] == {"pick": "1.01", "player_name": "C one",
+                              "player_id": "p1", "position": "RB"}
+    # No leftover rank / points fields on a pick.
+    assert "pos_rank" not in cy["picks"][0] and "total" not in cy["picks"][0]
+
+    al = out[1]
+    assert al["pos_counts"]["WR"] == 1 and al["pos_counts"]["RB"] == 1
+    assert "OTHER" not in al["pos_counts"]                          # only added when used
 
 
 def test_bracket_token_is_stable_and_content_addressed():

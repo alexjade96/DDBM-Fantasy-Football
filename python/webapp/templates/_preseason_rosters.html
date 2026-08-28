@@ -4,39 +4,56 @@
    draft picks instead of the full-season roster. Built by app._preseason_
    rosters() off draft.draft_board(). The full Draft tab (value/grade charts,
    gem/bust reads, the redraft sim) is one button-click away from the tab
-   header -- this section is only "how every roster was drafted". #}
+   header -- this section is only "how every roster was drafted".
+
+   Rows are in MANAGER PICK ORDER (draft slot), not regular-season finish.
+   The summary row is a slot number, the manager, and one count column per
+   position (how many of that position they drafted). The drilldown lists
+   the picks in draft order -- pre-season, so no ranks and no season points,
+   just Pick / Player / Pos. #}
 {% import "_ident.html" as idm with context %}
 {% if preseason_rosters %}
-<h2>Rosters as drafted</h2>
-<p class="hint">Expand a manager for every pick they made, in draft order.
-   <strong>Season pts</strong> is that player&rsquo;s true full-season output; the
-   <strong>Draft</strong> tab grades the picks and calls out the gems and busts.</p>
+{% set has_other = preseason_rosters | selectattr("pos_counts.OTHER", "defined") | list | length > 0 %}
+<h2>Drafted Rosters</h2>
+<p class="hint">Every roster as it was drafted, in draft order. Each position column
+   is how many of that position the manager drafted; expand a manager for their
+   picks. The <strong>Draft</strong> tab grades the picks and calls out the gems
+   and busts.</p>
 <div class="tablewrap">
-<div class="drilltable" style="--cols: minmax(140px,1.6fr) minmax(85px,1fr) minmax(85px,1fr)">
+<div class="drilltable"
+     style="--cols: 52px minmax(140px,1.4fr) repeat({{ 7 if has_other else 6 }}, minmax(46px,0.6fr))">
   <div class="dt-head">
+    <span class="dt-num">Slot</span>
     <span>Manager</span>
-    <span class="dt-num">Picks</span>
-    <span class="dt-num">Drafted pts</span>
+    <span class="dt-num">QB</span>
+    <span class="dt-num">RB</span>
+    <span class="dt-num">WR</span>
+    <span class="dt-num">TE</span>
+    <span class="dt-num">K</span>
+    <span class="dt-num">DEF</span>
+    {% if has_other %}<span class="dt-num">Other</span>{% endif %}
   </div>
   {% for r in preseason_rosters %}
   <details class="dt-row">
     <summary>
+      <span class="dt-num">{{ r.slot if r.slot is not none else "-" }}</span>
       <span>{{ idm.who(r.user_name) }}</span>
-      <span class="dt-num">{{ r.pick_count }}</span>
-      <span class="dt-num">{{ "%.1f"|format(r.total_pts) }}</span>
+      {% for pos in ["QB", "RB", "WR", "TE", "K", "DEF"] %}
+      <span class="dt-num">{{ r.pos_counts.get(pos, 0) }}</span>
+      {% endfor %}
+      {% if has_other %}<span class="dt-num">{{ r.pos_counts.get("OTHER", 0) }}</span>{% endif %}
     </summary>
     <div class="dt-detail">
       <table class="dt-games">
         <thead>
-          <tr><th>Pick</th><th>Player</th><th>Pos</th><th class="dt-num">Season pts</th></tr>
+          <tr><th>Pick</th><th>Player</th><th>Pos</th></tr>
         </thead>
         <tbody>
           {% for p in r.picks %}
           <tr>
             <td>{{ p.pick }}</td>
             <td>{{ idm.headshot(p.player_id) }}{{ p.player_name }}</td>
-            <td><span class="q">{{ p.position }}{% if p.pos_rank %} #{{ p.pos_rank }}{% endif %}</span></td>
-            <td class="dt-num">{{ "%.1f"|format(p.total) }}</td>
+            <td><span class="q">{{ p.position }}</span></td>
           </tr>
           {% endfor %}
         </tbody>
