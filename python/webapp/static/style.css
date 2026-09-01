@@ -1715,65 +1715,55 @@ tr.bench-impact td { background: color-mix(in srgb, #d9a441 8%, transparent); }
 #panel .preseason-rost .dt-row > summary > .pg1 {
   border-left: 1px solid var(--line); padding-left: 12px;
   margin-left: 2px; }
-/* The expanded pick table fills the panel width (table-layout:fixed +
-   width:100% + a percentage per column, the <table> analogue of the summary
-   grid's per-track fr weights) and groups its columns the SAME contextual
-   way the season report's _mini_table does: a real empty spacer column
-   (<td class="gap-col">) between groups, not cell padding or a border line.
-   Under table-layout:fixed a cell's padding can't shift a sibling column's
-   boundary, so the spacer is the only thing that actually pushes groups
-   apart; it takes its own small fixed width in the proportional pool.
+/* The expanded pick table groups its columns the SAME contextual way the
+   season report's _mini_table does -- a real empty spacer column
+   (<td class="gap-col">) between groups -- but inverts which side flexes:
+   the REAL columns are sized to their content (fixed ch/rem), and the TWO
+   SPACERS carry all the stretch (width:100% each under table-layout:auto,
+   so they split the leftover width equally and grow/shrink with the
+   panel). So the group gap scales with the window while Pick / the
+   Overall-ADP-+/- cluster / Player+Team stay tied to what they hold.
    Groups:
-     1. Pick                 -- the league's round.pick notation, own scale
-     2. Overall / ADP / +/-  -- one comparison (.dt-num right-aligns them)
-     3. Player / Team         -- identity, read as a pair
-   The two spacers take a FIXED width (1.8rem, ~29px -- close to the season
-   report's own 3ch _GAP_CH, and constant instead of scaling with the panel
-   like a % would); the real columns' percentages then split whatever
-   width:100% leaves after the two spacers. Real-column % sum to 100:
-   Pick 9 | Overall 11 | ADP 11 | +/- 12 | Player 40 | Team 17.
-
-   text-align is set here on BOTH th and td per column: the generic
+     1. Pick                 -- round.pick notation, ~4ch
+     2. Overall / ADP / +/-  -- one comparison, .dt-num right-aligns them
+     3. Player / Team         -- identity; Player has a min so a long name
+        doesn't shove Team, but it does not grab the slack -- the spacers do
+   text-align is set on BOTH th and td per column: the generic
    `table.dt-games th { text-align: left }` (0,1,1) otherwise outranks the
-   `.dt-num` class (0,1,0) the template puts on the numeric headers, so the
-   header sat left-aligned above a right-aligned cell -- the "not lining up"
-   symptom. */
-#panel .preseason-rost .dt-detail > table.dt-games { width: 100%; table-layout: fixed; }
+   `.dt-num` class (0,1,0) the template puts on the numeric headers, so a
+   header sat left-aligned above a right-aligned cell. */
+#panel .preseason-rost .dt-detail > table.dt-games { width: 100%; table-layout: auto; }
 #panel .preseason-rost .dt-detail > table.dt-games thead th,
 #panel .preseason-rost .dt-detail > table.dt-games tbody td {
-  padding-right: 12px; overflow: hidden; text-overflow: ellipsis; }
-/* Pick (col 1) -- left */
+  padding-right: 12px; white-space: nowrap; }
+/* Pick (col 1) -- left, content width */
 #panel .preseason-rost .dt-detail > table.dt-games thead th:nth-child(1),
 #panel .preseason-rost .dt-detail > table.dt-games tbody td:nth-child(1) {
-  width: 9%; text-align: left; }
-/* Overall / ADP / +/- (cols 3-5) -- right, header and cell together */
+  width: 1%; text-align: left; }
+/* Overall / ADP / +/- (cols 3-5) -- right, content width, header + cell together */
 #panel .preseason-rost .dt-detail > table.dt-games thead th:nth-child(3),
 #panel .preseason-rost .dt-detail > table.dt-games tbody td:nth-child(3),
 #panel .preseason-rost .dt-detail > table.dt-games thead th:nth-child(4),
 #panel .preseason-rost .dt-detail > table.dt-games tbody td:nth-child(4),
 #panel .preseason-rost .dt-detail > table.dt-games thead th:nth-child(5),
 #panel .preseason-rost .dt-detail > table.dt-games tbody td:nth-child(5) {
-  text-align: right; font-variant-numeric: tabular-nums; }
-#panel .preseason-rost .dt-detail > table.dt-games thead th:nth-child(3),
-#panel .preseason-rost .dt-detail > table.dt-games tbody td:nth-child(3) { width: 11%; }
-#panel .preseason-rost .dt-detail > table.dt-games thead th:nth-child(4),
-#panel .preseason-rost .dt-detail > table.dt-games tbody td:nth-child(4) { width: 11%; }
-#panel .preseason-rost .dt-detail > table.dt-games thead th:nth-child(5),
-#panel .preseason-rost .dt-detail > table.dt-games tbody td:nth-child(5) { width: 12%; }
-/* Player (col 7) / Team (col 8) -- left */
+  width: 1%; text-align: right; font-variant-numeric: tabular-nums; }
+/* Player (col 7) -- left, a comfortable min so a long name doesn't push Team,
+   but it does NOT take the slack (the spacers do) */
 #panel .preseason-rost .dt-detail > table.dt-games thead th:nth-child(7),
 #panel .preseason-rost .dt-detail > table.dt-games tbody td:nth-child(7) {
-  width: 40%; text-align: left; }
+  width: 1%; min-width: 15rem; text-align: left; }
+/* Team (col 8) -- left, content width */
 #panel .preseason-rost .dt-detail > table.dt-games thead th:last-child,
 #panel .preseason-rost .dt-detail > table.dt-games tbody td:last-child {
-  width: 17%; padding-right: 0; text-align: left; }
-/* The spacer columns: a fixed width (constant, not panel-scaled), no
-   padding of their own (nothing to pad), but border-bottom is left intact
-   or the row's divider breaks at every gap. Same idea as report._CSS's
-   .gap-col (which uses a fixed 3ch _GAP_CH). */
+  width: 1%; padding-right: 0; text-align: left; }
+/* The two spacer columns: each asks for the full table width, so under
+   table-layout:auto they split ALL the leftover space between them and
+   scale with the panel. No padding (nothing to pad); keep border-bottom or
+   the row divider breaks at every gap. */
 #panel .preseason-rost .dt-detail > table.dt-games thead th.gap-col,
 #panel .preseason-rost .dt-detail > table.dt-games tbody td.gap-col {
-  width: 1.8rem; padding: 0; border-left: 0; border-right: 0; border-top: 0; }
+  width: 100%; padding: 0; border-left: 0; border-right: 0; border-top: 0; }
 
 /* A drilltable that is NOT inside a .card is its own card: it already draws a
    border and radius, so wrapping it in .card framed it twice (a frame in a
