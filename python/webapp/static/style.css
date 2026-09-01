@@ -1715,30 +1715,35 @@ tr.bench-impact td { background: color-mix(in srgb, #d9a441 8%, transparent); }
 #panel .preseason-rost .dt-row > summary > .pg1 {
   border-left: 1px solid var(--line); padding-left: 12px;
   margin-left: 2px; }
-/* The generic #panel .dt-detail > table.dt-games rule forces width:100% + 28px
-   cell padding, which on the expanded pick table's 6 short columns (a
-   round.pick string, two small ints, a signed 1-decimal, a name, a 2-3 letter
-   team) spreads them out with big empty gaps. Let that inner table sit at its
-   natural width with tight, even spacing instead -- overriding the generic
-   rule's (1,2,3) score here with (1,2,3) + a class, later in the file. */
-/* Three column groups, matched to how the hint text frames them:
-     1. Pick        -- the league's round.pick notation, a scale of its own
-     2. Overall / ADP / +/-  -- one comparison cluster ("Overall, same scale
-        as ADP, minus ADP" -- read straight across), sits tight
-     3. Player / Team  -- identity, Player soaks up the leftover width
-   A wider gap closes group 1 (after Pick) and group 2 (after +/-); inside
-   group 2 the columns stay at the base gap. Right-align Overall/ADP/+/- so
-   the numbers line up; Pick stays left (a "1.01" isn't a magnitude). */
-#panel .preseason-rost .dt-detail > table.dt-games { width: auto; }
+/* The expanded pick table fills the panel width the same way the summary
+   grid does: table-layout:fixed + a percentage per column (the <table>
+   analogue of the summary grid's per-track fr weights), so the slack is
+   spread proportionally across all six columns rather than pooled into
+   Player via a width:99% hack. Weights: Player is the bulk column (the
+   Manager-equivalent), Pick/Overall/ADP/+/- a modest equal cluster (the
+   "read Overall vs ADP straight across" comparison the hint describes),
+   Team a slim tail. Overall/ADP/+/- keep their .dt-num right-align so the
+   numbers line up; Pick stays left (a "1.01" is not a magnitude). A wider
+   right pad after Pick and after +/- closes those two groups visually. */
+#panel .preseason-rost .dt-detail > table.dt-games { width: 100%; table-layout: fixed; }
 #panel .preseason-rost .dt-detail > table.dt-games thead th,
-#panel .preseason-rost .dt-detail > table.dt-games tbody td { padding-right: 16px; }
+#panel .preseason-rost .dt-detail > table.dt-games tbody td {
+  padding-right: 16px; overflow: hidden; text-overflow: ellipsis; }
 #panel .preseason-rost .dt-detail > table.dt-games thead th:nth-child(1),
-#panel .preseason-rost .dt-detail > table.dt-games tbody td:nth-child(1) { padding-right: 30px; }
+#panel .preseason-rost .dt-detail > table.dt-games tbody td:nth-child(1) {
+  width: 9%; padding-right: 26px; }
+#panel .preseason-rost .dt-detail > table.dt-games thead th:nth-child(2),
+#panel .preseason-rost .dt-detail > table.dt-games tbody td:nth-child(2) { width: 9%; }
+#panel .preseason-rost .dt-detail > table.dt-games thead th:nth-child(3),
+#panel .preseason-rost .dt-detail > table.dt-games tbody td:nth-child(3) { width: 9%; }
 #panel .preseason-rost .dt-detail > table.dt-games thead th:nth-child(4),
-#panel .preseason-rost .dt-detail > table.dt-games tbody td:nth-child(4) { padding-right: 34px; }
-#panel .preseason-rost .dt-detail > table.dt-games td:nth-child(5) { width: 99%; }
+#panel .preseason-rost .dt-detail > table.dt-games tbody td:nth-child(4) {
+  width: 9%; padding-right: 34px; }
+#panel .preseason-rost .dt-detail > table.dt-games thead th:nth-child(5),
+#panel .preseason-rost .dt-detail > table.dt-games tbody td:nth-child(5) { width: 52%; }
 #panel .preseason-rost .dt-detail > table.dt-games thead th:last-child,
-#panel .preseason-rost .dt-detail > table.dt-games tbody td:last-child { padding-right: 0; }
+#panel .preseason-rost .dt-detail > table.dt-games tbody td:last-child {
+  width: 12%; padding-right: 0; }
 
 /* A drilltable that is NOT inside a .card is its own card: it already draws a
    border and radius, so wrapping it in .card framed it twice (a frame in a
