@@ -1720,33 +1720,35 @@ tr.bench-impact td { background: color-mix(in srgb, #d9a441 8%, transparent); }
    analogue of the summary grid's per-track fr weights), so the slack is
    spread proportionally rather than pooled into one column.
 
-   THREE column groups, set apart by a wider right pad on the last member of
-   each; inside a group columns sit at the base gap:
+   THREE column groups, each STARTING with a hairline border-left (the same
+   cue the summary row's .pg1 separator uses), the first group aside:
      1. Pick                 -- the league's round.pick notation, own scale
      2. Overall / ADP / +/-  -- one comparison ("Overall, same scale as ADP,
         minus ADP" -- read straight across); .dt-num right-aligns them
      3. Player / Team         -- identity, read as a pair
-   Player carries the bulk of the width but is NOT so wide that Team floats
-   away from the name -- Team sits right after it so the two read together. */
+   The separator sits at the group-start column's left edge with the content
+   pushed in by padding-left; columns inside a group keep the base gap.
+   Player carries the bulk of the width but is not so wide that Team floats
+   off from the name. */
 #panel .preseason-rost .dt-detail > table.dt-games { width: 100%; table-layout: fixed; }
 #panel .preseason-rost .dt-detail > table.dt-games thead th,
 #panel .preseason-rost .dt-detail > table.dt-games tbody td {
   padding-right: 14px; overflow: hidden; text-overflow: ellipsis; }
-/* group 1 */
+/* group 1: Pick */
 #panel .preseason-rost .dt-detail > table.dt-games thead th:nth-child(1),
-#panel .preseason-rost .dt-detail > table.dt-games tbody td:nth-child(1) {
-  width: 10%; padding-right: 32px; }
-/* group 2 */
+#panel .preseason-rost .dt-detail > table.dt-games tbody td:nth-child(1) { width: 10%; }
+/* group 2: Overall / ADP / +/-  -- starts at col 2 with the separator */
 #panel .preseason-rost .dt-detail > table.dt-games thead th:nth-child(2),
-#panel .preseason-rost .dt-detail > table.dt-games tbody td:nth-child(2) { width: 11%; }
+#panel .preseason-rost .dt-detail > table.dt-games tbody td:nth-child(2) {
+  width: 11%; border-left: 1px solid var(--line); padding-left: 18px; }
 #panel .preseason-rost .dt-detail > table.dt-games thead th:nth-child(3),
 #panel .preseason-rost .dt-detail > table.dt-games tbody td:nth-child(3) { width: 11%; }
 #panel .preseason-rost .dt-detail > table.dt-games thead th:nth-child(4),
-#panel .preseason-rost .dt-detail > table.dt-games tbody td:nth-child(4) {
-  width: 11%; padding-right: 32px; }
-/* group 3: Player takes the remaining width, Team a slim tail right beside it */
+#panel .preseason-rost .dt-detail > table.dt-games tbody td:nth-child(4) { width: 12%; }
+/* group 3: Player / Team  -- starts at col 5 with the separator */
 #panel .preseason-rost .dt-detail > table.dt-games thead th:nth-child(5),
-#panel .preseason-rost .dt-detail > table.dt-games tbody td:nth-child(5) { width: 40%; }
+#panel .preseason-rost .dt-detail > table.dt-games tbody td:nth-child(5) {
+  width: 39%; border-left: 1px solid var(--line); padding-left: 18px; }
 #panel .preseason-rost .dt-detail > table.dt-games thead th:last-child,
 #panel .preseason-rost .dt-detail > table.dt-games tbody td:last-child {
   width: 17%; padding-right: 0; }
