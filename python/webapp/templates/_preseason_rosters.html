@@ -26,13 +26,15 @@
    <span class="pts dv-neg">red</span> when later. The <strong>Draft</strong>
    tab grades the picks in full.</p>
 <div class="tablewrap">
-{# Fixed-width position columns (a count is 1-2 digits), a bounded Manager
-   column that soaks up the slack, and a single fr only on a trailing spacer
-   so the position block stays tight against the middle instead of every
-   column stretching. See CLAUDE.md's "grid column mixing fr with fixed px"
-   panel-layout trap -- this is the fix for it. #}
+{# Fixed-width Pick-order + position columns (a slot / count is 1-2 digits),
+   and Manager takes ALL the remaining room (minmax(9rem, 1fr)). No trailing
+   fr spacer: on a maximized window it ballooned into a huge dead gap on the
+   right, leaving every real column crammed into the left third. The
+   .preseason-rost rule in style.css caps the whole grid's width so Manager
+   doesn't grow unboundedly either. See CLAUDE.md's "grid column mixing fr
+   with fixed px" panel-layout trap. #}
 <div class="drilltable preseason-rost"
-     style="--cols: 5.5rem minmax(9rem, 15rem) repeat({{ 7 if has_other else 6 }}, 2.4rem) 1fr">
+     style="--cols: 5.5rem minmax(9rem, 1fr) repeat({{ 7 if has_other else 6 }}, 2.4rem)">
   <div class="dt-head">
     <span class="dt-num">Pick order</span>
     <span>Manager</span>
@@ -43,7 +45,6 @@
     <span class="dt-num">K</span>
     <span class="dt-num">DEF</span>
     {% if has_other %}<span class="dt-num">Other</span>{% endif %}
-    <span></span>
   </div>
   {% for r in preseason_rosters %}
   <details class="dt-row">
@@ -54,7 +55,6 @@
       <span class="dt-num">{{ r.pos_counts.get(pos, 0) }}</span>
       {% endfor %}
       {% if has_other %}<span class="dt-num">{{ r.pos_counts.get("OTHER", 0) }}</span>{% endif %}
-      <span></span>
     </summary>
     <div class="dt-detail">
       {# Overall (absolute pick_no) and ADP are the same scale; the +/- is
