@@ -18,11 +18,41 @@
 </nav>
 
 <div class="reportpanel">
+  {% if not scored %}
+  <p class="empty">No games have been scored yet this season, so there is no
+     season report to build. It fills in once week 1 is complete. The drafted
+     rosters are on the <strong>Draft</strong> tab.</p>
+  {% else %}
+  {# One deduped background-image rule per unique player portrait / manager
+     avatar used anywhere in the manager sections below (report._portrait_style),
+     base64-embedded so a player who appears in a dozen tables is downloaded
+     once. Empty for the whole-league report. #}
+  {{ portrait_style|safe }}
   <p class="eyebrow">{{ eyebrow }}</p>
   <h2 class="rtitle">{{ heading_text }}</h2>
   <p class="hint">{{ subhead }}</p>
 
+  {# The season report's tiles are the same merged good/bad insight tiles the
+     Overview tab shows (report._insight_tiles mirrors app._overview_insight_rows);
+     the manager report keeps flat (label, value, sub) tiles. #}
   <section class="stats">
+    {% if tiles_kind == "insight" %}
+    {% for t in tiles %}
+    <div class="stat {% if loop.first %}gold{% endif %}">
+      <span class="k">{{ t.label }}</span>
+      <div class="insight-rows">
+        {% for r in t.rows %}
+        <div class="insight-row {{ r.tone }}">
+          <span class="ir-mark">{{ "▲" if r.tone == "good" else "▼" }}</span>
+          <span class="ir-who">{{ r.holder }}</span>
+          <span class="ir-val">{{ r.value }}</span>
+          {% if r.detail %}<span class="ir-det">{{ r.detail }}</span>{% endif %}
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+    {% endfor %}
+    {% else %}
     {% for k, v, sub in tiles %}
     <div class="stat {% if loop.first %}gold{% endif %}">
       <span class="k">{{ k }}</span>
@@ -30,17 +60,23 @@
       <span class="sub">{{ sub }}</span>
     </div>
     {% endfor %}
+    {% endif %}
   </section>
 
-  {# not class "lead" -- the report's ranked tables already use .teams.lead #}
-  <div class="card narrative">{{ narrative|safe }}</div>
+  {# The season report has no prose recap (the insight tiles say the same, as
+     on the Overview tab); the manager report keeps its manager-specific one.
+     Not class "lead" -- the report's ranked tables already use .teams.lead. #}
+  {% if narrative %}<div class="card narrative">{{ narrative|safe }}</div>{% endif %}
 
   <h2>{{ table_title }}</h2>
   <p class="hint">{{ table_blurb }}</p>
   <div class="card tablewrap">{{ table_html|safe }}</div>
 
   {% for sec in sections %}
-  <h2>{{ sec.title }}</h2>
+  {# An empty title is a continuation of the section above it (Season standouts
+     and Draft class each split into an insight block + an independent table
+     block under one heading) -- no <h2>, just the next block. #}
+  {% if sec.title %}<h2>{{ sec.title }}</h2>{% endif %}
   {% if sec.blurb %}<p class="hint">{{ sec.blurb }}</p>{% endif %}
   {# A section can carry a table, charts, or both -- render whatever it has.
      A section whose content already draws its own frame (.drilltable /
@@ -58,4 +94,5 @@
   </section>
   {% endif %}
   {% endfor %}
+  {% endif %}
 </div>

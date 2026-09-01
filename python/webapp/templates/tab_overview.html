@@ -12,7 +12,27 @@
 {% import "_ident.html" as idm with context %}
 {% import "_lazy.html" as lz %}
 
-{# ---- Lead: current week, current playoff round, or season complete ------- #}
+{# ---- Lead: pre-season draft, last completed week, playoff round, or
+       season complete --------------------------------------------------------
+   `preseason` (the season is drafted but no week has been scored yet): the
+   Overview is JUST the drafted rosters -- no headline tiles, no week charts,
+   no season-to-date section, because there is no data for any of it yet. #}
+{% if preseason %}
+<div class="rowhead">
+  <h2>Pre-season: the draft</h2>
+  <div class="rowhead-actions">
+    {# The full Draft tab has the board, value/grade charts and gem/bust reads. #}
+    <button type="button" class="ghost"
+            onclick="[...document.querySelectorAll('.tabs button')].find(b=>b.getAttribute('hx-get')==='/tab/draft').click()">
+      Draft Board &rarr;</button>
+  </div>
+</div>
+<p class="hint">The season has been drafted but no week has been played yet, so
+   there are no results to show. Below is every roster as it was drafted; the
+   <em>Draft</em> tab has the board and draft grades.</p>
+{% include "_preseason_rosters.html" %}
+
+{% else %}
 {% if phase == "playoffs" %}
 <div class="rowhead">
   <h2>Playoffs: {{ current_round.label }}
@@ -158,10 +178,12 @@
 <section class="grid">
   {% for c in charts %}{{ ch.chart(c) }}{% endfor %}
 </section>
+{% endif %}{# not preseason #}
 
 {# ---- Season config ------------------------------------------------------
    The league's own Sleeper settings, roster/scoring setup and member list
    (with user ids) -- each its own section, at the bottom of the tab.
    Deferred (its own sm.league() call) rather than blocking first paint.
-   Was its own tab until 2026-08. #}
+   Was its own tab until 2026-08. Shown in every phase (pre-season included):
+   it is the league's static setup, not results. #}
 {{ lz.lazy("/tab/overview/part/config?league=" ~ league|urlencode ~ "&season=" ~ season|urlencode ~ "&theme=" ~ theme, height="300px") }}

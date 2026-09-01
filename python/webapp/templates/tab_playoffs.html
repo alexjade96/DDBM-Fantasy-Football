@@ -65,6 +65,11 @@
 {% include "_bracket_editor.html" %}
 {% else %}
 
+{# Before the postseason has actually started, the tab is JUST the skeleton
+   bracket -- the seeded path that real results will fill in. Every KPI tile,
+   the analytics charts and the results board would be zeroes or placeholders,
+   so `po_started` gates them all off. #}
+{% if po_started %}
 <section class="stats">
   <div class="stat gold">
     <span class="k">Champion</span>
@@ -101,6 +106,7 @@
     {% if po_ppg[1] %}<span class="sub">{{ idm.who(po_ppg[1]) }}{% if po_ppg_sub %} · {{ po_ppg_sub }}{% endif %}</span>{% endif %}
   </div>
 </section>
+{% endif %}{# po_started #}
 
 {# The whole tab below the KPI tiles is a three-way view switch, sitting
    directly under the tiles:
@@ -164,6 +170,7 @@
         {%- endif %}
       </div>
 
+      {% if po_started %}
       <h2>Postseason analytics</h2>
       <p class="hint">The whole postseason together: bracket games (the championship path and any
          consolation) and the consolation bracket, pooled into one leaderboard.  The <strong>Playoffs</strong>
@@ -181,11 +188,16 @@
           "The rate stats are bracket games only, so a team that missed the bracket shows "
           "N/A here, with its own games under the Consolation bracket view.  Margin is the average;  "
           "Outcome is the title path.")) }}
+      {% else %}
+      <p class="hint">The postseason hasn&rsquo;t started yet. The bracket above shows the seeded
+         path; results, analytics and the games log fill in once the first playoff week is scored.</p>
+      {% endif %}
     </div>
 
     {# --- Playoffs: the championship bracket only -- analytics first, then
        results, then the bracket-round games log. --- #}
     <div class="vs-panel vs-p-po-playoffs">
+      {% if po_started %}
       <h2>Playoff analytics</h2>
       <p class="hint">Championship path only.  Consolation and consolation bracket games are covered by the
          Postseason and Consolation bracket views.</p>
@@ -200,11 +212,19 @@
          "Rate stats are their bracket games only;  Outcome is the title path.") }}
 
       {{ lz.lazy("/tab/playoffs/part/games?only=bracket&league=" ~ league|urlencode ~ "&season=" ~ season|urlencode ~ "&theme=" ~ theme ~ "&bracket=" ~ bracket|urlencode, height="260px") }}
+      {% else %}
+      <p class="hint">The championship bracket hasn&rsquo;t started. See the <strong>Postseason</strong>
+         view for the seeded bracket.</p>
+      {% endif %}
     </div>
 
     {# --- Consolation bracket: the missed-bracket teams only -- analytics first, then
        results, then the consolation-round games log. --- #}
     <div class="vs-panel vs-p-po-consolation">
+      {% if not po_started %}
+      <p class="hint">The postseason hasn&rsquo;t started, so there are no consolation-bracket
+         games yet.</p>
+      {% else %}
       {% if consolation.games %}
       <h2>Consolation bracket analytics</h2>
       <p class="hint">Every consolation bracket game (teams that missed the championship bracket).  There
@@ -226,6 +246,7 @@
       {% endif %}
 
       {{ lz.lazy("/tab/playoffs/part/games?only=consolation&league=" ~ league|urlencode ~ "&season=" ~ season|urlencode ~ "&theme=" ~ theme ~ "&bracket=" ~ bracket|urlencode, height="200px") }}
+      {% endif %}{# po_started #}
     </div>
   </div>
 </section>

@@ -42,6 +42,11 @@
   {% endfor %}
 </nav>
 {% include "_liveband.html" %}
+{% if not scored %}
+<p class="empty">No games have been scored yet this season. Rosters, lineup
+   efficiency and the season-long charts fill in once week 1 is complete. The
+   drafted rosters are on the <strong>Draft</strong> tab.</p>
+{% else %}
 {{ lz.lazy("/tab/roster/part/standouts" ~ part_qs, height="140px") }}
 
 {% if manager %}
@@ -60,4 +65,5 @@
 {{ lz.lazy("/tab/roster/part/weeks" ~ part_qs, height="300px") }}
 
 {{ lz.lazy("/tab/roster/part/honors" ~ part_qs, height="260px") }}
+{% endif %}
 {% endif %}

@@ -5,6 +5,10 @@
 {% import "_lazy.html" as lz %}
 {% set part_qs = "?league=" ~ league|urlencode ~ "&season=" ~ season|urlencode ~ "&theme=" ~ theme %}
 {% include "_liveband.html" %}
+{% if not scored %}
+<p class="empty">No games have been scored yet this season. Trades, the waiver
+   wire and what each move returned fill in once week 1 is complete.</p>
+{% else %}
 {% if standouts %}
 <h2>Transaction standouts</h2>
 <p class="hint">Who dealt, who worked the wire, and what it returned, the season&rsquo;s
@@ -90,3 +94,4 @@
 {% endif %}
 
 {{ lz.lazy("/tab/transactions/part/waivers" ~ part_qs, height="280px") }}
+{% endif %}

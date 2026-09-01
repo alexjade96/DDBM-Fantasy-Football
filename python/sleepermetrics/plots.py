@@ -433,7 +433,10 @@ def plot_efficiency(s: Season):
     as before.
     """
     d = metrics.efficiency(s).sort_values("eff").reset_index(drop=True)
-    if d.empty:
+    if d.empty or not d["eff"].notna().any():
+        # A just-started season has actual == optimal == 0 for every team, so
+        # `eff` is all-NaN -- there is nothing to plot and the axis math below
+        # would be NaN.
         return _no_data(f"No lineup data for {s.season} yet.")
     lu = getattr(s, "lineup", None)
     weekly_range = {}
@@ -1024,6 +1027,12 @@ def plot_roster_counts(s: Season):
 
 def _plot_acq(d, s: Season, title, subtitle):
     import pandas as pd
+    if d is None or len(d) == 0 or not pd.to_numeric(
+            d.get("total"), errors="coerce").fillna(0).gt(0).any():
+        # No acquisitions with any scored points yet (e.g. a season that has
+        # only just kicked off) -- `weeks`/`total` are NaN/0 and the bar +
+        # `int(weeks)` math below would raise.
+        return _no_data(f"No {title.split(':')[0].lower()} to show for {s.season} yet.")
     players = (d.drop_duplicates("player_name").sort_values("total")["player_name"].tolist())
     totals = {p: d[d["player_name"] == p]["total"].iloc[0] for p in players}
     span = max(totals.values()) if totals else 1
@@ -1038,7 +1047,8 @@ def _plot_acq(d, s: Season, title, subtitle):
                 color=pal[nm], edgecolor=T["edge"], linewidth=0.3, label=nm)
         for p in players:
             if row[p] >= span * 0.06:
-                ax.text(left[p] + row[p] / 2, y[p], f"{round(row[p])} ({int(wk[p])}w)",
+                wkn = int(wk[p]) if pd.notna(wk[p]) else 0
+                ax.text(left[p] + row[p] / 2, y[p], f"{round(row[p])} ({wkn}w)",
                         ha="center", va="center", fontsize=7, color="#1a1a1a")
         left += row.values
     for p in players:
@@ -1078,7 +1088,12 @@ def _ref_label(ref_scores: dict | None, team, weeks) -> str:
 # `plot_consolation_bracket`) so they render the same size beside each other. Neither
 # chart's title/caption text is allowed to change these dimensions -- long
 # strings wrap or truncate instead of stretching the figure.
-_PLAYOFF_FIG = (8.5, 5.2)
+# Height was 5.2; bumped to 6.0 so a wide, shallow bracket (few games but many
+# rounds, e.g. a 12-team pick-your-opponent bracket with a full placement
+# slate) renders each card tall enough for its two text lines to clear the
+# border -- at 5.2 a card was ~14px, shorter than two stacked 7pt lines, and
+# the top line clipped the outline (glaring in dark mode).
+_PLAYOFF_FIG = (8.5, 6.0)
 _PLAYOFF_CAPTION_BAND = 0.14        # fraction of the figure height kept for the caption
 
 
@@ -1485,7 +1500,10 @@ def plot_playoff_bracket(p, ref_scores: dict | None = None, consolation: dict | 
         _rows = d[d["matchup_id"] == _mid]
         if not len(_rows):
             continue
-        lo = float(_rows["y"].min()) - CARD_HH - 0.14
+        # Top margin matches the placement-tag offset below (0.20) plus a
+        # little headroom for the label's own glyph height, so the tag reads
+        # as INSIDE its tinted band rather than poking out above it.
+        lo = float(_rows["y"].min()) - CARD_HH - 0.30
         hi = float(_rows["y"].max()) + CARD_HH + 0.14
         rx0 = float(_rows["rx"].iloc[0])
         ax.add_patch(FancyBboxPatch(
@@ -1534,8 +1552,16 @@ def plot_playoff_bracket(p, ref_scores: dict | None = None, consolation: dict | 
             if tag:
                 _pair = d[d["matchup_id"] == r["matchup_id"]]
                 _top = float(_pair["y"].min())
-                ax.text(r["rx"] - HALF_W + PAD_X, _top - CARD_HH - 0.13, tag,
-                        ha="left", va="center", fontsize=6.5, style="italic",
+                # va="bottom" (not "center") so the WHOLE glyph sits above the
+                # anchor with no downward bleed, and the offset (0.13 -> 0.20)
+                # gives a real cleared margin -- at this figure's fixed 8.5x5.2
+                # footprint, 0.13 data-units measured under ~3pt of actual
+                # clearance, less than the label's own rendered height, so it
+                # clipped into its own top card. Verified against a shallow
+                # 3-round bracket (the tightest real case: y-span far above
+                # _MIN_SPAN, so no compression was masking this).
+                ax.text(r["rx"] - HALF_W + PAD_X, _top - CARD_HH - 0.20, tag,
+                        ha="left", va="bottom", fontsize=6.5, style="italic",
                         color=T["muted"], zorder=3)
         # A future round's node can still hold a raw "W:<matchup_id>"/"L:<matchup_id>"
         # reference (season/README.md's own documented authoring convention: the
@@ -1555,19 +1581,22 @@ def plot_playoff_bracket(p, ref_scores: dict | None = None, consolation: dict | 
         # Two bands inside the card, split SYMMETRICALLY around the card
         # centre: "#seed  Team" on the upper band (left-aligned, bold for the
         # winner), the score on the lower band (right-aligned, monospace so
-        # decimals line up). Equal +/- offsets (0.26 * CARD_H) give the card
-        # visible top and bottom margins and a clean gap between the lines.
-        # A tiny gold "*" prefixes the champion's name. Fills are always
-        # light, so text is a dark literal on both themes.
+        # decimals line up). The +/- offset (0.17 * CARD_H) and the 7pt size
+        # are tuned so BOTH lines clear the card edges at this figure's fixed
+        # footprint even for a wide, shallow bracket where each card renders
+        # only ~22px tall (a bigger offset / font clipped the top line into
+        # the border -- very visible in dark mode where the card outline is
+        # high-contrast). A tiny gold "*" prefixes the champion's name. Fills
+        # are always light, so text is a dark literal on both themes.
         badge = f"#{sd}  " if sd else ""
         star = "★ " if is_champ else ""
-        band = CARD_H * 0.26
+        band = CARD_H * 0.17
         ax.text(r["rx"] - HALF_W + PAD_X, r["y"] - band, f"{star}{badge}{team_label}",
-                ha="left", va="center", fontsize=7.5, zorder=3,
+                ha="left", va="center", fontsize=7, zorder=3,
                 fontweight="bold" if (win or is_champ) else "normal",
                 color="#242424")
         ax.text(r["rx"] + HALF_W - PAD_X, r["y"] + band, pts,
-                ha="right", va="center", fontsize=7.5, zorder=3,
+                ha="right", va="center", fontsize=7, zorder=3,
                 family="monospace",
                 color="#242424" if (win or is_champ) else "#5a5a5a")
         # Finishing-place chip on the upper band's right edge, for a

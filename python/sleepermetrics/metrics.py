@@ -1513,15 +1513,17 @@ def roster_standouts(s: Season) -> list[dict]:
              "stood pat")
     if len(st):
         # The most lopsided team: the largest share of started points from one
-        # position group.
+        # position group. A just-started season can have every started-point
+        # total still at 0 (games not yet scored) -> the ratio is all-NaN and
+        # idxmax raises; guard on there being a real value.
         share = (st.groupby(["user_name", "position"])["points"].sum()
                  / st.groupby("user_name")["points"].sum())
-        if len(share):
+        if share.notna().any():
             idx = share.idxmax()
             tile("Most one-position team", f"{share.max() * 100:.0f}%", idx[0],
                  f"of started points from {idx[1]}")
         ppw = st.groupby(["user_name", "week"])["points"].sum()
-        if len(ppw):
+        if len(ppw) and ppw.notna().any() and ppw.max() > 0:
             tile("Best starting week", f"{ppw.max():.1f}", ppw.idxmax()[0],
                  f"week {int(ppw.idxmax()[1])}")
     return out

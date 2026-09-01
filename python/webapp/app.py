@@ -428,7 +428,14 @@ def league_data(league_id: str, fresh: bool = False) -> dict:
     hit = _cache.get(league_id)
     if hit and not fresh and time.time() - hit["at"] < TTL:
         return hit
-    seasons = sm.apply_playoffs(sm.seasons(league_id), SEASON_DIR)
+    # A Sleeper chain only links backward, so a pasted older-season id can't see
+    # the league's live season. Resolve forward to the current-season id first
+    # (best-effort: returns the input unchanged when already current or on any
+    # failure), then assemble from there so the selector reaches the newest
+    # season. The entry is cached under BOTH ids, so a later paste of either
+    # (or of any other older-season id for the same league) hits it.
+    resolved = sm.current_season_league_id(league_id)
+    seasons = sm.apply_playoffs(sm.seasons(resolved), SEASON_DIR)
     # Only this league's brackets -- a stored 2025.json belongs to a league, not
     # to the number 2025, so another league must not inherit DDBM's playoffs.
     playoffs = sm.load_playoffs(
@@ -445,15 +452,21 @@ def league_data(league_id: str, fresh: bool = False) -> dict:
         if k in playoffs:
             continue
         try:
-            cfg = sm.sleeper_bracket(league_id, k)
+            cfg = sm.sleeper_bracket(resolved, k)
             if cfg.get("rounds"):
                 playoffs[k] = sm.playoff(cfg, validate=False)
                 source[k] = "sleeper"
         except Exception:
             pass
     d = {"at": time.time(), "seasons": seasons, "playoffs": playoffs,
-         "playoff_source": source, "names": list(seasons)}
-    _cache[league_id] = d
+         "playoff_source": source, "names": list(seasons),
+         # The id the selector/URL/header should use -- the current-season one,
+         # which may differ from what the user pasted (see the forward resolve
+         # above). `submitted` is kept only for diagnostics.
+         "resolved_league_id": resolved, "submitted_league_id": str(league_id)}
+    _cache[str(league_id)] = d
+    if resolved != str(league_id):
+        _cache[resolved] = d
     return d
 
 
@@ -573,6 +586,13 @@ def _base_ctx(league: str, season_key: str, s, theme: str, bracket: str | None,
             # Available to every tab so season-total views can flag, mid-season,
             # that their figures are through the current week (see _liveband.html).
             "live": s.in_progress, "current_week": s.current_week,
+            # True once at least one regular-season week has a real score on the
+            # board. Every tab whose charts/standouts are performance-derived
+            # (Roster, Draft value/grades, Transactions, Season report) gates
+            # those on this: before week 1 is scored they would all be zeroes /
+            # "no data" placeholders, so they are hidden with a short hint
+            # instead (same pattern as the Playoffs tab's `po_started`).
+            "scored": _has_scored_data(s),
             # Manager team portraits, keyed by user_name (see _ident.html).
             "avatars": _avatar_map(s),
             # A custom / rolled-back bracket token rides on every playoff chart
@@ -620,6 +640,7 @@ def tab_part_view(name: str, part: str, request: Request, league: str = DEFAULT_
     except Exception:
         return HTMLResponse(
             "<p class='empty'>Couldn&rsquo;t load this section.</p>")
+    league = d.get("resolved_league_id", league)
     # Same fallback tab() itself applies: a manager who doesn't exist in this
     # season (stale link, hand-edited URL) scopes back to the whole league
     # rather than a part handler silently filtering everything down to zero.
@@ -652,7 +673,8 @@ def _pushed(resp, ctx: dict, tab_name: str):
         f"&season={quote(str(ctx['season']))}&tab={tab_name}")
     if ctx.get("boot"):
         oob = tpl.env.get_template("_shell_sync.html").render(
-            league_name=ctx["league_name"], seasons=ctx["seasons"], season=ctx["season"])
+            league_name=ctx["league_name"], seasons=ctx["seasons"],
+            season=ctx["season"], league=ctx["league"])
         resp.body += oob.encode("utf-8")
         resp.headers["content-length"] = str(len(resp.body))
     return resp
@@ -1239,6 +1261,11 @@ def _week_insight_rows(s, wk: int) -> list[dict]:
     """
     import pandas as pd
 
+    # An in-progress (or not-yet-played) week has team rows but all-zero
+    # scores -- nothing to derive a "high score" / "biggest blowout" from --
+    # so the section stays hidden until the week is complete.
+    if not _week_scored(s, wk):
+        return []
     ws = metrics.week_stats(s, wk)
     if not len(ws):
         return []
@@ -1445,6 +1472,42 @@ def _preseason_rosters(s, board=None) -> list[dict]:
     return out
 
 
+def _last_completed_week(s) -> int:
+    """The highest regular-season week that has actually been PLAYED -- a week
+    whose games carry real scores. `s.last_week` is forced to >= 1 even for a
+    season that has only drafted (season.py), and a live-but-unfinished week
+    shows all-zero points until it locks, so neither is a safe "latest week
+    with data". Returns 0 when nothing has been scored yet (the pre-season /
+    just-drafted state)."""
+    import pandas as pd
+    tw = getattr(s, "team_wk", None)
+    if tw is None or not len(tw) or "points" not in tw.columns:
+        return 0
+    scored = tw[pd.to_numeric(tw["points"], errors="coerce").fillna(0) > 0]
+    return int(scored["week"].max()) if len(scored) else 0
+
+
+def _week_scored(s, wk: int) -> bool:
+    """True once week `wk` has real scores -- i.e. it is complete, not a
+    live-but-unlocked week (all-zero) or the pre-season slot. The gate for
+    every per-week insight/standout section."""
+    import pandas as pd
+    tw = getattr(s, "team_wk", None)
+    if tw is None or not len(tw) or "points" not in tw.columns or not wk:
+        return False
+    g = tw[tw["week"] == int(wk)]
+    return bool(len(g)) and bool(
+        pd.to_numeric(g["points"], errors="coerce").fillna(0).gt(0).any())
+
+
+def _has_scored_data(s) -> bool:
+    """True once ANY regular-season week is complete. Until then every
+    season-performance insight/standout/honors section is empty by definition
+    (there are no game results to derive them from), so the webapp hides them
+    rather than rendering a grid of zeroes."""
+    return _last_completed_week(s) > 0
+
+
 def _season_phase(s, d: dict, key: str) -> dict:
     """Which real-world phase this season is in RIGHT NOW: still in its
     regular season, mid-playoffs, or fully complete. Returns at least
@@ -1458,6 +1521,14 @@ def _season_phase(s, d: dict, key: str) -> dict:
     game_log`/`consolation_bracket`) instead of touching `Season` at all, then
     keeps only the rounds that have actually been played (see below) so a
     configured-but-not-started bracket still reads as "regular".
+
+    A fourth phase, `"preseason"`, is returned when the season has been drafted
+    but no week has been scored yet: the Overview then leads with the drafted
+    rosters and shows no week-based tiles/charts (there is no data). Carries
+    `last_week` = the last completed regular-season week (0 in preseason, else
+    the latest week with real scores) so the "regular"/"playoffs" leads open on
+    that instead of `Season.last_week`, which is forced to >= 1 and lags a
+    live in-progress week.
     """
     p = d["playoffs"].get(key)
     title_rounds, played_rounds = [], []
@@ -1473,14 +1544,23 @@ def _season_phase(s, d: dict, key: str) -> dict:
         # playoffs are on, championship round" during the regular season or
         # while round 1 is still being played.
         title_rounds = [g for g in log if g["kind"] in ("title", "mixed")]
-        # A round has actually been PLAYED once it has a decided GAME (one whose
-        # score is in, so `pending` is False). Byes don't count: a first-round
-        # bye resolves structurally from the seeding the moment the bracket is
-        # configured, with nothing played. This is what distinguishes "regular
-        # season, bracket merely configured" from "postseason under way".
-        played_rounds = [
-            g for g in title_rounds
-            if any(not gm["pending"] for gm in g["games"])]
+        # A round has actually been PLAYED once it has a decided GAME with real
+        # points on the board. `pending` alone isn't enough: Sleeper's
+        # pre-season `winners_bracket` (the source used when no bracket config
+        # is committed -- e.g. an upcoming season) already lists round-1
+        # matchups as NOT pending but with 0-0 scores, which otherwise reads as
+        # "the playoffs have started" the moment a season is drafted. A real
+        # played game has a positive score on at least one side. Byes still
+        # don't count (they resolve structurally from the seeding).
+        def _round_played(g):
+            for gm in g["games"]:
+                if gm["pending"]:
+                    continue
+                if any(float(sd.get("points") or 0) > 0 for sd in gm.get("sides", [])):
+                    return True
+            return False
+
+        played_rounds = [g for g in title_rounds if _round_played(g)]
     if s.status == "complete":
         # `title_rounds` (ALL rounds, not just the last) lets the complete-phase
         # lead recap the whole postseason run instead of freezing on whatever
@@ -1495,7 +1575,17 @@ def _season_phase(s, d: dict, key: str) -> dict:
         # completed week analysis", so it deliberately does not jump ahead to a
         # round that exists only as PENDING placeholders.
         return {"phase": "playoffs", "playoff": p, "current_round": played_rounds[-1]}
-    return {"phase": "regular"}
+    lcw = _last_completed_week(s)
+    if lcw == 0:
+        # Nothing scored yet. If the draft is in, lead with the drafted rosters
+        # (a real "here's where the season stands" view); otherwise fall through
+        # to a bare "regular" with week 0 so the template still renders.
+        try:
+            has_draft = not draft.draft_board(s).empty
+        except Exception:
+            has_draft = False
+        return {"phase": "preseason" if has_draft else "regular", "last_week": 0}
+    return {"phase": "regular", "last_week": lcw}
 
 
 def _playoff_tiles(games: list[dict], lead: tuple | None = None,
@@ -1577,10 +1667,15 @@ def _overview_insight_rows(s) -> list[dict]:
     UNTOUCHED -- still parity-mirrored with R and reused by the season /
     weekly reports.
 
-    Returns [] when there's nothing to say (empty/one-week season), so the
-    template's `{% if insight_rows %}` skips the section cleanly.
+    Returns [] when there's nothing to say (no completed week yet, or a
+    one-week season), so the template's `{% if insight_rows %}` skips the
+    section cleanly.
     """
     import pandas as pd
+
+    # No week has been scored -> every one of these facts would be a zero.
+    if not _has_scored_data(s):
+        return []
 
     tiles: list[dict] = []
 
@@ -1645,13 +1740,18 @@ def _overview_insight_rows(s) -> list[dict]:
                (stingy["user_name"], f"{round(stingy['pa'])}", "fewest conceded all season"),
                (leaky["user_name"], f"{round(leaky['pa'])}", "most conceded all season"))
 
-    # 5. Consistency -- week-to-week scoring SD.
+    # 5. Consistency -- week-to-week scoring SD. Undefined with a single scored
+    #    week (SD of one number is NaN), which a just-started season has -- skip
+    #    the tile rather than formatting a NaN.
     cons = metrics.consistency(s)
     if len(cons) >= 2:
         steady, swingy = cons.iloc[0], cons.iloc[-1]
-        merged("Consistency",
-               (steady["user_name"], f"SD {round(steady['sd'])}", "smallest week-to-week swing"),
-               (swingy["user_name"], f"SD {round(swingy['sd'])}", "biggest week-to-week swing"))
+        if pd.notna(steady["sd"]) and pd.notna(swingy["sd"]):
+            merged("Consistency",
+                   (steady["user_name"], f"SD {round(steady['sd'])}",
+                    "smallest week-to-week swing"),
+                   (swingy["user_name"], f"SD {round(swingy['sd'])}",
+                    "biggest week-to-week swing"))
 
     # 6. Schedule strength -- opponents' average scoring. Easiest slate reads
     #    as the "good" half here, matching the pre-merge tile tones (a tough
@@ -1948,6 +2048,7 @@ def report_weekly(request: Request, league: str = DEFAULT_LEAGUE, season: str | 
     """
     manager = manager or None
     d, s, key = pick(league, season)
+    league = d.get("resolved_league_id", league)
     if manager and not (s.standings["user_name"] == manager).any():
         manager = None
     ctx = {
@@ -1957,6 +2058,12 @@ def report_weekly(request: Request, league: str = DEFAULT_LEAGUE, season: str | 
         "avatars": _avatar_map(s), "asset_v": asset_v(),
     }
     ctx.update(_week_context(s, week))
+    if not _week_scored(s, ctx["week"]):
+        # The week has not been played (a pre-season season, or a link to a
+        # future week). Nothing to report yet -- a short page, not a scoreboard
+        # of zeros.
+        ctx["unplayed"] = True
+        return tpl.TemplateResponse(request, "weekly_report.html", ctx)
     # Unlike the Weekly TAB, this page is a single shareable link meant to
     # render whole (see docstring) -- not progressively loaded -- so it needs
     # wk_games/records computed eagerly here rather than left to the
@@ -1982,6 +2089,7 @@ def tab(name: str, request: Request, league: str = DEFAULT_LEAGUE,
         # serving their pre-refresh numbers for the rest of that cache's TTL.
         metrics.clear_metrics_cache()
         _waiver_bid_cache.clear()        # a mid-week claim adds a new FAAB bid
+        sm.clear_forward_cache()         # re-check whether a newer season exists
     try:
         # A refresh re-assembles the league from the API (fresh=True), not just
         # the scoring cache -- otherwise a live week's matchup points stay frozen
@@ -1990,6 +2098,10 @@ def tab(name: str, request: Request, league: str = DEFAULT_LEAGUE,
     except Exception:
         return HTMLResponse("<p class='empty'>Couldn&rsquo;t load league <code>"
                             f"{html_escape(league)}</code>.</p>")
+    # The forward-resolved id (== `league` unless a newer season was found), so
+    # the pushed URL, the header field and every chart <img> use the current
+    # season's id rather than the older one that may have been pasted.
+    league = d.get("resolved_league_id", league)
     ctx = _base_ctx(league, key, s, theme, bracket, scope,
                      int(time.time()) if refresh else 0)
     if boot:
@@ -2003,10 +2115,34 @@ def tab(name: str, request: Request, league: str = DEFAULT_LEAGUE,
         ctx["league_name"] = s.name
 
     if name == "overview":
-        # Lead with the latest / in-progress week -- its metrics, scoreboard and
-        # the two week-analytics charts -- then restate the season-to-date metrics
-        # below. The week lead is the same computation the Weekly tab uses.
-        ctx.update(_week_context(s))
+        # Which real-world phase the season is in RIGHT NOW decides the whole
+        # lead -- see _season_phase's docstring. Computed FIRST because the
+        # "preseason" phase (drafted, nothing scored) skips the week context,
+        # the insight tiles and the charts entirely: there is no data yet, so
+        # the tab is just the drafted rosters.
+        phase = _season_phase(s, d, key)
+        ctx["phase"] = phase["phase"]
+        if phase["phase"] == "preseason":
+            board = draft.draft_board(s)
+            ctx["preseason"] = True
+            ctx["preseason_rosters"] = _preseason_rosters(s, board)
+            ctx["week"] = 0
+            ctx["overview_tiles"] = []
+            ctx["insight_rows"] = []
+            ctx["charts"] = []
+            return _pushed(
+                tpl.TemplateResponse(request, "tab_overview.html", ctx), ctx, name)
+        # Lead with the last COMPLETED week (phase["last_week"], not
+        # Season.last_week which is forced to >= 1 and lags a live week) -- its
+        # metrics, scoreboard and the two week-analytics charts -- then restate
+        # the season-to-date metrics below. Same computation the Weekly tab uses.
+        ctx.update(_week_context(s, phase.get("last_week")))
+        # The Overview lead is now always a FINISHED week, so drop the live
+        # framing (the "This week"/Live badge/Refresh-scores affordances) even
+        # while the season itself is in progress -- there is nothing live to
+        # refresh in a week that is already scored. The "Regular season" section
+        # below keeps its own `current_week`-based "through week N" label.
+        ctx["live"] = False
         # Only the two charts that answer "who's actually good" at a glance
         # stay on this page -- standings (the record) and power_rank (the
         # composite merit blend). Overview is a landing page, not a wall of
@@ -2021,11 +2157,6 @@ def tab(name: str, request: Request, league: str = DEFAULT_LEAGUE,
         # rank_delta, already surfaced in the "Luck" insight row.
         ctx["charts"] = ["standings", "power_rank"]
         ctx["insight_rows"] = _overview_insight_rows(s)
-        # Which real-world phase the season is in RIGHT NOW decides what the
-        # lead above "Regular season" shows -- see _season_phase's docstring
-        # for why this can't be read off Season.current_week alone.
-        phase = _season_phase(s, d, key)
-        ctx["phase"] = phase["phase"]
         # {id(game): "Round N"} so the Highest-score / Biggest-blowout tiles
         # can name where the record fell -- the group's own label with the
         # "(#5 vs #8, ...)" matchup suffix trimmed off.
@@ -2114,6 +2245,12 @@ def tab(name: str, request: Request, league: str = DEFAULT_LEAGUE,
         # the draft instead of a scored-week scoreboard.
         board = draft.draft_board(s)
         has_draft = not board.empty
+        # With no week yet scored, "the latest week" IS the draft: default the
+        # Weekly tab to week 0 (the pre-season view) rather than an all-zero
+        # week 1 scoreboard, the same way the Overview leads with the draft in
+        # that phase. An explicit ?week=N is still honoured.
+        if week in (None, "") and has_draft and not _has_scored_data(s):
+            week = 0
         ctx.update(_week_context(s, week, allow_zero=has_draft))
         ctx["preseason"] = ctx["week"] == 0
         if ctx["preseason"]:
@@ -2164,7 +2301,10 @@ def tab(name: str, request: Request, league: str = DEFAULT_LEAGUE,
         ctx["charts"] = ["tx_volume", "manager_profile"]
         # One card per deal, not one row per team: the ledger's mirror-image
         # rows read as duplicates and print every player's name twice.
-        ctx["standouts"] = _faab_in_standouts(metrics.transaction_standouts(s), s)
+        # "Best trade" / "Best pickup" are scored on points-since-the-move, so
+        # the whole standouts grid waits until a week is on the board.
+        ctx["standouts"] = (_faab_in_standouts(metrics.transaction_standouts(s), s)
+                            if _has_scored_data(s) else [])
         deals = metrics.trade_deals(s)
         ctx["deals"] = deals
         ctx["n_deals"] = len(deals)
@@ -2192,10 +2332,14 @@ def tab(name: str, request: Request, league: str = DEFAULT_LEAGUE,
         mgr = manager or None
         if mgr and not (s.standings["user_name"] == mgr).any():
             mgr = None                      # scope doesn't exist in this season
-        ctx.update(sm_report.report_parts(s, d["seasons"], d["playoffs"], mgr))
         ctx["manager"] = mgr
         ctx["managers"] = list(
             s.standings.sort_values("final_position")["user_name"])
+        # Before week 1 is scored every section of the report is a zero -- the
+        # template shows a short "fills in once a week is complete" note and
+        # skips the whole body, so there's nothing to build.
+        if _has_scored_data(s):
+            ctx.update(sm_report.report_parts(s, d["seasons"], d["playoffs"], mgr))
         return _pushed(tpl.TemplateResponse(request, "tab_report.html", ctx), ctx, name)
     elif name == "career":
         # Fast response: summary prose + the main chart grid (already lazy
@@ -2216,6 +2360,7 @@ def tab(name: str, request: Request, league: str = DEFAULT_LEAGUE,
         ctx["has_playoffs"] = bool(d["playoffs"])
         return _pushed(tpl.TemplateResponse(request, "tab_career.html", ctx), ctx, name)
     elif name == "playoffs":
+        import pandas as pd
         # No season rail here: the header's season picker is the one control that
         # chooses the season, and a second in-tab switcher let the postseason
         # show 2022-2024 data while the rest of the page was on 2025.
@@ -2242,6 +2387,14 @@ def tab(name: str, request: Request, league: str = DEFAULT_LEAGUE,
             return _pushed(tpl.TemplateResponse(request, "tab_playoffs.html", ctx), ctx, name)
         r = p.results
         played = r[r["result"].isin(["W", "L", "T"])]
+        # Has the postseason actually started? Sleeper's pre-season bracket (the
+        # default when nothing is committed) already lists round-1 matchups as
+        # decided-but-0-0, so "has a result row" is not enough -- a real played
+        # game has points on the board. Until then the tab shows ONLY the
+        # skeleton bracket graphic; every KPI tile, the analytics charts and the
+        # results board would be zeroes/placeholders, so they stay hidden.
+        ctx["po_started"] = bool(len(played)) and bool(
+            (pd.to_numeric(played["points"], errors="coerce").fillna(0) > 0).any())
         top = played.loc[played["points"].idxmax()] if len(played) else None
         blow = played.loc[played["margin"].idxmax()] if len(played) else None
 
@@ -2570,7 +2723,10 @@ def _roster_part_standouts(request, s, d, key, ctx):
     # into a single list here since the template renders one flat grid, not
     # two labeled sub-groups.
     mgr = ctx.get("manager")
-    if mgr:
+    if not _has_scored_data(s):
+        # No week scored yet -> every roster/coaching superlative is a zero.
+        ctx["standouts"] = []
+    elif mgr:
         ctx["standouts"] = _manager_roster_standouts(s, mgr)
     else:
         ctx["standouts"] = metrics.roster_standouts(s) + metrics.coaching_standouts(s)
@@ -2722,6 +2878,11 @@ def _roster_part_weeks(request, s, d, key, ctx):
 @tab_part("roster", "honors")
 def _roster_part_honors(request, s, d, key, ctx):
     mgr = ctx.get("manager")
+    if not _has_scored_data(s):
+        # Team-of-the-week / player-of-the-week honors need scored weeks.
+        ctx["honors"] = []
+        ctx["phonors"] = []
+        return tpl.TemplateResponse(request, "_roster_honors.html", ctx)
     if mgr:
         ctx["honors"] = [h for h in metrics.roster_honors(s) if h["user_name"] == mgr]
         mgr_phonors = [p for p in metrics.player_honors(s) if mgr in p["managers"]]
@@ -2781,12 +2942,19 @@ def _tx_part_waivers(request, s, d, key, ctx):
 # others; each is its own lazy section rather than picking one to keep fast.
 @tab_part("draft", "standouts")
 def _draft_part_standouts(request, s, d, key, ctx):
-    ctx["standouts"] = draft.draft_standouts(s)
+    # Every draft grade is scored on season points -- a zero for everyone until
+    # week 1 is on the board (the tab's own template already hides this
+    # placeholder pre-season; this guards a direct hit to the URL too).
+    ctx["standouts"] = draft.draft_standouts(s) if _has_scored_data(s) else []
     return tpl.TemplateResponse(request, "_draft_standouts.html", ctx)
 
 
 @tab_part("draft", "finds")
 def _draft_part_finds(request, s, d, key, ctx):
+    if not _has_scored_data(s):
+        ctx.update({"gems": [], "busts": [], "drafted": [], "undrafted": [],
+                    "all_players": []})
+        return tpl.TemplateResponse(request, "_draft_finds.html", ctx)
     ctx.update(draft.draft_extremes(s))
     # records() scrubs NaN so a `{{ r.user_name or <dash placeholder> }}`-style
     # fallback fires (NaN is truthy in Jinja); a churned pickup can have a null
@@ -3027,9 +3195,15 @@ def report_redraft(request: Request, league: str = DEFAULT_LEAGUE, season: str |
         d, s, key = pick(league, season)
     except Exception:
         return HTMLResponse("<p class='empty'>Couldn&rsquo;t load this report.</p>")
+    league = d.get("resolved_league_id", league)
     ctx = _base_ctx(league, key, s, theme, bracket=None)
     ctx["asset_v"] = asset_v()
     ctx["league_name"] = s.name
+    if not _has_scored_data(s):
+        # Nothing to re-simulate against until a week has been played -- the
+        # template shows a short note in that case (`sim` stays unset).
+        ctx["no_games"] = True
+        return tpl.TemplateResponse(request, "redraft_report.html", ctx)
     # Both bases computed eagerly (see _draft_sim_ctx) -- the report's By-
     # final-season-results / By-ADP toggle is a single outer toggle wrapping
     # BOTH the board and the whole Season/Playoffs/Roster/Weekly simulation
@@ -3128,6 +3302,7 @@ def report(league: str = DEFAULT_LEAGUE, season: str | None = None,
     if not download and not render:
         return _report_loader(league, season, manager)
     d, s, key = pick(league, season)
+    league = d.get("resolved_league_id", league)
     # A manager the current season doesn't have (e.g. after switching season)
     # falls back to the whole-league report rather than erroring.
     if manager and not (s.standings["user_name"] == manager).any():
@@ -3190,6 +3365,7 @@ def playoffs_default(league: str = DEFAULT_LEAGUE, season: str | None = None,
     rolls back to) or the committed config for this season -- used to seed the
     editor, to roll back, and as the download payload."""
     d, s, key = pick(league, season)
+    league = d.get("resolved_league_id", league)
     if source == "committed":
         p = d["playoffs"].get(key)
         if p is None:
@@ -3208,6 +3384,7 @@ def playoffs_scaffold(league: str = DEFAULT_LEAGUE, season: str | None = None,
     """A seeded single-elim skeleton over a week range, starters pre-filled from
     Sleeper -- an editable baseline, not applied until the user inserts it."""
     d, s, key = pick(league, season)
+    league = d.get("resolved_league_id", league)
     wk = [int(w) for w in weeks.replace(" ", "").split(",") if w] or None
     try:
         return sm.scaffold_bracket(league, key, wk, teams)

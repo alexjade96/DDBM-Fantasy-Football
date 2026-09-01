@@ -423,7 +423,6 @@
     (function () {
       var form = document.getElementById('lookup');
       if (!form) return;
-      var box = document.getElementById('league');
       var lbl = document.getElementById('lookup-label');
       var go = document.getElementById('lookup-go');
       var modeOf = function () {
@@ -431,6 +430,12 @@
         return r ? r.value : 'league';
       };
       var syncUI = function () {
+        // Re-query every call: /load's out-of-band shell sync can REPLACE the
+        // #league <input> (when a pasted older-season id was resolved forward
+        // to the current-season one), so a reference captured once would be
+        // left pointing at a detached node and User mode would stop switching.
+        var box = document.getElementById('league');
+        if (!box) return;
         var user = modeOf() === 'user';
         lbl.textContent = user ? 'Username / user ID' : 'League ID';
         box.name = user ? 'user' : 'league';

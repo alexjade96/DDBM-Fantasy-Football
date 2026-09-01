@@ -29,6 +29,12 @@
   <p class="hint">{{ league_name }} · {{ season }} · Week {{ week }}
     {%- if live and is_current %} <span class="live-badge">Live</span>{% endif %}</p>
 
+{% if unplayed %}
+  <p class="empty">Week {{ week }} has not been played yet, so there is nothing to
+     report. Check back once the games are scored.</p>
+</main>
+{%- else %}
+
   <nav class="rail">
     <span class="k">View</span>
     <a class="year {% if not manager %}on{% endif %}"
@@ -242,5 +248,6 @@
     makeExpandable(t);
   });
 </script>
+{% endif %}
 </body>
 </html>

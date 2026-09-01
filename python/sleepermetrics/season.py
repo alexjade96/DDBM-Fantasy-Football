@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 import pandas as pd
 
 from .api import sleeper_api, sleeper_api_many
-from .league import league_chain, starter_slots
+from .league import current_season_league_id, league_chain, starter_slots
 from .players import players
 
 POSITIONS = ["QB", "RB", "WR", "TE", "K", "DEF"]
@@ -528,15 +528,30 @@ def league_accounts(seasons: dict) -> pd.DataFrame:
             .reset_index(drop=True))
 
 
-def season(league_id, season: str | None = None) -> Season:
-    """Assemble one season (default = most recent) of a league."""
+def season(league_id, season: str | None = None, advance: bool = False) -> Season:
+    """Assemble one season (default = most recent) of a league.
+
+    `advance=True` first resolves `league_id` forward to its most recent
+    season's id (see `current_season_league_id`) -- a Sleeper chain only links
+    backward, so a pasted older-season id otherwise caps out before the
+    league's live season. Off by default so the parity path is untouched.
+    """
+    if advance:
+        league_id = current_season_league_id(league_id)
     chain = league_chain(league_id)
     keys = list(chain.keys())
     link = chain[keys[-1]] if season is None else chain[str(season)]
     return assemble_season(link)
 
 
-def seasons(league_id) -> dict:
-    """Assemble every season in the chain -> {season: Season}."""
+def seasons(league_id, advance: bool = False) -> dict:
+    """Assemble every season in the chain -> {season: Season}.
+
+    `advance=True` resolves `league_id` forward first (see `season()` /
+    `current_season_league_id`). Default off -- verify.py and the R-parity
+    exporters call this with a bare id and must keep today's behaviour.
+    """
+    if advance:
+        league_id = current_season_league_id(league_id)
     chain = league_chain(league_id)
     return {s: assemble_season(link) for s, link in chain.items()}

@@ -16,7 +16,10 @@
   <main id="panel">
     <p class="hint"><a class="ghost" href="/dashboard?league={{ league|urlencode }}&season={{ season|urlencode }}&tab=draft">&larr; Back to the Draft tab</a></p>
     <div class="rowhead"><h1>{{ league_name }}: {{ season }} redraft simulation report</h1></div>
-    {% if not sim %}
+    {% if no_games %}
+    <p class="empty">No games have been played in {{ season }} yet, so there is
+       nothing to simulate against. This report fills in once week 1 is scored.</p>
+    {% elif not sim %}
     <p class="empty">No draft data for {{ season }} to simulate against.</p>
     {% else %}
     {# Two different bases for "who should have been drafted": true season

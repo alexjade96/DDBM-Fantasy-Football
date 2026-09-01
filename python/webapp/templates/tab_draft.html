@@ -16,6 +16,7 @@
    none of the three sections below is meaningfully "cheap" -- each is its
    own lazy section rather than only two of three, per app.py's TAB_PARTS. #}
 {% set part_qs = "?league=" ~ league|urlencode ~ "&season=" ~ season|urlencode ~ "&theme=" ~ theme %}
+{% if scored %}
 {{ lz.lazy("/tab/draft/part/standouts" ~ part_qs, height="110px") }}
 {# Charts next: the whole draft graded (generic), then the standout gems and
    busts (specific), then the full board (complete). General -> specific. #}
@@ -27,6 +28,11 @@
 </section>
 
 {{ lz.lazy("/tab/draft/part/finds" ~ part_qs, height="180px") }}
+{% else %}
+<p class="empty">No games have been scored yet this season, so the draft can&rsquo;t
+   be graded. Value charts, gems and busts fill in once week 1 is complete. The
+   board below is every pick as it was made.</p>
+{% endif %}
 
 {{ lz.lazy("/tab/draft/part/board" ~ part_qs, height="520px") }}
 {% endif %}

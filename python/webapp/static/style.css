@@ -454,6 +454,18 @@ details summary { cursor: pointer; font-weight: 600; }
   background: var(--bg); border: 1px solid var(--line); vertical-align: middle;
   margin-right: 7px; display: inline-block; }
 
+/* The Season Report tab renders report.py's HTML, which dedupes portraits: each
+   .pface/.face there is a <span> whose background-image is one rule in the
+   report's own injected <style> block (keyed on data-k), not an <img src>. */
+.reportpanel .pface, .reportpanel .face {
+  display: inline-block; width: 20px; height: 20px; border-radius: 50%;
+  vertical-align: -5px; margin-right: 6px; border: 1px solid var(--line);
+  background-color: var(--bg); background-size: cover;
+  background-position: center; background-repeat: no-repeat; }
+.reportpanel .fv .pface, .reportpanel .fv .face { width: 22px; height: 22px; vertical-align: -6px; }
+.reportpanel .q.posrank { margin-left: 6px; white-space: nowrap; }
+.reportpanel tr.bench-impact > td { background: color-mix(in srgb, #d9a441 12%, transparent); }
+
 /* Point-calculation chart: grouped, in plain English, raw stat code alongside. */
 .rulegroups { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
               gap: 10px 22px; margin-top: 14px; align-items: start; }
@@ -597,7 +609,16 @@ td.mono { font-size: 12px; color: var(--muted); word-break: break-all; }
 .reportpanel .tablewrap .drilltable + table,
 .reportpanel .tablewrap .drilltable + .dt-facts,
 .reportpanel .tablewrap .dt-facts + table,
-.reportpanel .tablewrap .dt-facts + .drilltable { margin-top: 18px; }
+.reportpanel .tablewrap .dt-facts + .drilltable,
+.reportpanel .tablewrap .facts-card + .drilltable,
+.reportpanel .tablewrap .facts-card + table { margin-top: 18px; }
+/* The Season standouts "best moves" facts as their own framed card, so the
+   player drill table under it reads as a standalone table, not attached. */
+.reportpanel .facts-card { border: 1px solid var(--line); border-radius: 10px;
+  background: var(--surface); padding: 12px 14px 14px; }
+.reportpanel .facts-head { font-size: 11px; text-transform: uppercase;
+  letter-spacing: .05em; color: var(--faint); font-weight: 700;
+  margin-bottom: 10px; }
 /* Exception: .dt-tables holds a matchup's two lineups SIDE BY SIDE, not
    stacked -- the rule above can't tell the difference and was pushing the
    second (right-hand) table down by the 26px meant for two tables stacked
@@ -614,7 +635,8 @@ td.mono { font-size: 12px; color: var(--muted); word-break: break-all; }
    shared base rule gives every other tab -- scoped to .reportpanel so the
    Roster/Coaching/Draft/Transactions tabs (which reuse these exact classes)
    keep their own, more spacious, sizing. */
-.reportpanel .dt-head, .reportpanel .dt-row > summary { padding: 7px 24px 7px 10px; }
+.reportpanel .dt-head, .reportpanel .dt-row > summary { padding: 7px 24px 7px 10px;
+  gap: 8px; }
 .reportpanel .dt-detail { padding: 10px 14px 12px; }
 .reportpanel table.sortable th, .reportpanel table.sortable td { padding: 6px 9px; }
 .reportpanel .card.tablewrap { padding: 8px; }
@@ -658,6 +680,13 @@ td.mono { font-size: 12px; color: var(--muted); word-break: break-all; }
 .dt-row[open] > summary::after { content: '\25BE'; }
 .dt-row[open] > summary { background: color-mix(in srgb, var(--turf) 8%, transparent); }
 .dt-num { text-align: right; font-variant-numeric: tabular-nums; }
+/* A .grp-end column closes a conceptual cluster in a report.py _drill_table
+   row (report.py's own _mini_table uses the identical class, via cell
+   padding instead of margin since a real <table> can pad individual cells
+   while a CSS grid row only has one shared `gap`). Report-scoped: the
+   Roster/Playoffs/Draft tabs' own drilltables don't use this grouping. */
+.reportpanel .dt-head .grp-end, .reportpanel .dt-row > summary .grp-end {
+  margin-right: 16px; }
 /* Scoreboard summary row: the score sits BETWEEN the two names (symmetric
    "Winner  score – score  Opponent" reading, names flanking inward), and
    only the score is coloured win/lose (same green/red as the drill-down's
@@ -942,13 +971,89 @@ table.dt-games tr.cmp-down td { background: color-mix(in srgb, #e03131 8%, trans
 /* Weekly report: same tighten-up as the rest of this page's tables (see the
    .reportpanel-scoped block above) -- scoped so Roster/Playoffs, which reuse
    this exact lineup-table markup, keep their own roomier sizing. */
-.reportpanel .dt-facts { gap: 14px 24px; }
-.reportpanel .dt-tables { gap: 14px 26px; }
+.reportpanel .dt-facts { gap: 16px 24px;
+  grid-template-columns: repeat(auto-fit, minmax(184px, 1fr)); }
+.reportpanel .fact { gap: 3px; }
+.reportpanel .fv { line-height: 1.5; }
+.reportpanel .dt-tables { gap: 14px 24px;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); align-items: start; }
+.reportpanel .dt-tables > .dt-block + .dt-block {
+  border-left: 1px solid var(--line); padding-left: 24px; }
+@media (max-width: 640px) {
+  .reportpanel .dt-tables { grid-template-columns: 1fr; }
+  .reportpanel .dt-tables > .dt-block + .dt-block {
+    border-left: 0; padding-left: 0; border-top: 1px solid var(--line);
+    padding-top: 12px; } }
 .reportpanel table.dt-games th { padding: 0 16px 6px 0; }
 .reportpanel table.dt-games td { padding: 5px 16px 5px 0; }
 .reportpanel .dt-detail .dt-facts + table.dt-games,
 .reportpanel .dt-detail .dt-facts + .dt-tables,
 .reportpanel .dt-detail .dt-facts + .dt-lineup-mode { margin-top: 12px; }
+/* table.dt-games is width:auto by default -- fine for a table sitting alone
+   at its own natural size, but here it's wrapped so the SITE'S OWN LAYOUT
+   already stretches the wrapper (a .dt-tables grid cell, or a lone .dt-block
+   the report uses just to opt a mini-table out of the Roster tab's "wide
+   listing" rule below). A width:auto table inside that stretched wrapper
+   stays only as wide as its own content, leaving dead space beside it
+   instead of the table itself filling the column -- this is what actually
+   read as the "huge whitespace gap" (a first attempt wrapped the table in
+   .dt-block to dodge the Roster-tab rule but left the table narrow, which
+   only moved the gap rather than closing it). Filling the table itself is
+   the fix; a table.dt-games sitting bare, not inside either wrapper, is
+   unaffected and keeps its natural narrow width. */
+.reportpanel .dt-tables > table.dt-games,
+.reportpanel .dt-tables > .dt-block > table.dt-games,
+.reportpanel .dt-block > table.dt-games { width: 100%; }
+/* A compact drill table carries its own `min-width` (report._min_width_ch --
+   the sum of its measured column ch), so when the panel is narrower than
+   that it scrolls here rather than shrinking a column until its text clips. */
+.reportpanel .dt-block { overflow-x: auto; }
+/* report.py's _mini_table()/_mini_table_rows() tables (Season standouts,
+   waiver drill, position mix -- 4-9 columns) carry dt-games-compact: the
+   16px right-padding above is sized for a 2-3 column lineup table, and
+   reads as loose gaps once that many columns are stretched to fill the
+   width:100% rule above. table-layout:fixed hands width control to the
+   report's own <colgroup> (see report._colgroup) -- table-layout:auto sizes
+   every column purely from its own content, so a table with no single wide
+   text column (Wk/Role/Pts/Running/Wk rank/Share, all short) spreads its
+   columns evenly across width:100% regardless of padding, reading as
+   generic "auto spaced" rather than grouped. Now that group SEPARATION is
+   a real spacer column (.gap-col, see below), the padding between columns
+   WITHIN a group only needs to be a small breathing-room gap, not a
+   second, weaker attempt at the same job. */
+.reportpanel table.dt-games.dt-games-compact { table-layout: fixed; }
+.reportpanel table.dt-games.dt-games-compact th { padding-right: 10px;
+  overflow: hidden; text-overflow: ellipsis; }
+.reportpanel table.dt-games.dt-games-compact td { padding-right: 10px;
+  overflow: hidden; text-overflow: ellipsis; }
+/* Column grouping is a REAL empty spacer <col>/<td class="gap-col"> between
+   groups (report.py's _spaced_cols), not cell padding -- under
+   table-layout:fixed a column's width is fixed by its own <col>, and a
+   cell's padding cannot push a SIBLING column's boundary rightward at all
+   (confirmed: a padding-right bump from 24px to 3em on the trailing column
+   of a group produced no visible change, because the columns after it were
+   already exactly where their own <col> widths put them). The spacer <col>
+   carries its own small fixed ch width (report._GAP_CH) so it joins the
+   proportional pool table-layout:fixed distributes leftover width across,
+   staying a modest gap; leaving it width-less made it absorb the whole
+   table's leftover space instead, squeezing every real column and clipping
+   headers. The spacer cell has no left/right padding of its own (nothing
+   to pad, it's empty) -- but it must NOT zero out `border`, or the row's
+   own border-bottom divider (table.dt-games tbody tr:not(:last-child) td)
+   breaks at every spacer, reading as a gap in the horizontal line instead
+   of a continuous row separator. */
+.reportpanel table.dt-games.dt-games-compact td.gap-col,
+.reportpanel table.dt-games.dt-games-compact th.gap-col {
+  padding: 0; border-left: 0; border-right: 0; border-top: 0; }
+/* A player fact: identity line (portrait + name + POS #rank), then the
+   figure + any note on a second line -- not a run-together sentence. */
+.reportpanel .fv .fpl { display: flex; align-items: center; gap: 2px;
+  flex-wrap: wrap; font-weight: 650; }
+.reportpanel .fv .fpl .posrank { margin-left: 6px; }
+.reportpanel .fv .fpl .pos { margin-left: 4px; }
+.reportpanel .fv .fnum { display: block; margin-top: 3px; color: var(--muted); }
+.reportpanel .fv .fnum .pts { color: var(--ink); margin-right: 6px; }
+.reportpanel .fv .fnote { font-size: 12px; }
 
 /* Rank badges: top third good, bottom third bad. */
 .rankpill { display: inline-block; padding: 1px 9px; border-radius: 20px;

@@ -232,7 +232,15 @@ def sleeper_bracket(league_id, season=None) -> dict:
         starters = _week_starters(lid, wk) if start else {}
         mus = []
         for m in sorted((x for x in wb if x["r"] == r), key=lambda x: x["m"]):
-            home, away = _sleeper_side(m.get("t1"), name_of), _sleeper_side(m.get("t2"), name_of)
+            # A future round's slots are unresolved: `t1` is null and the
+            # provenance lives in `t1_from` ({"w": 3} = winner of matchup 3).
+            # Translate those to the engine's own W:/L: refs so the SKELETON
+            # bracket (later rounds not yet played) still draws the full tree
+            # -- a "default path" that fills in as results land, rather than
+            # showing only round 1. `_sleeper_side` already understands the
+            # {"w": m} / {"l": m} shape.
+            home = _sleeper_side(m.get("t1") or m.get("t1_from"), name_of)
+            away = _sleeper_side(m.get("t2") or m.get("t2_from"), name_of)
             if home is None or away is None:
                 continue
             mid = f"M{m['m']}"
@@ -532,6 +540,12 @@ def playoff(config, rules: dict | None = None, validate: bool = True) -> Playoff
     winners: dict = {}
     losers: dict = {}
     res, det = [], []
+    # Collected across the whole run and emitted as a SINGLE warning each at the
+    # end, rather than one `warnings.warn` per matchup -- a bracket with several
+    # ties or several malformed lineups otherwise floods the terminal on every
+    # page load.
+    tie_ids: list = []
+    lineup_problems: list = []
 
     def resolve_team(nm):
         """Resolve a team or a W:/L: reference; None if it isn't decided yet."""
@@ -547,7 +561,7 @@ def playoff(config, rules: dict | None = None, validate: bool = True) -> Playoff
         if validate and rposi:
             probs = check_lineup(starters, rposi, pinfo)
             if probs:
-                warnings.warn(f"[{mid}] {team}: {'; '.join(probs)}")
+                lineup_problems.append(f"[{mid}] {team}: {'; '.join(probs)}")
         d = score_lineup(starters, season, weeks, rules).merge(
             pinfo[["player_id", "player_name", "position"]], on="player_id", how="left")
         d["team"], d["matchup_id"], d["round_id"] = team, mid, rid
@@ -582,20 +596,43 @@ def playoff(config, rules: dict | None = None, validate: bool = True) -> Playoff
                 continue
             scored = [score_side(sides[i], weeks, nms[i], mid, rd["id"]) for i in range(2)]
             pts = [s[0] for s in scored]
+            # A 0-0 "tie" is not a real result -- a fantasy starter always
+            # accrues *something*, so both sides at exactly 0.0 means the round
+            # simply has not been played yet (its week's stat lines are all
+            # zero). Treat it as PENDING and stay silent, rather than warning
+            # about a tie on every load of a not-yet-started bracket.
+            not_played = pts[0] == 0.0 and pts[1] == 0.0
             wi = None if pts[0] == pts[1] else int(pts[1] > pts[0])
-            if wi is None:
-                warnings.warn(f"[{mid}] tie at {pts[0]} -- no winner advanced.")
-            else:
+            if wi is None and not not_played:
+                tie_ids.append(f"{mid} ({pts[0]})")
+            elif wi is not None:
                 winners[mid] = nms[wi]
                 losers[mid] = nms[1 - wi]
             for i in range(2):
-                res.append({
-                    "round_id": rd["id"], "round": rd["name"], "weeks": wk_lbl,
-                    "matchup_id": mid, "team": nms[i], "starters": scored[i][1],
-                    "points": pts[i], "opponent": nms[1 - i], "opp_points": pts[1 - i],
-                    "result": "T" if wi is None else ("W" if i == wi else "L"),
-                    "margin": round(pts[i] - pts[1 - i], 2)})
+                if not_played:
+                    # Same shape as the "lineups not in yet" PENDING rows above:
+                    # no points, no margin, so the bracket chart shows a plain
+                    # placeholder card and `po_started` stays False.
+                    res.append({
+                        "round_id": rd["id"], "round": rd["name"], "weeks": wk_lbl,
+                        "matchup_id": mid, "team": nms[i], "starters": scored[i][1],
+                        "points": None, "opponent": nms[1 - i], "opp_points": None,
+                        "result": "PENDING", "margin": None})
+                else:
+                    res.append({
+                        "round_id": rd["id"], "round": rd["name"], "weeks": wk_lbl,
+                        "matchup_id": mid, "team": nms[i], "starters": scored[i][1],
+                        "points": pts[i], "opponent": nms[1 - i], "opp_points": pts[1 - i],
+                        "result": "T" if wi is None else ("W" if i == wi else "L"),
+                        "margin": round(pts[i] - pts[1 - i], 2)})
                 det.append(scored[i][2])
+
+    if lineup_problems:
+        warnings.warn("playoff lineup issues -- " + " | ".join(lineup_problems))
+    if tie_ids:
+        warnings.warn(
+            f"{len(tie_ids)} playoff matchup(s) tied, no winner advanced: "
+            + ", ".join(tie_ids))
 
     results = _tag_bracket(pd.DataFrame(res), [r["id"] for r in config["rounds"]])
     playersdf = pd.concat(det, ignore_index=True) if det else pd.DataFrame()

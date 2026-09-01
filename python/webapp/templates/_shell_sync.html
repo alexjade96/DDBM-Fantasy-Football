@@ -7,4 +7,16 @@
 {# htmx special-cases an out-of-band <title>: it updates document.title, so
    the browser tab / bookmark name follows the loaded league. #}
 <title hx-swap-oob="true">{{ league_name }} Fantasy Football</title>
+{# The header's League ID box. A pasted older-season id may have been resolved
+   FORWARD to the league's current-season id (see app.py
+   current_season_league_id) -- swap the box so the field, the pushed URL and
+   the loaded league all agree. Only emitted in League mode (`league` is passed
+   only then); User mode keeps its own box untouched. htmx settles this oob
+   <input> in place, and the mode-toggle JS re-resolves `#league` by id on its
+   next run, so the swap does not strand its handler. #}
+{% if league is defined and league %}
+<input hx-swap-oob="true" type="text" name="league" id="league" value="{{ league }}"
+       autocomplete="off" spellcheck="false"
+       data-ph-league="Sleeper league ID" data-ph-user="Sleeper username or user ID">
+{% endif %}
 {% with oob = true %}{% include "_seasons.html" %}{% endwith %}

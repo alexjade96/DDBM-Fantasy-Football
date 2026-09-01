@@ -6,8 +6,9 @@ Parallel port of the R package. Same design: compute (metrics) / render (plots)
 from . import (discord_bot, headshots, metrics, playoffs, plots, scoring,
                statnames, summaries, weekly)
 from .api import sleeper_api
-from .league import (league, league_chain, nfl_state, root_league_id,
-                     starter_slots, user, user_leagues)
+from .league import (clear_forward_cache, current_season_league_id, league,
+                     league_chain, nfl_state, root_league_id, starter_slots,
+                     user, user_leagues)
 from .players import players
 from .playoffs import (Playoff, apply_playoffs, clutch, load_playoffs, playoff,
                        playoff_all_stars, playoff_allplay, playoff_best_games,
@@ -30,6 +31,7 @@ from .weekly import summary_week
 
 __all__ = [
     "sleeper_api", "league", "league_chain", "root_league_id", "starter_slots",
+    "current_season_league_id", "clear_forward_cache",
     "nfl_state", "user", "user_leagues", "players",
     "Season", "assemble_season", "optimal_points", "season", "seasons",
     "league_accounts", "avatar_url",

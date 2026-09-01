@@ -514,7 +514,10 @@ def test_season_phase_leads_with_the_last_completed_round(monkeypatch):
     a group for every configured round (future rounds carry only PENDING
     placeholder games), so a bare bracket config alone must still read as
     'regular', and a bracket with round 1 played must lead with round 1, not
-    the final. See app._season_phase."""
+    the final. A round counts as PLAYED only when a decided game has real
+    points on the board -- Sleeper's pre-season `winners_bracket` lists round-1
+    games as NOT pending but 0-0, which must still read as 'regular'. See
+    app._season_phase."""
     from webapp import app
 
     s = make_season()
@@ -526,9 +529,18 @@ def test_season_phase_leads_with_the_last_completed_round(monkeypatch):
         # the mid-season branch; the `p` object is only passed through.
         return app._season_phase(s, {"playoffs": {"2025": object()}}, "2025")
 
-    def rnd(key, played_games, pending_games=0, byes_resolved=0, byes_pending=0):
-        games = ([{"pending": False}] * played_games
-                 + [{"pending": True}] * pending_games)
+    def _g(pending, scored=True):
+        # A decided game carries real side scores; an unplayed one is 0-0
+        # (Sleeper's empty pre-season bracket) or explicitly pending.
+        pts = (80.0, 90.0) if (not pending and scored) else (0.0, 0.0)
+        return {"pending": pending,
+                "sides": [{"points": pts[0]}, {"points": pts[1]}]}
+
+    def rnd(key, played_games, pending_games=0, byes_resolved=0, byes_pending=0,
+            zero_games=0):
+        games = ([_g(False)] * played_games
+                 + [_g(False, scored=False)] * zero_games
+                 + [_g(True)] * pending_games)
         byes = ([{"pending": False}] * byes_resolved
                 + [{"pending": True}] * byes_pending)
         return {"key": key, "kind": "title", "games": games, "byes": byes}
@@ -537,6 +549,14 @@ def test_season_phase_leads_with_the_last_completed_round(monkeypatch):
     # plus a first-round bye that resolves structurally. Still "regular".
     ph = phase_for([rnd("R1", 0, pending_games=2, byes_resolved=1),
                     rnd("R2", 0, pending_games=1),
+                    rnd("R3", 0, pending_games=1)])
+    assert ph["phase"] == "regular"
+    assert "current_round" not in ph
+
+    # Sleeper pre-season bracket: round 1 games are NOT pending but 0-0.
+    # Still "regular" -- nothing has actually been played.
+    ph = phase_for([rnd("R1", 0, zero_games=4, byes_resolved=0),
+                    rnd("R2", 0, pending_games=2),
                     rnd("R3", 0, pending_games=1)])
     assert ph["phase"] == "regular"
     assert "current_round" not in ph
@@ -557,6 +577,91 @@ def test_season_phase_leads_with_the_last_completed_round(monkeypatch):
     monkeypatch.setattr(app.sm, "game_log",
                         lambda *a, **k: (_ for _ in ()).throw(AssertionError()))
     assert app._season_phase(s, {"playoffs": {}}, "2025")["phase"] == "regular"
+
+
+def test_last_completed_week_ignores_unscored_weeks():
+    """`_last_completed_week` is the highest week with real scores -- a
+    live-but-unfinished week reads all-zero until it locks, and a just-drafted
+    season's week 1 is all-zero, so neither counts."""
+    import dataclasses
+    from webapp import app
+
+    s = make_season()                         # weeks 1-2, real points
+    assert app._last_completed_week(s) == 2
+
+    tw = s.team_wk.copy()
+    tw.loc[tw["week"] == 2, "points"] = 0.0    # week 2 not scored yet
+    assert app._last_completed_week(dataclasses.replace(s, team_wk=tw)) == 1
+
+    tw.loc[:, "points"] = 0.0                  # nothing scored at all
+    assert app._last_completed_week(dataclasses.replace(s, team_wk=tw)) == 0
+
+
+def test_insight_gates_hide_everything_until_a_week_is_scored():
+    """Every season-performance insight/standout section is empty while no
+    week has been scored (`_has_scored_data`), and a single week's insights
+    stay empty until that week itself is complete (`_week_scored`)."""
+    import dataclasses
+    from webapp import app
+
+    s = make_season()                             # weeks 1-2 scored
+    assert app._has_scored_data(s) is True
+    assert app._week_scored(s, 1) is True
+    assert app._overview_insight_rows(s)          # populated
+    assert app._week_insight_rows(s, 1)
+
+    tw = s.team_wk.copy()
+    tw.loc[tw["week"] == 2, "points"] = 0.0        # week 2 in progress
+    mid = dataclasses.replace(s, team_wk=tw)
+    assert app._week_scored(mid, 1) is True
+    assert app._week_scored(mid, 2) is False       # not yet complete
+    assert app._week_insight_rows(mid, 2) == []    # in-progress week -> hidden
+    assert app._week_insight_rows(mid, 1)          # a done week still shows
+
+    tw.loc[:, "points"] = 0.0                      # nothing scored
+    pre = dataclasses.replace(s, team_wk=tw)
+    assert app._has_scored_data(pre) is False
+    assert app._overview_insight_rows(pre) == []
+    assert app._week_insight_rows(pre, 1) == []
+
+
+def test_season_phase_preseason_when_drafted_but_nothing_scored(monkeypatch):
+    """A season that has been drafted but has no scored week is `preseason`:
+    the Overview then shows only the drafted rosters, no week tiles/charts.
+    Without a draft board it degrades to a bare `regular` (week 0)."""
+    import dataclasses
+    from webapp import app
+
+    s = make_season()
+    tw = s.team_wk.copy()
+    tw.loc[:, "points"] = 0.0                  # nothing scored
+    s0 = dataclasses.replace(s, team_wk=tw, status="in_season")
+
+    monkeypatch.setattr(app.sm, "consolation_bracket", lambda *a, **k: {})
+    monkeypatch.setattr(app.draft, "draft_board",
+                        lambda *a, **k: pd.DataFrame({"player_id": ["1"]}))
+    ph = app._season_phase(s0, {"playoffs": {}}, "2025")
+    assert ph["phase"] == "preseason" and ph["last_week"] == 0
+
+    # No draft either -> just "regular" with week 0, so the template still renders.
+    monkeypatch.setattr(app.draft, "draft_board", lambda *a, **k: pd.DataFrame())
+    ph = app._season_phase(s0, {"playoffs": {}}, "2025")
+    assert ph["phase"] == "regular" and ph["last_week"] == 0
+
+
+def test_season_phase_regular_leads_with_last_completed_week(monkeypatch):
+    """Mid-regular-season with the latest week still unscored: the lead opens on
+    the last COMPLETED week, not Season.last_week."""
+    import dataclasses
+    from webapp import app
+
+    s = make_season()
+    tw = s.team_wk.copy()
+    tw.loc[tw["week"] == 2, "points"] = 0.0    # week 2 in progress, unscored
+    s1 = dataclasses.replace(s, team_wk=tw, status="in_season")
+    monkeypatch.setattr(app.sm, "consolation_bracket", lambda *a, **k: {})
+    ph = app._season_phase(s1, {"playoffs": {}}, "2025")
+    assert ph["phase"] == "regular" and ph["last_week"] == 1
 
 
 def test_season_phase_complete_recaps_every_round(monkeypatch):
@@ -937,7 +1042,10 @@ def test_season_report_is_self_contained_html(tmp_path, season_obj):
     doc = out.read_text(encoding="utf-8")
     assert doc.lower().startswith("<!doctype html>")
     assert "Test League" in doc
-    assert "class='tile'" in doc                      # KPI tiles rendered
+    # Headline tiles rendered -- the season report uses merged good/bad insight
+    # tiles (mirrors the webapp Overview), so each carries a best/worst row.
+    assert "class='tile insight'" in doc
+    assert "class='irow good'" in doc and "class='irow bad'" in doc
     assert doc.count("<td class='rank'>") == 3        # one row per team
     assert "data:image/png" in doc                    # >=1 chart embedded inline
     # Self-contained: no external assets to fetch (charts are data URIs).
@@ -952,6 +1060,13 @@ def test_season_report_scopes_to_one_manager(tmp_path, season_obj):
     assert "Manager Report" in doc              # header reframed for the manager
     assert "class='me'" in doc                  # the manager's row is highlighted
     assert "wins vs merit" in doc               # manager-scoped narrative
+    # The game log carries the site's Lineup % column (started / optimal).
+    assert "Lineup %" in doc
+    # Portraits are OFF under SLEEPERMETRICS_NO_IMAGES (conftest sets it), so no
+    # portrait <style> rules and no .pface tokens are emitted -- and the file
+    # stays self-contained regardless.
+    assert "background-image:url(data:" not in doc
+    assert 'src="http' not in doc and "<script" not in doc
     # An unknown manager falls back to the whole-league report, not an error.
     out2 = tmp_path / "unknown.html"
     season_report(season_obj, str(out2), manager="Nobody")
@@ -995,6 +1110,451 @@ def test_season_metrics_and_charts_adapt_to_a_mid_season_week_cap(season_obj):
         fig = fn(mid)
         assert fig is not None
         plt.close(fig)
+
+
+def test_season_report_manager_trades_render_as_deal_cards(tmp_path, season_obj):
+    """The per-manager report's Trades section now renders the site's own
+    `.deal` card markup (metrics.trade_deals), not a drill-table of Got/Gave
+    columns. Al traded Zed (from Bo) for Yak; needs a pl_wk with points so
+    trade_ledger can price both sides, entirely offline (trade_ledger/
+    trade_deals touch no network)."""
+    import dataclasses
+
+    pl_wk = pd.DataFrame({
+        "week": [1, 1, 2, 2],
+        "roster_id": [1, 1, 1, 2],
+        "player_id": ["100", "200", "100", "200"],
+        "player_name": ["Yak", "Zed", "Yak", "Zed"],
+        "position": ["WR", "RB", "WR", "RB"],
+        "points": [12.0, 8.0, 15.0, 6.0],
+        "is_starter": [True, False, True, False],
+    })
+    transactions = pd.DataFrame({
+        "week": [1, 1],
+        "transaction_id": ["t1", "t1"],
+        "type": ["trade", "trade"],
+        "transaction": ["add", "add"],
+        "player_id": ["200", "100"],
+        "roster_id": [1, 2],
+        "user_name": ["Al", "Bo"],
+        "player_name": ["Zed", "Yak"],
+        "position": ["RB", "WR"],
+        "status": ["complete", "complete"],
+    })
+    s = dataclasses.replace(season_obj, pl_wk=pl_wk, transactions=transactions)
+    out = tmp_path / "trade.html"
+    from sleepermetrics import season_report
+    season_report(s, str(out), seasons={"2025": s}, manager="Al")
+    doc = out.read_text(encoding="utf-8")
+    assert "Traceback" not in doc
+    assert "class='deal-group'" in doc
+    assert "class='deal-meta'" in doc and "class='side" in doc
+    assert "class='plr'" in doc
+
+
+def test_season_report_standouts_week_table_is_boxed(tmp_path, season_obj):
+    """Season standouts' per-player week table (Wk/Role/Pts/Running/Wk rank/
+    Share) must sit inside a .dt-block, not as a bare table.dt-games directly
+    under .dt-detail -- a direct child there picks up the site's global "wide
+    Roster-tab listing" rule (width:100% + 28px cell padding), which read as
+    huge whitespace gaps on a table this narrow. Also checks the new Weeks/
+    Total pts columns landed on the main row."""
+    import dataclasses
+
+    pl_wk = pd.DataFrame({
+        "week": [1, 2], "roster_id": [1, 1], "player_id": ["100", "100"],
+        "player_name": ["Yak", "Yak"], "position": ["WR", "WR"],
+        "points": [12.0, 15.0], "is_starter": [True, True],
+    })
+    s = dataclasses.replace(season_obj, pl_wk=pl_wk)
+    out = tmp_path / "standouts.html"
+    from sleepermetrics import season_report
+    season_report(s, str(out), seasons={"2025": s}, manager="Al")
+    doc = out.read_text(encoding="utf-8")
+    assert "Traceback" not in doc
+    assert "Season standouts" in doc
+    assert "'>Weeks</span>" in doc
+    assert "'>Total pts</span>" in doc
+    assert "<span class=''>Trend</span>" in doc
+    # The week-detail mini-table is wrapped: class='dt-detail'>...<div
+    # class='dt-block'><table class='dt-games ...'> -- not a bare table right
+    # after </div> (the bug this session fixed). Also carries dt-games-compact
+    # (tighter cell padding for a table with this many columns). Anchor on
+    # the actual <h2> heading, not a bare text search -- "Season standouts"
+    # also appears earlier, inside the embedded <style> block's own comments.
+    j = doc.find("<h2>Season standouts</h2>")
+    i = doc.find("class='dt-detail'>", j)
+    detail = doc[i:i + 2000]
+    # ...<div class='dt-block'><table class='dt-games dt-games-compact'
+    # style='min-width:Nch'>... -- the mini-table is wrapped, and carries
+    # both the compact class and its own scroll floor.
+    assert "<div class='dt-block'><table class='dt-games dt-games-compact' " \
+        "style='min-width:" in detail
+    assert "Wk rank" in detail and "Share" in detail
+
+
+def test_report_group_ends_marks_last_column_of_each_cluster():
+    """`_group_ends` (report.py) turns a list of group sizes into the 0-based
+    column indices that should get the wider `.grp-end` gap -- every group's
+    last column except the table's own final column (which never needs a
+    trailing gap, there's nothing after it)."""
+    from sleepermetrics.report import _group_ends
+
+    # Player | Starts+PPG+Pts | Share | Bench pts -- 6 columns, groups [1,3,1,1].
+    assert _group_ends(6, [1, 3, 1, 1]) == {0, 3, 4}
+    # No grouping requested -> no boundaries drawn at all.
+    assert _group_ends(6, None) == set()
+    assert _group_ends(4, []) == set()
+
+
+def test_report_content_widths_measures_actual_text_not_markup():
+    """`_content_widths` sizes each real column to its OWN measured content
+    (header label vs. every row's cell, in `ch`) -- not a hand-picked
+    weight. A player-name cell counts its VISIBLE text (the <strong>/<span>
+    tags themselves are NOT counted -- that would inflate it toward 60+),
+    PLUS a fixed allowance for the portrait disc and POS #rank badge, which
+    take real rendered width `_text_len` drops -- without it the name
+    clips to an ellipsis under table-layout:fixed."""
+    from sleepermetrics.report import _content_widths
+
+    cols = [("Player", False), ("Pts", True)]
+    rows = [
+        [("<span class='pface'></span><strong>Jonathan Taylor</strong>"
+          "<span class='q posrank'>RB #3</span>", False), ("335", True)],
+        [("<strong>Yak</strong>", False), ("12.0", True)],
+    ]
+    widths = _content_widths(cols, rows)
+    # Visible text "Jonathan Taylor" (15) + "RB #3" (5) = 20, + portrait
+    # (~4ch) + badge chrome (~1.5ch) = 25.5, + 1.5 breathing room = 27.0.
+    # Still nowhere near the ~60+ the raw markup length would give.
+    assert widths[0] == pytest.approx(27.0)
+    # "Pts" header (3 chars) rendered uppercase + letter-spacing needs more
+    # than a flat +1.5ch buffer (that clipped a real "Margin" header to
+    # "MARG…") but a MODEST factor -- an over-large one over-inflates every
+    # multi-word header until the table outgrows the panel and every column
+    # scales down. h*1.22 + 2 = 5.66, which beats the data side
+    # ("335"/"12.0", widest 4, +1.5 = 5.5).
+    assert widths[1] == pytest.approx(5.66)
+
+
+def test_report_spaced_cols_inserts_real_gap_columns():
+    """`_spaced_cols` (report.py) inserts a genuine spacer marker after
+    each group boundary -- NOT a padding hint. Under table-layout:fixed a
+    cell's own padding can't move a sibling column's boundary (confirmed:
+    bumping padding-right from 24px to 3em on the old `.grp-end` mechanism
+    produced no visible change), so grouping has to be a real column
+    carved out of the <colgroup>. `_colgroup` gives that spacer its own
+    small fixed ch width (`_GAP_CH`) so it joins the proportional pool
+    table-layout:fixed distributes leftover width across and stays a modest
+    gap -- leaving it width-less made the spacer swallow the whole table's
+    leftover space, squeezing every real column."""
+    from sleepermetrics.report import _GAP_CH, _colgroup, _spaced_cols
+
+    cols = [("Player", False), ("Starts", True), ("PPG", True),
+            ("Pts", True), ("Share", True), ("Bench", True)]
+    rows = [[("Yak", False), ("2", True), ("13.5", True), ("27", True),
+             ("100%", True), ("8", True)]]
+    widths2, is_gap = _spaced_cols(cols, [1, 3, 1, 1], rows)
+    # 6 real columns + 3 group boundaries (after col 0, after col 3, after
+    # col 4) = 9 positions.
+    assert len(widths2) == 9
+    assert is_gap == [False, True, False, False, False, True, False, True,
+                      False]
+    # Every gap position carries the fixed _GAP_CH spacer width.
+    assert widths2[1] == _GAP_CH
+    assert widths2[5] == _GAP_CH
+    assert widths2[7] == _GAP_CH
+    # The colgroup gives every <col> -- real AND spacer -- an explicit ch
+    # width; the spacer's is the small _GAP_CH, a real column's is its own
+    # measured content width.
+    cg = _colgroup(widths2, is_gap)
+    cols_out = cg.replace("<colgroup>", "").replace("</colgroup>", "")
+    cols_out = cols_out.split("<col")[1:]
+    assert f"{_GAP_CH:.2f}ch" in cols_out[1]               # gap 1: _GAP_CH
+    assert f"{_GAP_CH:.2f}ch" in cols_out[5]               # gap 2: _GAP_CH
+    assert f"{_GAP_CH:.2f}ch" in cols_out[7]               # gap 3: _GAP_CH
+    assert "ch" in cols_out[0]                             # real col: sized
+
+
+def test_report_compact_table_carries_min_width_scroll_floor():
+    """`_mini_table`/`_mini_table_rows` emit `style='min-width:Nch'` on the
+    table -- the sum of every column's measured `ch` plus a per-column
+    padding reserve (`_min_width_ch`). Below that width the wrapper
+    (`.dt-block` / `.dt-detail`, both `overflow-x:auto`) scrolls instead of
+    a column shrinking until its text clips, which is the 'enforce a
+    minimum width before adding scrollability' contract."""
+    from sleepermetrics.report import (_content_widths, _mini_table,
+                                       _min_width_ch, _spaced_cols)
+
+    cols = [("Player", False), ("Wk", True), ("Pts", True), ("Share", True)]
+    rows = [[("<span class='pface'></span><strong>Christian McCaffrey</strong>"
+             "<span class='q posrank'>RB #4</span>", False), ("5", True),
+             ("28.4", True), ("31%", True)]]
+    html_out = _mini_table(cols, rows, groups=[1, 2, 1])
+    widths2, _ = _spaced_cols(cols, [1, 2, 1], rows)
+    want = _min_width_ch(widths2)
+    assert f"min-width:{want:.1f}ch" in html_out
+    # The floor is a real reserve, not zero, and covers the widest column.
+    assert want >= max(_content_widths(cols, rows))
+    assert want > 20
+
+
+def test_season_report_mini_tables_mark_group_boundaries(tmp_path, season_obj):
+    """The 'Where the points came from' drilldown groups Player | Starts+PPG
+    | Pts+Bench pts | Total pts | Share of pos (Started/Bench sit adjacent
+    as the two pieces that sum to Total pts); the waiver/standouts week
+    table groups Wk/Role | Pts/Points to date | Share/Wk rank (Points to
+    date is the renamed, decimal-matching former "Cumulative pts"/
+    "Running"). Confirms each drilldown emits a REAL `<td class="gap-col">`
+    spacer at the group boundary (not a `.grp-end` padding hint, which
+    can't move a sibling column under table-layout:fixed -- see
+    `test_report_spaced_cols_inserts_real_gap_columns` and the `_CSS`
+    comment on `.gap-col`), and that Total pts (Pts + Bench pts) computes
+    correctly."""
+    import dataclasses
+
+    pl_wk = pd.DataFrame({
+        "week": [1, 2, 3], "roster_id": [1, 1, 1], "player_id": ["100"] * 3,
+        "player_name": ["Yak"] * 3, "position": ["WR"] * 3,
+        "points": [12.0, 15.0, 8.0], "is_starter": [True, True, False],
+    })
+    s = dataclasses.replace(season_obj, pl_wk=pl_wk)
+    out = tmp_path / "grouping.html"
+    from sleepermetrics import season_report
+    season_report(s, str(out), seasons={"2025": s}, manager="Al")
+    doc = out.read_text(encoding="utf-8")
+    assert "Traceback" not in doc
+
+    j = doc.find("<h2>Where the points came from</h2>")
+    j_end = doc.find("<h2>", j + 10)
+    seg = doc[j:j_end]
+    k = seg.find("dt-games-compact")
+    head = seg[k:seg.find("</tr>", k)]
+    # Columns in header order, real vs gap, matching groups=[1,2,2,1,1]:
+    # Player | GAP | Starts, PPG | GAP | Pts, Bench pts | GAP | Total pts
+    # | GAP | Share of pos.
+    import re
+    cells = re.findall(r"<th class='([^']*)'>([^<]*)</th>", head)
+    labels = [c[1] for c in cells]
+    gaps = [c[0] == "gap-col" for c in cells]
+    assert labels == ["Player", "", "Starts", "PPG", "", "Pts", "Bench pts",
+                      "", "Total pts", "", "Share of pos"]
+    assert gaps == [False, True, False, False, True, False, False, True,
+                    False, True, False]
+    # A gap-col cell is genuinely empty -- no padding-based trick.
+    assert "<th class='gap-col'></th>" in head
+    # Total pts = Pts (started, 27.0) + Bench pts (8.0) = 35.
+    row = seg[seg.find("<tbody>", k):]
+    assert "<td class='gap-col'></td>" in row
+    assert "'n'>35</td>" in row
+
+    j2 = doc.find("<h2>Season standouts</h2>")
+    j2_end = doc.find("<h2>", j2 + 10)
+    seg2 = doc[j2:j2_end]
+    k2 = seg2.find("dt-games-compact")
+    head2 = seg2[k2:seg2.find("</tr>", k2)]
+    cells2 = re.findall(r"<th class='([^']*)'>([^<]*)</th>", head2)
+    labels2 = [c[1] for c in cells2]
+    # Wk/Role | GAP | Pts/Points to date | GAP | Share/Wk rank -- Share now
+    # sits before Wk rank (was the reverse), and the gap columns are real.
+    assert labels2 == ["Wk", "Role", "", "Pts", "Points to date", "",
+                       "Share", "Wk rank"]
+    share_i = head2.find(">Share<")
+    rank_i = head2.find(">Wk rank<")
+    assert -1 < share_i < rank_i
+    # Points to date matches Pts's own decimal precision (was integer-only):
+    # week 2's Pts (15.0) and running Points to date (12.0 + 15.0 = 27.0)
+    # both render with one decimal, not the old bare-integer "27".
+    row2 = seg2[seg2.find("<tbody>", k2):]
+    assert "'n'>15.0</td>" in row2                        # week 2's Pts, .1f
+    assert "'n'>27.0</td>" in row2                         # Points to date, .1f
+
+
+def test_season_report_manager_waivers_degrade_offline(tmp_path, season_obj):
+    """waiver_ledger needs network (season_position_ranks/_fa_trend price every
+    real NFL stat line); _mgr_transactions must not blow up the whole report
+    when that's unreachable -- it should just render without a waiver section."""
+    import dataclasses
+
+    pl_wk = pd.DataFrame({
+        "week": [1], "roster_id": [1], "player_id": ["300"],
+        "player_name": ["Pip"], "position": ["WR"], "points": [5.0],
+        "is_starter": [True],
+    })
+    transactions = pd.DataFrame({
+        "week": [1], "transaction_id": ["t2"], "type": ["waiver"],
+        "transaction": ["add"], "player_id": ["300"], "roster_id": [1],
+        "user_name": ["Al"], "player_name": ["Pip"], "position": ["WR"],
+        "status": ["complete"],
+    })
+    s = dataclasses.replace(season_obj, pl_wk=pl_wk, transactions=transactions)
+    out = tmp_path / "waiver.html"
+    from sleepermetrics import season_report
+    season_report(s, str(out), seasons={"2025": s}, manager="Al")
+    doc = out.read_text(encoding="utf-8")
+    assert "Traceback" not in doc
+    assert doc.lower().startswith("<!doctype html>")
+
+
+def _forward_api(routes: dict):
+    """A fake sleeper_api: `routes` maps an exact path -> its JSON payload,
+    anything else raises (a real 404 would)."""
+    def _api(path):
+        if path in routes:
+            return routes[path]
+        raise RuntimeError(f"unexpected GET {path}")
+    return _api
+
+
+def test_current_season_league_id_advances_forward(monkeypatch):
+    """A pasted older-season id resolves to the league's current-season id: its
+    members' current-season leagues are scanned, and the one whose own backward
+    chain shares this league's chain ROOT is picked."""
+    import importlib; L = importlib.import_module("sleepermetrics.league")
+    L.clear_forward_cache()
+    # 2024 id was pasted; the live league is 2026 (id "L26"), chaining
+    # L26 -> L25 -> L24 (root "L24"). A member is also in an unrelated league.
+    # league_chain() returns its dict OLDEST-first, so the chain root is the
+    # first value -- mirror that ordering here.
+    chains = {
+        "L24": {"2024": {"league_id": "L24"}},
+        "L26": {"2024": {"league_id": "L24"},
+                "2025": {"league_id": "L25"},
+                "2026": {"league_id": "L26"}},
+        "OTHER": {"2026": {"league_id": "OTHER"}},
+    }
+    monkeypatch.setattr(L, "league_chain", lambda lid: chains[str(lid)])
+    monkeypatch.setattr(L, "nfl_state", lambda: {"league_season": "2026"})
+    monkeypatch.setattr(L, "sleeper_api", _forward_api({
+        "/league/L24/rosters": [{"owner_id": "u1"}, {"owner_id": "u2"}],
+    }))
+    monkeypatch.setattr(L, "sleeper_api_many", lambda paths: [
+        [{"league_id": "OTHER", "status": "in_season"}],          # u1
+        [{"league_id": "L26", "status": "in_season"}],             # u2
+    ])
+    assert L.current_season_league_id("L24") == "L26"
+    # memoised
+    assert L._forward_cache["L24:2026"]["id"] == "L26"
+    L.clear_forward_cache()
+
+
+def test_current_season_league_id_returns_input_when_already_current(monkeypatch):
+    """The pasted id's own chain already contains the current season -> return
+    it untouched, and never even fetch /rosters."""
+    import importlib; L = importlib.import_module("sleepermetrics.league")
+    L.clear_forward_cache()
+    monkeypatch.setattr(L, "league_chain", lambda lid: {
+        "2026": {"league_id": "L26", "previous_league_id": "L25"}})
+    monkeypatch.setattr(L, "nfl_state", lambda: {"league_season": "2026"})
+
+    def _boom(*a, **k):
+        raise AssertionError("should not hit the network when already current")
+
+    monkeypatch.setattr(L, "sleeper_api", _boom)
+    monkeypatch.setattr(L, "sleeper_api_many", _boom)
+    assert L.current_season_league_id("L26") == "L26"
+    L.clear_forward_cache()
+
+
+def test_current_season_league_id_returns_input_on_failure(monkeypatch):
+    """Any Sleeper failure (private member account, offline, rate limit) leaves
+    the pasted id unchanged -- never raises, never a wrong league."""
+    import importlib; L = importlib.import_module("sleepermetrics.league")
+    L.clear_forward_cache()
+    monkeypatch.setattr(L, "nfl_state", lambda: (_ for _ in ()).throw(RuntimeError))
+    assert L.current_season_league_id("L24") == "L24"
+    L.clear_forward_cache()
+    monkeypatch.setattr(L, "nfl_state", lambda: {"league_season": "2026"})
+    monkeypatch.setattr(L, "league_chain", lambda lid: {
+        "2024": {"league_id": "L24", "previous_league_id": None}})
+    monkeypatch.setattr(L, "sleeper_api",
+                        lambda p: (_ for _ in ()).throw(RuntimeError))
+    assert L.current_season_league_id("L24") == "L24"
+    L.clear_forward_cache()
+
+
+def test_current_season_league_id_rejects_foreign_league(monkeypatch):
+    """A member's current-season league with a DIFFERENT chain root is not the
+    same league -- it must not be selected."""
+    import importlib; L = importlib.import_module("sleepermetrics.league")
+    L.clear_forward_cache()
+    chains = {
+        "L24": {"2024": {"league_id": "L24", "previous_league_id": None}},
+        "FOREIGN": {"2026": {"league_id": "FOREIGN", "previous_league_id": None}},
+    }
+    monkeypatch.setattr(L, "league_chain", lambda lid: chains[str(lid)])
+    monkeypatch.setattr(L, "nfl_state", lambda: {"league_season": "2026"})
+    monkeypatch.setattr(L, "sleeper_api", _forward_api({
+        "/league/L24/rosters": [{"owner_id": "u1"}]}))
+    monkeypatch.setattr(L, "sleeper_api_many",
+                        lambda paths: [[{"league_id": "FOREIGN"}]])
+    assert L.current_season_league_id("L24") == "L24"
+    L.clear_forward_cache()
+
+
+def test_seasons_advance_flag_defaults_off(monkeypatch):
+    """sm.seasons(id) / sm.season(id) must NOT call current_season_league_id
+    unless advance=True -- the parity exporters and verify.py pass a bare id
+    and must keep today's behaviour (and its call count)."""
+    import importlib; S = importlib.import_module("sleepermetrics.season")
+    calls = []
+    monkeypatch.setattr(S, "current_season_league_id",
+                        lambda lid, *a, **k: calls.append(lid) or lid)
+    # A minimal 1-season chain so assemble is skipped but keys[-1] resolves.
+    monkeypatch.setattr(S, "league_chain",
+                        lambda lid: {"2024": {"league_id": str(lid)}})
+    monkeypatch.setattr(S, "assemble_season", lambda link: link)
+    S.seasons("L24")
+    S.season("L24")
+    assert calls == []                       # never consulted with advance off
+    S.seasons("L24", advance=True)
+    assert calls == ["L24"]                   # consulted once, opt-in
+
+
+def test_mgr_career_splits_regular_and_playoff_columns():
+    """The per-manager career table splits the old combined "Finish" into a
+    regular-season rank column ("Reg.") and a separate "Playoffs" column. With
+    no bracket for a season the playoff cell is an en-dash, never blank/None."""
+    from sleepermetrics.report import _mgr_career
+    ss = {"2024": make_season("2024", champ_roster=1),
+          "2025": make_season("2025", champ_roster=1)}
+    html = _mgr_career(ss["2025"], "Al", ss, playoffs=None)
+    assert "<th class='n'>Reg.</th><th>Playoffs</th>" in html
+    assert "Finish</th>" not in html                 # old combined header gone
+    assert "&ndash;" in html                         # no bracket -> en-dash cell
+    assert " ★" not in html                          # champion star folded away
+
+
+def test_career_playoff_cell_maps_outcomes():
+    """_career_playoff_cell turns a scored bracket into the short column text:
+    Champion / Runner-up / Rd N, then the consolation winner / first-out team,
+    then "Missed" for any other team outside the championship bracket."""
+    from sleepermetrics.report import _career_playoff_cell
+
+    class _P:
+        champion = "Al"
+
+    class _Summ:
+        # stand in for playoffs.playoff_summary(p)
+        rows = {"Al": "Champion", "Bo": "Runner-up", "Cy": "Lost in Round 2"}
+
+    import sleepermetrics.playoffs as _pl
+    orig = _pl.playoff_summary
+    _pl.playoff_summary = lambda p: pd.DataFrame(
+        {"team": list(_Summ.rows), "outcome": list(_Summ.rows.values())})
+    try:
+        assert "Champion" in _career_playoff_cell(None, "Al", _P(), None)
+        assert _career_playoff_cell(None, "Bo", _P(), None) == "Runner-up"
+        assert "Rd 2" in _career_playoff_cell(None, "Cy", _P(), None)
+        # A team absent from the summary and from the consolation ends -> Missed.
+        assert "Missed" in _career_playoff_cell(None, "Zed", _P(), None)
+        cb = {"winner": "Zed", "last": "Ud"}
+        assert "Won consolation" in _career_playoff_cell(None, "Zed", _P(), cb)
+        assert "Lost consolation" in _career_playoff_cell(None, "Ud", _P(), cb)
+        # No bracket at all -> en-dash.
+        assert "ndash" in _career_playoff_cell(None, "Al", None, None)
+    finally:
+        _pl.playoff_summary = orig
 
 
 def test_summary_week(season_obj):

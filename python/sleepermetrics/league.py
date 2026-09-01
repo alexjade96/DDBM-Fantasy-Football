@@ -1,7 +1,9 @@
 """League metadata and the multi-season chain (mirrors R league.R)."""
 from __future__ import annotations
 
-from .api import sleeper_api
+import time
+
+from .api import sleeper_api, sleeper_api_many
 
 
 def league(league_id):
@@ -86,6 +88,99 @@ def root_league_id(league_id) -> str:
     """
     chain = league_chain(league_id)
     return next(iter(chain.values()))["league_id"]
+
+
+# current_season_league_id() results, keyed f"{league_id}:{season}". A new
+# season's league_id appears once a year, so a long TTL is fine; a stale
+# entry only means the selector caps one season early until it expires or a
+# ?refresh=1 clears it (webapp side).
+_forward_cache: dict = {}
+_FORWARD_TTL = 6 * 3600
+
+
+def clear_forward_cache() -> None:
+    """Drop the current_season_league_id() memo (webapp refresh path)."""
+    _forward_cache.clear()
+
+
+def current_season_league_id(league_id, nfl_season: str | None = None) -> str:
+    """This league's most recent season's league_id, resolved FORWARD.
+
+    Sleeper only ever links `previous_league_id` (newer -> older), so a pasted
+    2024-season id cannot see the same league's live 2025/2026 season (each
+    season gets its own id). This reconstructs the forward link: take the
+    pasted league's members, ask Sleeper which leagues each is in for
+    `nfl_season` (default: `/state/nfl`'s current season), and keep the one
+    whose own backward chain shares this league's chain ROOT -- the origin id,
+    which is stable for the life of the league and unique per real league, so
+    a root match means "the same league, a later season".
+
+    Returns `league_id` UNCHANGED when it is already the newest season, when
+    no member's current-season leagues share the chain root, or when any
+    Sleeper call fails. Never raises. Memoised for `_FORWARD_TTL`.
+    """
+    lid = str(league_id)
+    try:
+        season = str(nfl_season) if nfl_season else str(
+            (nfl_state() or {}).get("league_season")
+            or (nfl_state() or {}).get("season") or "")
+    except Exception:
+        return lid
+    if not season:
+        return lid
+
+    ck = f"{lid}:{season}"
+    hit = _forward_cache.get(ck)
+    if hit and time.time() - hit["at"] < _FORWARD_TTL:
+        return hit["id"]
+
+    def _remember(resolved: str) -> str:
+        _forward_cache[ck] = {"id": resolved, "at": time.time()}
+        return resolved
+
+    try:
+        chain = league_chain(lid)
+        if season in chain:
+            return _remember(lid)                       # already the current season
+        root = next(iter(chain.values()))["league_id"]
+    except Exception:
+        return lid
+
+    try:
+        rosters = sleeper_api(f"/league/{lid}/rosters") or []
+    except Exception:
+        return lid
+    uids = sorted({r.get("owner_id") for r in rosters if r.get("owner_id")})
+    if not uids:
+        return _remember(lid)
+
+    try:
+        member_leagues = sleeper_api_many(
+            [f"/user/{u}/leagues/nfl/{season}" for u in uids])
+    except Exception:
+        return lid
+
+    # Candidate current-season league ids the members are in, deduped, the
+    # pasted id itself dropped. "in_season"/"drafting" first so the live one
+    # is checked before any dormant same-name league.
+    seen, ordered = set(), []
+    for res in member_leagues:
+        for lg in (res or []):
+            cid = lg.get("league_id")
+            if not cid or cid == lid or cid in seen:
+                continue
+            seen.add(cid)
+            live = (lg.get("status") or "") in ("in_season", "drafting", "pre_draft")
+            ordered.append((0 if live else 1, cid))
+    ordered.sort(key=lambda t: t[0])
+
+    for _, cid in ordered:
+        try:
+            if next(iter(league_chain(cid).values()))["league_id"] == root:
+                return _remember(cid)
+        except Exception:
+            continue
+    return _remember(lid)
 
 
 def starter_slots(roster_positions) -> dict:

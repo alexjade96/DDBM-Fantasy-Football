@@ -83,6 +83,37 @@ def test_pending_when_lineup_not_submitted():
     assert p.champion is None       # nothing is awarded on an unplayed final
 
 
+def test_zero_zero_matchup_is_pending_not_a_tie(recwarn):
+    """A round whose stat lines are all zero (its week has not been played --
+    e.g. a Sleeper pre-season bracket loaded before week 1) scores 0-0. That is
+    NOT a real tie: it must read as PENDING, award nobody, and NOT emit the
+    "tie -- no winner advanced" warning that spammed the terminal on every load
+    of a not-yet-started bracket."""
+    cfg = _cfg()
+    cfg["rounds"][0]["weeks"] = [16]     # STATS has no week 16 -> every starter 0.0
+    p = playoffs.playoff(cfg, validate=False)
+    r1 = p.results[p.results["matchup_id"] == "R1M1"]
+    assert set(r1["result"]) == {"PENDING"}
+    assert r1["points"].isna().all()          # no 0.0 points left on the row
+    assert p.champion is None
+    assert not any("tie" in str(w.message).lower() for w in recwarn.list)
+
+    # A genuine non-zero tie still warns and still advances nobody, but the
+    # whole run emits at most ONE consolidated tie warning even with several
+    # tied matchups (rather than one per matchup, which flooded the terminal).
+    cfg2 = _cfg()
+    cfg2["rounds"][0]["matchups"] = [
+        {"id": "R1M1", "home": {"team": "Ay", "starters": ["4"]},
+         "away": {"team": "Bee", "starters": ["4"]}},
+        {"id": "R1M2", "home": {"team": "Cy", "starters": ["4"]},
+         "away": {"team": "Dee", "starters": ["4"]}}]    # both matchups tie
+    with pytest.warns(UserWarning, match="tied") as rec:
+        playoffs.playoff(cfg2, validate=False)
+    tie_warns = [w for w in rec.list if "tied" in str(w.message)]
+    assert len(tie_warns) == 1
+    assert "R1M1" in str(tie_warns[0].message) and "R1M2" in str(tie_warns[0].message)
+
+
 def test_bye_advances_unscored():
     cfg = _cfg()
     cfg["rounds"][0]["matchups"][1] = {"id": "R1M2", "bye": "Dee"}
@@ -486,6 +517,39 @@ def test_sleeper_losers_bracket_resolves_a_consolation_tree(monkeypatch):
     # The config runs through the engine and crowns the best consolation finish.
     p = playoffs.playoff(cfg, validate=False)
     assert (p.results["result"] == "BYE").sum() == 2
+
+
+def test_sleeper_bracket_builds_full_skeleton_from_from_refs(monkeypatch):
+    """A pre-season Sleeper `winners_bracket` has round 1 populated but later
+    rounds carry only `t1_from`/`t2_from` provenance ({"w": 1} = winner of
+    matchup 1). `sleeper_bracket` must translate those into the engine's own
+    W:/L: refs so the SKELETON bracket draws the whole tree, not just round 1."""
+    WB = [
+        {"m": 1, "r": 1, "l": None, "w": None, "t1": 4, "t2": 1},
+        {"m": 2, "r": 1, "l": None, "w": None, "t1": 3, "t2": 2},
+        {"m": 3, "r": 2, "l": None, "w": None, "t1": None, "t2": None,
+         "t1_from": {"w": 1}, "t2_from": {"w": 2}, "p": 1},
+        {"m": 4, "r": 2, "l": None, "w": None, "t1": None, "t2": None,
+         "t1_from": {"l": 1}, "t2_from": {"l": 2}, "p": 3},
+    ]
+    names = {1: "Al", 2: "Bo", 3: "Cy", 4: "Dee"}
+    monkeypatch.setattr(playoffs, "_bracket_context",
+                        lambda lid, season=None: (
+                            {"season": "2026"}, "L", {"name": "TestLg",
+                             "roster_positions": ["QB"], "scoring_settings": RULES,
+                             "settings": {"playoff_week_start": 15}}, names))
+    monkeypatch.setattr(playoffs, "sleeper_api",
+                        lambda path: WB if path.endswith("winners_bracket") else [])
+    monkeypatch.setattr(playoffs, "_week_starters", lambda lid, wk: {})
+    monkeypatch.setattr(playoffs, "_sleeper_seed_map", lambda *a, **k: {})
+    playoffs._gen_cache.clear()
+    cfg = playoffs.sleeper_bracket("L", "2026")
+    rounds = {r["id"]: r["matchups"] for r in cfg["rounds"]}
+    assert [m["id"] for m in rounds["R1"]] == ["M1", "M2"]
+    r2 = {m["id"]: (m["home"]["team"], m["away"]["team"]) for m in rounds["R2"]}
+    assert r2 == {"M3": ("W:M1", "W:M2"), "M4": ("L:M1", "L:M2")}
+    assert cfg["final"] == "M3"
+    playoffs._gen_cache.clear()
 
 
 def test_sleeper_losers_bracket_none_when_empty(monkeypatch):
