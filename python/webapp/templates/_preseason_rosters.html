@@ -19,26 +19,27 @@
 <h2>Drafted Rosters</h2>
 <p class="hint">Every roster as it was drafted, in draft order. Each position column
    is how many of that position the manager drafted; expand a manager for their
-   picks. <strong>+/-</strong> is <strong>Overall</strong> (the absolute pick
-   number, same scale as <strong>ADP</strong>) minus ADP:
-   <span class="pts dv-pos">green</span> when the manager took the player
-   earlier than Sleeper&rsquo;s pre-season consensus,
-   <span class="pts dv-neg">red</span> when later. The <strong>Draft</strong>
-   tab grades the picks in full.</p>
+   picks. <strong>ADP&nbsp;&plusmn;</strong> is the manager&rsquo;s average
+   <strong>Overall</strong> pick minus <strong>ADP</strong> across their priced
+   picks: <span class="pts dv-pos">green</span> when they tended to draft
+   <em>ahead</em> of Sleeper&rsquo;s pre-season consensus,
+   <span class="pts dv-neg">red</span> when they tended to wait. The same
+   figure per pick is in the drilldown; the <strong>Draft</strong> tab grades
+   the picks in full.</p>
 <div class="tablewrap">
-{# Two column groups: IDENTITY (Slot + Manager, Manager taking the bulk of
-   the width via a large fr weight so the table fills the panel) and the
-   POSITION-COUNT block (a compact, centered cluster of 6-7 single-digit
-   columns with a modest fr each, so it grows a little but stays tight next
-   to Manager rather than each count floating in a wide column). `.pg1` on
-   the first count column draws the hairline that separates the two groups.
-   No trailing fr spacer -- on a maximized window it ballooned into a dead
-   gap on the right. See CLAUDE.md's "give every column an fr share" trap. #}
+{# Three column groups: IDENTITY (Slot + Manager, Manager taking the bulk of
+   the width via a large fr weight so the table fills the panel), then ADP +/-
+   (the manager's mean over/under vs consensus), then the POSITION-COUNT block
+   (a compact, centered cluster of 6-7 single-digit columns). `.pg1` on the
+   first count column draws the hairline that separates ADP +/- from the
+   counts. No trailing fr spacer -- on a maximized window it ballooned into a
+   dead gap on the right. See CLAUDE.md's "give every column an fr share". #}
 <div class="drilltable preseason-rost"
-     style="--cols: minmax(4rem, 0.5fr) minmax(9rem, 5fr) repeat({{ 7 if has_other else 6 }}, minmax(2.6rem, 0.35fr))">
+     style="--cols: minmax(4rem, 0.5fr) minmax(9rem, 5fr) minmax(4.5rem, 0.7fr) repeat({{ 7 if has_other else 6 }}, minmax(2.6rem, 0.35fr))">
   <div class="dt-head">
     <span class="dt-num">Slot</span>
     <span>Manager</span>
+    <span class="dt-num">ADP &plusmn;</span>
     <span class="pc pg1">QB</span>
     <span class="pc">RB</span>
     <span class="pc">WR</span>
@@ -52,6 +53,7 @@
     <summary>
       <span class="dt-num">{{ r.slot if r.slot is not none else "-" }}</span>
       <span>{{ idm.who(r.user_name) }}</span>
+      <span class="dt-num">{% if r.avg_vs_adp is not none %}<span class="pts{% if r.avg_vs_adp < 0 %} dv-pos{% elif r.avg_vs_adp > 0 %} dv-neg{% endif %}">{{ "%+.1f"|format(r.avg_vs_adp) }}</span>{% else %}&ndash;{% endif %}</span>
       {% for pos in ["QB", "RB", "WR", "TE", "K", "DEF"] %}
       <span class="pc{% if loop.first %} pg1{% endif %}">{{ r.pos_counts.get(pos, 0) }}</span>
       {% endfor %}

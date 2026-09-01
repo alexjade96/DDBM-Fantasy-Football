@@ -1450,14 +1450,18 @@ def _preseason_rosters(s, board=None) -> list[dict]:
     costs nothing beyond the draft_board() call the Weekly branch already makes
     to gate week 0.
 
-    Returns `[{user_name, slot, pos_counts: {QB: n, ...}, picks: [{pick,
-    player_name, player_id, position, team, adp}]}]`; empty when the season
-    has no draft board. `pos_counts` has a key for every position in
-    `_PRESEASON_POS` (0 when none), plus "OTHER" only when something outside
-    that list was drafted. `team` (the player's NFL team abbr) comes from the
-    cached player DB; `adp` (Sleeper's published pre-season ADP for the
-    league's own format, or None) from `draft._fetch_adp_raw` -- neither is on
-    draft_board(), which is parity-adjacent. Both degrade to None off-network.
+    Returns `[{user_name, slot, pos_counts: {QB: n, ...}, avg_vs_adp,
+    picks: [{pick, player_name, player_id, position, team, adp, vs_adp}]}]`;
+    empty when the season has no draft board. `pos_counts` has a key for every
+    position in `_PRESEASON_POS` (0 when none), plus "OTHER" only when
+    something outside that list was drafted. `avg_vs_adp` is the MEAN of
+    `vs_adp` over this manager's picks that have an ADP (None if none do) --
+    the manager's average over/under vs the field's consensus, negative =
+    tended to reach, positive = tended to wait. `team` (the player's NFL team
+    abbr) comes from the cached player DB; `adp` (Sleeper's published
+    pre-season ADP for the league's own format, or None) from
+    `draft._fetch_adp_raw` -- neither is on draft_board(), which is
+    parity-adjacent. Both degrade to None off-network.
     """
     if board is None:
         board = draft.draft_board(s)
@@ -1512,8 +1516,19 @@ def _preseason_rosters(s, board=None) -> list[dict]:
                 "adp": round(float(adp), 1) if adp is not None else None,
                 "vs_adp": vs_adp,
             })
+        # Mean over/under vs the field's consensus across this manager's
+        # priced picks -- one summary-row figure, tinted like the per-pick
+        # column (negative/green = tended to draft ahead of ADP). Suppressed
+        # if the magnitude is implausible (> the draft's own pick count): a
+        # stub / partially-run draft can have ADP on a wildly different scale
+        # from its pick numbers, and a real average deviation can't exceed
+        # the number of picks made.
+        priced = [p["vs_adp"] for p in picks if p["vs_adp"] is not None]
+        avg_vs_adp = round(sum(priced) / len(priced), 1) if priced else None
+        if avg_vs_adp is not None and abs(avg_vs_adp) > len(b):
+            avg_vs_adp = None
         out.append({"user_name": name, "slot": slot, "pos_counts": pos_counts,
-                    "picks": picks})
+                    "avg_vs_adp": avg_vs_adp, "picks": picks})
     # Manager pick order: by draft slot ascending; a manager with no resolvable
     # slot (shouldn't happen for a real Sleeper draft) sinks to the bottom.
     out.sort(key=lambda e: e["slot"] if e["slot"] is not None else 999)
