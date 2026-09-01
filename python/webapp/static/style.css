@@ -1704,8 +1704,18 @@ tr.bench-impact td { background: color-mix(in srgb, #d9a441 8%, transparent); }
 
 /* Weekly Pre-season "Drafted Rosters" (_preseason_rosters.html). Its summary
    grid uses an all-fr --cols template (see the template), so it fills the
-   panel width with the slack spread proportionally -- no width cap here. The
-   generic #panel .dt-detail > table.dt-games rule forces width:100% + 28px
+   panel width with the slack spread proportionally -- no width cap here.
+   The position-count columns (.pc) are a compact CENTERED cluster; .pg1 (the
+   first one, QB) carries the hairline that separates the identity group
+   (Slot + Manager) from the count group. */
+#panel .preseason-rost .dt-head > .pc,
+#panel .preseason-rost .dt-row > summary > .pc {
+  text-align: center; font-variant-numeric: tabular-nums; }
+#panel .preseason-rost .dt-head > .pg1,
+#panel .preseason-rost .dt-row > summary > .pg1 {
+  border-left: 1px solid var(--line); padding-left: 12px;
+  margin-left: 2px; }
+/* The generic #panel .dt-detail > table.dt-games rule forces width:100% + 28px
    cell padding, which on the expanded pick table's 6 short columns (a
    round.pick string, two small ints, a signed 1-decimal, a name, a 2-3 letter
    team) spreads them out with big empty gaps. Let that inner table sit at its
@@ -1713,10 +1723,14 @@ tr.bench-impact td { background: color-mix(in srgb, #d9a441 8%, transparent); }
    rule's (1,2,3) score here with (1,2,3) + a class, later in the file. */
 #panel .preseason-rost .dt-detail > table.dt-games { width: auto; }
 #panel .preseason-rost .dt-detail > table.dt-games thead th,
-#panel .preseason-rost .dt-detail > table.dt-games tbody td { padding-right: 20px; }
+#panel .preseason-rost .dt-detail > table.dt-games tbody td { padding-right: 18px; }
 #panel .preseason-rost .dt-detail > table.dt-games thead th:last-child,
 #panel .preseason-rost .dt-detail > table.dt-games tbody td:last-child { padding-right: 0; }
-/* The player column is the one that should take any leftover room. */
+/* Columns 1-4 (Pick / Overall / ADP / +/-) are a numeric cluster; 5-6
+   (Player / Team) are identity. Widen the gap after +/- so the two groups
+   read apart, and let Player soak up any leftover width. */
+#panel .preseason-rost .dt-detail > table.dt-games thead th:nth-child(4),
+#panel .preseason-rost .dt-detail > table.dt-games tbody td:nth-child(4) { padding-right: 34px; }
 #panel .preseason-rost .dt-detail > table.dt-games td:nth-child(5) { width: 99%; }
 
 /* A drilltable that is NOT inside a .card is its own card: it already draws a

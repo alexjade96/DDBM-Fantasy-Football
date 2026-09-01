@@ -26,25 +26,26 @@
    <span class="pts dv-neg">red</span> when later. The <strong>Draft</strong>
    tab grades the picks in full.</p>
 <div class="tablewrap">
-{# EVERY column has an fr share so the table fills the panel width and the
-   slack is spread proportionally instead of pooling in one column. Pick-order
-   and the position counts have a small floor (a slot / count is 1-2 digits)
-   but still grow; Manager carries the bulk (a large fr weight). No trailing
-   fr spacer -- on a maximized window it ballooned into a dead gap on the
-   right and crammed every real column into the left third. See CLAUDE.md's
-   "give every column an fr share" panel-layout trap. #}
+{# Two column groups: IDENTITY (Slot + Manager, Manager taking the bulk of
+   the width via a large fr weight so the table fills the panel) and the
+   POSITION-COUNT block (a compact, centered cluster of 6-7 single-digit
+   columns with a modest fr each, so it grows a little but stays tight next
+   to Manager rather than each count floating in a wide column). `.pg1` on
+   the first count column draws the hairline that separates the two groups.
+   No trailing fr spacer -- on a maximized window it ballooned into a dead
+   gap on the right. See CLAUDE.md's "give every column an fr share" trap. #}
 <div class="drilltable preseason-rost"
-     style="--cols: minmax(5rem, 0.6fr) minmax(9rem, 4fr) repeat({{ 7 if has_other else 6 }}, minmax(2.4rem, 0.6fr))">
+     style="--cols: minmax(4rem, 0.5fr) minmax(9rem, 5fr) repeat({{ 7 if has_other else 6 }}, minmax(2.6rem, 0.35fr))">
   <div class="dt-head">
-    <span class="dt-num">Pick order</span>
+    <span class="dt-num">Slot</span>
     <span>Manager</span>
-    <span class="dt-num">QB</span>
-    <span class="dt-num">RB</span>
-    <span class="dt-num">WR</span>
-    <span class="dt-num">TE</span>
-    <span class="dt-num">K</span>
-    <span class="dt-num">DEF</span>
-    {% if has_other %}<span class="dt-num">Other</span>{% endif %}
+    <span class="pc pg1">QB</span>
+    <span class="pc">RB</span>
+    <span class="pc">WR</span>
+    <span class="pc">TE</span>
+    <span class="pc">K</span>
+    <span class="pc">DEF</span>
+    {% if has_other %}<span class="pc">Other</span>{% endif %}
   </div>
   {% for r in preseason_rosters %}
   <details class="dt-row">
@@ -52,9 +53,9 @@
       <span class="dt-num">{{ r.slot if r.slot is not none else "-" }}</span>
       <span>{{ idm.who(r.user_name) }}</span>
       {% for pos in ["QB", "RB", "WR", "TE", "K", "DEF"] %}
-      <span class="dt-num">{{ r.pos_counts.get(pos, 0) }}</span>
+      <span class="pc{% if loop.first %} pg1{% endif %}">{{ r.pos_counts.get(pos, 0) }}</span>
       {% endfor %}
-      {% if has_other %}<span class="dt-num">{{ r.pos_counts.get("OTHER", 0) }}</span>{% endif %}
+      {% if has_other %}<span class="pc">{{ r.pos_counts.get("OTHER", 0) }}</span>{% endif %}
     </summary>
     <div class="dt-detail">
       {# Overall (absolute pick_no) and ADP are the same scale; the +/- is
