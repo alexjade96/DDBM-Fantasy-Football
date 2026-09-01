@@ -1757,7 +1757,7 @@ tr.bench-impact td { background: color-mix(in srgb, #d9a441 8%, transparent); }
 #panel .preseason-rost .dt-detail > table.dt-games tbody td:nth-child(4),
 #panel .preseason-rost .dt-detail > table.dt-games thead th:nth-child(5),
 #panel .preseason-rost .dt-detail > table.dt-games tbody td:nth-child(5) {
-  padding-left: 26px; }
+  padding-left: 38px; }
 /* Player (col 7) -- left, content width; a modest min-width so a short name
    still gives the headshot + tag room */
 #panel .preseason-rost .dt-detail > table.dt-games thead th:nth-child(7),
@@ -1768,7 +1768,7 @@ tr.bench-impact td { background: color-mix(in srgb, #d9a441 8%, transparent); }
    padding-left, same as the numeric group above). */
 #panel .preseason-rost .dt-detail > table.dt-games thead th:last-child,
 #panel .preseason-rost .dt-detail > table.dt-games tbody td:last-child {
-  width: 1%; padding-left: 26px; text-align: left; }
+  width: 1%; padding-left: 38px; text-align: left; }
 /* The two spacer columns absorb the leftover width, but UNEQUALLY: Group 1
    is a single short column (Pick), so the gap after it needs less than the
    gap between the two wide blocks (Overall/ADP/+/- and Player/Team). The
