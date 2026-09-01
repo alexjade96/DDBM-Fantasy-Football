@@ -476,6 +476,54 @@ def pick(league_id: str, season: str | None, fresh: bool = False):
     return d, d["seasons"][key], key
 
 
+# --- first-load warm-up -------------------------------------------------------
+# The htmx `preload` extension (index.html) warms a tab's HTML + chart <img>
+# URLs on hover, which is most navigation. This complements it for the FIRST
+# visit: once the landing Overview has loaded, a background thread pre-computes
+# the heavy per-manager / per-week metric frames the Roster, Draft and
+# Transactions tabs each need, so they land in metrics._cached / draft.py's own
+# cache before the user gets there. Data only -- NOT chart rendering (matplotlib
+# is serialised under plots._render_lock, so warming charts would block the
+# ones the user is actually waiting on). Best-effort and silent: every call is
+# wrapped, a failure just means that tab pays its own cost later as it did
+# before. One warm-up per (league, season); the guard set is never cleared
+# (a re-`refresh` clears the underlying caches, and re-warming is cheap enough
+# not to matter).
+_warm_lock = threading.Lock()
+_warmed: set[str] = set()
+
+
+def _warm_league_season(s) -> None:
+    """Pre-populate the metric caches a cold Roster/Draft/Transactions tab hits.
+    Runs on a daemon thread off the request path; never raises.
+
+    Only the four functions wrapped in metrics._cached are worth warming here
+    (coaching_detail etc. aren't cached, so a thread call would be thrown-away
+    work); draft_board() memoises itself per league:season in draft.py."""
+    for fn in (metrics.roster_detail, metrics.roster_weeks,
+               metrics.roster_honors, metrics.player_honors):
+        try:
+            fn(s)
+        except Exception:
+            pass
+    try:
+        draft.draft_board(s)
+    except Exception:
+        pass
+
+
+def _warm_async(s) -> None:
+    """Kick off _warm_league_season on a daemon thread, once per (league,
+    season). Cheap no-op on every call after the first for that key."""
+    key = f"{getattr(s, 'league_id', '')}:{getattr(s, 'season', '')}"
+    with _warm_lock:
+        if key in _warmed:
+            return
+        _warmed.add(key)
+    threading.Thread(target=_warm_league_season, args=(s,),
+                     name=f"warm-{key}", daemon=True).start()
+
+
 # FAAB bid per waiver transaction. `settings.waiver_bid` rides on every raw
 # Sleeper waiver transaction but is dropped by season._unnest_transactions
 # (which mirrors the R frame -- adding a column there would be a parity change),
@@ -2113,6 +2161,10 @@ def tab(name: str, request: Request, league: str = DEFAULT_LEAGUE,
         ctx["boot"] = True
         ctx["seasons"] = list(reversed(d["names"]))
         ctx["league_name"] = s.name
+        # First view of this league/season: warm the Roster/Draft/Transactions
+        # metric caches in the background so those tabs are quick to open. Off
+        # the request path (daemon thread), best-effort, once per key.
+        _warm_async(s)
 
     if name == "overview":
         # Which real-world phase the season is in RIGHT NOW decides the whole

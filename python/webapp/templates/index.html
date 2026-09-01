@@ -11,6 +11,11 @@
   {# ?v=<mtime> so a CSS edit is never served from a stale browser cache #}
   <link rel="stylesheet" href="/static/style.css?v={{ asset_v }}">
   <script src="https://unpkg.com/htmx.org@1.9.12" defer></script>
+  {# preload extension: a tab's panel is fetched in the background on hover
+     (and its lazy-part / chart <img> URLs warmed too, preload-images) so the
+     click that follows swaps an already-cached response. Same origin as htmx
+     itself. See the .tabs nav below. #}
+  <script src="https://unpkg.com/htmx.org@1.9.12/dist/ext/preload.js" defer></script>
   {# The visual playoff-bracket builder (SMBuilder). Sits on window.SMBracket
      (defined inline below) and the /playoffs data endpoints. #}
   <script src="/static/builder.js?v={{ asset_v }}" defer></script>
@@ -455,10 +460,16 @@
     })();
   </script>
 
-  <nav class="tabs" role="tablist" hx-push-url="true"
+  {# hx-ext="preload": each tab button below carries preload="mouseover", so
+     hovering a tab fetches its /tab/<id> panel (and, via preload-images, the
+     chart <img> URLs it contains) in the background; the subsequent click
+     swaps from cache. A hover that doesn't lead to a click costs one warmed
+     request -- responses are cheap once league_data() is cached, and every
+     heavy tab already memoises its own per-manager/week work. #}
+  <nav class="tabs" role="tablist" hx-push-url="true" hx-ext="preload"
        hx-target="#panel" hx-swap="innerHTML" hx-include="#league, #season, #theme, #bracket">
     {% for id, label in tabs %}
-    <button role="tab" hx-get="/tab/{{ id }}"
+    <button role="tab" hx-get="/tab/{{ id }}" preload="mouseover" preload-images="true"
             class="{% if id == initial_tab %}active{% endif %}"
             onclick="document.querySelectorAll('.tabs button').forEach(b=>b.classList.remove('active'));this.classList.add('active')">
       {{ label }}
