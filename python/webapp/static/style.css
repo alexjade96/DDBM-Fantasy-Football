@@ -1715,43 +1715,43 @@ tr.bench-impact td { background: color-mix(in srgb, #d9a441 8%, transparent); }
 #panel .preseason-rost .dt-row > summary > .pg1 {
   border-left: 1px solid var(--line); padding-left: 12px;
   margin-left: 2px; }
-/* The expanded pick table fills the panel width the same way the summary
-   grid does: table-layout:fixed + a percentage per column (the <table>
-   analogue of the summary grid's per-track fr weights), so the slack is
-   spread proportionally rather than pooled into one column.
-
-   THREE column groups, each STARTING with a hairline border-left (the same
-   cue the summary row's .pg1 separator uses), the first group aside:
+/* The expanded pick table fills the panel width (table-layout:fixed +
+   width:100% + a percentage per column, the <table> analogue of the summary
+   grid's per-track fr weights) and groups its columns the SAME contextual
+   way the season report's _mini_table does: a real empty spacer column
+   (<td class="gap-col">) between groups, not cell padding or a border line.
+   Under table-layout:fixed a cell's padding can't shift a sibling column's
+   boundary, so the spacer is the only thing that actually pushes groups
+   apart; it takes its own small fixed width in the proportional pool.
+   Groups:
      1. Pick                 -- the league's round.pick notation, own scale
-     2. Overall / ADP / +/-  -- one comparison ("Overall, same scale as ADP,
-        minus ADP" -- read straight across); .dt-num right-aligns them
+     2. Overall / ADP / +/-  -- one comparison (.dt-num right-aligns them)
      3. Player / Team         -- identity, read as a pair
-   The separator sits at the group-start column's left edge with the content
-   pushed in by padding-left; columns inside a group keep the base gap.
-   Player carries the bulk of the width but is not so wide that Team floats
-   off from the name. */
+   Cols: Pick 9 | gap 3 | Overall 11 | ADP 11 | +/- 12 | gap 3 | Player 34
+         | Team 17  (== 100). */
 #panel .preseason-rost .dt-detail > table.dt-games { width: 100%; table-layout: fixed; }
 #panel .preseason-rost .dt-detail > table.dt-games thead th,
 #panel .preseason-rost .dt-detail > table.dt-games tbody td {
-  padding-right: 14px; overflow: hidden; text-overflow: ellipsis; }
-/* group 1: Pick */
+  padding-right: 12px; overflow: hidden; text-overflow: ellipsis; }
 #panel .preseason-rost .dt-detail > table.dt-games thead th:nth-child(1),
-#panel .preseason-rost .dt-detail > table.dt-games tbody td:nth-child(1) { width: 10%; }
-/* group 2: Overall / ADP / +/-  -- starts at col 2 with the separator */
-#panel .preseason-rost .dt-detail > table.dt-games thead th:nth-child(2),
-#panel .preseason-rost .dt-detail > table.dt-games tbody td:nth-child(2) {
-  width: 11%; border-left: 1px solid var(--line); padding-left: 18px; }
+#panel .preseason-rost .dt-detail > table.dt-games tbody td:nth-child(1) { width: 9%; }
 #panel .preseason-rost .dt-detail > table.dt-games thead th:nth-child(3),
 #panel .preseason-rost .dt-detail > table.dt-games tbody td:nth-child(3) { width: 11%; }
 #panel .preseason-rost .dt-detail > table.dt-games thead th:nth-child(4),
-#panel .preseason-rost .dt-detail > table.dt-games tbody td:nth-child(4) { width: 12%; }
-/* group 3: Player / Team  -- starts at col 5 with the separator */
+#panel .preseason-rost .dt-detail > table.dt-games tbody td:nth-child(4) { width: 11%; }
 #panel .preseason-rost .dt-detail > table.dt-games thead th:nth-child(5),
-#panel .preseason-rost .dt-detail > table.dt-games tbody td:nth-child(5) {
-  width: 39%; border-left: 1px solid var(--line); padding-left: 18px; }
+#panel .preseason-rost .dt-detail > table.dt-games tbody td:nth-child(5) { width: 12%; }
+#panel .preseason-rost .dt-detail > table.dt-games thead th:nth-child(7),
+#panel .preseason-rost .dt-detail > table.dt-games tbody td:nth-child(7) { width: 34%; }
 #panel .preseason-rost .dt-detail > table.dt-games thead th:last-child,
 #panel .preseason-rost .dt-detail > table.dt-games tbody td:last-child {
   width: 17%; padding-right: 0; }
+/* The spacer column: its own small fixed width, no padding of its own
+   (nothing to pad), but border-bottom is left intact or the row's divider
+   breaks at every gap. Same treatment as report._CSS's .gap-col. */
+#panel .preseason-rost .dt-detail > table.dt-games thead th.gap-col,
+#panel .preseason-rost .dt-detail > table.dt-games tbody td.gap-col {
+  width: 3%; padding: 0; border-left: 0; border-right: 0; border-top: 0; }
 
 /* A drilltable that is NOT inside a .card is its own card: it already draws a
    border and radius, so wrapping it in .card framed it twice (a frame in a
