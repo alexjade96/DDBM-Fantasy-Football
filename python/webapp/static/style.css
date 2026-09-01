@@ -1728,24 +1728,42 @@ tr.bench-impact td { background: color-mix(in srgb, #d9a441 8%, transparent); }
      2. Overall / ADP / +/-  -- one comparison (.dt-num right-aligns them)
      3. Player / Team         -- identity, read as a pair
    Cols: Pick 9 | gap 3 | Overall 11 | ADP 11 | +/- 12 | gap 3 | Player 34
-         | Team 17  (== 100). */
+         | Team 17  (== 100).
+
+   text-align is set here on BOTH th and td per column: the generic
+   `table.dt-games th { text-align: left }` (0,1,1) otherwise outranks the
+   `.dt-num` class (0,1,0) the template puts on the numeric headers, so the
+   header sat left-aligned above a right-aligned cell -- the "not lining up"
+   symptom. */
 #panel .preseason-rost .dt-detail > table.dt-games { width: 100%; table-layout: fixed; }
 #panel .preseason-rost .dt-detail > table.dt-games thead th,
 #panel .preseason-rost .dt-detail > table.dt-games tbody td {
   padding-right: 12px; overflow: hidden; text-overflow: ellipsis; }
+/* Pick (col 1) -- left */
 #panel .preseason-rost .dt-detail > table.dt-games thead th:nth-child(1),
-#panel .preseason-rost .dt-detail > table.dt-games tbody td:nth-child(1) { width: 9%; }
+#panel .preseason-rost .dt-detail > table.dt-games tbody td:nth-child(1) {
+  width: 9%; text-align: left; }
+/* Overall / ADP / +/- (cols 3-5) -- right, header and cell together */
+#panel .preseason-rost .dt-detail > table.dt-games thead th:nth-child(3),
+#panel .preseason-rost .dt-detail > table.dt-games tbody td:nth-child(3),
+#panel .preseason-rost .dt-detail > table.dt-games thead th:nth-child(4),
+#panel .preseason-rost .dt-detail > table.dt-games tbody td:nth-child(4),
+#panel .preseason-rost .dt-detail > table.dt-games thead th:nth-child(5),
+#panel .preseason-rost .dt-detail > table.dt-games tbody td:nth-child(5) {
+  text-align: right; font-variant-numeric: tabular-nums; }
 #panel .preseason-rost .dt-detail > table.dt-games thead th:nth-child(3),
 #panel .preseason-rost .dt-detail > table.dt-games tbody td:nth-child(3) { width: 11%; }
 #panel .preseason-rost .dt-detail > table.dt-games thead th:nth-child(4),
 #panel .preseason-rost .dt-detail > table.dt-games tbody td:nth-child(4) { width: 11%; }
 #panel .preseason-rost .dt-detail > table.dt-games thead th:nth-child(5),
 #panel .preseason-rost .dt-detail > table.dt-games tbody td:nth-child(5) { width: 12%; }
+/* Player (col 7) / Team (col 8) -- left */
 #panel .preseason-rost .dt-detail > table.dt-games thead th:nth-child(7),
-#panel .preseason-rost .dt-detail > table.dt-games tbody td:nth-child(7) { width: 34%; }
+#panel .preseason-rost .dt-detail > table.dt-games tbody td:nth-child(7) {
+  width: 34%; text-align: left; }
 #panel .preseason-rost .dt-detail > table.dt-games thead th:last-child,
 #panel .preseason-rost .dt-detail > table.dt-games tbody td:last-child {
-  width: 17%; padding-right: 0; }
+  width: 17%; padding-right: 0; text-align: left; }
 /* The spacer column: its own small fixed width, no padding of its own
    (nothing to pad), but border-bottom is left intact or the row's divider
    breaks at every gap. Same treatment as report._CSS's .gap-col. */
