@@ -1733,16 +1733,19 @@ tr.bench-impact td { background: color-mix(in srgb, #d9a441 8%, transparent); }
    `.dt-num` class (0,1,0) the template puts on the numeric headers, so a
    header sat left-aligned above a right-aligned cell. */
 #panel .preseason-rost .dt-detail > table.dt-games { width: 100%; table-layout: auto; }
-/* Base within-group breathing room after each column's content (the group
-   gaps themselves are the two flexing spacer columns, below). */
 #panel .preseason-rost .dt-detail > table.dt-games thead th,
 #panel .preseason-rost .dt-detail > table.dt-games tbody td {
-  padding-right: 18px; white-space: nowrap; }
+  padding: 7px 0; white-space: nowrap; }
 /* Pick (col 1) -- left, content width */
 #panel .preseason-rost .dt-detail > table.dt-games thead th:nth-child(1),
 #panel .preseason-rost .dt-detail > table.dt-games tbody td:nth-child(1) {
   width: 1%; text-align: left; }
-/* Overall / ADP / +/- (cols 3-5) -- right, content width, header + cell together */
+/* Overall / ADP / +/- (cols 3-5) -- right, content width, header + cell
+   together. Within-group spacing is padding-LEFT here, not padding-right:
+   these cells are right-aligned, so padding-right just shifts the value
+   inward from its own edge and opens NO gap to the next column -- the gap
+   between two right-aligned columns comes from the LATER one's padding-left
+   pushing its content away from the previous column's edge. */
 #panel .preseason-rost .dt-detail > table.dt-games thead th:nth-child(3),
 #panel .preseason-rost .dt-detail > table.dt-games tbody td:nth-child(3),
 #panel .preseason-rost .dt-detail > table.dt-games thead th:nth-child(4),
@@ -1750,16 +1753,22 @@ tr.bench-impact td { background: color-mix(in srgb, #d9a441 8%, transparent); }
 #panel .preseason-rost .dt-detail > table.dt-games thead th:nth-child(5),
 #panel .preseason-rost .dt-detail > table.dt-games tbody td:nth-child(5) {
   width: 1%; text-align: right; font-variant-numeric: tabular-nums; }
+#panel .preseason-rost .dt-detail > table.dt-games thead th:nth-child(4),
+#panel .preseason-rost .dt-detail > table.dt-games tbody td:nth-child(4),
+#panel .preseason-rost .dt-detail > table.dt-games thead th:nth-child(5),
+#panel .preseason-rost .dt-detail > table.dt-games tbody td:nth-child(5) {
+  padding-left: 26px; }
 /* Player (col 7) -- left, content width; a modest min-width so a short name
-   still gives the headshot + tag room, but NOT so large it swallows the
-   Group 2 -> Group 3 gap (that's the second spacer's job) */
+   still gives the headshot + tag room */
 #panel .preseason-rost .dt-detail > table.dt-games thead th:nth-child(7),
 #panel .preseason-rost .dt-detail > table.dt-games tbody td:nth-child(7) {
   width: 1%; min-width: 9rem; text-align: left; }
-/* Team (col 8) -- left, content width */
+/* Team (col 8) -- left, content width; padding-left for the within-group gap
+   from Player (left-aligned columns: the gap comes from the later column's
+   padding-left, same as the numeric group above). */
 #panel .preseason-rost .dt-detail > table.dt-games thead th:last-child,
 #panel .preseason-rost .dt-detail > table.dt-games tbody td:last-child {
-  width: 1%; padding-right: 0; text-align: left; }
+  width: 1%; padding-left: 26px; text-align: left; }
 /* The two spacer columns absorb the leftover width, but UNEQUALLY: Group 1
    is a single short column (Pick), so the gap after it needs less than the
    gap between the two wide blocks (Overall/ADP/+/- and Player/Team). The
