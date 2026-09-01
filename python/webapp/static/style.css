@@ -1760,14 +1760,21 @@ tr.bench-impact td { background: color-mix(in srgb, #d9a441 8%, transparent); }
 #panel .preseason-rost .dt-detail > table.dt-games thead th:last-child,
 #panel .preseason-rost .dt-detail > table.dt-games tbody td:last-child {
   width: 1%; padding-right: 0; text-align: left; }
-/* The two spacer columns: width:50% EACH so table-layout:auto splits the
-   leftover width evenly between them (two width:100% columns get
-   front-loaded by the auto algorithm -- the first gap ballooned and the
-   second collapsed). No padding (nothing to pad); keep border-bottom or
-   the row divider breaks at every gap. */
+/* The two spacer columns absorb the leftover width, but UNEQUALLY: Group 1
+   is a single short column (Pick), so the gap after it needs less than the
+   gap between the two wide blocks (Overall/ADP/+/- and Player/Team). The
+   first spacer (.gap-col) gets ~40%, the second (.gap-col.gap-wide) ~60%,
+   so the whitespace between the visible content blocks reads more evenly
+   across the row. Percentages under table-layout:auto are a proportional
+   split of whatever's left after the content-sized real columns. No
+   padding (nothing to pad); keep border-bottom or the row divider breaks
+   at every gap. */
 #panel .preseason-rost .dt-detail > table.dt-games thead th.gap-col,
 #panel .preseason-rost .dt-detail > table.dt-games tbody td.gap-col {
-  width: 50%; padding: 0; border-left: 0; border-right: 0; border-top: 0; }
+  width: 40%; padding: 0; border-left: 0; border-right: 0; border-top: 0; }
+#panel .preseason-rost .dt-detail > table.dt-games thead th.gap-col.gap-wide,
+#panel .preseason-rost .dt-detail > table.dt-games tbody td.gap-col.gap-wide {
+  width: 60%; }
 
 /* A drilltable that is NOT inside a .card is its own card: it already draws a
    border and radius, so wrapping it in .card framed it twice (a frame in a

@@ -67,15 +67,18 @@
          name (no rank -- pre-season), not its own column.
 
          Three column groups -- Pick | Overall/ADP/+/- | Player/Team -- set
-         apart by a real empty spacer column (<td class="gap-col">), the same
-         contextual grouping the season report's _mini_table uses, rather
-         than cell padding or a border line. The .preseason-rost CSS sizes
-         every column (table-layout:fixed) including the two spacers. #}
+         apart by a real empty spacer column, the same contextual grouping
+         the season report's _mini_table uses, rather than cell padding or a
+         border line. The two spacers flex to absorb the leftover width (see
+         .preseason-rost CSS); the FIRST is `.gap-col` (narrower -- Group 1
+         is a single short column) and the SECOND `.gap-col.gap-wide`
+         (wider), so the whitespace between the visible content blocks reads
+         more evenly across the row. #}
       <table class="dt-games">
         <thead>
           <tr><th>Pick</th><th class="gap-col"></th>
             <th class="dt-num">Overall</th><th class="dt-num">ADP</th><th class="dt-num">+/-</th>
-            <th class="gap-col"></th><th>Player</th><th>Team</th></tr>
+            <th class="gap-col gap-wide"></th><th>Player</th><th>Team</th></tr>
         </thead>
         <tbody>
           {% for p in r.picks %}
@@ -85,7 +88,7 @@
             <td class="dt-num">{{ p.pick_no if p.pick_no is not none else "N/A" }}</td>
             <td class="dt-num">{{ "%.1f"|format(p.adp) if p.adp is not none else "N/A" }}</td>
             <td class="dt-num">{% if p.vs_adp is not none %}<span class="pts{% if p.vs_adp < 0 %} dv-pos{% elif p.vs_adp > 0 %} dv-neg{% endif %}">{{ "%+.1f"|format(p.vs_adp) }}</span>{% else %}N/A{% endif %}</td>
-            <td class="gap-col"></td>
+            <td class="gap-col gap-wide"></td>
             <td>{{ idm.headshot(p.player_id) }}{{ p.player_name }}{% if p.position %} <span class="q">{{ p.position }}</span>{% endif %}</td>
             <td><span class="q">{{ p.team or "N/A" }}</span></td>
           </tr>
