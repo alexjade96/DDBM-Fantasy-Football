@@ -1727,8 +1727,11 @@ tr.bench-impact td { background: color-mix(in srgb, #d9a441 8%, transparent); }
      1. Pick                 -- the league's round.pick notation, own scale
      2. Overall / ADP / +/-  -- one comparison (.dt-num right-aligns them)
      3. Player / Team         -- identity, read as a pair
-   Cols: Pick 9 | gap 3 | Overall 11 | ADP 11 | +/- 12 | gap 3 | Player 34
-         | Team 17  (== 100).
+   The two spacers take a FIXED width (1.8rem, ~29px -- close to the season
+   report's own 3ch _GAP_CH, and constant instead of scaling with the panel
+   like a % would); the real columns' percentages then split whatever
+   width:100% leaves after the two spacers. Real-column % sum to 100:
+   Pick 9 | Overall 11 | ADP 11 | +/- 12 | Player 40 | Team 17.
 
    text-align is set here on BOTH th and td per column: the generic
    `table.dt-games th { text-align: left }` (0,1,1) otherwise outranks the
@@ -1760,16 +1763,17 @@ tr.bench-impact td { background: color-mix(in srgb, #d9a441 8%, transparent); }
 /* Player (col 7) / Team (col 8) -- left */
 #panel .preseason-rost .dt-detail > table.dt-games thead th:nth-child(7),
 #panel .preseason-rost .dt-detail > table.dt-games tbody td:nth-child(7) {
-  width: 34%; text-align: left; }
+  width: 40%; text-align: left; }
 #panel .preseason-rost .dt-detail > table.dt-games thead th:last-child,
 #panel .preseason-rost .dt-detail > table.dt-games tbody td:last-child {
   width: 17%; padding-right: 0; text-align: left; }
-/* The spacer column: its own small fixed width, no padding of its own
-   (nothing to pad), but border-bottom is left intact or the row's divider
-   breaks at every gap. Same treatment as report._CSS's .gap-col. */
+/* The spacer columns: a fixed width (constant, not panel-scaled), no
+   padding of their own (nothing to pad), but border-bottom is left intact
+   or the row's divider breaks at every gap. Same idea as report._CSS's
+   .gap-col (which uses a fixed 3ch _GAP_CH). */
 #panel .preseason-rost .dt-detail > table.dt-games thead th.gap-col,
 #panel .preseason-rost .dt-detail > table.dt-games tbody td.gap-col {
-  width: 3%; padding: 0; border-left: 0; border-right: 0; border-top: 0; }
+  width: 1.8rem; padding: 0; border-left: 0; border-right: 0; border-top: 0; }
 
 /* A drilltable that is NOT inside a .card is its own card: it already draws a
    border and radius, so wrapping it in .card framed it twice (a frame in a
