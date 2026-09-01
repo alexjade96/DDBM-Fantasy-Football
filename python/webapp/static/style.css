@@ -1733,9 +1733,11 @@ tr.bench-impact td { background: color-mix(in srgb, #d9a441 8%, transparent); }
    `.dt-num` class (0,1,0) the template puts on the numeric headers, so a
    header sat left-aligned above a right-aligned cell. */
 #panel .preseason-rost .dt-detail > table.dt-games { width: 100%; table-layout: auto; }
+/* Base within-group breathing room after each column's content (the group
+   gaps themselves are the two flexing spacer columns, below). */
 #panel .preseason-rost .dt-detail > table.dt-games thead th,
 #panel .preseason-rost .dt-detail > table.dt-games tbody td {
-  padding-right: 12px; white-space: nowrap; }
+  padding-right: 18px; white-space: nowrap; }
 /* Pick (col 1) -- left, content width */
 #panel .preseason-rost .dt-detail > table.dt-games thead th:nth-child(1),
 #panel .preseason-rost .dt-detail > table.dt-games tbody td:nth-child(1) {
