@@ -25,3 +25,21 @@ jobs:
         env:
           SLEEPERMETRICS_NO_IMAGES: "1"
         run: python -m pytest -q
+
+  deploy-health:
+    # Informational only: Render auto-deploys from main regardless of this job.
+    # A red X here means the new revision booted but /health did not answer.
+    if: github.ref == 'refs/heads/main'
+    needs: python
+    runs-on: ubuntu-latest
+    steps:
+      - name: Wait for Render to redeploy, then check /health
+        run: |
+          sleep 120
+          for i in $(seq 1 10); do
+            if curl -fsS https://ddbm-fantasy-football.onrender.com/health; then
+              echo "healthy"; exit 0
+            fi
+            echo "retry $i"; sleep 20
+          done
+          echo "::error::/health did not come back after the deploy"; exit 1

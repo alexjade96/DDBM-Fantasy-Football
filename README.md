@@ -129,10 +129,7 @@ The weekly Discord recap runs on a GitHub Actions scheduled workflow rather than
 a Render cron (Render crons are paid). Hugging Face Spaces is a fallback (same
 `Dockerfile`, no card) but the Space is public.
 
-Full rationale, the platform comparison, and a step-by-step action checklist are
-in [`docs/hosting-cicd-plan.md`](docs/hosting-cicd-plan.md) and
-[`docs/hosting-cicd-actions.md`](docs/hosting-cicd-actions.md). See also
-[`python/webapp/README.md`](python/webapp/README.md).
+See also [`python/webapp/README.md`](python/webapp/README.md).
 
 ---
 
