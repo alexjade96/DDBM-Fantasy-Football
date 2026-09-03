@@ -1594,6 +1594,26 @@ def test_plot_standings_renders(tmp_path, season_obj):
     assert os.path.exists(p)
 
 
+def test_standings_and_power_rank_charts_no_500_on_unscored_season(season_obj):
+    """A season Sleeper marks complete/in_season but whose regular-season
+    team_wk has no positive points (a defunct or playoffs-only season) used to
+    500 on a raw GET /chart/standings -- `points.max()` is NaN and set_xlim
+    raises "Axis limits cannot be NaN or Inf". Both charts must degrade to a
+    titled blank panel instead, like every other frame-derived chart."""
+    import dataclasses
+
+    import matplotlib.pyplot as plt
+    blank = dataclasses.replace(
+        season_obj,
+        standings=season_obj.standings.assign(points=0.0),
+        team_wk=season_obj.team_wk.assign(points=0.0),
+    )
+    for fn in (plots.plot_standings, plots.plot_power_rank):
+        fig = fn(blank)
+        assert fig is not None
+        plt.close(fig)
+
+
 # --- per-account import: team names + icons ---------------------------------
 def test_avatar_url_handles_both_sleeper_shapes():
     from sleepermetrics.season import avatar_url

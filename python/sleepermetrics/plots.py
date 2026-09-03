@@ -351,6 +351,12 @@ def save(fig, path: str) -> str:
 
 def plot_standings(s: Season):
     d = s.standings.sort_values("final_position", ascending=False).reset_index(drop=True)
+    # A pre-season / unstarted season has a standings frame with no rows, or
+    # rows whose points are all NaN/0 -- `xmax` is then NaN and set_xlim below
+    # raises "Axis limits cannot be NaN or Inf". Same guard the other frame-
+    # derived charts already carry (plot_efficiency, plot_flex_usage, ...).
+    if d.empty or not (d["points"].fillna(0) > 0).any():
+        return _no_data(f"No standings for {s.season} yet.")
     pal = palette(d["user_name"])
     fig, ax = plt.subplots(figsize=(9, 6))
     ax.barh(range(len(d)), d["points"], color=[pal[n] for n in d["user_name"]],
@@ -566,6 +572,11 @@ def plot_allplay(s: Season):
 def plot_power_rank(s: Season):
     """Composite power ranking (mirrors R sl_plot_power_rank)."""
     d = metrics.power_rank(s).sort_values("power").reset_index(drop=True)
+    # An unstarted season has no power scores -- `span` is then NaN and the
+    # set_xlim below raises "Axis limits cannot be NaN or Inf". Same guard the
+    # other frame-derived charts carry.
+    if d.empty or not d["power"].notna().any():
+        return _no_data(f"No power ranking for {s.season} yet.")
     fig, ax = plt.subplots(figsize=(9.5, 6))
     colors = ["#2c7fb8" if v > 0 else "#c0563f" for v in d["power"]]
     ax.barh(range(len(d)), d["power"], color=colors, height=0.72, zorder=2)

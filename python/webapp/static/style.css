@@ -257,12 +257,35 @@ img { display: block; width: 100%; height: auto; border-radius: 7px; }
 @keyframes shimmer { 0% { background-position: 220% 0; } 100% { background-position: -120% 0; } }
 @media (prefers-reduced-motion: reduce) { .skeleton { animation: none; } }
 
-/* Per-chart loading skeleton. While a figure carries `.skeleton` it reserves
-   height and shows the shimmer; the image fades in once it loads. Wired up in
-   index.html on every htmx swap, so no per-chart markup is needed. */
-.card.chart.skeleton { min-height: 300px; }
+/* Per-chart loading skeleton. The figure carries an inline `aspect-ratio`
+   (set in _chartmacro.html, wide vs normal) so the shimmer reserves a box the
+   SHAPE of the coming chart, not a flat strip -- the page barely moves when the
+   PNG swaps in. Once the image loads, `prepCharts()` removes `.skeleton` and
+   this rule drops the reserved ratio so the real PNG's natural height wins. */
+.card.chart.skeleton { min-height: 0; }
+.card.chart:not(.skeleton):not(.chart-failed) { aspect-ratio: auto !important; }
 .card.chart img { opacity: 0; transition: opacity .3s ease; }
 .card.chart img.loaded { opacity: 1; }
+
+/* A chart whose PNG failed to load: a one-click Retry instead of a silent gap
+   (prepCharts() in index.html builds the button). Keeps the figure's reserved
+   aspect-ratio box so the grid doesn't reflow. */
+.card.chart.chart-failed { display: grid; place-items: center; }
+.card.chart.chart-failed img { display: none; }
+.chart-retry { font: inherit; font-size: 13px; padding: 8px 14px; border-radius: 8px;
+  border: 1px solid var(--line); background: var(--surface); color: var(--muted);
+  cursor: pointer; }
+.chart-retry:hover { color: var(--ink); border-color: var(--turf); }
+
+/* First-load panel skeleton (index.html's <main> before the boot=1 fetch
+   swaps in the real Overview). Shares the .skeleton shimmer; shape mimics the
+   Overview's tile row + chart grid so the swap doesn't jump. */
+.panel-boot { display: grid; gap: 16px; }
+.panel-boot .pb-tiles { height: 92px; border-radius: 12px; }
+.panel-boot .pb-grid { display: grid; gap: 16px;
+  grid-template-columns: repeat(auto-fit, minmax(460px, 1fr)); }
+.panel-boot .pb-chart { aspect-ratio: 3 / 2; border-radius: 12px; }
+@media (max-width: 720px) { .panel-boot .pb-grid { grid-template-columns: 1fr; } }
 /* Per-chart insight caption, interspersed with each graphic. */
 .card.chart figcaption { color: var(--muted); font-size: 12.5px; line-height: 1.45;
   margin-top: 8px; padding: 0 4px 2px; }

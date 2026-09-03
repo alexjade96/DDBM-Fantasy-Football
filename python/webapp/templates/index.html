@@ -125,16 +125,48 @@
     // Per-chart loading skeleton: after each panel swap, give every chart figure
     // a shimmer placeholder until its PNG loads (or errors), then fade the image
     // in. Runs once per image (data-sk guard), and handles the cached case where
-    // the image is already complete.
+    // the image is already complete. On error the figure shows a one-click
+    // Retry instead of a silent empty gap (a flaky Sleeper API or a slow cold
+    // render is exactly what the free host will hit).
     function prepCharts() {
       document.querySelectorAll('.card.chart img:not([data-sk])').forEach(function (img) {
         img.setAttribute('data-sk', '1');
         var fig = img.closest('.card.chart');
-        var done = function () { fig.classList.remove('skeleton'); img.classList.add('loaded'); };
-        if (img.complete && img.naturalWidth) { done(); return; }
+        var ok = function () {
+          fig.classList.remove('skeleton', 'chart-failed'); img.classList.add('loaded');
+        };
+        var fail = function () {
+          fig.classList.remove('skeleton');
+          fig.classList.add('chart-failed');
+          if (fig.querySelector('.chart-retry')) return;
+          var b = document.createElement('button');
+          b.className = 'chart-retry';
+          b.textContent = 'Chart didn’t load. Retry';
+          b.onclick = function () {
+            b.remove();
+            fig.classList.remove('chart-failed');
+            fig.classList.add('skeleton');
+            img.classList.remove('loaded');
+            // Re-point src with a fresh cache-buster so the browser refetches.
+            img.src = /([?&])_=\d+/.test(img.src)
+              ? img.src.replace(/([?&])_=\d+/, '$1_=' + Date.now())
+              : img.src + '&_=' + Date.now();
+          };
+          fig.appendChild(b);
+        };
+        if (img.complete && img.naturalWidth) { ok(); return; }
         fig.classList.add('skeleton');
-        img.addEventListener('load', done);
-        img.addEventListener('error', done);   // a failed chart shouldn't shimmer forever
+        img.addEventListener('load', ok);
+        img.addEventListener('error', fail);
+      });
+      // Hint the browser to request the first couple of charts in each grid
+      // ahead of the rest, so the server's single render lock serves
+      // top-of-panel charts first and the shimmer resolves top-to-bottom
+      // rather than in scrambled arrival order. Ignored by older browsers.
+      document.querySelectorAll('.grid').forEach(function (g) {
+        g.querySelectorAll('.card.chart img').forEach(function (im, i) {
+          im.setAttribute('fetchpriority', i < 2 ? 'high' : 'low');
+        });
       });
     }
     // Click a column header to sort any panel table. Cells are ranked by their
@@ -357,6 +389,120 @@
     document.body.addEventListener('htmx:afterSwap', prepRosterFilters);
     document.body.addEventListener('htmx:afterSwap', prepDraftFilters);
 
+    // --- Background chart warm ------------------------------------------------
+    // After the first Overview panel settles, quietly fetch every OTHER tab's
+    // panel HTML and every /chart/ PNG + lazy tab-part inside it, one at a
+    // time, so a later tab click is an instant swap with images already in the
+    // browser cache (prepCharts then sees img.complete and never shimmers).
+    //
+    // Never competes with a real request: waitIdle() pauses the walk while any
+    // htmx request is in flight, while a warm fetch of its own is pending, and
+    // while the browser tab is hidden. Sequential + an 80ms gap between fetches
+    // so the server's single plots._render_lock drains in order and a real
+    // click's chart jumps ahead naturally. Best-effort: a warm miss just means
+    // that chart renders on click as it does today. Depth: charts + one level
+    // into each lazy part, in the viewer's CURRENT theme (the other theme
+    // re-renders on the rare OS dark/light toggle). Testing is prototypes, not
+    // in the list. Restarts on a league/season switch (panel from /load).
+    (function backgroundWarm() {
+      var TABS = ['weekly', 'playoffs', 'roster', 'draft',
+                  'transactions', 'career', 'report'];
+      var running = false, cancelled = false, inFlight = 0, started = false;
+
+      function qs() {
+        var g = function (id) { var e = document.getElementById(id); return e ? e.value : ''; };
+        return 'league=' + encodeURIComponent(g('league')) +
+               '&season=' + encodeURIComponent(g('season')) +
+               '&theme=' + encodeURIComponent(g('theme')) +
+               '&bracket=' + encodeURIComponent(g('bracket'));
+      }
+      function idle() {
+        return !document.hidden && inFlight === 0 &&
+               !document.querySelector('.htmx-request');
+      }
+      function waitIdle() {
+        return new Promise(function (res) {
+          (function poll() { idle() ? res() : setTimeout(poll, 400); })();
+        });
+      }
+      var sleep = function (ms) { return new Promise(function (r) { setTimeout(r, ms); }); };
+
+      function warm(url) {
+        inFlight++;
+        return fetch(url, { credentials: 'same-origin' })
+          .then(function (r) { return r.ok ? r.text() : ''; })
+          .catch(function () { return ''; })
+          .then(function (t) { inFlight--; return t; },
+                function () { inFlight--; return ''; });
+      }
+      function itemsIn(html) {
+        var d = new DOMParser().parseFromString(html, 'text/html'), out = [];
+        d.querySelectorAll('img[src*="/chart/"]').forEach(function (im) {
+          out.push(im.getAttribute('src'));
+        });
+        d.querySelectorAll('.lazysec[hx-get]').forEach(function (lz) {
+          out.push({ part: lz.getAttribute('hx-get') });
+        });
+        return out;
+      }
+      function walkTab(id) {
+        return waitIdle().then(function () {
+          if (cancelled) return;
+          return warm('/tab/' + id + '?' + qs()).then(function (panel) {
+            if (cancelled || !panel) return;
+            var chain = Promise.resolve();
+            itemsIn(panel).forEach(function (item) {
+              chain = chain.then(function () {
+                if (cancelled) return;
+                return waitIdle().then(function () {
+                  if (cancelled) return;
+                  if (typeof item === 'string') return warm(item).then(function () { return sleep(80); });
+                  return warm(item.part).then(function (frag) {
+                    if (cancelled || !frag) return;
+                    var sub = Promise.resolve();
+                    itemsIn(frag).forEach(function (u) {
+                      if (typeof u !== 'string') return;
+                      sub = sub.then(function () {
+                        if (cancelled) return;
+                        return waitIdle().then(function () {
+                          return cancelled ? undefined : warm(u).then(function () { return sleep(80); });
+                        });
+                      });
+                    });
+                    return sub;
+                  }).then(function () { return sleep(80); });
+                });
+              });
+            });
+            return chain;
+          });
+        });
+      }
+      function run() {
+        if (running) return;
+        running = true; cancelled = false;
+        var chain = Promise.resolve();
+        TABS.forEach(function (id) {
+          chain = chain.then(function () { return cancelled ? undefined : walkTab(id); });
+        });
+        chain.then(function () { running = false; });
+      }
+      function kickoff() {
+        if (started) return;
+        started = true;
+        window.requestIdleCallback
+          ? requestIdleCallback(run, { timeout: 4000 })
+          : setTimeout(run, 3000);
+      }
+      document.body.addEventListener('htmx:afterSwap', function (e) {
+        if (!e.target || e.target.id !== 'panel') return;
+        // A league/season switch makes an in-progress walk stale -- cancel and
+        // re-kick for the new context (the old warmed entries are harmless).
+        if (started) { cancelled = true; running = false; started = false; }
+        kickoff();
+      });
+    })();
+
     // When the Playoffs tab loads (its editor is present) and no bracket token is
     // active, restore this browser's saved custom bracket by re-POSTing it for a
     // fresh token, then reloading. Guarded per league:season so a failed restore
@@ -470,16 +616,19 @@
     })();
   </script>
 
-  {# hx-ext="preload": each tab button below carries preload="mouseover", so
-     hovering a tab fetches its /tab/<id> panel (and, via preload-images, the
-     chart <img> URLs it contains) in the background; the subsequent click
-     swaps from cache. A hover that doesn't lead to a click costs one warmed
-     request -- responses are cheap once league_data() is cached, and every
-     heavy tab already memoises its own per-manager/week work. #}
+  {# hx-ext="preload": each tab button below carries preload="mousedown", so
+     PRESSING a tab (mousedown fires ~100ms before click) fetches its /tab/<id>
+     panel (and, via preload-images, the chart <img> URLs it contains) in the
+     background; the click that follows swaps from cache. mousedown rather than
+     mouseover so a trackpad pointer brushing across the tab bar doesn't warm
+     three or four panels the user never opens -- those wasted renders compete
+     for plots._render_lock against the chart the user is actually waiting on.
+     A press that doesn't become a click still costs one warmed request, but
+     that's a deliberate action, not an accident. #}
   <nav class="tabs" role="tablist" hx-push-url="true" hx-ext="preload"
        hx-target="#panel" hx-swap="innerHTML" hx-include="#league, #season, #theme, #bracket">
     {% for id, label in tabs %}
-    <button role="tab" hx-get="/tab/{{ id }}" preload="mouseover" preload-images="true"
+    <button role="tab" hx-get="/tab/{{ id }}" preload="mousedown" preload-images="true"
             class="{% if id == initial_tab %}active{% endif %}"
             onclick="document.querySelectorAll('.tabs button').forEach(b=>b.classList.remove('active'));this.classList.add('active')">
       {{ label }}
@@ -489,7 +638,19 @@
 
   <main id="panel"
         hx-get="/tab/{{ initial_tab }}?boot=1" hx-trigger="load" hx-include="#league, #season, #theme, #bracket">
-    <p class="empty">Loading…</p>
+    {# First cold panel load runs league_data()'s full Sleeper chain walk (can
+       be 10-30s on a cold container). A bare "Loading..." for that long reads
+       as a hung page; a skeleton shaped like the real Overview (tile row + a
+       chart grid) plus the #bar top progress indicator reads as "working". #}
+    <div class="panel-boot" aria-busy="true" aria-label="Loading">
+      <div class="skeleton pb-tiles"></div>
+      <div class="pb-grid">
+        <div class="skeleton pb-chart"></div>
+        <div class="skeleton pb-chart"></div>
+        <div class="skeleton pb-chart"></div>
+        <div class="skeleton pb-chart"></div>
+      </div>
+    </div>
   </main>
 
   <footer>

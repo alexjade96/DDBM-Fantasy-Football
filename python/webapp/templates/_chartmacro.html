@@ -28,9 +28,14 @@
 {%- set m = CHART_META.get(key, {}) -%}
 {%- set cap = caption if caption is not none else m.cap -%}
 {%- set is_wide = wide if wide is not none else m.wide -%}
-<figure class="card chart{% if is_wide %} wide{% endif %}">
+{# aspect-ratio on the figure reserves a box the SHAPE of the coming chart, so
+   the shimmer skeleton doesn't collapse to a flat strip and the page doesn't
+   jump when the PNG swaps in. `.card.chart:not(.skeleton)` drops it in
+   style.css once the image has loaded, so the real PNG's natural height wins. #}
+<figure class="card chart{% if is_wide %} wide{% endif %}"
+        style="aspect-ratio: {{ '16 / 7' if is_wide else '3 / 2' }}">
   <img src="/chart/{{ key }}?league={{ league }}&season={{ season }}{% if week is not none %}&week={{ week }}{% endif %}{% if manager is not none %}&manager={{ manager|urlencode }}{% endif %}{% if bracket %}&bracket={{ bracket }}{% endif %}{% if scope %}&scope={{ scope }}{% endif %}{% if transaction_id %}&transaction_id={{ transaction_id|urlencode }}{% endif %}{% if basis %}&basis={{ basis }}{% endif %}&theme={{ theme }}&_={{ bust }}"
-       alt="{{ alt or cap or key }}" loading="lazy">
+       alt="{{ alt or cap or key.replace('_', ' ').title() }}" loading="lazy">
   {%- if cap %}<figcaption>{{ cap }}</figcaption>{%- endif %}
 </figure>
 {%- endmacro %}

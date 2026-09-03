@@ -2300,7 +2300,12 @@ def tab(name: str, request: Request, league: str = DEFAULT_LEAGUE,
         # only reachable via their raw /chart/<key> URL for now. `luck` stays
         # dropped as a chart: it's the same all-play computation as `allplay`'s
         # rank_delta, already surfaced in the "Luck" insight row.
-        ctx["charts"] = ["standings", "power_rank"]
+        # Both charts are built from regular-season frames; a season Sleeper
+        # marks complete/in_season but that has no scored regular-season week
+        # (a defunct or playoffs-only season) would render them from an empty
+        # frame -- NaN axis limits, a 500 on the raw /chart/<key> URL. The
+        # insight rows below already no-op on that same condition.
+        ctx["charts"] = ["standings", "power_rank"] if _has_scored_data(s) else []
         ctx["insight_rows"] = _overview_insight_rows(s)
         # {id(game): "Round N"} so the Highest-score / Biggest-blowout tiles
         # can name where the record fell -- the group's own label with the
