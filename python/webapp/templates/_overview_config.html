@@ -18,12 +18,12 @@
       <tr>
         <td>{{ m.roster_id }}</td>
         <td data-sort="{{ m.user_name or '' }}">{{ idm.who(m.user_name) }}</td>
-        <td>{{ m.team_name or "&mdash;" | safe }}</td>
-        <td class="mono">{{ m.user_id or "&mdash;" | safe }}</td>
+        <td>{{ (m.team_name or "&ndash;") | safe }}</td>
+        <td class="mono">{{ (m.user_id or "&ndash;") | safe }}</td>
         <td class="cfg-seasons" data-sort="{{ m.member_seasons | length }}">
           {%- if m.member_seasons -%}
           {{ m.member_seasons | join(", ") }} <span class="cfg-x">({{ m.member_seasons | length }})</span>
-          {%- else -%}&mdash;{%- endif -%}
+          {%- else -%}&ndash;{%- endif -%}
         </td>
       </tr>
       {% endfor %}
@@ -38,9 +38,9 @@
      people most want, so it sits above the raw settings rows. #}
   <h4 class="cfg-subhead">Roster positions</h4>
   <p class="hint">The lineup each team sets every week, plus the bench.
-     {{ roster_starters | length }} starters and {{ roster_bench | length }} bench/reserve
-     &mdash; {{ roster_positions | length }} roster spots per team. Slot order is Sleeper&rsquo;s
-     own, the order the optimal-lineup solver and every roster table read.</p>
+     {{ roster_starters | length }} starters and {{ roster_bench | length }} bench/reserve,
+     {{ roster_positions | length }} roster spots per team in total. Slot order is Sleeper&rsquo;s
+     own.</p>
   <div class="cfg-roster">
     <div class="cfg-roster-col">
       <h4>Starters <span class="cfg-count">{{ roster_starters | length }}</span></h4>

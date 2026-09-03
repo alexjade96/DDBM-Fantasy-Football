@@ -4,8 +4,9 @@
 #   docker build -t sleepermetrics .
 #   docker run -p 8000:8000 sleepermetrics
 #
-# Works as-is on Render, Fly.io, Google Cloud Run and Hugging Face Spaces --
-# each of those injects $PORT, which the CMD honours.
+# Deploys as-is to a Render free web service (see docs/hosting-cicd-plan.md).
+# Also works on Hugging Face Spaces; any host that injects $PORT, which the CMD
+# honours.
 FROM python:3.12-slim
 
 ENV PYTHONUNBUFFERED=1 \

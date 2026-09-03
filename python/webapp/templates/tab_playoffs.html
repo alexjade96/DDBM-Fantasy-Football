@@ -172,9 +172,9 @@
 
       {% if po_started %}
       <h2>Postseason analytics</h2>
-      <p class="hint">The whole postseason together: bracket games (the championship path and any
-         consolation) and the consolation bracket, pooled into one leaderboard.  The <strong>Playoffs</strong>
-         and <strong>Consolation bracket</strong> views break these out by competition.</p>
+      <p class="hint">Bracket games and the consolation bracket, pooled into one leaderboard.
+         The <strong>Playoffs</strong> and <strong>Consolation bracket</strong> views break
+         these out by competition.</p>
       <div class="grid two">
         {{ ch.chart("playoff_players_splice", scope="postseason", bracket=bracket, alt="Best postseason players") }}
         {{ ch.chart("clutch", scope="postseason", bracket=bracket, alt="Postseason clutch") }}

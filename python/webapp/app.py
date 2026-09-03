@@ -10,6 +10,7 @@ layer adds no new plotting code.
 """
 from __future__ import annotations
 
+import contextlib
 import io
 import os
 import re
@@ -41,7 +42,25 @@ SEASON_DIR = os.environ.get("SLEEPERMETRICS_SEASON_DIR", str(ROOT / "season"))
 DEFAULT_LEAGUE = os.environ.get("SLEEPERMETRICS_LEAGUE", "1252770181306929152")
 TTL = int(os.environ.get("SLEEPERMETRICS_TTL", "900"))   # cache seasons 15 min
 
-app = FastAPI(title="Sleeper League Analytics")
+
+@contextlib.asynccontextmanager
+async def _lifespan(_app: "FastAPI"):
+    # Assembling the default league is many sequential Sleeper calls; the first
+    # visitor otherwise pays all of it synchronously in their /tab/overview
+    # request. Kick it on a daemon thread at boot so it races the cold-start
+    # window instead -- if it finishes first, that visitor gets a cache hit.
+    # Best-effort: a boot with no network just leaves the cache cold, exactly
+    # as before. `_prime_default_league` is defined below (resolved at call
+    # time, not import time).
+    try:
+        threading.Thread(target=_prime_default_league,
+                         name="prime-default-league", daemon=True).start()
+    except Exception:
+        pass
+    yield
+
+
+app = FastAPI(title="Sleeper League Analytics", lifespan=_lifespan)
 app.mount("/static", StaticFiles(directory=BASE / "static"), name="static")
 tpl = Jinja2Templates(directory=str(BASE / "templates"))
 
@@ -386,6 +405,14 @@ TABS = [
 # Assembling a league is many API calls, so hold it briefly rather than rebuild
 # it on every tab switch. Charts are cheap to redraw from the cached frames.
 _cache: dict = {}
+# Stale-while-revalidate: once an entry is past its TTL, the next request gets
+# the stale copy instantly and a background thread re-assembles it, so nobody
+# after the very first population waits on the chain walk. `_refreshing` holds
+# the ids a refresh is already in flight for, so a burst of requests kicks one
+# refresh, not one per request. Purely request-triggered -- no timer -- so it
+# adds no work while the app is idle.
+_cache_lock = threading.Lock()
+_refreshing: set[str] = set()
 
 # Ad-hoc bracket cache: a user-supplied / rolled-back bracket, scored once and
 # held under a content-addressed token so the tab and its PNG charts (which are
@@ -424,10 +451,11 @@ def _bracket_from_token(token: str | None):
     return None
 
 
-def league_data(league_id: str, fresh: bool = False) -> dict:
-    hit = _cache.get(league_id)
-    if hit and not fresh and time.time() - hit["at"] < TTL:
-        return hit
+def _assemble_league(league_id: str) -> dict:
+    """The actual chain walk + bracket resolution -- many sequential Sleeper
+    API calls. Split out of league_data() so the stale-while-revalidate path
+    can run it on a background thread. Writes the result into _cache (under
+    both the submitted and the forward-resolved id) and returns it."""
     # A Sleeper chain only links backward, so a pasted older-season id can't see
     # the league's live season. Resolve forward to the current-season id first
     # (best-effort: returns the input unchanged when already current or on any
@@ -468,6 +496,42 @@ def league_data(league_id: str, fresh: bool = False) -> dict:
     if resolved != str(league_id):
         _cache[resolved] = d
     return d
+
+
+def _revalidate_async(league_id: str) -> None:
+    """Re-assemble a stale cache entry on a daemon thread. Guarded so a burst
+    of requests kicks one refresh, not one per request; failures are swallowed
+    (the stale entry keeps serving)."""
+    with _cache_lock:
+        if league_id in _refreshing:
+            return
+        _refreshing.add(league_id)
+
+    def _run():
+        try:
+            _assemble_league(league_id)
+        except Exception:
+            pass
+        finally:
+            with _cache_lock:
+                _refreshing.discard(league_id)
+
+    threading.Thread(target=_run, name=f"revalidate-{league_id}",
+                     daemon=True).start()
+
+
+def league_data(league_id: str, fresh: bool = False) -> dict:
+    hit = _cache.get(league_id)
+    if hit and not fresh:
+        age = time.time() - hit["at"]
+        if age < TTL:
+            return hit
+        # Stale: serve it now, refresh in the background. The next request (or
+        # this one on its next tab) gets the fresh copy; nobody waits on the
+        # chain walk after the first population.
+        _revalidate_async(league_id)
+        return hit
+    return _assemble_league(league_id)
 
 
 def pick(league_id: str, season: str | None, fresh: bool = False):
@@ -522,6 +586,20 @@ def _warm_async(s) -> None:
         _warmed.add(key)
     threading.Thread(target=_warm_league_season, args=(s,),
                      name=f"warm-{key}", daemon=True).start()
+
+
+def _prime_default_league() -> None:
+    """Assemble the default league into _cache at process start, so the first
+    visitor gets a cache hit instead of paying the chain walk. Runs on the
+    daemon thread started by the app lifespan; never raises. A no-op if the
+    entry is already fresh (e.g. a fast restart)."""
+    try:
+        hit = _cache.get(DEFAULT_LEAGUE)
+        if hit and time.time() - hit["at"] < TTL:
+            return
+        _assemble_league(DEFAULT_LEAGUE)
+    except Exception:
+        pass
 
 
 # FAAB bid per waiver transaction. `settings.waiver_bid` rides on every raw
@@ -1880,7 +1958,7 @@ def _week_manager_context(s, week: int, manager: str, wk_games: list[dict]) -> d
         tiles.append(("Lineup call", f"-{regret['gain']:.1f} pts",
                       f"started {regret['out']} over {regret['In']}{tag}"))
     elif mine is not None:
-        tiles.append(("Lineup call", "Optimal", "nothing left costly on the bench"))
+        tiles.append(("Lineup call", "Optimal", "nothing costly left on the bench"))
     if allplay:
         aw, al, ad = allplay["allplay_w"], allplay["allplay_l"], allplay["rank_delta"]
         sub = (f"#{allplay['allplay_rank']} all-play, earned" if not ad else
@@ -2417,9 +2495,8 @@ def tab(name: str, request: Request, league: str = DEFAULT_LEAGUE,
         ctx["summary"] = summaries.summary_career(d["seasons"])
         ctx["charts"] = ["career", "trajectory", "head_to_head", "loyalty"]
         ctx["charts_intro"] = (
-            "The league across every season on record, each chart&rsquo;s takeaway is "
-            "noted beneath it. Identity follows the persistent account, so a manager who renamed "
-            "themselves is still one person.")
+            "The league across every season on record. Identity follows the persistent "
+            "account, so a manager who renamed themselves is still one person.")
         # The all-time postseason lives here, on the league's cross-season tab;
         # the Playoffs tab shows only the season selected in the header. Told
         # apart from "not yet fetched" so the template only offers the lazy

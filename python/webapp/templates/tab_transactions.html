@@ -24,11 +24,10 @@
 </section>
 {% endif %}
 
-<p class="hint">Who shaped their roster, and whether it paid off; each chart&rsquo;s
-   takeaway is noted beneath it. Value throughout counts points a player returned
-   <em>while on that roster</em>, so a star flipped early scores low and a long-held pickup
-   who started all year scores high, the same measure the deal cards and waiver table
-   below use.</p>
+<p class="hint">Who shaped their roster, and whether it paid off. Value throughout
+   counts points a player returned <em>while on that roster</em>: a star traded away early
+   scores low, a long-held pickup who started all year scores high. The deal cards and
+   waiver table below use the same measure.</p>
 <section class="grid">
   {% for c in charts %}{{ ch.chart(c) }}{% endfor %}
 </section>
@@ -36,13 +35,11 @@
 <h2>Trades</h2>
 {% if deals %}
 <p class="hint">{{ n_deals }} trade{{ "" if n_deals == 1 else "s" }} in {{ season }}, one
-   card per deal, followed by each side's cumulative points since the deal as
-   a race and points received by player alongside each side's net. The card
-   lists every player a side <strong>received</strong> individually, with the
-   points he's scored <em>for them</em> since the trade, so each
-   player appears once, under whoever got him. <strong>Net</strong> is that
-   total minus what they gave up scored for whoever took it; a deal's
-   nets always sum to zero, which is what makes a three-way trade add up.</p>
+   card per deal. Each card lists what a side <strong>received</strong>, with the points
+   that player has scored <em>for them</em> since the trade. <strong>Net</strong> is that
+   total minus what they gave up scored for its new team; a deal's nets sum to zero.
+   Below each card: cumulative points since the deal as a race, and points received per
+   player against each side's net.</p>
 <div class="deals">
   {% for d in deals %}
   <div class="deal-group">

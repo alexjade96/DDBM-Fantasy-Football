@@ -133,11 +133,10 @@
 {% set r = rosters[0] %}
 <h2>Efficiency</h2>
 <p class="hint">{{ manager }}&rsquo;s week-by-week lineup calls. <strong>Average pts
-   from optimal</strong> is the typical cost of the decisions, only the bench points a
-   legal swap would actually have converted, per week. Expand a week to see who started and
-   who sat, with gold rows marking who would have swapped with whom in the best legal
-   lineup; a highlighted Optimal score means that lineup would have beaten the week's
-   opponent.</p>
+   from optimal</strong> is the per-week cost of the lineup decisions: the bench points a
+   legal swap would have converted. Expand a week to see who started and who sat; gold rows
+   mark a swap the optimal lineup would make, and a highlighted Optimal score means that
+   lineup would have beaten the week's opponent.</p>
 {% if r.eff is not none %}
 {% set nweeks = r.lineup_weeks | length %}
 <div class="dt-facts">

@@ -4,6 +4,11 @@
    /dashboard renders its shell instantly, before the real league data is
    known -- see app.py's dashboard()/tab()/_pushed()). #}
 <h1 id="league-name" hx-swap-oob="true">{{ league_name }}</h1>
+{# The subtitle under the h1 carries the loaded league id, so it has to follow
+   a league switch (and a forward-resolved id) the same way the h1 does. #}
+{% if league is defined and league %}
+<p class="sub" id="league-sub" hx-swap-oob="true">League Analytics | {{ league }}</p>
+{% endif %}
 {# htmx special-cases an out-of-band <title>: it updates document.title, so
    the browser tab / bookmark name follows the loaded league. #}
 <title hx-swap-oob="true">{{ league_name }} Fantasy Football</title>

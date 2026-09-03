@@ -1508,9 +1508,9 @@ def roster_standouts(s: Season) -> list[dict]:
     used = pl.groupby("user_name")["player_name"].nunique()
     if len(used):
         tile("Most players used", f"{int(used.max())}", used.idxmax(),
-             "roster churn")
+             "across the season")
         tile("Fewest players used", f"{int(used.min())}", used.idxmin(),
-             "stood pat")
+             "across the season")
     if len(st):
         # The most lopsided team: the largest share of started points from one
         # position group. A just-started season can have every started-point

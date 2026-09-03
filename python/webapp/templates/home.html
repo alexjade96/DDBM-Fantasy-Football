@@ -7,7 +7,8 @@
   <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
   {# ?v=<mtime> so a CSS edit is never served from a stale browser cache #}
   <link rel="stylesheet" href="/static/style.css?v={{ asset_v }}">
-  <script src="https://unpkg.com/htmx.org@1.9.12" defer></script>
+  {# Vendored, version pinned in the filename -- see index.html's head. #}
+  <script src="/static/htmx-1.9.12.min.js" defer></script>
 </head>
 <body>
   <main class="landing">

@@ -598,6 +598,33 @@ def test_clutch_with_consolation_pools_bracket_and_consolation_team_weeks():
     assert "Zz" not in set(d_no["user_name"])
 
 
+def test_chart_clutch_no_500_on_unstarted_bracket():
+    """An all-PENDING bracket (a pre-season Sleeper bracket loaded before week 1)
+    makes `playoffs.clutch()` return a column-less empty frame. `plot_clutch`
+    must degrade to a titled blank panel, not raise `KeyError: 'po_ppg'` on the
+    `.sort_values` -- the same guard `plot_consolation_clutch` already has. In the
+    app this chart only renders behind `{% if po_started %}`, but a direct
+    `/chart/clutch?season=<unstarted>` would 500 without the guard."""
+    import matplotlib.pyplot as plt
+
+    from sleepermetrics import plots
+
+    cfg = _cfg()
+    for rnd in cfg["rounds"]:
+        rnd["weeks"] = [16]        # STATS has no week 16 -> every round PENDING
+    p = playoffs.playoff(cfg, validate=False)
+    assert set(p.results["result"]) == {"PENDING"}
+
+    class S:
+        team_wk = pd.DataFrame({"user_name": ["Al", "Bo", "Cy", "Dee"],
+                                "points": [100.0, 90.0, 80.0, 110.0]})
+
+    assert playoffs.clutch({"2025": S()}, {"2025": p}, "title").empty
+    fig = plots.plot_clutch({"2025": S()}, {"2025": p}, "title")
+    assert fig is not None
+    plt.close(fig)
+
+
 def test_consolation_clutch_sets_consolation_ppg_against_regular_season_ppg():
     class S:
         team_wk = pd.DataFrame({"user_name": ["X", "X", "Y", "Y"],

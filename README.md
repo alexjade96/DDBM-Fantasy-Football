@@ -117,9 +117,21 @@ mismatches. Season champions come from these brackets, not Sleeper's
 
 ### Free hosting
 
-The `Dockerfile` honours `$PORT`, so the Python dashboard deploys unchanged to
-Render, Fly.io, Google Cloud Run or Hugging Face Spaces free tiers. It is
-read-only over the public Sleeper API and reads no secrets. See
+The `Dockerfile` honours `$PORT`, so the Python dashboard deploys unchanged to a
+**Render free web service**: connect the repo once in the Render dashboard and it
+builds the `Dockerfile` and redeploys on every push to `main`. The webapp is
+read-only over the public Sleeper API and reads no secrets. The free tier spins
+down after 15 minutes idle (about a 1 minute cold start) and has no persistent
+disk, so the player and headshot caches rebuild on wake; the player dump is one
+Sleeper fetch and `players()` refetches daily anyway.
+
+The weekly Discord recap runs on a GitHub Actions scheduled workflow rather than
+a Render cron (Render crons are paid). Hugging Face Spaces is a fallback (same
+`Dockerfile`, no card) but the Space is public.
+
+Full rationale, the platform comparison, and a step-by-step action checklist are
+in [`docs/hosting-cicd-plan.md`](docs/hosting-cicd-plan.md) and
+[`docs/hosting-cicd-actions.md`](docs/hosting-cicd-actions.md). See also
 [`python/webapp/README.md`](python/webapp/README.md).
 
 ---

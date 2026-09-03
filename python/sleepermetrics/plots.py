@@ -499,8 +499,7 @@ def plot_efficiency(s: Season):
     pad = max((span_hi - span_lo) * 0.15, 1.5)
     ax.set_xlim(span_lo - pad, span_hi + pad)
     return _finish(fig, ax, "Lineup Efficiency",
-                   "Darker = better  ·  faint bar = that manager's worst-to-best week  ·  "
-                   "caps mark their single best/worst week",
+                   "Darker = better  ·  faint bar spans each manager's worst-to-best week",
                    "Efficiency %", caption=_cap(s))
 
 
@@ -900,8 +899,7 @@ def plot_flex_usage(s: Season):
     # depending on the manager, so no fixed corner is reliably clear of data.
     ax.legend(handles, positions, loc="best", frameon=False, fontsize=9, ncol=3)
     return _finish(fig, ax, "Flex Allocation",
-                   "Share of each manager's flex-slot starts filled by RB, WR or TE  ·  "
-                   "reconstructed from their actual started lineups",
+                   "Share of each manager's flex-slot starts filled by RB, WR or TE",
                    "Share of flex-slot weeks", caption=_cap(s), grid_axis="x")
 
 
@@ -2400,7 +2398,8 @@ def plot_playoff_players_splice(seasons: dict, playoffs: dict, n: int = 15,
         title_word = axis_word = "Playoff"
     suffix, span = _po_span(playoffs)
     fig = _finish(fig, ax, f"Best {title_word} Players{suffix}",
-                  f"{sub}  ·  one slice per game, earliest at left",
+                  f"{sub}  ·  each slice is one game, earliest at left, "
+                  "width = that game's points",
                   f"{axis_word} Points")
 
     # Colour key: one entry per round DEPTH that actually shows up in the
@@ -2745,8 +2744,10 @@ def plot_clutch(seasons: dict, playoffs: dict, scope: str = "title",
     # Ordered by postseason scoring itself (the coloured dot), highest at the
     # top -- the "who actually put up points when it counted" read -- rather
     # than by the clutch delta.
-    d = _clutch(seasons, playoffs, scope, consolation=consolation).sort_values(
-        "po_ppg").reset_index(drop=True)
+    d = _clutch(seasons, playoffs, scope, consolation=consolation)
+    if d.empty:
+        return _no_data("No playoff games scored yet.")
+    d = d.sort_values("po_ppg").reset_index(drop=True)
     fig, ax = plt.subplots(figsize=(10, 6))
     cols = ["#2ca02c" if v > 0 else "#d62728" for v in d["clutch"]]
     for i, r in d.iterrows():

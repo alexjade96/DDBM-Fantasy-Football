@@ -7,15 +7,25 @@
      just the id at that point -- see dashboard()); _shell_sync.html swaps
      this <title> out-of-band once league_data() has run. #}
   <title>{% if league_name and league_name != league %}{{ league_name }} Fantasy Football{% else %}Sleeper League Analytics{% endif %}</title>
+  {# Start the TLS handshake to the hosts the panel/chart fetches will hit
+     while the shell is still parsing, so the first request to each saves a
+     round trip. Sleeper's API + CDN are used by every league; unpkg only if a
+     vendored script 404s (it shouldn't). #}
+  <link rel="preconnect" href="https://api.sleeper.app" crossorigin>
+  <link rel="preconnect" href="https://sleepercdn.com" crossorigin>
+  <link rel="dns-prefetch" href="https://api.sleeper.app">
+  <link rel="dns-prefetch" href="https://sleepercdn.com">
   <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
   {# ?v=<mtime> so a CSS edit is never served from a stale browser cache #}
   <link rel="stylesheet" href="/static/style.css?v={{ asset_v }}">
-  <script src="https://unpkg.com/htmx.org@1.9.12" defer></script>
+  {# htmx + its preload extension are vendored into static/ (version pinned in
+     the filename) rather than pulled from unpkg: one less third-party origin
+     to DNS/TLS/fetch on a cold open, and an unpkg outage can't break the app. #}
+  <script src="/static/htmx-1.9.12.min.js" defer></script>
   {# preload extension: a tab's panel is fetched in the background on hover
      (and its lazy-part / chart <img> URLs warmed too, preload-images) so the
-     click that follows swaps an already-cached response. Same origin as htmx
-     itself. See the .tabs nav below. #}
-  <script src="https://unpkg.com/htmx.org@1.9.12/dist/ext/preload.js" defer></script>
+     click that follows swaps an already-cached response. See the .tabs nav. #}
+  <script src="/static/htmx-ext-preload-1.9.12.js" defer></script>
   {# The visual playoff-bracket builder (SMBuilder). Sits on window.SMBracket
      (defined inline below) and the /playoffs data endpoints. #}
   <script src="/static/builder.js?v={{ asset_v }}" defer></script>
@@ -383,7 +393,7 @@
       <span class="mark"></span>
       <div>
         <h1 id="league-name">{{ league_name }}</h1>
-        <p class="sub">Sleeper league analytics · metrics computed live</p>
+        <p class="sub" id="league-sub">League Analytics | {{ league }}</p>
       </div>
     </div>
 

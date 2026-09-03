@@ -149,8 +149,7 @@
    it leads the season-complete tiles up top. Supersedes the old
    `summary | md` / `extra_insights | md` prose cards; summary_season() is
    untouched (still parity-mirrored, still used by the reports). #}
-<p class="hint">The regular season beyond any one week, at a glance -- most
-   telling first.</p>
+<p class="hint">The regular season at a glance.</p>
 <section class="stats">
   {% for t in insight_rows %}
   <div class="stat {% if loop.index0 == 0 %}gold{% endif %}">
@@ -174,7 +173,6 @@
   {% endfor %}
 </section>
 {% endif %}
-<p class="hint">The charts below carry the takeaway underneath each one.</p>
 <section class="grid">
   {% for c in charts %}{{ ch.chart(c) }}{% endfor %}
 </section>
