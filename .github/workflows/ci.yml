@@ -1,0 +1,27 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  python:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: python/requirements.txt
+
+      - name: Install deps
+        run: pip install -r python/requirements.txt
+
+      - name: pytest (network-free)
+        working-directory: python
+        env:
+          SLEEPERMETRICS_NO_IMAGES: "1"
+        run: python -m pytest -q
