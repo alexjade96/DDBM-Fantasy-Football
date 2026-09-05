@@ -56,28 +56,33 @@ a.ghost { text-decoration: none; display: inline-block; }
 a.ghost:hover { filter: brightness(1.06); }
 :focus-visible { outline: 2px solid var(--turf); outline-offset: 2px; }
 
-/* Landing / home page: a single centred card that leads into /dashboard. */
-.landing { display: grid; place-items: center; min-height: 100vh;
-  padding: 40px clamp(16px, 5vw, 40px); }
-.landing-card {
-  background: var(--surface); border: 1px solid var(--line); border-radius: 16px;
-  box-shadow: var(--shadow); padding: clamp(28px, 5vw, 48px);
-  max-width: 460px; width: 100%; text-align: left;
-}
-.landing-card .mark { height: 40px; margin-bottom: 18px; }
-.landing-card h1 { font-size: 26px; letter-spacing: -.02em; }
-.landing-lede { color: var(--muted); font-size: 15px; margin: 10px 0 26px; }
-.landing-form { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; }
-.landing-form label { display: flex; flex-direction: column; gap: 4px; flex: 1; min-width: 180px; }
-.landing-form span { font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: var(--faint); }
-.landing-form input { width: 100%; }
-.landing-form button { padding: 8px 16px; }
-.landing-hint { color: var(--faint); font-size: 12px; margin: 12px 0 0; }
+/* Landing / home page: the same .top header + footer as a loaded league page,
+   the league lookup in the header, an inert tab strip, and the greeting in the
+   #panel .card pane. It reuses the loaded-page shell wholesale (.top / .brand /
+   .mark / .sub / .tabs / main#panel / .card / h2) -- only these few extras. */
+#panel .card:has(> .home-lede) { padding: clamp(20px, 4vw, 32px); max-width: 620px; }
+.home-lede { color: var(--muted); font-size: 15px; margin: 0 0 4px; max-width: 62ch; }
+.home-hint { color: var(--faint); font-size: 12px; margin: 12px 0 0; }
+#panel .card > #user-results:not(:empty) { margin-top: 14px; }
+#panel .card .user-results { max-width: 640px; }
+/* The inert landing tab reads as a label, not a button: no hover/press cue. */
+.tabs button[disabled] { cursor: default; opacity: 1; }
 
-/* "or" divider between the two landing forms. */
-.landing-or { display: flex; align-items: center; gap: 10px; margin: 22px 0 16px;
-  color: var(--faint); font-size: 11px; letter-spacing: .08em; text-transform: uppercase; }
-.landing-or::before, .landing-or::after { content: ""; flex: 1; height: 1px; background: var(--line); }
+/* Landing "ADP compare" board. Controls row + a sortable table; the small
+   "· #12" after each ADP value is the source's own overall rank. */
+#adp-controls { flex-wrap: wrap; margin: 4px 0 14px; }
+#adp-board .tablewrap { margin-top: 6px; max-height: 70vh; overflow-y: auto; }
+#adp-board thead th { position: sticky; top: 0; background: var(--surface); z-index: 1; }
+.adp-rk { color: var(--faint); font-weight: 400; }
+.adp-actions { display: flex; gap: 8px; align-items: flex-end; }
+.adp-actions > span { align-self: center; font-size: 11px; letter-spacing: .06em;
+  text-transform: uppercase; color: var(--faint); }
+.adp-actions a.ghost, .adp-actions button.ghost { padding: 7px 12px; }
+
+/* Persistent utility bar in the loaded-page header (index.html): a labelled
+   region holding the league lookup and, later, other cross-league tools. */
+.utilbar { display: flex; flex-direction: column; gap: 6px; align-items: flex-end; }
+.utilbar-label { font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: var(--faint); }
 
 /* Header lookup: League / User mode toggle, a small segmented pill sitting
    left of the id box in the .controls form. */
@@ -561,6 +566,11 @@ td.mono { font-size: 12px; color: var(--muted); word-break: break-all; }
   font-weight: 600; padding: 4px 12px; border-radius: 20px; border: 1px solid var(--line);
   color: var(--muted); }
 .dl:hover { border-color: var(--turf); color: var(--turf); }
+/* Draft board's action row: "Download Draft Rosters" stays left where it sits
+   in markup, "View Simulated Draft" right-justifies. Only the last .dl keeps
+   the margin-left:auto; the first resets it so it doesn't eat the slack. */
+.draft-board-actions .dl { margin-left: 0; }
+.draft-board-actions .dl:last-child { margin-left: auto; }
 /* Vertical rhythm inside the report tab -- same convention as `#panel > * + *`
    (see below), but scoped one level deeper: every block in tab_report.html
    (eyebrow, narrative card, each section's heading/hint/table/chart-grid) is a
@@ -1094,96 +1104,95 @@ table.dt-games tr.cmp-down td { background: color-mix(in srgb, #e03131 8%, trans
 .reportpanel .peer.is-me { color: var(--ink); font-weight: 700;
   box-shadow: inset 0 -2px 0 var(--turf); }
 
-/* Draft board: a round x slot grid; each pick colour-marked by position. */
-.draftboard { font-size: 12px; }
-.draftboard th, .draftboard td { border: 1px solid var(--line); vertical-align: top;
-  white-space: nowrap; padding: 6px 8px; }
-.draftboard thead th { position: sticky; top: 0; background: var(--surface);
-  text-transform: none; letter-spacing: 0; font-size: 11.5px; color: var(--ink);
-  max-width: 130px; overflow: hidden; text-overflow: ellipsis; }
-.draftboard td.rnd, .draftboard th.rnd { text-align: center; color: var(--faint);
-  font-variant-numeric: tabular-nums; font-weight: 600; }
-.draftboard td.pick { min-width: 128px; }
-.draftboard .pk { color: var(--faint); font-size: 10.5px; font-variant-numeric: tabular-nums; }
-.draftboard .pl { display: block; font-weight: 600; padding-left: 6px;
-  border-left: 3px solid var(--line); margin: 1px 0; }
-.draftboard .pl .pface { width: 15px; height: 15px; margin-right: 4px; }
-.draftboard .q { font-size: 10px; padding-left: 6px; }
-.draftboard .pts { color: var(--muted); font-size: 10.5px; font-variant-numeric: tabular-nums; }
-/* Draft value tint: a pick that beat/missed its slot, "slight" enough not to
-   fight the position-colour accent on .pl above it. Global (not
-   .draftboard-scoped) so the hint text's inline legend renders with the same
-   look. Two distinct comparisons share this same look: the actual board's
-   `.pts` (a full-round-or-more threshold vs true redraft_round, see
-   app.py's `dv`) and the redraft/ADP boards' "Orig." `.q` label (any exact
-   pick_no difference vs the real draft, see _redraft_board_table.html /
-   _redraft_board_adp_table.html). */
+/* Draft-value tint, global: green when a pick's TRUE season value would have
+   gone a full round or more EARLIER than he was actually drafted, red when
+   LATER. Used by the redraft report's own tables. (The redraft BOARD tiles
+   mark rise/fell with an arrow + a pale text tint instead -- see the
+   .sleeperboard block's .sb-no.rise/.fall.) */
 .dv-pos { color: #2f9e44;
   background: color-mix(in srgb, #2f9e44 14%, transparent); border-radius: 4px; padding: 0 3px; }
 .dv-neg { color: #e03131;
   background: color-mix(in srgb, #e03131 14%, transparent); border-radius: 4px; padding: 0 3px; }
 
-/* Fixed-width, no-scroll variant of .draftboard -- the Draft tab's live
-   board and both redraft-report boards (_draft_board_fit.html,
-   _redraft_board_table.html, _redraft_board_adp_table.html). Started as a
-   Testing-tab layout prototype; adopted everywhere .draftboard shows a
-   round x slot grid, since a plain `table-layout: auto` board (each column
-   auto-sizing to its widest cell) overflows .tablewrap's own
-   `overflow-x: auto` into a scrollbar once a league has enough teams (10,
-   currently). `fixed` + `width: 100%` instead force every column to share
-   the panel's actual width: the round column gets a small explicit width,
-   and every team column (no explicit width) auto-splits the remainder
-   evenly. Per-pick detail is condensed onto fewer lines than an
-   auto-layout board would use, each pair sharing one flex row
-   (.pkrow: pick # + pos-rank/orig-pick; .ptsrow: points + TRUE-total,
-   Draft tab board only) -- left/right-justified via
-   `justify-content: space-between` instead of `.q`'s usual left-padding,
-   which assumed it trailed inline after a sibling, not sat in a row of its
-   own. The player name truncates to one line via the standard ellipsis
-   trio (nowrap + hidden overflow + text-overflow), full name still
-   reachable on hover via the template's own `title` -- the right-hand `.q`
-   in each row gets the same treatment (plus `min-width: 0`, required for a
-   flex item to actually shrink below its own content size) since a long
-   "(orig 1.08)" tag is exactly as capable of overflowing a narrow fixed
-   column as a long name is; the left-hand label (`.pk`/`.pts`) stays
-   `flex: none` so pick # and points are never the side sacrificed.
+/* --- Draft grid: Sleeper-draft-room style ------------------------------
+   The round x slot draft grid, styled to read like Sleeper's draft room:
+   the whole pick tile filled with its position hue (light text), rounded
+   tiles with a gap between them, a filled team-header bar. Used by BOTH the
+   Draft tab board (_draft_board_sleeper.html, via @tab_part("draft",
+   "board")) and the redraft report's two boards (_redraft_board_sleeper.html
+   -- same tiles, plus the pick / real-slot run and TRUE season points on the
+   face; see .sb-no.rise/.fall and .sb-pts below). `border-collapse: separate`
+   + `border-spacing` is what buys the
+   tile gap -- a collapsed-border table can't have one. `min-width` floor +
+   .tablewrap's overflow-x are a "fits the panel, else scrolls" fallback;
+   --team-count rides in inline per instance. Tile text is a fixed light
+   literal, NOT var(--ink): a theme token would vanish on the always-light
+   position fill in dark mode (same trap as the medal discs / bracket
+   nodes). The fills are the chart POS_COLORS.
 
-   "Always fits the panel, never scrolls" only holds while there's enough
-   room to stay readable -- `width: 100%` alone has no floor, so a narrow
-   viewport or a big league (more team columns splitting the same space)
-   would shrink every column arbitrarily far, past the point the truncation/
-   ellipsis machinery above can save it (a 3-char-wide column just prints
-   garbage). `min-width`, computed from the per-instance `--team-count`
-   custom property each template sets on its own `<table>` (same
-   inline-custom-property idiom as `.drilltable`'s `--cols` elsewhere), puts
-   a floor under that. 108px/column is sized to the Draft tab board's own
-   `.ptsrow` -- its densest row, TWO numbers ("213 pts" + "(Total 253)"),
-   not the pick-row's single "Orig. 1.08" (a first pass at 92px undersized
-   this and still clipped the total figure; 116px had room to spare). Once
-   the container is narrower than `--team-count` columns' worth of that,
-   the table overflows ITS OWN container instead of shrinking further --
-   which is exactly what `.tablewrap`'s existing `overflow-x: auto` is for,
-   so the fallback is a scrollbar, not illegible/clipped text. */
-.draftboard-fit { table-layout: fixed; width: 100%; font-size: 10.5px;
-  min-width: calc(30px + var(--team-count, 6) * 108px); }
-.draftboard-fit th, .draftboard-fit td { padding: 4px 6px; }
-.draftboard-fit th.rnd, .draftboard-fit td.rnd { width: 30px; }
-.draftboard-fit td.pick { min-width: 0; }
-.draftboard-fit .pkrow, .draftboard-fit .ptsrow { display: flex;
-  justify-content: space-between; align-items: baseline; gap: 4px; }
-.draftboard-fit .pkrow > .pk, .draftboard-fit .ptsrow > .pts { flex: none; }
-.draftboard-fit .pkrow .q, .draftboard-fit .ptsrow .q { padding-left: 0; white-space: nowrap;
-  overflow: hidden; text-overflow: ellipsis; min-width: 0; }
-.draftboard-fit .pl { max-width: 100%; overflow: hidden; text-overflow: ellipsis;
-  padding-left: 4px; border-left-width: 2px; }
-.draftboard-fit .pl .pface { width: 12px; height: 12px; margin-right: 3px; }
-/* Position accents (match the charts' POS_COLORS). */
-.pos-QB { border-left-color: #d62728 !important; }
-.pos-RB { border-left-color: #2ca02c !important; }
-.pos-WR { border-left-color: #1f77b4 !important; }
-.pos-TE { border-left-color: #ff7f0e !important; }
-.pos-K  { border-left-color: #9467bd !important; }
-.pos-DEF { border-left-color: #8c564b !important; }
+   The round column is pinned narrow (--rnd-w) since it only ever holds a
+   1-2 digit number, and the min-width budget per pick-card column is sized
+   to fit a long full name ("Christian McCaffrey") rather than truncate it --
+   once the panel is narrower than that, .tablewrap's overflow-x scrolls. */
+.sleeperboard { --rnd-w: 22px; border-collapse: separate; border-spacing: 4px;
+  table-layout: fixed; width: 100%; font-size: 10.5px;
+  min-width: calc(var(--rnd-w) + var(--team-count, 6) * 152px); }
+.sleeperboard th, .sleeperboard td { padding: 5px 7px; }
+.sleeperboard th { background: var(--ink); color: var(--surface); font-weight: 700;
+  font-size: 11px; text-transform: none; letter-spacing: 0; border-radius: 6px 6px 0 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sleeperboard th.rnd, .sleeperboard td.rnd { width: var(--rnd-w); padding: 5px 2px;
+  text-align: center; color: var(--faint); font-weight: 600;
+  font-variant-numeric: tabular-nums; }
+.sleeperboard th.rnd { background: none; }
+.sleeperboard th .ident .idn { color: var(--surface); }
+/* Neutral fallback fill for any position outside the six below (Sleeper
+   drafts can list an IDP/DB pick, e.g. Travis Hunter as "DB") -- matches the
+   charts' own `#999999` unknown-position fallback, so a white-text tile is
+   still readable instead of vanishing on the panel background. */
+.sleeperboard .sb-cell { border-radius: 6px; padding: 5px 6px; vertical-align: top;
+  overflow: hidden; background: #8a8f8c; }
+.sleeperboard .sb-pick { display: flex; flex-direction: column; gap: 2px;
+  color: #fff; text-shadow: 0 1px 1px rgba(0, 0, 0, .28); min-width: 0; }
+.sleeperboard .sb-top { display: flex; justify-content: space-between; align-items: baseline;
+  gap: 4px; font-size: 9.5px; opacity: .9; font-variant-numeric: tabular-nums; }
+.sleeperboard .sb-top > span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* Wrap to a second line rather than hard-truncate -- the wider columns fit
+   most names on one line, and a long one reads better broken than clipped
+   (full name still on hover via the template's title). No portrait and no
+   position label: the tile colour already carries the position. */
+.sleeperboard .sb-name { display: -webkit-box; -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2; font-weight: 700; font-size: 12px; line-height: 1.25;
+  overflow: hidden; overflow-wrap: anywhere; }
+.sleeperboard .sb-cell.sb-empty { background: color-mix(in srgb, var(--ink) 4%, transparent); }
+.sleeperboard .sb-empty .sb-no { color: var(--faint); font-size: 9.5px; }
+/* Redraft boards (_redraft_board_sleeper.html): the top-left run is the bare
+   `#N` redraft pick, then a distinct `.sb-orig` chip for where the player
+   really went ("orig 1.09" / "UDFA"). The chip is a translucent-white pill
+   -- NEUTRAL, not the old green/red fill that was colour-on-colour against
+   the position tile -- so it separates cleanly from the plain pick number on
+   any fill. Rise/fell is the ARROW (`.sb-ar`, bumped up a size and bold) plus
+   a pale tint on the chip text. `.sb-pts` (top-right, TRUE season points)
+   stays `flex: none` so the pick run is the side that ellipsises on a narrow
+   tile, never the points. */
+.sleeperboard .sb-no { display: inline-flex; align-items: baseline; gap: 4px; }
+.sleeperboard .sb-orig { display: inline-flex; align-items: baseline; gap: 2px;
+  padding: 0 4px; border-radius: 4px; font-weight: 700;
+  background: rgba(255, 255, 255, .2); color: rgba(255, 255, 255, .95); }
+.sleeperboard .sb-orig.rise { color: #d7f5df; }
+.sleeperboard .sb-orig.fall { color: #ffdcd8; }
+.sleeperboard .sb-orig .sb-ar { font-size: 11.5px; font-weight: 800; line-height: 1; }
+.sleeperboard .sb-udfa { letter-spacing: .04em; }
+.sleeperboard .sb-pts { flex: none; font-weight: 700; }
+/* Whole-tile position fills (chart POS_COLORS). Two-class specificity beats the
+   single-class `.pos-QB { border-left-color ... !important }` accents above for
+   `background`; those accents are inert here (no left border on a tile). */
+.sleeperboard .pos-QB  { background: #d62728; }
+.sleeperboard .pos-RB  { background: #2ca02c; }
+.sleeperboard .pos-WR  { background: #1f77b4; }
+.sleeperboard .pos-TE  { background: #ff7f0e; }
+.sleeperboard .pos-K   { background: #9467bd; }
+.sleeperboard .pos-DEF { background: #8c564b; }
 
 footer { max-width: 1440px; margin: 0 auto; padding: 18px clamp(16px, 4vw, 40px) 40px;
          border-top: 1px solid var(--line); color: var(--faint); font-size: 12.5px; }
@@ -1319,7 +1328,7 @@ footer code { font-family: ui-monospace, Consolas, monospace; }
    paint over what's scrolling underneath. Dropping the padding here removes
    the gap entirely; the table's own per-cell padding already gives it
    breathing room, so it reads the same as a deliberately flush table in a
-   card (the same treatment `.draftboard`/`.drilltable` already use).
+   card (the same treatment `.drilltable` already uses).
 
    `.reportpanel` (the Weekly tab wraps its whole body in it) has its own
    `.reportpanel .card.tablewrap { padding: 8px }` at (0,3,0), which outranked
@@ -1815,11 +1824,6 @@ tr.bench-impact td { background: color-mix(in srgb, #d9a441 8%, transparent); }
    tables -- which DO live inside a card -- keep their flat look. */
 .tablewrap:not(.card) > .drilltable { background: var(--surface);
   box-shadow: var(--shadow); }
-/* Same for the draft board: every cell carries a border, so the grid draws its
-   own frame -- inside .card that reads as a frame in a frame. The gems/busts
-   and other plain tables only have cell bottom-borders, so they still want the
-   card. */
-.tablewrap:not(.card) > .draftboard { background: var(--surface); }
 
 /* --- vertical rhythm between top-level panel blocks ----------------------
    Spacing used to come ONLY from h2's margin-top, and .stats/.grid/.card/

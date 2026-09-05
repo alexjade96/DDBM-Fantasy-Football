@@ -8,7 +8,7 @@
 {% with oob = true %}{% include "_seasons.html" %}{% endwith %}
 {% include "_liveband.html" %}
 {% if no_draft %}
-<p class="empty">No draft data for {{ season }}. Sleeper only serves a draft board for
+<p class="empty">No draft data for {{ season }}.  Sleeper only serves a draft board for
    seasons whose draft ran on its platform.</p>
 {% else %}
 {# draft.draft_standouts()/draft_extremes()/undrafted_standouts() all
@@ -29,7 +29,7 @@
 {{ lz.lazy("/tab/draft/part/finds" ~ part_qs, height="180px") }}
 {% else %}
 <p class="empty">No games have been scored yet this season, so the draft can&rsquo;t
-   be graded. Value charts, gems and busts fill in once week 1 is complete. The
+   be graded.  Value charts, gems and busts fill in once week 1 is complete.  The
    board below is every pick as it was made.</p>
 {% endif %}
 

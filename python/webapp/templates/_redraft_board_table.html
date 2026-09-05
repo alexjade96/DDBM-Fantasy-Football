@@ -1,65 +1,21 @@
-{# The redrafted round x slot grid: same shape as the Actual board, same team
-   ownership per seat, but filled by TRUE season value instead of actual pick
-   order -- see draft.redraft_board()'s docstring. Used by the redraft
-   report (redraft_report.html), fed by app.py's _redraft_board_ctx(). The
-   Draft tab's own board (_draft_board.html) no longer shows this inline --
-   it just links into the report instead. Expects `redraft_rounds`/
-   `slot_user` in context and `idm` imported as `idm` by the includer.
+{# The redrafted round x slot grid: same shape as the actual Draft tab board,
+   same team ownership per seat, but filled by TRUE season value instead of
+   actual pick order -- see draft.redraft_board()'s docstring. Used by the
+   redraft report (redraft_report.html), fed by app.py's _redraft_board_ctx().
+   Expects `redraft_rounds` / `slot_user` in context and `idm` imported as
+   `idm` by the includer.
 
-   Fixed layout (.draftboard-fit, see style.css and _draft_board_fit.html --
-   the Draft tab board's own real-life copy of the same idiom) so a 10-team
-   league doesn't overflow into a horizontal scrollbar. Two left/right rows
-   per pick instead of the auto-layout board's separate lines: pick # and
-   where the player actually went ("Orig. 1.08" / "Undrafted") share the
-   top row, position rank and TRUE season points share the bottom. The
-   "Orig." label reuses the actual board's `.dv-pos`/`.dv-neg` tint (style.css)
-   -- green when this cell's `pick_no` beats (is numerically lower than)
-   `orig_pick_no` (the player rose vs. the real draft), red when it's worse
-   (higher); an "Undrafted" real outcome has no `orig_pick_no` to compare
-   against and stays neutral. Header
-   cells use `idm.who()` (portrait beside name, same idiom as everywhere
-   else in the app) instead of bare text. `--team-count` (read by
-   .draftboard-fit's own min-width, style.css) is how many team columns
-   THIS instance has -- inline custom property, same idiom as
-   `.drilltable`'s `--cols` elsewhere. #}
+   The tile markup is the shared _redraft_board_sleeper.html (Sleeper-style
+   tiles, same .sleeperboard CSS as the Draft tab board), which keeps the
+   "Orig. 1.08" corner visible and tinted -- green when the player would have
+   gone earlier than his real slot, red when later. #}
 {% if redraft_rounds %}
 <p class="hint">Same grid, same team ownership: each slot filled by whoever
-   actually deserved it by TRUE season value instead of who was actually taken. Each
-   pick's top-right corner says where that player really went, <span class="dv-pos">green</span>
-   when he'd have gone earlier than he really did, <span class="dv-neg">red</span> when later.</p>
-{# nosort: the board is a round x slot grid, so re-ordering rows is meaningless #}
-<div class="tablewrap nosort">
-  <table class="draftboard draftboard-fit" style="--team-count: {{ slot_user|length }}">
-    <thead>
-      <tr>
-        <th class="rnd">R</th>
-        {% for u in slot_user %}<th title="{{ u or '' }}">{{ idm.who(u) }}</th>{% endfor %}
-      </tr>
-    </thead>
-    <tbody>
-      {% for rnd in redraft_rounds %}
-      <tr>
-        <td class="rnd">{{ rnd.round }}</td>
-        {% for c in rnd.cells %}
-        <td class="pick">
-          {% if c %}
-          <div class="pkrow">
-            <span class="pk">#{{ c.pick_no }}</span>
-            <span class="q{% if c.orig_pick_no %}{% if c.pick_no < c.orig_pick_no %} dv-pos{% elif c.pick_no > c.orig_pick_no %} dv-neg{% endif %}{% endif %}">{{ ("Orig. " ~ c.orig_pick) if c.orig_pick else "Undrafted" }}</span>
-          </div>
-          <span class="pl pos-{{ c.pos }}" title="{{ c.player }}">{{ idm.headshot(c.player_id) }}{{ c.player }}</span>
-          <div class="ptsrow">
-            <span class="q posrank">{% if c.pos_rank %}{{ c.pos }} #{{ c.pos_rank }}{% endif %}</span>
-            <span class="pts">{{ "%.0f"|format(c.total) }} pts</span>
-          </div>
-          {% else %}<span class="pk">N/A</span>{% endif %}
-        </td>
-        {% endfor %}
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
-</div>
+   actually deserved it by TRUE season value instead of who was actually taken.
+   Each tile shows this pick and where the player really went (&uarr; he&rsquo;d have
+   gone earlier, &darr; later), with his TRUE season points top-right.  Hover for
+   his leaguewide position finish.</p>
+{% with rows = redraft_rounds %}{% include "_redraft_board_sleeper.html" %}{% endwith %}
 {% else %}
 <p class="empty">Not enough season data to build a redraft comparison.</p>
 {% endif %}

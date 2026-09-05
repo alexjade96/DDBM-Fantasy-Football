@@ -1,35 +1,38 @@
-{# "Draft board" section: the actual round x slot grid. Deferred behind
-   /tab/draft/part/board (see app.py's TAB_PARTS) since draft.draft_board()
-   materializes the whole board -- see tab_draft.html, which renders this
-   same fragment's placeholder. Used to also hold a Redraft-by-true-value
-   toggle (a second copy of the grid, filled by TRUE season value instead of
-   actual order) -- removed in favour of just this board plus a link into
-   the full redraft simulation report, which covers the same "what if"
-   question with actual standings/playoffs behind it rather than just a
-   reordered grid. The grid itself is _draft_board_fit.html (a fixed-layout
-   table that always fits the panel width instead of overflowing into a
-   horizontal scrollbar) -- same `rounds`/`slot_user` context either way, so
-   there's no reason to keep a second copy of the markup here. #}
+{# "Draft board" section: the actual round x slot grid, styled like Sleeper's
+   own draft room (position-colored tiles, the analytics on hover). Deferred
+   behind /tab/draft/part/board (see app.py's TAB_PARTS) since
+   draft.draft_board() materializes the whole board -- see tab_draft.html,
+   which renders this same fragment's placeholder. Used to also hold a
+   Redraft-by-true-value toggle (a second copy of the grid, filled by TRUE
+   season value instead of actual order) -- removed in favour of just this
+   board plus a link into the full redraft simulation report, which covers
+   the same "what if" question with actual standings/playoffs behind it. The
+   grid markup is _draft_board_sleeper.html. #}
 <div class="rowhead"><h2>{{ season }} draft board</h2></div>
-<p class="hint">Each column is a manager's draft slot, each row is a round; colour
-   marks the position.</p>
+<p class="hint">Each column is a manager's draft slot, each row is a round.  The
+   tile colour is the position; hover a pick for its points, season total and the
+   draft-value read.</p>
 <dl class="glossary">
-  <div><dt>Points</dt><dd>Scored on the drafting team's roster, started or benched; the
-    number in parens is his TRUE full-season output, regardless of who rostered him
-    (0 if he never scored anywhere all season), equal to the first number whenever
-    the team kept him the whole way.</dd></div>
-  <div><dt>Pos #N</dt><dd>Leaguewide finish at his position, from that same true-season
-    number.</dd></div>
-  <div><dt>Highlight</dt><dd><span class="pts dv-pos">Green</span> when his TRUE season
-    value would have gone a full round or more EARLIER than he actually was drafted;
-    <span class="pts dv-neg">red</span> when it would have gone a round or more LATER.</dd></div>
+  <div><dt>round.pick</dt><dd>The pick in league notation (round, then pick within
+    the round).</dd></div>
+  <div><dt>Pos #N</dt><dd>Where the field had him going: position rank by Sleeper's
+    published pre-season ADP.  Falls back to his leaguewide season finish at the
+    position when that season has no ADP.</dd></div>
+  <div><dt>On hover</dt><dd>Points scored on the drafting roster, his TRUE full-season
+    output, and whether his season value would have gone a full round or more
+    earlier or later than he was actually drafted.</dd></div>
 </dl>
 
 <p class="hint">See how the season might have gone with a different draft: the
    report replays the whole season and postseason with every roster redrafted by true
    season value or Sleeper's own ADP.</p>
-<a class="dl" target="_blank" rel="noopener"
-   href="/report/redraft?league={{ league|urlencode }}&season={{ season|urlencode }}&theme={{ theme }}"
-   title="Open the redraft simulation report">View Simulated Draft &nearr;</a>
+<div class="rail draft-board-actions">
+  <a class="dl" target="_blank" rel="noopener"
+     href="/draft/rosters?league={{ league|urlencode }}&season={{ season|urlencode }}"
+     title="Download each team and its drafted roster as a JSON file">&darr; Download Draft Rosters</a>
+  <a class="dl" target="_blank" rel="noopener"
+     href="/report/redraft?league={{ league|urlencode }}&season={{ season|urlencode }}&theme={{ theme }}"
+     title="Open the redraft simulation report">View Simulated Draft &nearr;</a>
+</div>
 
-{% include "_draft_board_fit.html" %}
+{% include "_draft_board_sleeper.html" %}

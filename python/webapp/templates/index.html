@@ -29,6 +29,8 @@
   {# The visual playoff-bracket builder (SMBuilder). Sits on window.SMBracket
      (defined inline below) and the /playoffs data endpoints. #}
   <script src="/static/builder.js?v={{ asset_v }}" defer></script>
+  {# Shared #panel table sort (also loaded by home.html). #}
+  <script src="/static/table-sort.js?v={{ asset_v }}" defer></script>
 </head>
 <body hx-indicator="#bar">
   <div id="bar"></div>
@@ -169,96 +171,10 @@
         });
       });
     }
-    // Click a column header to sort any panel table. Cells are ranked by their
-    // first embedded number when the column has one ("#3 of 10" -> 3, "9-8" -> 9,
-    // "+41.4" -> 41.4), else alphabetically -- so ranks, records, scores and
-    // names all sort sensibly without per-table configuration. Opt out with
-    // class="nosort" (the draft board is a grid, not a ranking).
-    function sortValue(td) {
-      var t = (td.textContent || '').trim().replace(/,/g, '');
-      var m = t.match(/-?\d+(\.\d+)?/);
-      return m ? parseFloat(m[0]) : null;
-    }
-    // A cell can override BOTH the numeric-detection heuristic and the text
-    // used for it via data-sort -- e.g. a "Player" cell that also carries a
-    // position-rank badge ("Daniel Jones QB #15") would otherwise auto-detect
-    // as numeric (every row has a digit) and sort by the rank buried in the
-    // badge instead of the name. data-sort="Daniel Jones" forces plain text
-    // comparison using that value instead of the cell's full textContent.
-    function textValue(td) {
-      return (td.dataset && td.dataset.sort !== undefined) ? td.dataset.sort
-        : (td.textContent || '').trim();
-    }
-    // Fantasy position order, not alphabetical (DEF/K/QB/RB/TE/WR reads
-    // nothing like how anyone thinks about a roster). Any column literally
-    // headed "Pos" sorts this way instead of by cell text.
-    var POS_ORDER = { QB: 0, RB: 1, WR: 2, TE: 3, K: 4, DEF: 5 };
-    function posValue(td) {
-      var t = (td.textContent || '').trim().toUpperCase();
-      return Object.prototype.hasOwnProperty.call(POS_ORDER, t) ? POS_ORDER[t] : 99;
-    }
-    function makeSortable(table) {
-      if (table.dataset.sortable || table.closest('.nosort')) return;
-      table.dataset.sortable = '1';
-      var head = table.tHead && table.tHead.rows[0];
-      var body = table.tBodies[0];
-      if (!head || !body || body.rows.length < 2) return;
-      Array.prototype.forEach.call(head.cells, function (th, i) {
-        th.tabIndex = 0;
-        th.setAttribute('role', 'button');
-        var isPos = th.textContent.trim().toLowerCase() === 'pos';
-        var run = function () {
-          // Group each row with EVERY immediately-following .detail-row
-          // sibling (a per-row drilldown -- possibly several rows deep for
-          // a multi-team split) so sorting always moves the whole group
-          // together, keyed on the group's own leading (data) row --
-          // otherwise a reorder could separate a row from its own expanded
-          // content, or attach it to the wrong neighbour. Mirrors
-          // weekly_report.html's standalone copy of this same fix.
-          var all = Array.prototype.slice.call(body.rows);
-          var groups = [];
-          for (var idx = 0; idx < all.length; idx++) {
-            var r = all[idx];
-            if (r.classList.contains('detail-row')) continue;
-            var grp = [r];
-            while (all[idx + 1] && all[idx + 1].classList.contains('detail-row')) {
-              grp.push(all[idx + 1]); idx++;
-            }
-            groups.push(grp);
-          }
-          // Rows that aren't data (the neighbourhood table's "⋯" gap) stay put.
-          if (groups.some(function (g) { return g[0].cells.length <= 1; })) return;
-          var asc = th.dataset.dir !== 'asc';
-          Array.prototype.forEach.call(head.cells, function (o) {
-            delete o.dataset.dir; o.classList.remove('sort-asc', 'sort-desc');
-          });
-          th.dataset.dir = asc ? 'asc' : 'desc';
-          th.classList.add(asc ? 'sort-asc' : 'sort-desc');
-          var overridden = groups.some(function (g) {
-            return g[0].cells[i] && g[0].cells[i].dataset.sort !== undefined;
-          });
-          var numeric = !isPos && !overridden && groups.every(function (g) {
-            return !g[0].cells[i] || sortValue(g[0].cells[i]) !== null;
-          });
-          groups.sort(function (a, b) {
-            var x = a[0].cells[i], y = b[0].cells[i];
-            if (!x || !y) return 0;
-            var d = isPos ? posValue(x) - posValue(y)
-              : numeric ? sortValue(x) - sortValue(y)
-              : textValue(x).localeCompare(textValue(y));
-            return asc ? d : -d;
-          });
-          groups.forEach(function (g) { g.forEach(function (r) { body.appendChild(r); }); });
-        };
-        th.addEventListener('click', run);
-        th.addEventListener('keydown', function (e) {
-          if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); run(); }
-        });
-      });
-    }
-    function prepTables() {
-      document.querySelectorAll('#panel table').forEach(makeSortable);
-    }
+    // Panel table sort lives in /static/table-sort.js (shared with home.html's
+    // ADP compare table). SMTableSort.prepTables() applies it to every
+    // #panel table; SMTableSort.makeSortable(table) does one.
+    function prepTables() { window.SMTableSort.prepTables(); }
     // Roster tab, per-manager scope: clicking a position-build row's
     // .pblabel chip (e.g. "RB") filters the Full player list drilldown
     // below to just that position, reusing the chip that's already there
@@ -543,36 +459,45 @@
       </div>
     </div>
 
-    <!-- One lookup control with a League / User mode toggle.
-         League mode -> GET /load (swaps #panel, and /load also re-syncs the
-         title + season list out-of-band). User mode -> GET /user-leagues,
-         rendering the "which of this account's leagues?" list into #panel;
-         picking one there navigates to /league=<id> (a full load), which
-         corrects #league/#season for the tab nav's hx-include. #league and
-         #season stay the canonical state fields either way -- the tabs
-         nav includes them by id, so their names/ids must not change.
-         Endpoint + submit target are switched per-mode in htmx:configRequest
-         below. `change from:#season` reloads the current league on a season
-         switch (League mode only; ignored in User mode). -->
-    <form id="lookup" class="controls" hx-get="/load" hx-target="#panel" hx-swap="innerHTML"
-          hx-include="#theme" hx-trigger="change from:#season, submit" hx-push-url="true"
-          hx-on="htmx:afterRequest: document.querySelectorAll('.tabs button').forEach((b,i)=>b.classList.toggle('active', i===0))">
-      <div class="lookup-mode" role="radiogroup" aria-label="Look up by">
-        <label><input type="radio" name="mode" value="league" checked> League</label>
-        <label><input type="radio" name="mode" value="user"> User</label>
-      </div>
-      <label>
-        <span id="lookup-label">League ID</span>
-        <input type="text" name="league" id="league" value="{{ league }}"
-               autocomplete="off" spellcheck="false"
-               data-ph-league="Sleeper league ID" data-ph-user="Sleeper username or user ID">
-      </label>
-      <label>
-        <span>Season</span>
-        {% include "_seasons.html" %}
-      </label>
-      <button type="submit" id="lookup-go">Load</button>
-    </form>
+    <!-- Persistent utility bar: league-agnostic controls that stay put on every
+         loaded page, independent of which league/season/tab is showing. Today
+         it holds the League / User lookup; it's the home for further
+         cross-league tools (see the Testing tab's "persistent league bar"
+         mockup). -->
+    <div class="utilbar" role="group" aria-label="League tools">
+      <span class="utilbar-label">Look up a league</span>
+
+      <!-- One lookup control with a League / User mode toggle.
+           League mode -> GET /load (swaps #panel, and /load also re-syncs the
+           title + season list out-of-band). User mode -> GET /user-leagues,
+           rendering the "which of this account's leagues?" list into #panel;
+           picking one there navigates to /league=<id> (a full load), which
+           corrects #league/#season for the tab nav's hx-include. #league and
+           #season stay the canonical state fields either way -- the tabs
+           nav includes them by id, so their names/ids must not change.
+           Endpoint + submit target are switched per-mode in htmx:configRequest
+           below. `change from:#season` reloads the current league on a season
+           switch (League mode only; ignored in User mode). -->
+      <form id="lookup" class="controls" hx-get="/load" hx-target="#panel" hx-swap="innerHTML"
+            hx-include="#theme" hx-trigger="change from:#season, submit" hx-push-url="true"
+            hx-on="htmx:afterRequest: document.querySelectorAll('.tabs button').forEach((b,i)=>b.classList.toggle('active', i===0))">
+        <div class="lookup-mode" role="radiogroup" aria-label="Look up by">
+          <label><input type="radio" name="mode" value="league" checked> League</label>
+          <label><input type="radio" name="mode" value="user"> User</label>
+        </div>
+        <label>
+          <span id="lookup-label">League ID</span>
+          <input type="text" name="league" id="league" value="{{ league }}"
+                 autocomplete="off" spellcheck="false"
+                 data-ph-league="Sleeper league ID" data-ph-user="Sleeper username or user ID">
+        </label>
+        <label>
+          <span>Season</span>
+          {% include "_seasons.html" %}
+        </label>
+        <button type="submit" id="lookup-go">Load</button>
+      </form>
+    </div>
 
   </header>
 

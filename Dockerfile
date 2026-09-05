@@ -18,9 +18,11 @@ WORKDIR /app
 COPY python/requirements.txt ./requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt
 
-# The package, the web layer, and the season data (bracket configs the
-# Playoffs tab reads, plus the ADP cache the Draft tab's redraft report reads).
+# The metrics package, the cross-platform ADP layer (landing-page ADP compare),
+# the web layer, and the season data (bracket configs the Playoffs tab reads,
+# plus the ADP snapshots under season/adp/).
 COPY python/sleepermetrics ./sleepermetrics
+COPY python/ffadp ./ffadp
 COPY python/webapp ./webapp
 COPY season ./season
 

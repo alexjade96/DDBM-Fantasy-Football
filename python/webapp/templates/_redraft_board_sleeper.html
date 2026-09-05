@@ -1,0 +1,64 @@
+{# Shared Sleeper-tile grid for the two redraft-report boards
+   (_redraft_board_table.html by true season value, _redraft_board_adp_table.html
+   by ADP). Same `.sleeperboard` styling as the Draft tab board
+   (_draft_board_sleeper.html) -- position-hue-filled rounded tiles, a filled
+   team-header bar -- but the tile carries what this board is about:
+
+     - top-left: the bare "#23" redraft pick, then a distinct translucent-white
+       chip for where the player really went ("orig 1.09" / "UDFA"). An up/down
+       arrow on the chip (bumped up a size) + a pale tint marks whether he'd
+       have gone earlier (up) or later (down) than his real slot. The chip is
+       NEUTRAL, not a green/red fill -- that was colour-on-colour against the
+       position tile.
+     - top-right: his TRUE season points -- the number the redraft order is
+       built from, so it belongs on the face, not the tooltip.
+     - tooltip: leaguewide position finish + the original-pick note in words.
+
+   Caller sets `rows` (its own list of {round, cells}: `redraft_rounds` or
+   `redraft_rounds_adp`) and shares `slot_user`; `idm` is imported with
+   context by redraft_report.html. Cell fields come from
+   _redraft_board_ctx / _redraft_board_adp_ctx: pick_no, player, player_id,
+   pos, pos_rank, total, orig_pick, orig_pick_no. #}
+{% if rows %}
+{# nosort: a round x slot grid, so re-ordering rows is meaningless #}
+<div class="tablewrap nosort">
+  <table class="sleeperboard" style="--team-count: {{ slot_user|length }}">
+    <thead>
+      <tr>
+        <th class="rnd">R</th>
+        {% for u in slot_user %}<th title="{{ u or '' }}">{{ idm.who(u) }}</th>{% endfor %}
+      </tr>
+    </thead>
+    <tbody>
+      {% for rnd in rows %}
+      <tr>
+        <td class="rnd">{{ rnd.round }}</td>
+        {% for c in rnd.cells %}
+        {% if c %}
+        {%- set rise = c.orig_pick_no and c.pick_no < c.orig_pick_no -%}
+        {%- set fall = c.orig_pick_no and c.pick_no > c.orig_pick_no -%}
+        <td class="sb-cell pos-{{ c.pos }}">
+          {%- set tip -%}
+          {%- if c.pos_rank %}{{ c.pos }} #{{ c.pos_rank }} at his position{% endif -%}
+          {%- if c.orig_pick %}{% if c.pos_rank %} &middot; {% endif %}really drafted {{ c.orig_pick }}
+            {%- if rise %} (would have gone earlier){% elif fall %} (would have gone later){% endif -%}
+          {%- else %}{% if c.pos_rank %} &middot; {% endif %}really undrafted{% endif -%}
+          {%- endset -%}
+          <div class="sb-pick" title="{{ tip }}">
+            <div class="sb-top">
+              <span class="sb-no">#{{ c.pick_no }}{% if c.orig_pick %} <span class="sb-orig{% if rise %} rise{% elif fall %} fall{% endif %}">{% if rise %}<span class="sb-ar">&uarr;</span>{% elif fall %}<span class="sb-ar">&darr;</span>{% endif %}orig {{ c.orig_pick }}</span>{% else %} <span class="sb-orig sb-udfa">UDFA</span>{% endif %}</span>
+              <span class="sb-pts">{{ "%.0f"|format(c.total) }} pts</span>
+            </div>
+            <span class="sb-name" title="{{ c.player }}">{{ c.player }}</span>
+          </div>
+        </td>
+        {% else %}
+        <td class="sb-cell sb-empty"><span class="sb-no">N/A</span></td>
+        {% endif %}
+        {% endfor %}
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}

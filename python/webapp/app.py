@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import contextlib
 import io
+import json
 import os
 import re
 import threading
@@ -60,7 +61,7 @@ async def _lifespan(_app: "FastAPI"):
     yield
 
 
-app = FastAPI(title="Sleeper League Analytics", lifespan=_lifespan)
+app = FastAPI(title="Fantasy Football 4 Fun", lifespan=_lifespan)
 app.mount("/static", StaticFiles(directory=BASE / "static"), name="static")
 tpl = Jinja2Templates(directory=str(BASE / "templates"))
 
@@ -910,8 +911,6 @@ CHART_META = {
     "position_scoring": {"cap": "Started points by position and each slot's share of the total."},
     "roster_counts": {"cap": "The average roster shape each manager carried."},
     "season_optimal": {"cap": "Started vs the best legal lineup, averaged across every manager, by week."},
-    "bracket_accent": {"cap": "PROTOTYPE: on the live elbow+card bracket, one neutral card fill with a green accent bar marking the side that advanced, gold champion card."},
-    "bracket_full": {"cap": "PROTOTYPE: bracket_accent plus alternating round column bands and byes drawn as a lighter pill."},
     "playoff_players_splice": {"cap": "Each bar split into one slice per playoff game, earliest first: a total shown as the games that built it."},
     "consolation_bracket": {"cap": "The teams that missed the championship bracket, week by week, and who finished last."},
     "consolation_players_splice": {"cap": "Best scorers in the consolation bracket, each bar split into one slice per game."},
@@ -948,28 +947,14 @@ CHART_META = {
 }
 tpl.env.globals["CHART_META"] = CHART_META
 
-# Testing tab: ad-hoc prototype charts under review, grouped by what existing
-# chart they're a proposed alternative/addition to -- a holding area for
-# "what if we tried..." requests so they're visible and clickable without
-# committing them to a real tab first. To add one: write the chart function,
-# a CHART_META entry, and a dispatch line in the /chart route (SEASON_CHARTS
-# for a plain season-scoped chart, or an `if name ==` branch if it needs the
-# same special-cased args a sibling chart already gets -- e.g. the
-# playoff_players_* prototypes below share playoff_players' own `po`/`scope`
-# setup rather than duplicating it) -- then list its key in a group here;
-# nothing else needs touching. Remove the key (and the chart function/dispatch
-# line, if it's been rejected) once a prototype's fate is decided.
-TESTING_CHARTS = [
-    ("Playoff bracket restylings, on top of the now-live baseline (elbow connectors "
-     "and two-line node cards, adopted from this round's prototypes). Two remain "
-     "under review: (1) drop the green-for-every-winner card fill for a single "
-     "neutral fill plus a short green accent bar marking the side that advanced (so "
-     "a Round 1 game isn't as loud as the Final), with a gold champion card; (2) the "
-     "same, plus alternating faint round column bands and byes drawn as a lighter, "
-     "narrower pill rather than a full matchup card", [
-        "bracket_accent", "bracket_full",
-    ]),
-]
+# Testing tab: a holding area for prototypes under review. Currently a single
+# non-chart item -- a link to the redesigned landing page -- rendered directly
+# by tab_testing.html, so there is no registry here right now. For a CHART
+# prototype: write the chart function, a CHART_META entry, and a /chart dispatch
+# line (SEASON_CHARTS for a plain season-scoped chart, or an `if name ==` branch
+# for one that needs a sibling's special-cased args), then reintroduce a list
+# like the one removed here and wire tab_testing.html back to iterate it. Remove
+# the chart function + dispatch line once a prototype's fate is decided.
 
 
 @app.get("/chart/{name}")
@@ -1044,18 +1029,6 @@ def chart(name: str, league: str = DEFAULT_LEAGUE, season: str | None = None,
             return png(plots.plot_playoff_stats(po, scope))
         if name == "playoff_players":
             return png(plots.plot_playoff_players(po, scope=scope))
-        if name in ("bracket_accent", "bracket_full"):
-            # Same inputs as the `bracket` branch below (a resolved p_season +
-            # this season's reference scores for bye/idle nodes); these are the
-            # Testing-tab restyling prototypes still under review on top of the
-            # now-live elbow+card bracket.
-            if p_season is None:
-                return Response(status_code=404)
-            _bracket_proto = {
-                "bracket_accent": plots.plot_playoff_bracket_accent,
-                "bracket_full": plots.plot_playoff_bracket_full,
-            }[name]
-            return png(_bracket_proto(p_season, sm.reference_scores(s)))
         if name in ("playoff_players_splice", "clutch"):
             # The Playoffs tab passes `scope=title` (championship path only);
             # the Postseason tab passes `scope=postseason`, which means "the
@@ -1157,6 +1130,132 @@ def home(request: Request, league: str = DEFAULT_LEAGUE):
     return tpl.TemplateResponse(request, "home.html", {
         "league": league, "asset_v": asset_v(),
     })
+
+
+# --- landing-page ADP comparison ---------------------------------------------
+# A cross-platform pre-season ADP board, shown on the landing page (no league
+# loaded). Webapp-only, backed by python/ffadp (a module OUTSIDE the parity-
+# gated sleepermetrics package). Every source is public, season-wide, REDRAFT
+# draft data -- no auth, no per-user league reads, and deliberately not
+# dynasty / rookie / IDP (Sleeper exposes those fields; ffadp.sleeper uses
+# only the redraft ones). Only Sleeper distinguishes scoring format; ESPN
+# publishes one redraft ADP that stands in for every mode. No TE-premium
+# variant -- neither source publishes one.
+_ADP_SCORING = [
+    ("std", "Standard"), ("half_ppr", "Half PPR"),
+    ("ppr", "Full PPR"), ("2qb", "Superflex"),
+]
+_ADP_SCORING_DEFAULT = "ppr"
+_ADP_POS = ["ALL", "QB", "RB", "WR", "TE", "K", "DEF"]
+
+
+@app.get("/welcome", response_class=HTMLResponse)
+def landing_start(request: Request):
+    """The landing page's default #panel view (greeting + User-lookup target).
+    Served on its own so the "Get started" sub-nav tab can swap it back after
+    "ADP Comparison" has replaced #panel."""
+    return tpl.TemplateResponse(request, "_landing_start.html", {})
+
+
+def _adp_params(season, scoring, pos):
+    sea = str(season).strip() if season else _current_nfl_season()
+    scoring = scoring if scoring in {k for k, _ in _ADP_SCORING} else _ADP_SCORING_DEFAULT
+    pos = pos.upper() if pos.upper() in _ADP_POS else "ALL"
+    return sea, scoring, pos
+
+
+@app.get("/adp", response_class=HTMLResponse)
+def adp_compare(request: Request, season: str | None = None,
+                scoring: str = _ADP_SCORING_DEFAULT, pos: str = "ALL"):
+    """The ADP Comparison landing tab: the section shell + the first board.
+
+    Rendered into the landing page's #panel (see home.html's sub-nav). Season
+    defaults to the one Sleeper considers current; scoring (default Full PPR)
+    and position are the controls. The board streams in as a lazy fragment
+    (`/adp/data`) so switching a control re-fetches just the table.
+    """
+    import ffadp.board as _adpboard
+
+    sea, scoring, pos = _adp_params(season, scoring, pos)
+    # Full historical span: from the oldest year ANY source has ADP for, back
+    # to the current draft season. A source that predates a chosen year (or
+    # simply has a gap there) just drops its column -- see ffadp.board.
+    cur = int(_current_nfl_season())
+    seasons = [str(y) for y in range(cur, _adpboard.EARLIEST_ANY - 1, -1)]
+    return tpl.TemplateResponse(request, "_adp_compare.html", {
+        "asset_v": asset_v(), "season": sea, "scoring": scoring, "pos": pos,
+        "seasons": seasons, "scorings": _ADP_SCORING, "positions": _ADP_POS,
+        "first_season": _adpboard.FIRST_SEASON,
+        "board": None,   # the table streams in via /adp/data
+    })
+
+
+@app.get("/adp/data", response_class=HTMLResponse)
+def adp_data(request: Request, season: str | None = None,
+             scoring: str = _ADP_SCORING_DEFAULT, pos: str = "ALL",
+             reload: bool = False):
+    """The ADP comparison table itself (HTMX fragment).
+
+    `reload=1` bypasses every cached snapshot and re-fetches each source live,
+    rewriting its snapshot. Otherwise a committed / previously-fetched snapshot
+    is used and the network is only hit for a year that has none.
+
+    Degrades to a message rather than 500ing: a source with no data is simply
+    omitted, and if EVERY source is empty the fragment says so.
+    """
+    import ffadp
+
+    sea, scoring, pos = _adp_params(season, scoring, pos)
+    try:
+        board = ffadp.combine(sea, scoring=scoring, pos=pos, reload=reload)
+    except Exception:
+        board = {"season": sea, "scoring": scoring, "pos": pos,
+                 "sources": [], "columns": [], "rows": []}
+    return tpl.TemplateResponse(request, "_adp_table.html", {
+        "board": board,
+        "scorings": _ADP_SCORING, "positions": _ADP_POS,
+    })
+
+
+def _adp_frame_and_name(season, scoring, pos, reload=False):
+    """Shared by the CSV + Excel export routes: the combined board as a flat
+    DataFrame plus a filename stem reflecting the requested view."""
+    import ffadp
+    import ffadp.board as _adpboard
+
+    sea, scoring, pos = _adp_params(season, scoring, pos)
+    board = ffadp.combine(sea, scoring=scoring, pos=pos, reload=reload)
+    df = _adpboard.to_frame(board)
+    stem = f"adp-{sea}-{scoring}" + ("" if pos == "ALL" else f"-{pos.lower()}")
+    return df, stem
+
+
+@app.get("/adp/export.csv")
+def adp_export_csv(season: str | None = None, scoring: str = _ADP_SCORING_DEFAULT,
+                   pos: str = "ALL", reload: bool = False):
+    """The current ADP Comparison view as CSV (attachment)."""
+    df, stem = _adp_frame_and_name(season, scoring, pos, reload)
+    buf = io.StringIO()
+    df.to_csv(buf, index=False)
+    return Response(
+        buf.getvalue(), media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="{stem}.csv"'})
+
+
+@app.get("/adp/export.xlsx")
+def adp_export_xlsx(season: str | None = None, scoring: str = _ADP_SCORING_DEFAULT,
+                    pos: str = "ALL", reload: bool = False):
+    """The current ADP Comparison view as an .xlsx workbook (attachment)."""
+    import pandas as pd
+
+    df, stem = _adp_frame_and_name(season, scoring, pos, reload)
+    buf = io.BytesIO()
+    with pd.ExcelWriter(buf, engine="openpyxl") as xl:
+        df.to_excel(xl, index=False, sheet_name="ADP")
+    return Response(
+        buf.getvalue(),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{stem}.xlsx"'})
 
 
 # The analytics link reads `/league=<id>` (no `/dashboard?` query) -- a literal
@@ -2705,12 +2804,10 @@ def tab(name: str, request: Request, league: str = DEFAULT_LEAGUE,
         })
         return _pushed(tpl.TemplateResponse(request, "tab_playoffs.html", ctx), ctx, name)
     elif name == "testing":
-        # Rendered eagerly here, no lazy @tab_part split -- the current
-        # group (redraft_standings() companions) is memoized per league:season
-        # (draft._sim_cache), so only the first chart on the page pays the
-        # real per-team-week solve; the rest reuse it.
+        # Currently just a link to the redesigned landing page -- no charts, so
+        # nothing to render eagerly. `seasons` feeds the shell's season picker
+        # and the _liveband include.
         ctx["seasons"] = list(reversed(d["names"]))
-        ctx["testing_charts"] = TESTING_CHARTS
         return _pushed(tpl.TemplateResponse(request, "tab_testing.html", ctx), ctx, name)
     else:
         return HTMLResponse("<p class='empty'>Unknown tab.</p>", status_code=404)
@@ -3187,7 +3284,7 @@ def _redraft_board_adp_ctx(s) -> dict:
 def _draft_board_ctx(s) -> dict:
     """{"slots", "slot_user", "rounds"} for the actual round x slot grid --
     used by the Draft tab's board part (_draft_board.html, via
-    _draft_board_fit.html).
+    _draft_board_sleeper.html).
     """
     db = draft.draft_board(s)
     if db.empty:
@@ -3215,6 +3312,9 @@ def _draft_board_ctx(s) -> dict:
     for rnd, g in db.groupby("round"):
         cells = {int(r["draft_slot"]): {
             "pick_no": int(r["pick_no"]) if pd_notna(r["pick_no"]) else None,
+            # pick WITHIN the round (1..team count), for the board's
+            # "round.pick" notation.
+            "pick_in_round": int(r["pick_in_round"]) if pd_notna(r["pick_in_round"]) else None,
             "player": r["player_name"] or "N/A",
             "player_id": r["player_id"] if pd_notna(r["player_id"]) else None,
             "pos": (r["position"] or "").upper(),
@@ -3237,16 +3337,129 @@ def _draft_board_ctx(s) -> dict:
             "rounds": rounds}
 
 
+def _adp_pos_rank_map(s) -> dict:
+    """{player_id: "RB #5"} -- each player's position rank by Sleeper's own
+    published pre-season ADP for the season (lower ADP = better = #1 at his
+    position), in the league's own ADP format (`_adp_field_for`). This is the
+    "where the field had him going" read the draft board's tile badge shows,
+    as opposed to a season-value position finish. Best-effort: off-network /
+    no ADP for the season returns {}, and the board falls back to the
+    season-value rank. Webapp-only, same precedent as `_preseason_rosters`'
+    own ADP lookup -- the ADP endpoint is undocumented and not on the
+    parity-checked draft_board()."""
+    try:
+        field = draft._adp_field_for(s)
+        raw = draft._fetch_adp_raw(s.season)
+    except Exception:
+        return {}
+    by_pos: dict = {}
+    for pid, row in raw.items():
+        adp = row.get(field)
+        pos = (row.get("position") or "").upper()
+        if pos and isinstance(adp, (int, float)) and adp < 999:
+            by_pos.setdefault(pos, []).append((adp, str(pid)))
+    out: dict = {}
+    for pos, lst in by_pos.items():
+        for rank, (_adp, pid) in enumerate(sorted(lst), start=1):
+            out[pid] = f"{pos} #{rank}"
+    return out
+
+
 @tab_part("draft", "board")
 def _draft_part_board(request, s, d, key, ctx):
     bctx = _draft_board_ctx(s)
     if not bctx["rounds"]:
         return HTMLResponse("")
+    # The tile badge shows the ADP position rank (where the field had the
+    # player going pre-season), not the season-value finish -- more fitting
+    # on a board that reads like a draft room. Merged on here rather than in
+    # _draft_board_ctx so the ADP fetch stays off any other caller's path;
+    # falls back to the ctx's own season-value `pos_rank` when the season has
+    # no ADP (off-network, or a season Sleeper never published ADP for).
+    adp_rank = _adp_pos_rank_map(s)
+    if adp_rank:
+        for rnd in bctx["rounds"]:
+            for c in rnd["cells"]:
+                if c and c.get("player_id") is not None:
+                    c["adp_pos_rank"] = adp_rank.get(str(c["player_id"]))
     ctx.update(bctx)
     # No redraft-board toggle here anymore (see _draft_board.html) -- the
     # board just links into the full redraft report instead, so this route
     # no longer pays for _redraft_board_ctx's own draft.redraft_board() call.
     return tpl.TemplateResponse(request, "_draft_board.html", ctx)
+
+
+def _draft_rosters_payload(s, key: str) -> dict:
+    """Every team plus the players it drafted, as a plain dict ready to dump
+    to JSON. Draft-time facts only (player, position, pick coordinates) -- no
+    season points/grades/ranks, so the file is stable and reproducible rather
+    than shifting with the standings. Built straight off draft.draft_board()
+    (cached), one entry per team, teams in draft-slot order, picks in overall
+    pick order."""
+    from datetime import datetime, timezone
+
+    db = draft.draft_board(s)
+    teams: list[dict] = []
+    rounds = teams_n = 0
+    if not db.empty:
+        db = db.sort_values("pick_no")
+        rounds = int(db["round"].dropna().max() or 0)
+        teams_n = int(db["draft_slot"].dropna().nunique())
+        # Group by team; a draft slot maps to one manager all draft, so sort
+        # the groups by slot to read like a board column top to bottom.
+        by_slot = sorted(
+            db.groupby("roster_id", sort=False),
+            key=lambda kv: (kv[1]["draft_slot"].dropna().min()
+                            if kv[1]["draft_slot"].notna().any() else 1e9),
+        )
+        for rid, g in by_slot:
+            first = g.iloc[0]
+            picks = []
+            for _, r in g.iterrows():
+                rnd = int(r["round"]) if pd_notna(r["round"]) else None
+                pir = int(r["pick_in_round"]) if pd_notna(r["pick_in_round"]) else None
+                picks.append({
+                    "overall": int(r["pick_no"]) if pd_notna(r["pick_no"]) else None,
+                    "round": rnd,
+                    "pick_in_round": pir,
+                    "player_id": str(r["player_id"]) if pd_notna(r["player_id"]) else None,
+                    "player": r["player_name"] if pd_notna(r["player_name"]) else "N/A",
+                    "position": (r["position"] or "").upper() if pd_notna(r["position"]) else "",
+                })
+            teams.append({
+                "draft_slot": int(first["draft_slot"]) if pd_notna(first["draft_slot"]) else None,
+                "manager": first["user_name"] if pd_notna(first["user_name"]) else None,
+                "roster_id": int(rid) if pd_notna(rid) else None,
+                "pick_count": len(picks),
+                "picks": picks,
+            })
+    return {
+        "league_id": s.league_id,
+        "league_name": s.name,
+        "season": key,
+        "generated": datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds"),
+        "draft": {"rounds": rounds, "teams": teams_n,
+                  "total_picks": sum(t["pick_count"] for t in teams)},
+        "teams": teams,
+    }
+
+
+@app.get("/draft/rosters")
+def draft_rosters(league: str = DEFAULT_LEAGUE, season: str | None = None):
+    """Each team + its drafted roster as a downloadable JSON file. Served as
+    an attachment so a browser click saves it rather than rendering it."""
+    from urllib.parse import quote
+
+    try:
+        d, s, key = pick(league, season)
+    except Exception:
+        return JSONResponse({"error": f"Could not load league {league}."},
+                            status_code=404)
+    payload = _draft_rosters_payload(s, key)
+    fname = f"{s.name}_{key}_draft_rosters.json".replace(" ", "_")
+    body = json.dumps(payload, indent=2, ensure_ascii=False)
+    return Response(body, media_type="application/json", headers={
+        "Content-Disposition": f'attachment; filename="{quote(fname)}"'})
 
 
 # Builds the redraft-simulation context -- shared by the standalone report

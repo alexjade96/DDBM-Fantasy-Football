@@ -3,62 +3,135 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Sleeper League Analytics</title>
+  <title>Fantasy Football 4 Fun</title>
   <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
   {# ?v=<mtime> so a CSS edit is never served from a stale browser cache #}
   <link rel="stylesheet" href="/static/style.css?v={{ asset_v }}">
   {# Vendored, version pinned in the filename -- see index.html's head. #}
   <script src="/static/htmx-1.9.12.min.js" defer></script>
+  {# Shared #panel table sort (also loaded by index.html) -- the ADP Comparison
+     table uses it. #}
+  <script src="/static/table-sort.js?v={{ asset_v }}" defer></script>
+  {# The ADP Comparison tab fetches from ESPN's public read replica. #}
+  <link rel="preconnect" href="https://lm-api-reads.fantasy.espn.com" crossorigin>
+  <link rel="dns-prefetch" href="https://lm-api-reads.fantasy.espn.com">
 </head>
 <body>
-  <main class="landing">
-    <div class="landing-card">
+  {# The landing page is a loaded-league layout with nothing loaded yet: the
+     same .top header (brand + the league lookup), the same .tabs strip, and a
+     #panel main pane -- only the pane holds the greeting instead of a league's
+     Overview. See index.html for the populated version. #}
+  <header class="top">
+    <div class="brand">
       <span class="mark"></span>
-      <h1>Sleeper League Analytics</h1>
-      <p class="landing-lede">
-        Live-computed standings, luck, coaching, draft grades, playoffs and a
-        full season report, for any Sleeper fantasy football league.
-      </p>
-
-      {# Submitting leads to the season analytics at `/league=<id>` -- a clean
-         path with no `/dashboard?` query string. JS builds that path; the plain
-         GET action="/dashboard" is the no-JS fallback (that route still works).
-         The id is temporarily pre-filled with the Dank Soupers league so the
-         default way in is one click. #}
-      <form class="landing-form" id="landing-form" action="/dashboard" method="get">
-        <label>
-          <span>League ID</span>
-          <input type="text" name="league" id="league-id" value="{{ league }}"
-                 inputmode="numeric" autocomplete="off" spellcheck="false" required>
-        </label>
-        <button type="submit">View analytics &rarr;</button>
-      </form>
-      <p class="landing-hint">Pre-filled with the Dank Soupers league.</p>
-
-      {# Don't know a league id? Look the account up instead: type a Sleeper
-         username or user id, get the leagues it's in, click through to one. #}
-      <div class="landing-or"><span>or</span></div>
-      <form class="landing-form" hx-get="/user-leagues" hx-target="#user-results"
-            hx-swap="outerHTML" hx-trigger="submit">
-        <label>
-          <span>Sleeper username or user ID</span>
-          <input type="text" name="user" autocomplete="off" spellcheck="false"
-                 placeholder="e.g. sleeperbot" required>
-        </label>
-        <button type="submit">Find leagues</button>
-      </form>
-      {# The fragment returns its own <section class="user-results">, which
-         replaces this placeholder (hx-swap="outerHTML"). #}
-      <div id="user-results"></div>
+      <div>
+        <h1>Fantasy Football 4 Fun</h1>
+        <p class="sub">Sleeper league analytics</p>
+      </div>
     </div>
+
+    {# The league-loading function, in the header -- same place and shape it
+       sits on a loaded page (index.html's .utilbar). One lookup with a League
+       / User mode toggle.
+       League mode: JS navigates to /league=<id> (a clean path, no ?query). The
+       plain GET action="/dashboard" is the no-JS fallback -- that route still
+       resolves. User mode: JS fires an htmx.ajax GET to /user-leagues, whose
+       fragment renders the account's leagues into #user-results; picking one
+       there navigates to /league=<id>. The single text box carries name="league"
+       or name="user" per mode. No hx-* on the form itself, so the submit path is
+       unambiguous regardless of listener order. The id is pre-filled with the
+       Dank Soupers (DDBM) league so the default way in is one click. No season
+       picker here -- nothing is loaded, so there are no seasons to choose. #}
+    <div class="utilbar" role="group" aria-label="League tools">
+      <span class="utilbar-label">Look up a league</span>
+      <form class="controls" id="lookup" action="/dashboard" method="get">
+        <div class="lookup-mode" role="radiogroup" aria-label="Look up by">
+          <label><input type="radio" name="mode" value="league" checked> League</label>
+          <label><input type="radio" name="mode" value="user"> User</label>
+        </div>
+        <label>
+          <span id="lookup-label">League ID</span>
+          <input type="text" name="league" id="lookup-box" value="{{ league }}"
+                 inputmode="numeric" autocomplete="off" spellcheck="false" required
+                 data-ph-league="Sleeper league ID" data-ph-user="Sleeper username or user ID">
+        </label>
+        <button type="submit" id="lookup-go">View league &rarr;</button>
+      </form>
+    </div>
+  </header>
+
+  {# The landing sub-nav: the loaded page has a tab strip, so the empty state
+     carries one too. Two views, both htmx-swapping #panel: "Get started"
+     (GET /welcome -- the greeting + User-lookup target) and "ADP Comparison"
+     (GET /adp -- the cross-platform pre-season ADP board). Not the loaded-
+     league TABS nav; these need no league. onclick moves the .active class
+     the same way index.html's tab nav does. #}
+  <nav class="tabs" role="tablist" hx-target="#panel" hx-swap="innerHTML"
+       hx-push-url="false"
+       onclick="if(event.target.matches('button[role=tab]')){this.querySelectorAll('button').forEach(b=>b.classList.remove('active'));event.target.classList.add('active');}">
+    <button type="button" role="tab" class="active" hx-get="/welcome">Get started</button>
+    <button type="button" role="tab" hx-get="/adp">ADP Comparison</button>
+  </nav>
+
+  <main id="panel">
+    {% include "_landing_start.html" %}
   </main>
 
+  <footer>
+    Data: public Sleeper API. Champions come from the stored playoff brackets, not
+    Sleeper&rsquo;s <code>winners_bracket</code>; see <code>playoffs/README.md</code>.
+  </footer>
+
   <script>
-    document.getElementById('landing-form').addEventListener('submit', function (e) {
-      var id = document.getElementById('league-id').value.trim();
-      if (!id) return;                        // let required-validation fire
-      e.preventDefault();
-      window.location.assign('/league=' + encodeURIComponent(id));
+    // League / User lookup toggle for the landing form (#lookup). Mirrors the
+    // loaded dashboard header's toggle (index.html), minus the season picker and
+    // the out-of-band shell sync -- the landing page has no league loaded yet.
+    // - League mode: submit navigates to /league=<id> (JS) or GETs /dashboard
+    //   (no-JS fallback); the box carries name="league".
+    // - User mode: submit fires an htmx.ajax GET to /user-leagues, dropping the
+    //   returned <section class="user-results"> inside #user-results (innerHTML,
+    //   so the container id survives a repeat lookup); the box carries
+    //   name="user".
+    (function () {
+      var form = document.getElementById('lookup');
+      if (!form) return;
+      var lbl = document.getElementById('lookup-label');
+      var box = document.getElementById('lookup-box');
+      var go = document.getElementById('lookup-go');
+      var modeOf = function () {
+        var r = form.querySelector('input[name="mode"]:checked');
+        return r ? r.value : 'league';
+      };
+      var syncUI = function () {
+        var user = modeOf() === 'user';
+        lbl.textContent = user ? 'Username / user ID' : 'League ID';
+        box.name = user ? 'user' : 'league';
+        box.placeholder = box.dataset[user ? 'phUser' : 'phLeague'] || '';
+        go.textContent = user ? 'Find →' : 'View league →';
+        // /dashboard's no-JS fallback only makes sense for a league id.
+        form.setAttribute('action', user ? '/user-leagues' : '/dashboard');
+      };
+      form.querySelectorAll('input[name="mode"]').forEach(function (r) {
+        r.addEventListener('change', syncUI);
+      });
+      form.addEventListener('submit', function (e) {
+        var v = box.value.trim();
+        if (!v) return;                          // let required-validation fire
+        e.preventDefault();
+        if (modeOf() === 'user') {
+          window.htmx.ajax('GET', '/user-leagues?user=' + encodeURIComponent(v),
+            { target: '#user-results', swap: 'innerHTML' });
+        } else {
+          window.location.assign('/league=' + encodeURIComponent(v));
+        }
+      });
+      syncUI();
+    })();
+
+    // Make the ADP Comparison table (and any future #panel table) sortable each
+    // time an htmx swap brings one in.
+    document.body.addEventListener('htmx:afterSwap', function () {
+      if (window.SMTableSort) window.SMTableSort.prepTables();
     });
   </script>
 </body>

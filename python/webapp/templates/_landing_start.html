@@ -1,0 +1,17 @@
+{# The landing page's default #panel view: the greeting + the User-lookup
+   results target. Rendered inline by home.html on first paint, and re-served
+   by GET /welcome when the "Get started" sub-nav tab is clicked after the
+   "ADP Comparison" view has replaced #panel. #}
+<section class="card" id="ln-start">
+  <h2>Get started</h2>
+  <p class="home-lede">
+    Live-computed standings, luck, coaching, draft grades, playoffs and a full
+    season report, for any Sleeper league.  Enter a league ID in the header, or
+    switch to User to find one by account.
+  </p>
+  <p class="home-hint">Pre-filled with the Dank Soupers league.</p>
+
+  {# The /user-leagues fragment (its own <section class="user-results">) is
+     dropped in here by home.html's submit handler (innerHTML swap). #}
+  <div id="user-results"></div>
+</section>

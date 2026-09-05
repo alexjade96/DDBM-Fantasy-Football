@@ -1,0 +1,64 @@
+{# The Draft tab's round x slot board, styled like Sleeper's own draft room.
+   Context (`slots`/`slot_user`/`rounds`) is app.py's _draft_board_ctx, with
+   `adp_pos_rank` merged onto each cell by _draft_part_board.
+
+     - the whole pick tile is filled with its position hue, light text on top
+       (.sleeperboard .pos-<POS> in style.css), rounded corners, a small gap
+       between tiles (border-spacing, not a collapsed table border) -- the
+       colour IS the position label, so no portrait and no bare "RB" line,
+       just round.pick + the ADP position rank on top (where the field had
+       the player going pre-season, from _adp_pos_rank_map in app.py; falls
+       back to the season-value finish when the season has no ADP) and the
+       player name below
+     - each team column header is a bold filled bar
+     - the app's extra analytics (team pts, TRUE season total, the draft-value
+       read) live in the tile's `title` tooltip so the tile face stays clean
+
+   `--team-count` rides in as an inline custom property (same idiom as
+   .drilltable's --cols) so .sleeperboard's own min-width floor can scale with
+   league size; .tablewrap's overflow-x is the fallback once the panel is
+   narrower than that. #}
+{% import "_ident.html" as idm with context %}
+{% if rounds %}
+{# nosort: a round x slot grid, so re-ordering rows is meaningless #}
+<div class="tablewrap nosort">
+  <table class="sleeperboard" style="--team-count: {{ slot_user|length }}">
+    <thead>
+      <tr>
+        <th class="rnd">R</th>
+        {% for u in slot_user %}<th title="{{ u or '' }}">{{ idm.who(u) }}</th>{% endfor %}
+      </tr>
+    </thead>
+    <tbody>
+      {% for rnd in rounds %}
+      <tr>
+        <td class="rnd">{{ rnd.round }}</td>
+        {% for c in rnd.cells %}
+        {% if c %}
+        <td class="sb-cell pos-{{ c.pos }}">
+          {%- set tip -%}
+          {{ "%.0f"|format(c.points) }} pts &middot; Total {{ "%.0f"|format(c.total) }}
+          {%- if c.dv == "pos" %} &middot; went a round early{% elif c.dv == "neg" %} &middot; went a round late{% endif -%}
+          {%- endset -%}
+          <div class="sb-pick" title="{{ tip }}">
+            <div class="sb-top">
+              <span class="sb-no">{% if c.pick_in_round %}{{ rnd.round }}.{{ "%02d"|format(c.pick_in_round) }}{% else %}#{{ c.pick_no }}{% endif %}</span>
+              {# ADP position rank ("where the field had him going") when the season has ADP; else the season-value finish. #}
+              {% if c.adp_pos_rank %}<span class="sb-rank">{{ c.adp_pos_rank }}</span>
+              {% elif c.pos_rank %}<span class="sb-rank">{{ c.pos }} #{{ c.pos_rank }}</span>{% endif %}
+            </div>
+            <span class="sb-name" title="{{ c.player }}">{{ c.player }}</span>
+          </div>
+        </td>
+        {% else %}
+        <td class="sb-cell sb-empty"><span class="sb-no">N/A</span></td>
+        {% endif %}
+        {% endfor %}
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<p class="empty">No draft data for this season.</p>
+{% endif %}

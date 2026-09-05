@@ -1,0 +1,91 @@
+{# The "ADP Comparison" landing view: cross-platform pre-season average draft
+   position for REDRAFT leagues, side by side. No league context -- season /
+   scoring format / position are the only controls. The board streams in from
+   /adp/data so changing a control re-fetches just the table. Historical years
+   are read from committed snapshots; "Refresh" (`&reload=1`) re-pulls live. #}
+<section class="card">
+  <h2>ADP Comparison: platform vs platform</h2>
+  <p class="hint">Where each platform&rsquo;s <strong>redraft</strong> draft rooms
+    are taking every player, lined up so you can see who they disagree on.  All
+    season-wide published data, no league required.  Sort by any column; the
+    <strong>Spread</strong> column is how far apart the platforms rank a player.
+    Scoring format only changes the Sleeper column (ESPN publishes one ADP for
+    every format).
+    {%- if first_season %}
+      History runs back to
+      {%- for src, yr in first_season.items() if yr %}
+        {{ " " }}{{ yr }} ({{ src|capitalize }}){{ "," if not loop.last }}
+      {%- endfor -%};
+      a source is skipped for years before it published ADP.
+    {%- endif %}</p>
+
+  <form class="controls" id="adp-controls"
+        hx-get="/adp/data" hx-target="#adp-board" hx-swap="innerHTML"
+        hx-trigger="change, submit" hx-include="#adp-controls">
+    <label>
+      <span>Season</span>
+      <select name="season">
+        {% for y in seasons %}
+        <option value="{{ y }}" {% if y == season %}selected{% endif %}>{{ y }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>
+      <span>Scoring</span>
+      <select name="scoring">
+        {% for k, lbl in scorings %}
+        <option value="{{ k }}" {% if k == scoring %}selected{% endif %}>{{ lbl }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>
+      <span>Position</span>
+      <select name="pos">
+        {% for p in positions %}
+        <option value="{{ p }}" {% if p == pos %}selected{% endif %}>{{ p }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    {# Refresh + download the current view. Refresh re-pulls the sources live
+       (&reload=1) and rewrites the snapshots; the downloads are plain <a> so
+       they're real file downloads, not htmx swaps. All three hrefs / the
+       refresh trigger track the controls via the inline script below. #}
+    <span class="adp-actions">
+      <span>Data</span>
+      <button type="button" class="ghost" id="adp-refresh"
+              hx-get="/adp/data" hx-target="#adp-board" hx-swap="innerHTML"
+              hx-include="#adp-controls" hx-vals='{"reload": 1}'>Refresh</button>
+      <a class="ghost" id="adp-csv"
+         href="/adp/export.csv?season={{ season }}&scoring={{ scoring }}&pos={{ pos }}"
+         download>CSV</a>
+      <a class="ghost" id="adp-xlsx"
+         href="/adp/export.xlsx?season={{ season }}&scoring={{ scoring }}&pos={{ pos }}"
+         download>Excel</a>
+    </span>
+  </form>
+
+  {# First board loads immediately; subsequent loads come from #adp-controls. #}
+  <div id="adp-board"
+       hx-get="/adp/data?season={{ season }}&scoring={{ scoring }}&pos={{ pos }}"
+       hx-trigger="load" hx-swap="innerHTML">
+    <p class="hint">Loading ADP&hellip;</p>
+  </div>
+</section>
+
+<script>
+  // Keep the CSV / Excel download links pointing at whatever the controls
+  // currently show, so a download always matches the visible table.
+  (function () {
+    var form = document.getElementById('adp-controls');
+    if (!form) return;
+    var sync = function () {
+      var qs = new URLSearchParams(new FormData(form)).toString();
+      var csv = document.getElementById('adp-csv');
+      var xls = document.getElementById('adp-xlsx');
+      if (csv) csv.href = '/adp/export.csv?' + qs;
+      if (xls) xls.href = '/adp/export.xlsx?' + qs;
+    };
+    form.addEventListener('change', sync);
+    sync();
+  })();
+</script>

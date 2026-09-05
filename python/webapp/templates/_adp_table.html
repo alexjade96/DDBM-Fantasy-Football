@@ -1,0 +1,64 @@
+{# The ADP comparison table (HTMX fragment from /adp/data). `board` is
+   ffadp.combine()'s dict: sources (with ok flags), columns (sources that
+   returned data), rows (one per player, adp/rank per source, consensus,
+   spread). Degrades to a message when nothing resolved. #}
+{% set unavailable = board.sources | rejectattr("ok") | list %}
+
+{% if not board.columns %}
+  <p class="empty">No ADP data available for {{ board.season }} right now.  The
+    live sources could not be reached and there is no saved snapshot yet.</p>
+{% else %}
+
+  <p class="hint">
+    {{ board.rows | length }} players &middot;
+    {% for c in board.columns %}
+      {%- set s = (board.sources | selectattr("name", "equalto", c) | first) -%}
+      <strong>{{ s.label }}</strong>{{ "" if loop.last else ", " }}
+    {%- endfor %}
+    {%- if unavailable %} &middot;
+      {% for s in unavailable -%}
+        {{ s.label }}{% if s.why %} ({{ s.why }}){% endif %}{{ "" if loop.last else ", " }}
+      {%- endfor %}
+    {%- endif %}
+  </p>
+
+  <div class="tablewrap">
+    <table class="sortable">
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>Player</th>
+          <th class="n">Consensus</th>
+          {% for c in board.columns %}
+            {%- set s = (board.sources | selectattr("name", "equalto", c) | first) -%}
+            <th class="n">{{ s.label }} ADP</th>
+          {% endfor %}
+          <th class="n">Spread</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in board.rows %}
+        <tr>
+          <td class="n">{{ loop.index }}</td>
+          <td data-sort="{{ r.player }}"><strong>{{ r.player }}</strong>
+            {%- if r.position %} <span class="q">{{ r.position }}</span>{% endif -%}
+            {%- if r.team %} <span class="q">{{ r.team }}</span>{% endif -%}
+          </td>
+          <td class="n">{{ "%.1f"|format(r.consensus) if r.consensus is not none else "&ndash;" }}</td>
+          {% for c in board.columns %}
+            {%- set a = r.adp.get(c) -%}{%- set rk = r.rank.get(c) -%}
+            <td class="n" data-sort="{{ rk if rk is not none else 99999 }}">
+              {%- if a is not none -%}
+                {{ "%.1f"|format(a) }}<span class="adp-rk"> &middot; #{{ rk }}</span>
+              {%- else -%}&ndash;{%- endif -%}
+            </td>
+          {% endfor %}
+          <td class="n" data-sort="{{ r.spread if r.spread is not none else -1 }}">
+            {{ r.spread if r.spread is not none else "&ndash;" }}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+{% endif %}

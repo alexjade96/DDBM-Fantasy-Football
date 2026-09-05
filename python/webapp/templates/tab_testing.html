@@ -1,27 +1,18 @@
-{# Testing tab: a holding area for prototype charts under review -- "should
-   we build/keep this", not a finished feature. Grouped by what existing
-   chart each prototype is an alternative/addition to (see app.py's
-   TESTING_CHARTS); add a chart function + registry entries there and list
-   its key in a group to make it show up here, nothing in this template
-   needs touching. (A non-chart layout prototype -- the draft board's
-   fixed-width no-scroll grid -- lived here too for a while; it graduated to
-   the real Draft tab board and both redraft-report boards once judged, so
-   it's gone from here, same as any adopted/rejected chart prototype would
-   be.) No in-tab season rail -- one season control for the whole page, same
+{# Testing tab: a holding area for prototypes under review -- "should we
+   build/keep this", not a finished feature. Chart prototypes get a chart
+   function + a CHART_META entry + a /chart dispatch line in app.py; a
+   layout/section prototype gets a @tab_part(...) handler + a lazy section
+   here. No in-tab season rail -- one season control for the whole page, same
    as the Draft tab. #}
-{% import "_chartmacro.html" as ch with context %}
 {% with oob = true %}{% include "_seasons.html" %}{% endwith %}
 {% include "_liveband.html" %}
 <h2>Testing</h2>
-<p class="hint"><strong>Prototypes under review, not a finished feature.</strong> Expect
-   charts here to be added, reworked, or removed.</p>
-{% if testing_charts %}
-{% for group_name, keys in testing_charts %}
-<h3>{{ group_name }}</h3>
-<section class="grid">
-  {% for k in keys %}{{ ch.chart(k) }}{% endfor %}
-</section>
-{% endfor %}
-{% else %}
-<p class="empty">Nothing under review right now.</p>
-{% endif %}
+<p class="hint"><strong>Prototypes under review, not a finished feature.</strong> Items
+   here may be adopted, reworked, or dropped.</p>
+
+<h3>Prototype: redesigned landing page</h3>
+<p class="hint">The reworked entry page for when nothing is loaded (no league, no
+   user).  It wears the same header and footer as a loaded page, with a single
+   League / User lookup in place of the current centered card.  Opens in a new
+   tab.</p>
+<p><a class="ghost" href="/" target="_blank" rel="noopener">Open the landing page prototype &rarr;</a></p>
