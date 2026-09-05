@@ -206,6 +206,134 @@ def test_espn_provider_degrades_to_empty(monkeypatch):
     cache.clear()
 
 
+# --- FFC provider (fixture payload, no network) --------------------------
+
+_FFC_FIXTURE = {
+    "status": "Success",
+    "meta": {"type": "PPR", "teams": 12},
+    "players": [
+        {"name": "Christian McCaffrey", "position": "RB", "team": "SF",
+         "adp": 1.4},
+        {"name": "Justin Jefferson", "position": "WR", "team": "MIN",
+         "adp": 3.2},
+        {"name": "Harrison Butker", "position": "PK", "team": "KC",
+         "adp": 130.0},                       # PK -> K
+        {"name": "Bad Row", "position": "RB", "team": "X", "adp": 0},   # dropped
+    ],
+}
+
+
+def test_ffc_trim_normalises_and_sorts():
+    from ffadp import ffc
+    rows = ffc._trim(_FFC_FIXTURE["players"])
+    assert [r["name"] for r in rows] == [
+        "Christian McCaffrey", "Justin Jefferson", "Harrison Butker"]
+    assert rows[2]["position"] == "K"          # PK normalised
+    assert all(r["adp"] > 0 for r in rows)     # adp<=0 dropped
+
+
+def test_ffc_provider_snapshot_first(monkeypatch):
+    from ffadp import ffc, cache
+    cache.clear()
+    seen = []
+    monkeypatch.setattr(cache, "load",
+                        lambda src, sea, force=False, variant=None:
+                        (seen.append((src, sea, variant)) or
+                         [{"name": "A", "position": "RB", "team": "SF", "adp": 1.1}]))
+    monkeypatch.setattr(ffc.api, "ffc_adp",
+                        lambda *a, **k: (_ for _ in ()).throw(AssertionError("live hit")))
+    rows = ffc.FfcAdp().fetch("2024", "ppr")
+    assert len(rows) == 1 and seen == [("ffc", "2024", "ppr")]
+    cache.clear()
+
+
+def test_ffc_provider_format_fallback_and_skip(monkeypatch):
+    from ffadp import ffc, cache
+    cache.clear()
+    # an unsupported ask still resolves via _format_or_fallback (all 4 listed)
+    assert ffc.FfcAdp()._format_or_fallback("half_ppr") == "half_ppr"
+    # a year before FFC history returns [] without any fetch
+    monkeypatch.setattr(ffc.api, "ffc_adp",
+                        lambda *a, **k: (_ for _ in ()).throw(AssertionError("no call")))
+    assert ffc.FfcAdp().fetch("2008", "ppr") == []
+    cache.clear()
+
+
+def test_ffc_provider_degrades_to_empty(monkeypatch):
+    from ffadp import ffc, cache
+    cache.clear()
+    monkeypatch.setattr(ffc.api, "ffc_adp",
+                        lambda *a, **k: (_ for _ in ()).throw(RuntimeError("no net")))
+    monkeypatch.setattr(cache, "load",
+                        lambda src, sea, force=False, variant=None: None)
+    assert ffc.FfcAdp().fetch("2024", "ppr") == []
+    cache.clear()
+
+
+# --- MFL provider (fixture payloads, no network) ------------------------
+
+def test_mfl_flip_name_and_rows():
+    from ffadp import mfl
+    assert mfl._flip_name("McCaffrey, Christian") == "Christian McCaffrey"
+    assert mfl._flip_name("Bills, Buffalo") == "Buffalo Bills"
+    adp = [{"id": "1", "averagePick": "2.8"},
+           {"id": "2", "averagePick": "1.5"},
+           {"id": "3", "averagePick": "9.0"},   # a team-slot pos -> dropped
+           {"id": "4", "averagePick": "0"}]     # adp<=0 -> dropped
+    players = {
+        "1": {"name": "McCaffrey, Christian", "position": "RB", "team": "SFO"},
+        "2": {"name": "Taylor, Jonathan", "position": "RB", "team": "IND"},
+        "3": {"name": "Bills, Buffalo", "position": "TMWR", "team": "BUF"},
+        "4": {"name": "Nobody, Zero", "position": "WR", "team": "FA"},
+    }
+    rows = mfl._rows(adp, players)
+    assert [r["name"] for r in rows] == ["Jonathan Taylor", "Christian McCaffrey"]
+    assert rows[0]["adp"] == 1.5 and rows[0]["mfl_id"] == "2"
+
+
+def test_mfl_provider_snapshot_first(monkeypatch):
+    from ffadp import mfl, cache
+    cache.clear()
+    monkeypatch.setattr(cache, "load",
+                        lambda src, sea, force=False, variant=None:
+                        [{"mfl_id": "1", "name": "A", "position": "RB",
+                          "team": "SF", "adp": 1.2}])
+    monkeypatch.setattr(mfl.api, "mfl_adp",
+                        lambda *a, **k: (_ for _ in ()).throw(AssertionError("live hit")))
+    monkeypatch.setattr(mfl.api, "mfl_players",
+                        lambda *a, **k: (_ for _ in ()).throw(AssertionError("live hit")))
+    rows = mfl.MflAdp().fetch("2024", "ppr")
+    assert len(rows) == 1 and rows[0].extra["mfl_id"] == "1"
+    cache.clear()
+
+
+def test_mfl_provider_std_maps_to_non_ppr(monkeypatch):
+    from ffadp import mfl, cache
+    cache.clear()
+    got = {}
+    monkeypatch.setattr(cache, "load",
+                        lambda src, sea, force=False, variant=None: None)
+    monkeypatch.setattr(mfl.api, "mfl_players", lambda season: {
+        "1": {"name": "Doe, John", "position": "RB", "team": "SF"}})
+    monkeypatch.setattr(mfl.api, "mfl_adp",
+                        lambda season, is_ppr=1: got.update(is_ppr=is_ppr) or
+                        [{"id": "1", "averagePick": "3.0"}])
+    mfl.MflAdp().fetch("2024", "std")
+    assert got["is_ppr"] == 0
+    cache.clear()
+
+
+def test_mfl_provider_degrades_to_empty(monkeypatch):
+    from ffadp import mfl, cache
+    cache.clear()
+    monkeypatch.setattr(mfl.api, "mfl_players",
+                        lambda season: (_ for _ in ()).throw(RuntimeError("no net")))
+    monkeypatch.setattr(cache, "load",
+                        lambda src, sea, force=False, variant=None: None)
+    assert mfl.MflAdp().fetch("2024", "ppr") == []
+    cache.clear()
+
+
 def test_combine_tags_source_coverage(monkeypatch):
     # ESPN present for a year, Sleeper predates it -> Sleeper column dropped
     # with a "from <year>" note; ESPN column kept.
