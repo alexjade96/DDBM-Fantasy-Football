@@ -1,24 +1,18 @@
-"""Yahoo ADP provider -- STUB.
+"""Yahoo ADP provider.
 
-Yahoo's Fantasy API is OAuth2-only: there is no anonymous read path for
-league or draft-analysis data, and this feature explicitly does NOT do auth.
-A public Yahoo-specific ADP mirror has not been identified; the likely third
-column is a public consensus source (FantasyPros-style) rather than Yahoo
-itself. Left as a stub returning [] so the board simply omits the column.
+Yahoo's own Fantasy API is OAuth2-only: there is no anonymous read path for
+draft-analysis data, and this feature does no auth. Yahoo's redraft ADP is
+still available publicly THROUGH RotoWire's comparison feed (the `yahooppr`
+column), so the provider lives in ffadp.rotowire alongside the other columns
+that feed shares; this module just re-exports it so the registry / imports
+read naturally.
+
+Current season only (RotoWire's feed has no history). Yahoo publishes a
+single ADP; like the ESPN column it stands in for whichever scoring mode
+the board asks for.
 """
 from __future__ import annotations
 
-from .base import AdpProvider, AdpRow
+from .rotowire import EARLIEST, YahooAdp
 
-
-EARLIEST = None   # no public no-auth history
-
-
-class YahooAdp(AdpProvider):
-    name = "yahoo"
-    label = "Yahoo"
-    formats = ("std", "half_ppr", "ppr")
-
-    def fetch(self, season: str, scoring: str = "ppr",
-              reload: bool = False) -> list[AdpRow]:
-        return []
+__all__ = ["YahooAdp", "EARLIEST"]

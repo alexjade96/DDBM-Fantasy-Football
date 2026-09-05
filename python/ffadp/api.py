@@ -102,6 +102,28 @@ def mfl_adp(season, is_ppr: int = 1, fcount: int = 12) -> list[dict]:
     return rows
 
 
+def rotowire_adp(scoring: str = "PPR") -> list[dict]:
+    """RotoWire's ADP comparison table for the CURRENT season (one JSON list).
+
+    `scoring` is RotoWire's own slug -- "PPR" or "Standard"; anything else
+    falls back to "PPR". Each row carries a dozen sites' ADP in its own
+    column (yahooppr, nffc12ppr, ffpcoverall, underdoghalfppr, ...) plus
+    RotoWire's `average` consensus, keyed by first/last name + team + pos.
+    There is no year parameter -- the endpoint always returns the live
+    draft-season table. Raises on a non-2xx / non-list payload so a provider
+    can fall back to its snapshot.
+    """
+    slug = "Standard" if str(scoring).lower() in ("standard", "std") else "PPR"
+    url = "https://www.rotowire.com/football/tables/adp.php"
+    resp = requests.get(url, params={"pos": "ALL", "scoring": slug},
+                        headers={"User-Agent": _UA}, timeout=45)
+    resp.raise_for_status()
+    data = resp.json()
+    if not isinstance(data, list):
+        raise ValueError("unexpected RotoWire adp payload")
+    return data
+
+
 def mfl_players(season) -> dict[str, dict]:
     """MFL id -> {name, position, team} for a season. Names come back
     "Last, First"; kept verbatim here and flipped by the provider."""

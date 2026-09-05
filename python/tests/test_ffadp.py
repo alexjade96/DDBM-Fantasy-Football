@@ -334,6 +334,133 @@ def test_mfl_provider_degrades_to_empty(monkeypatch):
     cache.clear()
 
 
+# --- RotoWire fan-out (fixture feed, no network) -----------------------
+
+_RW_FIXTURE = [
+    {"firstname": "Jahmyr", "lastname": "Gibbs", "position": "RB",
+     "team": "DET", "playerID": "16808",
+     "average": "1.6", "yahooppr": "1.3", "nffc12ppr": "1.4",
+     "mfl12standard": "1.6", "ffpcoverall": "1.5", "underdoghalfppr": "1.0"},
+    {"firstname": "Ja'Marr", "lastname": "Chase", "position": "WR",
+     "team": "CIN", "playerID": "2799",
+     "average": "3.8", "yahooppr": "3.5", "nffc12ppr": "3.2",
+     "mfl12standard": "-", "ffpcoverall": "3.6", "underdoghalfppr": "3.1"},
+    {"firstname": "Some", "lastname": "Linebacker", "position": "LB",
+     "team": "KC", "playerID": "9", "average": "40.0"},      # IDP -> dropped
+    {"firstname": "No", "lastname": "Data", "position": "WR",
+     "team": "FA", "playerID": "8",
+     "average": "", "yahooppr": "-", "ffpcoverall": "999.0"},  # all sentinel
+]
+
+
+def test_rotowire_trim_drops_idp_and_sentinels():
+    from ffadp import rotowire
+    rows = rotowire._trim(_RW_FIXTURE)
+    assert [r["name"] for r in rows] == ["Jahmyr Gibbs", "Ja'Marr Chase"]
+    assert rows[0]["position"] == "RB" and rows[0]["yahooppr"] == 1.3
+    assert rows[1]["mfl12standard"] is None       # "-" sentinel
+
+
+def test_rotowire_columns_fan_out(monkeypatch):
+    from ffadp import rotowire
+    rotowire._clear_feed_cache()
+    monkeypatch.setattr(rotowire.api, "rotowire_adp", lambda slug="PPR": _RW_FIXTURE)
+    monkeypatch.setattr(rotowire.cache, "load",
+                        lambda *a, **k: None)   # force the (patched) live path
+    monkeypatch.setattr(rotowire.cache, "save", lambda *a, **k: None)
+    # each source slices its own column
+    rw = rotowire.RotowireAdp().fetch("2026", "ppr")
+    yh = rotowire.YahooAdp().fetch("2026", "ppr")
+    nf = rotowire.NffcAdp().fetch("2026", "ppr")
+    ud = rotowire.UnderdogAdp().fetch("2026", "ppr")
+    assert [r.name for r in rw] == ["Jahmyr Gibbs", "Ja'Marr Chase"]
+    assert rw[0].adp == 1.6 and rw[0].overall_rank == 1
+    assert [r.adp for r in yh] == [1.3, 3.5]
+    assert [r.adp for r in nf] == [1.4, 3.2]
+    assert [r.adp for r in ud] == [1.0, 3.1]
+    rotowire._clear_feed_cache()
+
+
+def test_rotowire_one_fetch_feeds_all_columns(monkeypatch):
+    from ffadp import rotowire
+    rotowire._clear_feed_cache()
+    calls = []
+    monkeypatch.setattr(rotowire.api, "rotowire_adp",
+                        lambda slug="PPR": calls.append(slug) or _RW_FIXTURE)
+    monkeypatch.setattr(rotowire.cache, "load", lambda *a, **k: None)
+    monkeypatch.setattr(rotowire.cache, "save", lambda *a, **k: None)
+    for cls in (rotowire.RotowireAdp, rotowire.NffcAdp, rotowire.FfpcAdp,
+                rotowire.UnderdogAdp, rotowire.YahooAdp):
+        cls().fetch("2026", "ppr")
+    assert calls == ["PPR"]          # one HTTP call backs all five columns
+    rotowire._clear_feed_cache()
+
+
+def test_rotowire_std_slug_and_yahoo_ppr_only(monkeypatch):
+    from ffadp import rotowire
+    rotowire._clear_feed_cache()
+    seen = []
+    monkeypatch.setattr(rotowire.api, "rotowire_adp",
+                        lambda slug="PPR": seen.append(slug) or _RW_FIXTURE)
+    monkeypatch.setattr(rotowire.cache, "load", lambda *a, **k: None)
+    monkeypatch.setattr(rotowire.cache, "save", lambda *a, **k: None)
+    # NFFC in Standard maps to the mfl12standard column
+    nf = rotowire.NffcAdp().fetch("2026", "std")
+    assert seen == ["Standard"]
+    assert [r.adp for r in nf] == [1.6]        # only Gibbs has mfl12standard
+    # Yahoo publishes one ADP; a Standard ask still shows its yahooppr number
+    yh = rotowire.YahooAdp().fetch("2026", "std")
+    assert [r.adp for r in yh] == [1.3, 3.5]
+    rotowire._clear_feed_cache()
+
+
+def test_rotowire_predates_returns_empty(monkeypatch):
+    from ffadp import rotowire
+    monkeypatch.setattr(rotowire.api, "rotowire_adp",
+                        lambda slug="PPR": (_ for _ in ()).throw(AssertionError("no call")))
+    # a year before the feed's (current-season) EARLIEST
+    assert rotowire.RotowireAdp().fetch(str(rotowire.EARLIEST - 1), "ppr") == []
+
+
+def test_rotowire_degrades_to_empty(monkeypatch):
+    from ffadp import rotowire
+    rotowire._clear_feed_cache()
+    monkeypatch.setattr(rotowire.api, "rotowire_adp",
+                        lambda slug="PPR": (_ for _ in ()).throw(RuntimeError("no net")))
+    monkeypatch.setattr(rotowire.cache, "load", lambda *a, **k: None)
+    assert rotowire.RotowireAdp().fetch(str(rotowire.EARLIEST), "ppr") == []
+    rotowire._clear_feed_cache()
+
+
+def test_rotowire_derived_columns_never_write_their_own_snapshot(monkeypatch):
+    # The Yahoo / NFFC / FFPC / Underdog columns are views over the one
+    # "rotowire" snapshot; none may read or write a snapshot keyed on its own
+    # source name (which could collide with a future first-party provider).
+    from ffadp import rotowire
+    rotowire._clear_feed_cache()
+    seen_names = []
+    monkeypatch.setattr(rotowire.cache, "load",
+                        lambda src, *a, **k: seen_names.append(("load", src)) or None)
+    monkeypatch.setattr(rotowire.cache, "save",
+                        lambda src, *a, **k: seen_names.append(("save", src)))
+    monkeypatch.setattr(rotowire.api, "rotowire_adp", lambda slug="PPR": _RW_FIXTURE)
+    for cls in (rotowire.YahooAdp, rotowire.NffcAdp, rotowire.FfpcAdp,
+                rotowire.UnderdogAdp, rotowire.RotowireAdp):
+        cls().fetch("2026", "ppr")
+    assert {src for _, src in seen_names} == {"rotowire"}
+    rotowire._clear_feed_cache()
+
+
+def test_board_registers_rotowire_family():
+    from ffadp import board
+    names = [p.name for p in board.PROVIDERS]
+    for n in ("rotowire", "nffc", "ffpc", "underdog", "yahoo"):
+        assert n in names
+    # all five are current-season-only
+    assert board.FIRST_SEASON["nffc"] == board.FIRST_SEASON["yahoo"]
+    assert board.FIRST_SEASON["fantasypros"] is None
+
+
 def test_combine_tags_source_coverage(monkeypatch):
     # ESPN present for a year, Sleeper predates it -> Sleeper column dropped
     # with a "from <year>" note; ESPN column kept.

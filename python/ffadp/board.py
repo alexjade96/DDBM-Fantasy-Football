@@ -9,29 +9,43 @@ from .espn import EspnAdp
 from .fantasypros import FantasyProsAdp
 from .ffc import FfcAdp
 from .mfl import MflAdp
+from .rotowire import FfpcAdp, NffcAdp, RotowireAdp, UnderdogAdp
 from .sleeper import SleeperAdp
 from .yahoo import YahooAdp
 
 # The source registry, in display order. TO ADD A SOURCE: write a module with
-# an AdpProvider subclass (a `name`, `label`, `formats` tuple, an optional
-# module-level `EARLIEST` year, and a `fetch(season, scoring, reload=False)`
-# that snapshots via ffadp.cache and degrades to []), then add it here.
-# Everything else (id keying, merge, consensus/spread, the season range, the
-# coverage notes, CSV/Excel export) picks it up automatically. A source whose
-# fetch() returns [] is dropped from the board and noted as unavailable.
+# an AdpProvider subclass (a `name`, `label`, `formats` tuple, an `EARLIEST`
+# year -- module-level, or a class attribute when one module backs several
+# sources -- and a `fetch(season, scoring, reload=False)` that snapshots via
+# ffadp.cache and degrades to []), then add it here. Everything else (id
+# keying, merge, consensus/spread, the season range, the coverage notes,
+# CSV/Excel export) picks it up automatically. A source whose fetch() returns
+# [] is dropped from the board and noted as unavailable.
 PROVIDERS: list[AdpProvider] = [
-    SleeperAdp(), EspnAdp(), FfcAdp(), MflAdp(), YahooAdp(), FantasyProsAdp(),
+    SleeperAdp(), EspnAdp(), FfcAdp(), MflAdp(),
+    RotowireAdp(), NffcAdp(), FfpcAdp(), UnderdogAdp(), YahooAdp(),
+    FantasyProsAdp(),
 ]
 _BY_NAME = {p.name: p for p in PROVIDERS}
 
-# Earliest season each source has public, no-auth ADP for (its module's
-# `EARLIEST`), so the UI can say "from <year>" instead of just dropping the
-# column. None -> no public history (a stub, or an auth-gated source).
-FIRST_SEASON = {
-    p.name: getattr(__import__(f"ffadp.{p.name}", fromlist=["EARLIEST"]),
-                    "EARLIEST", None)
-    for p in PROVIDERS
-}
+
+def _earliest_of(p: AdpProvider):
+    """The oldest season a provider has public no-auth ADP for. A class
+    attribute wins (used when one module backs several columns); otherwise
+    the provider's own module's EARLIEST; else None (a stub)."""
+    if getattr(p, "EARLIEST", None) is not None:
+        return p.EARLIEST
+    try:
+        mod = __import__(f"ffadp.{p.name}", fromlist=["EARLIEST"])
+        return getattr(mod, "EARLIEST", None)
+    except Exception:
+        return None
+
+
+# Earliest season each source has public, no-auth ADP for, so the UI can say
+# "from <year>" instead of just dropping the column. None -> no public
+# history (a stub, or an auth-gated source).
+FIRST_SEASON = {p.name: _earliest_of(p) for p in PROVIDERS}
 # The oldest season ANY source can cover -- the season picker's lower bound.
 EARLIEST_ANY = min((y for y in FIRST_SEASON.values() if y), default=2020)
 

@@ -1,15 +1,22 @@
 """FantasyPros consensus-ADP provider -- STUB.
 
-The intended third column: a public consensus ADP that aggregates ESPN /
-Yahoo / Sleeper / CBS / NFL etc., which is more useful for draft prep than any
-single platform and needs no auth. FantasyPros publishes redraft consensus
-ADP per scoring format (STD / HALF / PPR) and per year.
+FantasyPros would be the ideal consensus column, but there is no no-auth
+path to its ADP data:
 
-Not wired yet -- returns [] so the board omits the column. To implement:
-add the fetch (a small JSON/CSV pull), trim to the AdpRow shape (carry a
-cross-id if the feed has one, else a clean name+position for
+  * The ADP pages (fantasypros.com/nfl/adp/ppr-overall.php etc.) do NOT
+    contain the table in their HTML. The server-rendered markup holds only a
+    ~5-row preview blob (integer ranks, no decimal ADP); the full table is
+    fetched client-side from api.fantasypros.com, which returns 403 without
+    an x-api-key. That key is issued only to "Hall of Fame" subscribers.
+  * Getting the real numbers would need either the gated key (violates the
+    feature's no-auth / no-secrets rule) or a headless browser to run the
+    page JS (a dependency this feature avoids).
+
+RotoWire's `average` / consensus column (ffadp.rotowire.RotowireAdp) is the
+public substitute now wired in. If FantasyPros ever exposes a public feed,
+implement fetch() here: trim to AdpRow (clean name+position for
 identity.resolve), snapshot via ffadp.cache under season/adp/fantasypros/,
-and set EARLIEST to the oldest year the feed covers.
+set EARLIEST.
 """
 from __future__ import annotations
 
