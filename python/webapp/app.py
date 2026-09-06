@@ -1724,6 +1724,108 @@ def _preseason_rosters(s, board=None) -> list[dict]:
     return out
 
 
+# Sleeper's four ADP variants -> ffadp.combine's scoring key. The board grades
+# a drafted roster against the FIELD's cross-platform consensus (Sleeper +
+# ESPN + Yahoo + CBS + FFC + RotoWire), not just Sleeper's own ADP, so the
+# format is picked the same way draft._adp_field_for does and mapped through.
+_ADP_FIELD_TO_SCORING = {
+    "adp_std": "std", "adp_half_ppr": "half_ppr",
+    "adp_ppr": "ppr", "adp_2qb": "2qb",
+}
+
+
+def _preseason_adp_compare(s, board=None) -> list[dict]:
+    """The Draft tab's "Pre-season" finds view: each manager's drafted roster
+    graded against the cross-platform CONSENSUS draft position from
+    ffadp.combine (mean rank across every live source), one entry per manager,
+    ordered by draft slot.
+
+    For each pick, `vs_consensus = pick_no - consensus_rank`: negative means
+    the manager took the player EARLIER than the field's consensus (a reach),
+    positive means later (waited / got value). `avg_vs_consensus` is the mean
+    over this manager's priced picks, with the same implausible-magnitude
+    guard `_preseason_rosters` uses (a stub / half-run draft can put ADP on a
+    different scale from its pick numbers).
+
+    Returns []:
+      * when the season has no draft board, or
+      * when ffadp.combine resolves nothing for the season (offline, no
+        committed snapshot) -- the panel then shows a short "no ADP" note.
+    Webapp-only; ffadp stays outside the parity-gated engine.
+    """
+    if board is None:
+        board = draft.draft_board(s)
+    if board.empty:
+        return []
+    try:
+        import ffadp.board as _adpboard
+        scoring_key = _ADP_FIELD_TO_SCORING.get(draft._adp_field_for(s), "ppr")
+        b = _adpboard.combine(str(s.season), scoring=scoring_key)
+    except Exception:
+        return []
+    by_pid: dict[str, dict] = {}
+    for r in b.get("rows", []):
+        pid = r.get("sleeper_id")
+        if pid:
+            by_pid[str(pid)] = r
+    if not by_pid:
+        return []
+    src_labels = {sc["name"]: sc["label"] for sc in b.get("sources", [])}
+    live_cols = list(b.get("columns", []))
+
+    bs = board.sort_values("pick_no")
+    out = []
+    for name, g in bs.groupby("user_name", sort=False):
+        slot = None
+        picks = []
+        for _, row in g.iterrows():
+            if slot is None and pd_notna(row.get("draft_slot")):
+                slot = int(row["draft_slot"])
+            pid = str(row["player_id"]) if pd_notna(row.get("player_id")) else None
+            pick_no = int(row["pick_no"]) if pd_notna(row.get("pick_no")) else None
+            rnd = int(row["round"]) if pd_notna(row.get("round")) else None
+            pir = int(row["pick_in_round"]) if pd_notna(row.get("pick_in_round")) else None
+            adp_row = by_pid.get(pid) if pid else None
+            consensus = adp_row.get("consensus") if adp_row else None
+            spread = adp_row.get("spread") if adp_row else None
+            vs = (round(pick_no - consensus, 1)
+                  if (consensus is not None and pick_no is not None) else None)
+            per_source = []
+            if adp_row:
+                for c in live_cols:
+                    rk = adp_row.get("rank", {}).get(c)
+                    if rk is not None:
+                        per_source.append({"label": src_labels.get(c, c), "rank": rk})
+            picks.append({
+                "pick": (f"{rnd}.{pir:02d}" if rnd and pir
+                         else (str(pick_no) if pick_no is not None else "-")),
+                "pick_no": pick_no,
+                "player_name": row["player_name"] if pd_notna(row.get("player_name")) else "N/A",
+                "player_id": pid,
+                "position": (row["position"] or "").upper() if pd_notna(row.get("position")) else "",
+                "consensus": consensus,
+                "spread": spread,
+                "vs_consensus": vs,
+                "per_source": per_source,
+            })
+        priced = [p["vs_consensus"] for p in picks if p["vs_consensus"] is not None]
+        avg = round(sum(priced) / len(priced), 1) if priced else None
+        if avg is not None and abs(avg) > len(bs):
+            avg = None
+        out.append({
+            "user_name": name,
+            "slot": slot,
+            "n_picks": len(picks),
+            "priced": len(priced),
+            "avg_vs_consensus": avg,
+            "n_reaches": sum(1 for v in priced if v < 0),
+            "n_values": sum(1 for v in priced if v > 0),
+            "picks": picks,
+        })
+    out.sort(key=lambda e: e["slot"] if e["slot"] is not None else 999)
+    return out
+
+
 def _last_completed_week(s) -> int:
     """The highest regular-season week that has actually been PLAYED -- a week
     whose games carry real scores. `s.last_week` is forced to >= 1 even for a
@@ -3209,6 +3311,11 @@ def _draft_part_standouts(request, s, d, key, ctx):
 
 @tab_part("draft", "finds")
 def _draft_part_finds(request, s, d, key, ctx):
+    board = draft.draft_board(s)
+    # The Pre-season panel grades the drafted roster against the field's
+    # cross-platform consensus ADP -- no points needed, so it renders in
+    # every phase (it is the ONLY finds panel shown before week 1).
+    ctx["preseason_adp"] = _preseason_adp_compare(s, board)
     if not _has_scored_data(s):
         ctx.update({"gems": [], "busts": [], "drafted": [], "undrafted": [],
                     "all_players": []})

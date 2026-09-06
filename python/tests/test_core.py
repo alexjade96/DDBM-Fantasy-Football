@@ -974,6 +974,82 @@ def test_preseason_rosters_are_in_pick_order_with_per_position_counts(season_obj
     assert al["picks"][0]["vs_adp"] == 0.5                          # pick 2 vs adp 1.5 -> value
 
 
+def test_preseason_adp_compare_grades_picks_against_consensus(season_obj, monkeypatch):
+    """The Draft tab's "Pre-season" finds panel: one entry per manager (draft
+    slot order), each pick graded `vs_consensus = pick_no - consensus_rank`
+    (negative = reached ahead of the field, positive = waited). The consensus
+    rank comes from ffadp.combine, joined by Sleeper player_id. See
+    app._preseason_adp_compare."""
+    import pandas as pd
+    from webapp import app
+    from webapp.app import _preseason_adp_compare
+
+    monkeypatch.setattr(app.draft, "_adp_field_for", lambda s: "adp_ppr")
+    # Stub the whole ffadp board: three players with a known consensus rank.
+    fake_board = {
+        "columns": ["sleeper", "espn"],
+        "sources": [{"name": "sleeper", "label": "Sleeper"},
+                    {"name": "espn", "label": "ESPN"}],
+        "rows": [
+            {"sleeper_id": "p1", "consensus": 3.0, "spread": 2,
+             "rank": {"sleeper": 2, "espn": 4}},
+            {"sleeper_id": "p2", "consensus": 1.5, "spread": 1,
+             "rank": {"sleeper": 1, "espn": 2}},
+            # p3 not in the board -> that pick is unpriced.
+        ],
+    }
+    import ffadp.board as _ab
+    monkeypatch.setattr(_ab, "combine", lambda *a, **k: fake_board)
+
+    s = season_obj
+    assert _preseason_adp_compare(s, pd.DataFrame()) == []           # no board
+
+    board = pd.DataFrame({
+        "pick_no":       [1, 2, 3],
+        "round":         [1, 1, 1],
+        "pick_in_round": [1, 2, 3],
+        "draft_slot":    [2, 1, 2],
+        "user_name":     ["Al", "Cy", "Al"],
+        "player_id":     ["p1", "p2", "p3"],
+        "player_name":   ["A one", "C one", "A two"],
+        "position":      ["rb", "wr", "te"],
+    })
+    out = _preseason_adp_compare(s, board)
+    assert [e["user_name"] for e in out] == ["Cy", "Al"]             # slot order (1, 2)
+
+    cy = out[0]
+    assert cy["picks"][0]["consensus"] == 1.5 and cy["picks"][0]["spread"] == 1
+    assert cy["picks"][0]["vs_consensus"] == 0.5                     # pick 2 vs rank 1.5 -> waited
+    assert [s["label"] for s in cy["picks"][0]["per_source"]] == ["Sleeper", "ESPN"]
+
+    al = out[1]
+    assert al["picks"][0]["vs_consensus"] == -2.0                    # pick 1 vs rank 3 -> reached
+    assert al["picks"][1]["consensus"] is None                       # p3 not on the board
+    assert al["picks"][1]["vs_consensus"] is None
+    assert al["priced"] == 1 and al["n_picks"] == 2
+    assert al["n_reaches"] == 1 and al["n_values"] == 0
+    assert al["avg_vs_consensus"] == -2.0                            # mean over the one priced pick
+
+
+def test_preseason_adp_compare_empty_when_board_resolves_nothing(season_obj, monkeypatch):
+    """ffadp offline / no snapshot -> combine returns no rows -> the panel
+    shows its own "no ADP" note rather than a table of dashes."""
+    import pandas as pd
+    from webapp import app
+    from webapp.app import _preseason_adp_compare
+    import ffadp.board as _ab
+
+    monkeypatch.setattr(app.draft, "_adp_field_for", lambda s: "adp_ppr")
+    monkeypatch.setattr(_ab, "combine",
+                        lambda *a, **k: {"columns": [], "sources": [], "rows": []})
+    board = pd.DataFrame({
+        "pick_no": [1], "round": [1], "pick_in_round": [1], "draft_slot": [1],
+        "user_name": ["Cy"], "player_id": ["p1"], "player_name": ["C one"],
+        "position": ["rb"],
+    })
+    assert _preseason_adp_compare(s=season_obj, board=board) == []
+
+
 def test_bracket_token_is_stable_and_content_addressed():
     """The webapp keys an ad-hoc bracket by a hash of its config, so identical
     brackets share a token and an unknown token resolves to nothing."""

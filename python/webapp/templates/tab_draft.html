@@ -25,13 +25,19 @@
 <section class="grid">
   {% for c in charts %}{{ ch.chart(c) }}{% endfor %}
 </section>
-
-{{ lz.lazy("/tab/draft/part/finds" ~ part_qs, height="180px") }}
 {% else %}
 <p class="empty">No games have been scored yet this season, so the draft can&rsquo;t
-   be graded.  Value charts, gems and busts fill in once week 1 is complete.  The
-   board below is every pick as it was made.</p>
+   be graded on points.  Value charts, gems and busts fill in once week 1 is
+   complete.  Until then, the <strong>Pre-season</strong> view below grades every
+   pick against the field&rsquo;s cross-platform consensus, and the board is every
+   pick as it was made.</p>
 {% endif %}
+
+{# The finds section always loads: pre-season it shows only its Pre-season
+   panel (drafted rosters vs consensus ADP, no points needed); once week 1 is
+   scored the points-based panels (All / Drafted / Undrafted / Gems / Busts)
+   join it. #}
+{{ lz.lazy("/tab/draft/part/finds" ~ part_qs, height="180px") }}
 
 {{ lz.lazy("/tab/draft/part/board" ~ part_qs, height="520px") }}
 {% endif %}

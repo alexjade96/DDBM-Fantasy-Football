@@ -1484,16 +1484,21 @@ footer code { font-family: ui-monospace, Consolas, monospace; }
 .fa-vs-mode:has(#fam-opt:checked) .vs-tabs label[for="fam-opt"] {
   background: var(--ink); color: var(--surface); border-color: var(--ink); }
 
-/* Draft tab: all players / drafted / gems / busts / undrafted, one shared
-   viewswitch instead of five separate always-visible sections -- fixed
-   5-id set (that grouping doesn't vary per league) rather than generated.
-   The position-adjusted read lives as an extra column on every panel
-   instead of its own tab -- one less place to look for the same picks. */
+/* Draft tab: pre-season / all players / drafted / gems / busts / undrafted,
+   one shared viewswitch instead of separate always-visible sections -- fixed
+   id set (that grouping doesn't vary per league) rather than generated. The
+   position-adjusted read lives as an extra column on every panel instead of
+   its own tab -- one less place to look for the same picks.  Pre-season
+   (drafted rosters vs cross-platform consensus ADP) needs no points, so it
+   is the only panel shown before week 1 -- the other five radios/labels are
+   simply not rendered then, and their unmatched rules here are no-ops. */
+.gb-vs-mode #gb-preseason:checked ~ .vs-p-preseason,
 .gb-vs-mode #gb-gems:checked ~ .vs-p-gems,
 .gb-vs-mode #gb-busts:checked ~ .vs-p-busts,
 .gb-vs-mode #gb-undrafted:checked ~ .vs-p-undrafted,
 .gb-vs-mode #gb-drafted:checked ~ .vs-p-drafted,
 .gb-vs-mode #gb-all:checked ~ .vs-p-all { display: block; }
+.gb-vs-mode:has(#gb-preseason:checked) .vs-tabs label[for="gb-preseason"],
 .gb-vs-mode:has(#gb-gems:checked) .vs-tabs label[for="gb-gems"],
 .gb-vs-mode:has(#gb-busts:checked) .vs-tabs label[for="gb-busts"],
 .gb-vs-mode:has(#gb-undrafted:checked) .vs-tabs label[for="gb-undrafted"],

@@ -1,0 +1,67 @@
+{# "Pre-season" panel of the Draft finds viewswitch: each manager's drafted
+   roster vs the FIELD's cross-platform consensus draft position
+   (ffadp.combine -> mean rank across Sleeper / ESPN / Yahoo / CBS / FFCalc /
+   RotoWire). No points needed, so this is the one finds panel shown before
+   week 1. `preseason_adp` is app._preseason_adp_compare(s): one entry per
+   manager (ordered by draft slot), each with a picks list.
+
+   One summary row per manager, expanding to that manager's picks. Same
+   drilldown furniture as the sibling panels (a trigger row + `.detail-row`
+   siblings, grouped by index.html's makeSortable). #}
+{% import "_ident.html" as idm with context %}
+{% if not preseason_adp %}
+  <p class="empty">No cross-platform ADP available for {{ season }} yet.  The
+    sources could not be reached and there is no saved snapshot for this
+    season.</p>
+{% else %}
+<div class="card tablewrap scrolltable">
+  <table class="sortable">
+    <thead><tr>
+      <th>Slot</th><th>Manager</th><th class="n">Picks</th>
+      <th class="n">Priced</th><th class="n">Avg vs consensus</th>
+      <th class="n">Reaches</th><th class="n">Values</th>
+    </tr></thead>
+    <tbody>
+    {% for m in preseason_adp %}
+      {% set avg = m.avg_vs_consensus %}
+      <tr class="has-detail">
+        <td data-sort="{{ '%03d'|format(m.slot) if m.slot is not none else '999' }}">
+          {{ m.slot if m.slot is not none else "&ndash;" }}</td>
+        <td data-sort="{{ m.user_name }}"><span class="drilldown-mark"></span>{{ idm.who(m.user_name) }}</td>
+        <td class="n">{{ m.n_picks }}</td>
+        <td class="n">{{ m.priced }}</td>
+        {# Negative = drafted AHEAD of the field's consensus (reached, green);
+           positive = waited past consensus (value, red). Matches the
+           per-pick tint below and _preseason_rosters' own avg_vs_adp cue. #}
+        <td class="n" data-sort="{{ '%09.1f'|format(avg + 1000) if avg is not none else '999999999' }}">
+          {%- if avg is not none -%}
+            <span class="res {% if avg <= 0 %}w{% else %}l{% endif %}">{{ "+" if avg > 0 }}{{ "%.1f"|format(avg) }}</span>
+          {%- else -%}&ndash;{%- endif -%}</td>
+        <td class="n">{{ m.n_reaches }}</td>
+        <td class="n">{{ m.n_values }}</td>
+      </tr>
+      {% for p in m.picks %}
+      <tr class="detail-row" hidden>
+        <td></td>
+        <td>
+          {{ idm.headshot(p.player_id) }}{{ p.player_name }}
+          {%- if p.position %} <span class="q">{{ p.position }}</span>{% endif -%}
+        </td>
+        <td class="n" data-sort="{{ '%07d'|format(p.pick_no) if p.pick_no is not none else '9999999' }}">{{ p.pick }}</td>
+        <td class="n">
+          {%- if p.consensus is not none -%}#{{ "%.1f"|format(p.consensus) }}
+          {%- else -%}&ndash;{%- endif -%}</td>
+        <td class="n">
+          {%- if p.vs_consensus is not none -%}
+            <span class="res {% if p.vs_consensus <= 0 %}w{% else %}l{% endif %}">{{ "+" if p.vs_consensus > 0 }}{{ "%.1f"|format(p.vs_consensus) }}</span>
+          {%- else -%}&ndash;{%- endif -%}</td>
+        <td class="n" colspan="2">
+          {%- if p.spread is not none -%}<span class="q">spread {{ p.spread }}</span>{% endif -%}
+          {%- for src in p.per_source %} <span class="q">{{ src.label }} #{{ src.rank }}</span>{% endfor -%}</td>
+      </tr>
+      {% endfor %}
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
