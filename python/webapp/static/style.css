@@ -1585,18 +1585,39 @@ footer code { font-family: ui-monospace, Consolas, monospace; }
 .preseason-adp-wrap::-webkit-scrollbar { height: 8px; }
 .preseason-adp-wrap::-webkit-scrollbar-thumb {
   background: var(--line); border-radius: 4px; }
-.preseason-adp-picks { width: auto; border-collapse: collapse; font-size: 12px; }
+/* Fill the panel: width:100% so the drilldown spans the .detail-row cell
+   (no right-side whitespace). table-layout:fixed distributes the slack
+   EVENLY instead of dumping it into Player (which is what `auto` + width:100%
+   did -- a 293px name column); the per-column widths below set the ratios.
+   min-width keeps it readable when the panel is narrow -- below that the
+   .preseason-adp-wrap scrolls. */
+.preseason-adp-picks { width: 100%; min-width: 520px; table-layout: fixed;
+  border-collapse: collapse; font-size: 12px; }
 .preseason-adp-picks th { font-size: 10px; text-transform: uppercase;
   letter-spacing: .04em; color: var(--faint); font-weight: 600;
   padding: 4px 8px 5px 0; white-space: nowrap; border-bottom: 1px solid var(--line); }
 .preseason-adp-picks td { padding: 5px 8px 5px 0; white-space: nowrap;
-  border-bottom: 1px solid var(--line); }
+  border-bottom: 1px solid var(--line); overflow: hidden; text-overflow: ellipsis; }
 .preseason-adp-picks th:first-child, .preseason-adp-picks td:first-child { padding-left: 4px; }
 .preseason-adp-picks th:last-child, .preseason-adp-picks td:last-child { padding-right: 4px; }
 .preseason-adp-picks tr:last-child td { border-bottom: 0; }
 .preseason-adp-picks td.n, .preseason-adp-picks th.n { text-align: right;
   font-variant-numeric: tabular-nums; }
+/* Column ratios under table-layout:fixed. Pick + vs are tiny, Player takes
+   what's left of a fixed chunk, the platform columns share the rest evenly. */
+.preseason-adp-picks th:nth-child(1), .preseason-adp-picks td:nth-child(1) { width: 6%; }
+.preseason-adp-picks th:nth-child(2), .preseason-adp-picks td:nth-child(2) { width: 26%; }
+.preseason-adp-picks th:nth-child(3), .preseason-adp-picks td:nth-child(3) { width: 12%; }
+.preseason-adp-picks th:nth-child(4), .preseason-adp-picks td:nth-child(4) { width: 8%; }
+.preseason-adp-picks th:nth-child(n+5), .preseason-adp-picks td:nth-child(n+5) { width: 12%; }
 .preseason-adp-picks .q { font-size: 10.5px; color: var(--faint); }
+/* A draft platform with no ADP for a historical season keeps its column
+   (so years read consistently) but dimmed, cells = N/A, `why` on the
+   header's title tooltip. */
+.preseason-adp-picks th.adp-src-na { color: color-mix(in srgb, var(--faint) 60%, transparent);
+  cursor: help; }
+.preseason-adp-picks td.adp-src-na { color: color-mix(in srgb, var(--faint) 55%, transparent); }
+.preseason-adp-picks td.adp-src-na .q { color: inherit; }
 /* Player column: cap it so a long name can't spread the whole table. */
 .preseason-adp-picks td:nth-child(2) { max-width: 170px; overflow: hidden;
   text-overflow: ellipsis; }

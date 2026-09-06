@@ -986,25 +986,30 @@ def test_preseason_adp_compare_grades_picks_against_consensus(season_obj, monkey
     from webapp.app import _preseason_adp_compare
 
     monkeypatch.setattr(app.draft, "_adp_field_for", lambda s: "adp_ppr")
-    # Stub the ffadp board: sleeper + espn are DRAFT PLATFORMS (the `apps`
-    # group), ffc is an analysis platform -- only the platform columns get
-    # broken out, but ffc still feeds the field consensus.
+    # Stub the ffadp board the way combine() returns it: every source carries
+    # `group` + `ok`. sleeper/yahoo/espn/cbs are DRAFT PLATFORMS (the `apps`
+    # group), ffc is an analysis platform. cbs has no data this season
+    # (`ok` False) -- it must STILL become a column (N/A), not vanish.
+    # combine()'s registry order is sleeper, espn, yahoo, cbs, ...
     fake_board = {
-        "columns": ["sleeper", "espn", "ffc"],
+        "columns": ["sleeper", "espn", "yahoo", "ffc"],
         "groups": [{"key": "apps", "label": "Draft platforms",
-                    "columns": ["sleeper", "espn"]},
+                    "columns": ["sleeper", "espn", "yahoo"]},
                    {"key": "analyst", "label": "Analysis platforms",
                     "columns": ["ffc"]}],
-        "sources": [{"name": "sleeper", "label": "Sleeper"},
-                    {"name": "espn", "label": "ESPN"},
-                    {"name": "ffc", "label": "FFCalc"}],
+        "sources": [{"name": "sleeper", "label": "Sleeper", "group": "apps", "ok": True},
+                    {"name": "espn", "label": "ESPN", "group": "apps", "ok": True},
+                    {"name": "yahoo", "label": "Yahoo", "group": "apps", "ok": True},
+                    {"name": "cbs", "label": "CBS", "group": "apps", "ok": False,
+                     "why": "from 2026"},
+                    {"name": "ffc", "label": "FFCalc", "group": "analyst", "ok": True}],
         "rows": [
             {"sleeper_id": "p1", "consensus": 3.0, "spread": 2,
-             "rank": {"sleeper": 2, "espn": 4, "ffc": 3},
-             "adp": {"sleeper": 2.1, "espn": 4.4, "ffc": 3.0}},
+             "rank": {"sleeper": 2, "espn": 4, "yahoo": 3, "ffc": 3},
+             "adp": {"sleeper": 2.1, "espn": 4.4, "yahoo": 3.3, "ffc": 3.0}},
             {"sleeper_id": "p2", "consensus": 1.5, "spread": 1,
-             "rank": {"sleeper": 1, "espn": 2, "ffc": 1},
-             "adp": {"sleeper": 1.2, "espn": 1.9, "ffc": 1.1}},
+             "rank": {"sleeper": 1, "espn": 2, "yahoo": 1, "ffc": 1},
+             "adp": {"sleeper": 1.2, "espn": 1.9, "yahoo": 1.1, "ffc": 1.1}},
             # p3 not in the board -> that pick is unpriced.
         ],
     }
@@ -1025,9 +1030,12 @@ def test_preseason_adp_compare_grades_picks_against_consensus(season_obj, monkey
         "position":      ["rb", "wr", "te"],
     })
     res = _preseason_adp_compare(s, board)
-    # Only the `apps` group is broken out as columns -- ffc (analyst) is not.
-    assert [sc["key"] for sc in res["sources"]] == ["sleeper", "espn"]
-    assert [sc["label"] for sc in res["sources"]] == ["Sleeper", "ESPN"]
+    # EVERY draft platform is a column, incl. the one with no data (cbs);
+    # ffc (analyst) is not. Column order is Sleeper, Yahoo, ESPN, then CBS.
+    assert [sc["key"] for sc in res["sources"]] == ["sleeper", "yahoo", "espn", "cbs"]
+    assert [sc["label"] for sc in res["sources"]] == ["Sleeper", "Yahoo", "ESPN", "CBS"]
+    assert [sc["ok"] for sc in res["sources"]] == [True, True, True, False]
+    assert next(sc for sc in res["sources"] if sc["key"] == "cbs")["why"] == "from 2026"
     mgrs = res["managers"]
     assert [e["user_name"] for e in mgrs] == ["Cy", "Al"]           # slot order (1, 2)
 
@@ -1035,15 +1043,15 @@ def test_preseason_adp_compare_grades_picks_against_consensus(season_obj, monkey
     # consensus/spread still reflect the FULL field (ffc included)
     assert cy["picks"][0]["consensus"] == 1.5 and cy["picks"][0]["spread"] == 1
     assert cy["picks"][0]["vs_consensus"] == 0.5                     # pick 2 vs rank 1.5 -> waited
-    assert cy["picks"][0]["ranks"] == {"sleeper": 1, "espn": 2}     # no ffc key
-    assert cy["picks"][0]["adps"] == {"sleeper": 1.2, "espn": 1.9}
+    assert cy["picks"][0]["ranks"] == {"sleeper": 1, "yahoo": 1, "espn": 2, "cbs": None}
+    assert cy["picks"][0]["adps"] == {"sleeper": 1.2, "yahoo": 1.1, "espn": 1.9, "cbs": None}
 
     al = mgrs[1]
     assert al["picks"][0]["vs_consensus"] == -2.0                    # pick 1 vs rank 3 -> reached
-    assert al["picks"][0]["ranks"] == {"sleeper": 2, "espn": 4}
+    assert al["picks"][0]["ranks"] == {"sleeper": 2, "yahoo": 3, "espn": 4, "cbs": None}
     assert al["picks"][1]["consensus"] is None                       # p3 not on the board
     assert al["picks"][1]["vs_consensus"] is None
-    assert al["picks"][1]["ranks"] == {"sleeper": None, "espn": None}
+    assert al["picks"][1]["ranks"] == {"sleeper": None, "yahoo": None, "espn": None, "cbs": None}
     assert al["priced"] == 1 and al["n_picks"] == 2
     assert al["n_reaches"] == 1 and al["n_values"] == 0
     assert al["avg_vs_consensus"] == -2.0                            # mean over the one priced pick

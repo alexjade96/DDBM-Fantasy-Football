@@ -5,17 +5,18 @@
      {"sources": [{"key","label"}, ...],   # live board columns, display order
       "managers": [{user_name, slot, ... , picks: [...]}]}
 
-   Outer table: one summary row per manager (draft-slot order). Its drilldown
-   is a compact nested table -- Pick / Player / Consensus / vs, then ONE
-   COLUMN PER DRAFT PLATFORM (ffadp's `apps` group: Sleeper / ESPN / Yahoo /
-   CBS) showing that platform's rank + raw ADP for the pick. The analysis
-   platforms (FFCalc, RotoWire) still feed the field Consensus / vs, they
-   just aren't broken out here. Own class `.preseason-adp-picks` (NOT
-   `.dt-games`, whose 26px per-cell right padding blew the width past the
-   panel and hid the platform columns). It sits in a `.preseason-adp-wrap`
-   that scrolls only horizontally, with a persistently visible scrollbar so
-   a still-too-wide drilldown reads as scrollable. makeSortable groups the
-   trigger row with its single following .detail-row. #}
+   Outer table: one summary row per manager (draft-slot order) -- Slot /
+   Manager / Avg vs consensus / Reaches / Values. Its drilldown is a compact
+   nested table -- Pick / Player / Consensus / vs, then ONE COLUMN PER DRAFT
+   PLATFORM (ffadp's `apps` group, ordered Sleeper / Yahoo / ESPN / CBS),
+   ALWAYS all of them -- a platform with no ADP for the season keeps its
+   column greyed with N/A. `preseason_adp.sources` carries `ok` / `why` per
+   platform. The analysis platforms (FFCalc, RotoWire) still feed the field
+   Consensus / vs, they just aren't broken out here. Own class
+   `.preseason-adp-picks` (NOT `.dt-games`, whose 26px per-cell right padding
+   blew the width past the panel). It sits in a `.preseason-adp-wrap` that
+   scrolls only horizontally. makeSortable groups the trigger row with its
+   single following .detail-row. #}
 {% import "_ident.html" as idm with context %}
 {% set sources = preseason_adp.sources %}
 {% set managers = preseason_adp.managers %}
@@ -27,8 +28,7 @@
 <div class="card tablewrap scrolltable">
   <table class="sortable preseason-adp">
     <thead><tr>
-      <th>Slot</th><th>Manager</th><th class="n">Picks</th>
-      <th class="n">Priced</th><th class="n">Avg vs consensus</th>
+      <th>Slot</th><th>Manager</th><th class="n">Avg vs consensus</th>
       <th class="n">Reaches</th><th class="n">Values</th>
     </tr></thead>
     <tbody>
@@ -38,8 +38,6 @@
         <td data-sort="{{ '%03d'|format(m.slot) if m.slot is not none else '999' }}">
           {{ m.slot if m.slot is not none else "&ndash;" }}</td>
         <td data-sort="{{ m.user_name }}"><span class="drilldown-mark"></span>{{ idm.who(m.user_name) }}</td>
-        <td class="n">{{ m.n_picks }}</td>
-        <td class="n">{{ m.priced }}</td>
         {# Negative = drafted AHEAD of the field's consensus (reached, green);
            positive = waited past consensus (value, red). Matches the per-pick
            `vs` column and _preseason_rosters' own avg_vs_adp cue. #}
@@ -51,13 +49,20 @@
         <td class="n">{{ m.n_values }}</td>
       </tr>
       <tr class="detail-row" hidden>
-        <td colspan="7">
+        <td colspan="5">
           <div class="preseason-adp-wrap">
           <table class="preseason-adp-picks nosort">
+            {# Every draft platform is a column, live or not. One with no ADP
+               for this season (ESPN's 2025 sentinel hole; CBS / RotoWire,
+               which only publish the current draft season) keeps its column
+               greyed with N/A cells and a `why` tooltip on the header. #}
             <thead><tr>
               <th class="n">Pick</th><th>Player</th>
               <th class="n">Consensus</th><th class="n">vs</th>
-              {% for src in sources %}<th class="n">{{ src.label }}</th>{% endfor %}
+              {% for src in sources %}
+              <th class="n{% if not src.ok %} adp-src-na{% endif %}"
+                  {%- if not src.ok and src.why %} title="{{ src.label }}: {{ src.why }}"{% endif %}>{{ src.label }}</th>
+              {% endfor %}
             </tr></thead>
             <tbody>
             {% for p in m.picks %}
@@ -72,8 +77,9 @@
                 {%- else -%}&ndash;{%- endif -%}</td>
               {% for src in sources %}
                 {% set rk = p.ranks.get(src.key) %}{% set a = p.adps.get(src.key) %}
-                <td class="n">
+                <td class="n{% if not src.ok %} adp-src-na{% endif %}">
                   {%- if rk is not none -%}#{{ rk }}{% if a is not none %} <span class="q">{{ "%.1f"|format(a) }}</span>{% endif %}
+                  {%- elif not src.ok -%}<span class="q">N/A</span>
                   {%- else -%}&ndash;{%- endif -%}</td>
               {% endfor %}
             </tr>

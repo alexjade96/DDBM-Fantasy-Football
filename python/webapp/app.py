@@ -1747,14 +1747,18 @@ def _preseason_adp_compare(s, board=None) -> dict:
     guard `_preseason_rosters` uses (a stub / half-run draft can put ADP on a
     different scale from its pick numbers).
 
-    Returns `{"sources": [{"key","label"}, ...], "managers": [...]}` -- the
-    `sources` list is the board's live DRAFT-PLATFORM columns (ffadp's `apps`
-    group: Sleeper / ESPN / Yahoo / CBS), so the drilldown shows one real
-    column per platform ADP. The analysis platforms (FFCalc, RotoWire) still
-    feed the field `consensus` / `spread` used for `vs_consensus`, they just
-    aren't broken out as their own columns here. Each `managers` entry
-    carries a `picks` list whose rows have `ranks` / `adps` dicts keyed by
-    platform source key.
+    Returns `{"sources": [{"key","label","ok","why"}, ...], "managers": [...]}`
+    -- `sources` is EVERY draft platform ffadp knows (its `apps` group:
+    Sleeper / ESPN / Yahoo / CBS), live or not, so the drilldown always shows
+    the full column set. A platform with no ADP for the season (`ok` False,
+    e.g. ESPN's 2025 all-sentinel hole, or CBS/RotoWire which only publish
+    the current draft season) keeps its column with every cell N/A and a
+    `why` string for the header tooltip. The analysis platforms (FFCalc,
+    RotoWire) still feed the field `consensus` / `spread` used for
+    `vs_consensus`, they just aren't broken out as their own columns. Each
+    `managers` entry carries a `picks` list whose rows have `ranks` / `adps`
+    dicts keyed by platform source key (value None where that platform has
+    no ADP for the pick).
 
     Returns `{"sources": [], "managers": []}`:
       * when the season has no draft board, or
@@ -1780,16 +1784,23 @@ def _preseason_adp_compare(s, board=None) -> dict:
             by_pid[str(pid)] = r
     if not by_pid:
         return empty
-    src_labels = {sc["name"]: sc["label"] for sc in b.get("sources", [])}
-    # Only break out the DRAFT-PLATFORM columns (ffadp's `apps` group:
-    # Sleeper / ESPN / Yahoo / CBS). The analysis platforms still count
-    # toward the field consensus below, they just don't get their own
-    # column. Fall back to every live column if the board has no groups.
-    plat_cols = next((g["columns"] for g in b.get("groups", [])
-                      if g.get("key") == "apps"), None)
-    if plat_cols is None:
-        plat_cols = list(b.get("columns", []))
-    sources = [{"key": c, "label": src_labels.get(c, c)} for c in plat_cols]
+    # One column per DRAFT PLATFORM ffadp knows (its `apps` group), live or
+    # not -- a platform with no data for the season stays as an N/A column
+    # rather than vanishing, so historical years read consistently. The
+    # analysis platforms (FFCalc, RotoWire) still feed the field consensus
+    # below; they just don't get their own column.
+    all_src = b.get("sources", [])
+    plat = [sc for sc in all_src if sc.get("group") == "apps"]
+    if not plat:                       # board with no group info: every live col
+        live = {sc["name"] for sc in all_src if sc.get("ok")}
+        plat = [sc for sc in all_src if sc["name"] in live] or all_src
+    # Column order: Sleeper, Yahoo, ESPN, then the rest (CBS, ...) -- the two
+    # sources with real historical depth first, side by side.
+    _plat_order = {"sleeper": 0, "yahoo": 1, "espn": 2}
+    plat.sort(key=lambda sc: _plat_order.get(sc["name"], 99))
+    sources = [{"key": sc["name"], "label": sc["label"],
+                "ok": bool(sc.get("ok")), "why": sc.get("why")} for sc in plat]
+    plat_cols = [sc["key"] for sc in sources]
 
     bs = board.sort_values("pick_no")
     managers = []
