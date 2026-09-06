@@ -71,10 +71,20 @@ a.ghost:hover { filter: brightness(1.06); }
 /* Landing "ADP compare" board. Controls row + a sortable table; the small
    "· #12" after each ADP value is the source's own overall rank. */
 #adp-controls { flex-wrap: wrap; margin: 4px 0 14px; }
-#adp-board .tablewrap { margin-top: 6px; max-height: 70vh; overflow-y: auto; }
-#adp-board thead th { position: sticky; background: var(--surface); z-index: 1; }
-#adp-board thead .adp-grouprow th { top: 0; }
-#adp-board thead tr:not(.adp-grouprow) th { top: 26px; }
+/* The board is a .scrolltable (shared sticky-header pattern), so it already
+   gets `position: sticky !important` (beating the #panel sort-arrow rule
+   that would otherwise reset it to `relative`) and the ::before divider.
+   Two extras this table needs on top of that base:
+     - a two-row <thead>: the group-label row pins at top: 0, the per-source
+       header row pins directly below it (top: --adp-h1). --adp-h1 is the
+       first row's rendered height (8px+8px padding + an 11px-caps line);
+       a hair generous is fine -- it only shifts the second row down by a
+       pixel, never opens a gap for body rows to show through.
+     - a slightly deeper cap (70vh) than the shared 420px -- this is the
+       page's primary content, not a drilldown. */
+.adp-scroll { --adp-h1: 31px; max-height: 70vh; margin-top: 6px; }
+.adp-scroll table thead .adp-grouprow th { top: 0; z-index: 4; }
+.adp-scroll table thead tr:not(.adp-grouprow) th { top: var(--adp-h1); }
 .adp-rk { color: var(--faint); font-weight: 400; }
 
 /* Data actions, ABOVE the ADP card: Refresh / CSV / Excel on one short row. */
@@ -109,8 +119,7 @@ a.ghost:hover { filter: brightness(1.06); }
    .adp-grouphead cells span their group and the toggles flip
    data-adp-group visibility. */
 .adp-grouphead { text-align: center; font-size: 11px; letter-spacing: .04em;
-  text-transform: uppercase; color: var(--faint);
-  border-bottom: 1px solid var(--line); }
+  text-transform: uppercase; color: var(--faint); }
 .adp-grouphead + .adp-grouphead { border-left: 1px solid var(--line); }
 .adp-board td[data-adp-col] { border-left: 1px solid transparent; }
 .adp-board [data-adp-col].adp-groupedge { border-left: 1px solid var(--line); }
