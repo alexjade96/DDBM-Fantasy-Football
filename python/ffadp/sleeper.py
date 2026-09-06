@@ -53,6 +53,7 @@ def _snapshot(season: str) -> dict | None:
 class SleeperAdp(AdpProvider):
     name = "sleeper"
     label = "Sleeper"
+    group = "apps"
     formats = ("std", "half_ppr", "ppr", "2qb")
 
     def fetch(self, season: str, scoring: str = "ppr",

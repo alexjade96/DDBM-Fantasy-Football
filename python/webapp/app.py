@@ -1182,10 +1182,19 @@ def adp_compare(request: Request, season: str | None = None,
     # simply has a gap there) just drops its column -- see ffadp.board.
     cur = int(_current_nfl_season())
     seasons = [str(y) for y in range(cur, _adpboard.EARLIEST_ANY - 1, -1)]
+    # "History runs back to <year> (<Label>), ..." -- oldest first, one entry
+    # per source that has any pre-current history; sources that only publish
+    # the live draft season (RotoWire family) are left out of this note.
+    lbl = {p.name: p.label for p in _adpboard.PROVIDERS}
+    hist = sorted(
+        ((y, lbl.get(n, n)) for n, y in _adpboard.FIRST_SEASON.items()
+         if y and y < cur),
+        key=lambda t: (t[0], t[1]),
+    )
     return tpl.TemplateResponse(request, "_adp_compare.html", {
         "asset_v": asset_v(), "season": sea, "scoring": scoring, "pos": pos,
         "seasons": seasons, "scorings": _ADP_SCORING, "positions": _ADP_POS,
-        "first_season": _adpboard.FIRST_SEASON,
+        "history": hist,
         "board": None,   # the table streams in via /adp/data
     })
 

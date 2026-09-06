@@ -4,7 +4,7 @@ from __future__ import annotations
 import pandas as pd
 
 from . import identity
-from .base import AdpProvider
+from .base import GROUP_LABEL, GROUP_ORDER, GROUPS, AdpProvider
 from .espn import EspnAdp
 from .fantasypros import FantasyProsAdp
 from .ffc import FfcAdp
@@ -73,8 +73,9 @@ def combine(season: str, sources: list[str] | None = None,
     Returns a dict:
       {
         "season": str, "scoring": str, "pos": str,
-        "sources":   [{"name","label","ok": bool}, ...]   # ok=False -> no data
-        "columns":   ["sleeper","espn", ...]              # sources with data
+        "sources":   [{"name","label","ok": bool, "group": str}, ...]
+        "columns":   ["sleeper","espn", ...]   # live sources, grouped order
+        "groups":    [{"key","label","columns":[names]}, ...]  # non-empty only
         "rows":      [ {player, position, team,
                         adp:  {src: float|None},
                         rank: {src: int|None},
@@ -106,7 +107,8 @@ def combine(season: str, sources: list[str] | None = None,
         per_source[name] = rows
         first = FIRST_SEASON.get(p.name)
         st = {"name": p.name, "label": p.label, "ok": bool(rows),
-              "first_season": first}
+              "first_season": first,
+              "group": getattr(p, "group", "analyst")}
         # Distinguish "predates this source" from "fetch failed / not wired".
         if not rows:
             try:
@@ -121,7 +123,23 @@ def combine(season: str, sources: list[str] | None = None,
                 st["why"] = "unavailable"
         src_status.append(st)
 
-    columns = [s["name"] for s in src_status if s["ok"]]
+    # Columns are grouped by source type (draft apps first, then high-stakes
+    # / best-ball, then analyst consensus); within a group the registry order
+    # holds. `groups` reports the same split so the UI can label and filter.
+    reg_ix = {p.name: i for i, p in enumerate(PROVIDERS)}
+    live = [s["name"] for s in src_status if s["ok"]]
+    grp_of = {p.name: getattr(p, "group", "analyst") for p in PROVIDERS}
+    columns = sorted(
+        live,
+        key=lambda n: (GROUP_ORDER.get(grp_of.get(n, "analyst"), 99),
+                       reg_ix.get(n, 99)),
+    )
+    groups = [
+        {"key": key, "label": GROUP_LABEL[key],
+         "columns": [n for n in columns if grp_of.get(n) == key]}
+        for key, _ in GROUPS
+    ]
+    groups = [g for g in groups if g["columns"]]
 
     # Fold every source's rows into one record per player key.
     merged: dict[str, dict] = {}
@@ -156,7 +174,8 @@ def combine(season: str, sources: list[str] | None = None,
 
     return {
         "season": season, "scoring": scoring, "pos": pos,
-        "sources": src_status, "columns": columns, "rows": rows_out,
+        "sources": src_status, "columns": columns, "groups": groups,
+        "rows": rows_out,
     }
 
 
@@ -164,7 +183,8 @@ def to_frame(board: dict) -> pd.DataFrame:
     """Flat DataFrame view of combine()'s rows -- for tests and CSV/Excel
     export. Column order mirrors the on-screen table: board rank, player,
     position, team, consensus, then each source's ADP + that source's own
-    overall rank, and spread last."""
+    overall rank (in the board's grouped column order: draft apps, then
+    high-stakes / best-ball, then analyst consensus), and spread last."""
     recs = []
     for i, r in enumerate(board["rows"], 1):
         rec = {

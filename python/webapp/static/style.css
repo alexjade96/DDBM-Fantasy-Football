@@ -72,12 +72,31 @@ a.ghost:hover { filter: brightness(1.06); }
    "· #12" after each ADP value is the source's own overall rank. */
 #adp-controls { flex-wrap: wrap; margin: 4px 0 14px; }
 #adp-board .tablewrap { margin-top: 6px; max-height: 70vh; overflow-y: auto; }
-#adp-board thead th { position: sticky; top: 0; background: var(--surface); z-index: 1; }
+#adp-board thead th { position: sticky; background: var(--surface); z-index: 1; }
+#adp-board thead .adp-grouprow th { top: 0; }
+#adp-board thead tr:not(.adp-grouprow) th { top: 26px; }
 .adp-rk { color: var(--faint); font-weight: 400; }
 .adp-actions { display: flex; gap: 8px; align-items: flex-end; }
 .adp-actions > span { align-self: center; font-size: 11px; letter-spacing: .06em;
   text-transform: uppercase; color: var(--faint); }
 .adp-actions a.ghost, .adp-actions button.ghost { padding: 7px 12px; }
+
+/* ADP source-group header + the per-group filter chips. Columns are ordered
+   apps -> high-stakes/best-ball -> analyst; the .adp-grouphead cells span
+   their group and a client filter toggles data-adp-group. */
+.adp-grouphead { text-align: center; font-size: 11px; letter-spacing: .04em;
+  text-transform: uppercase; color: var(--faint);
+  border-bottom: 1px solid var(--line); }
+.adp-grouphead + .adp-grouphead { border-left: 1px solid var(--line); }
+.adp-board td[data-adp-col] { border-left: 1px solid transparent; }
+.adp-board [data-adp-col].adp-groupedge { border-left: 1px solid var(--line); }
+.adp-filter { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0 2px; }
+.adp-filter .chip { font: inherit; font-size: 12px; padding: 4px 10px;
+  border: 1px solid var(--line); border-radius: 999px; background: transparent;
+  color: var(--faint); cursor: pointer; }
+.adp-filter .chip.is-on { background: var(--accent, #2b6); color: #fff;
+  border-color: transparent; }
+.adp-col-hidden { display: none; }
 
 /* Persistent utility bar in the loaded-page header (index.html): a labelled
    region holding the league lookup and, later, other cross-league tools. */

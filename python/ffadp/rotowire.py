@@ -188,18 +188,22 @@ class _RotowireColumn(AdpProvider):
 
 class RotowireAdp(_RotowireColumn):
     name, label, col_key = "rotowire", "RotoWire", "rotowire"
+    group = "analyst"          # RotoWire's own compiled consensus
 
 
 class NffcAdp(_RotowireColumn):
     name, label, col_key = "nffc", "NFFC", "nffc"
+    group = "highstakes"
 
 
 class FfpcAdp(_RotowireColumn):
     name, label, col_key = "ffpc", "FFPC", "ffpc"
+    group = "highstakes"
 
 
 class UnderdogAdp(_RotowireColumn):
     name, label, col_key = "underdog", "Underdog", "underdog"
+    group = "highstakes"       # best-ball contest platform
 
 
 class YahooAdp(_RotowireColumn):
@@ -208,3 +212,4 @@ class YahooAdp(_RotowireColumn):
     ADP; like the ESPN column it stands in for whatever scoring mode the
     board asks for."""
     name, label, col_key = "yahoo", "Yahoo", "yahoo"
+    group = "apps"             # a mainstream draft app

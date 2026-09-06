@@ -53,6 +53,9 @@ def _trim(players: list) -> list[dict]:
 class FfcAdp(AdpProvider):
     name = "ffc"
     label = "FFCalc"
+    # Compiled from FFC's own free mock/real drafts across the site, not a
+    # first-party league app.
+    group = "analyst"
     formats = ("std", "half_ppr", "ppr", "2qb")
 
     def fetch(self, season: str, scoring: str = "ppr",

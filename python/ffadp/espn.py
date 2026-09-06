@@ -59,6 +59,7 @@ def _trim(raw: list) -> list[dict]:
 class EspnAdp(AdpProvider):
     name = "espn"
     label = "ESPN"
+    group = "apps"
     # One published ADP; it stands in for whatever format the board asks for.
     formats = ("half_ppr", "ppr", "std", "2qb")
 

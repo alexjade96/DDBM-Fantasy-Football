@@ -5,18 +5,21 @@
    are read from committed snapshots; "Refresh" (`&reload=1`) re-pulls live. #}
 <section class="card">
   <h2>ADP Comparison: platform vs platform</h2>
-  <p class="hint">Where each platform&rsquo;s <strong>redraft</strong> draft rooms
+  <p class="hint">Where each source&rsquo;s <strong>redraft</strong> draft rooms
     are taking every player, lined up so you can see who they disagree on.  All
-    season-wide published data, no league required.  Sort by any column; the
-    <strong>Spread</strong> column is how far apart the platforms rank a player.
-    Scoring format only changes the Sleeper column (ESPN publishes one ADP for
-    every format).
-    {%- if first_season %}
+    season-wide published data, no league required.  Columns are grouped by
+    source type: <strong>draft apps</strong> (Sleeper, ESPN, Yahoo),
+    <strong>high-stakes &amp; best-ball</strong> (MFL, NFFC, FFPC, Underdog),
+    then <strong>analyst consensus</strong> (FFCalc, RotoWire).  The chips
+    above the table show or hide a whole group.  Sort by any column; the
+    <strong>Spread</strong> column is how far apart the sources rank a player.
+    {%- if history %}
       History runs back to
-      {%- for src, yr in first_season.items() if yr %}
-        {{ " " }}{{ yr }} ({{ src|capitalize }}){{ "," if not loop.last }}
+      {%- for yr, name in history %}
+        {{ " " }}{{ yr }} ({{ name }}){{ "," if not loop.last }}
       {%- endfor -%};
-      a source is skipped for years before it published ADP.
+      a source is skipped for years before it published ADP, and the
+      high-stakes / analyst live feeds cover the current draft season only.
     {%- endif %}</p>
 
   <form class="controls" id="adp-controls"
@@ -87,5 +90,68 @@
     };
     form.addEventListener('change', sync);
     sync();
+  })();
+
+  // Source-group filter: the chips in .adp-filter toggle whole groups
+  // (data-adp-group) of the ADP table on/off. "All sources" resets. Runs on
+  // load and again after every htmx swap of #adp-board. The export links are
+  // deliberately NOT re-scoped -- a download is the full board.
+  (function () {
+    var board = document.getElementById('adp-board');
+    if (!board) return;
+
+    function apply(root) {
+      var bar = root.querySelector('[data-adp-filter]');
+      var table = root.querySelector('table.adp-board');
+      if (!bar || !table) return;
+      var on = {};
+      bar.querySelectorAll('.chip[data-adp-group]').forEach(function (c) {
+        if (c.dataset.adpGroup !== 'all') on[c.dataset.adpGroup] = c.classList.contains('is-on');
+      });
+      // A group is shown unless its chip is explicitly off.
+      table.querySelectorAll('[data-adp-group]').forEach(function (el) {
+        var g = el.dataset.adpGroup;
+        if (!(g in on)) return;                 // group headers of empty groups, etc.
+        el.classList.toggle('adp-col-hidden', on[g] === false);
+      });
+      // Left divider sits on the first visible column of each later group.
+      var seenGroup = null, firstOfGroup = true;
+      table.querySelectorAll('thead tr:not(.adp-grouprow) th[data-adp-col]').forEach(function (th) {
+        var g = th.dataset.adpGroup, hidden = th.classList.contains('adp-col-hidden');
+        if (g !== seenGroup) { seenGroup = g; firstOfGroup = true; }
+        var edge = firstOfGroup && !hidden && th.previousElementSibling &&
+                   th.previousElementSibling.dataset.adpCol;
+        markEdge(table, th.dataset.adpCol, edge);
+        if (!hidden) firstOfGroup = false;
+      });
+    }
+    function markEdge(table, col, edge) {
+      table.querySelectorAll('[data-adp-col="' + col + '"]').forEach(function (el) {
+        el.classList.toggle('adp-groupedge', !!edge);
+      });
+    }
+    function wire(root) {
+      var bar = root.querySelector('[data-adp-filter]');
+      if (!bar || bar.dataset.wired) return;
+      bar.dataset.wired = '1';
+      bar.addEventListener('click', function (e) {
+        var chip = e.target.closest('.chip[data-adp-group]');
+        if (!chip) return;
+        if (chip.dataset.adpGroup === 'all') {
+          bar.querySelectorAll('.chip').forEach(function (c) { c.classList.add('is-on'); });
+        } else {
+          chip.classList.toggle('is-on');
+        }
+        apply(root);
+      });
+      apply(root);
+    }
+
+    wire(board);
+    document.body.addEventListener('htmx:afterSwap', function (e) {
+      if (e.target && (e.target.id === 'adp-board' || e.target.closest('#adp-board'))) {
+        wire(board);
+      }
+    });
   })();
 </script>

@@ -28,6 +28,7 @@ EARLIEST = None   # set when wired
 class FantasyProsAdp(AdpProvider):
     name = "fantasypros"
     label = "FantasyPros"
+    group = "analyst"          # expert / cross-platform consensus
     # Consensus is published per scoring format; declare all so the board's
     # selector maps cleanly once real data is in.
     formats = ("std", "half_ppr", "ppr")

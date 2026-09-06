@@ -65,6 +65,9 @@ def _rows(adp_rows: list, players: dict) -> list[dict]:
 class MflAdp(AdpProvider):
     name = "mfl"
     label = "MFL"
+    # A draft platform, but the published ADP is a cross-league aggregate and
+    # MFL skews high-stakes / industry.
+    group = "highstakes"
     formats = ("ppr", "std")
 
     def fetch(self, season: str, scoring: str = "ppr",

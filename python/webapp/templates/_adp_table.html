@@ -1,7 +1,13 @@
 {# The ADP comparison table (HTMX fragment from /adp/data). `board` is
-   ffadp.combine()'s dict: sources (with ok flags), columns (sources that
-   returned data), rows (one per player, adp/rank per source, consensus,
-   spread). Degrades to a message when nothing resolved. #}
+   ffadp.combine()'s dict: sources (with ok flags + group), columns (live
+   sources in grouped order), groups (apps / highstakes / analyst, each with
+   its own live columns), rows (one per player, adp/rank per source,
+   consensus, spread). Degrades to a message when nothing resolved.
+
+   Columns are grouped by source type: a two-row header shows the group
+   labels above the per-source headers, and every group / source header +
+   body cell carries data-adp-group / data-adp-col so a client filter can
+   show or hide a whole group or a single source. #}
 {% set unavailable = board.sources | rejectattr("ok") | list %}
 
 {% if not board.columns %}
@@ -10,28 +16,51 @@
 {% else %}
 
   <p class="hint">
-    {{ board.rows | length }} players &middot;
-    {% for c in board.columns %}
-      {%- set s = (board.sources | selectattr("name", "equalto", c) | first) -%}
-      <strong>{{ s.label }}</strong>{{ "" if loop.last else ", " }}
-    {%- endfor %}
+    {{ board.rows | length }} players
+    {% for g in board.groups %} &middot;
+      <strong>{{ g.label }}:</strong>
+      {%- for c in g.columns -%}
+        {%- set s = (board.sources | selectattr("name", "equalto", c) | first) %}
+        {{ " " }}{{ s.label }}{{ "" if loop.last else "," }}
+      {%- endfor -%}
+    {% endfor %}
     {%- if unavailable %} &middot;
+      <span class="q">unavailable:
       {% for s in unavailable -%}
         {{ s.label }}{% if s.why %} ({{ s.why }}){% endif %}{{ "" if loop.last else ", " }}
-      {%- endfor %}
+      {%- endfor %}</span>
     {%- endif %}
   </p>
 
+  {# Filter chips: one per group, one "All" reset. The client script keys off
+     data-adp-group on the chips and the cells. #}
+  <div class="adp-filter" data-adp-filter>
+    <button type="button" class="chip is-on" data-adp-group="all">All sources</button>
+    {% for g in board.groups %}
+      <button type="button" class="chip is-on" data-adp-group="{{ g.key }}">{{ g.label }}</button>
+    {% endfor %}
+  </div>
+
   <div class="tablewrap">
-    <table class="sortable">
+    <table class="sortable adp-board">
       <thead>
+        <tr class="adp-grouprow">
+          <th></th>
+          <th></th>
+          <th class="n"></th>
+          {% for g in board.groups %}
+            <th class="n adp-grouphead" colspan="{{ g.columns | length }}"
+                data-adp-group="{{ g.key }}">{{ g.label }}</th>
+          {% endfor %}
+          <th class="n"></th>
+        </tr>
         <tr>
           <th>#</th>
           <th>Player</th>
           <th class="n">Consensus</th>
           {% for c in board.columns %}
             {%- set s = (board.sources | selectattr("name", "equalto", c) | first) -%}
-            <th class="n">{{ s.label }} ADP</th>
+            <th class="n" data-adp-group="{{ s.group }}" data-adp-col="{{ c }}">{{ s.label }} ADP</th>
           {% endfor %}
           <th class="n">Spread</th>
         </tr>
@@ -46,8 +75,10 @@
           </td>
           <td class="n">{{ "%.1f"|format(r.consensus) if r.consensus is not none else "&ndash;" }}</td>
           {% for c in board.columns %}
+            {%- set s = (board.sources | selectattr("name", "equalto", c) | first) -%}
             {%- set a = r.adp.get(c) -%}{%- set rk = r.rank.get(c) -%}
-            <td class="n" data-sort="{{ rk if rk is not none else 99999 }}">
+            <td class="n" data-adp-group="{{ s.group }}" data-adp-col="{{ c }}"
+                data-sort="{{ rk if rk is not none else 99999 }}">
               {%- if a is not none -%}
                 {{ "%.1f"|format(a) }}<span class="adp-rk"> &middot; #{{ rk }}</span>
               {%- else -%}&ndash;{%- endif -%}

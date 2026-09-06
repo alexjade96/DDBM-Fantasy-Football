@@ -461,6 +461,88 @@ def test_board_registers_rotowire_family():
     assert board.FIRST_SEASON["fantasypros"] is None
 
 
+# --- source grouping --------------------------------------------------------
+
+def test_every_provider_has_a_valid_group():
+    from ffadp import board
+    from ffadp.base import GROUP_ORDER
+    for p in board.PROVIDERS:
+        assert getattr(p, "group", None) in GROUP_ORDER, p.name
+
+
+def test_expected_group_assignments():
+    from ffadp import board
+    g = {p.name: p.group for p in board.PROVIDERS}
+    assert g["sleeper"] == g["espn"] == g["yahoo"] == "apps"
+    assert g["mfl"] == g["nffc"] == g["ffpc"] == g["underdog"] == "highstakes"
+    assert g["ffc"] == g["rotowire"] == g["fantasypros"] == "analyst"
+
+
+class _AppStub(AdpProvider):
+    name, label, group, formats = "app1", "App1", "apps", ("half_ppr",)
+    def fetch(self, season, scoring="half_ppr"):
+        return [AdpRow("app1", "Ja'Marr Chase", "WR", "CIN", adp=1.0,
+                       overall_rank=1, sleeper_id="100")]
+
+
+class _AnalystStub(AdpProvider):
+    name, label, group, formats = "an1", "An1", "analyst", ("half_ppr",)
+    def fetch(self, season, scoring="half_ppr"):
+        return [AdpRow("an1", "Ja'Marr Chase", "WR", "CIN", adp=1.2,
+                       overall_rank=1, sleeper_id="100")]
+
+
+class _HighStakesStub(AdpProvider):
+    name, label, group, formats = "hs1", "Hs1", "highstakes", ("half_ppr",)
+    def fetch(self, season, scoring="half_ppr"):
+        return [AdpRow("hs1", "Ja'Marr Chase", "WR", "CIN", adp=1.1,
+                       overall_rank=1, sleeper_id="100")]
+
+
+def test_combine_orders_columns_by_group_and_reports_groups(monkeypatch):
+    # Register out of group order; combine() must still emit
+    # apps -> highstakes -> analyst.
+    provs = [_AnalystStub(), _AppStub(), _HighStakesStub()]
+    monkeypatch.setattr(board, "PROVIDERS", provs)
+    monkeypatch.setattr(board, "_BY_NAME", {p.name: p for p in provs})
+    identity.reset()
+    monkeypatch.setattr(identity, "_raw_players", _fake_dump)
+
+    b = board.combine("2026", scoring="half_ppr")
+    assert b["columns"] == ["app1", "hs1", "an1"]
+    assert [g["key"] for g in b["groups"]] == ["apps", "highstakes", "analyst"]
+    assert b["groups"][0]["columns"] == ["app1"]
+    assert b["groups"][1]["label"] == "High-stakes & best-ball"
+    # sources carry their group too
+    assert {s["name"]: s["group"] for s in b["sources"]} == {
+        "app1": "apps", "hs1": "highstakes", "an1": "analyst"}
+    identity.reset()
+
+
+def test_combine_groups_omits_empty_group(monkeypatch):
+    provs = [_AppStub(), _AnalystStub()]     # no highstakes source
+    monkeypatch.setattr(board, "PROVIDERS", provs)
+    monkeypatch.setattr(board, "_BY_NAME", {p.name: p for p in provs})
+    identity.reset()
+    monkeypatch.setattr(identity, "_raw_players", _fake_dump)
+    b = board.combine("2026", scoring="half_ppr")
+    assert [g["key"] for g in b["groups"]] == ["apps", "analyst"]
+    identity.reset()
+
+
+def test_to_frame_follows_grouped_column_order(monkeypatch):
+    provs = [_AnalystStub(), _AppStub(), _HighStakesStub()]
+    monkeypatch.setattr(board, "PROVIDERS", provs)
+    monkeypatch.setattr(board, "_BY_NAME", {p.name: p for p in provs})
+    identity.reset()
+    monkeypatch.setattr(identity, "_raw_players", _fake_dump)
+    df = board.to_frame(board.combine("2026", scoring="half_ppr"))
+    cols = list(df.columns)
+    # App1 ADP appears before Hs1 ADP before An1 ADP
+    assert cols.index("App1 ADP") < cols.index("Hs1 ADP") < cols.index("An1 ADP")
+    identity.reset()
+
+
 def test_combine_tags_source_coverage(monkeypatch):
     # ESPN present for a year, Sleeper predates it -> Sleeper column dropped
     # with a "from <year>" note; ESPN column kept.
