@@ -1564,38 +1564,47 @@ footer code { font-family: ui-monospace, Consolas, monospace; }
    viewswitch, not every sortable table. */
 .gb-vs-mode table th:nth-child(2), .gb-vs-mode table td:nth-child(2) { padding-right: 4px; }
 .gb-vs-mode table th:nth-child(3), .gb-vs-mode table td:nth-child(3) { padding-left: 4px; }
-/* The Pre-season panel's drilldown is a full nested table (Pick / Player /
-   Overall / Consensus / vs / Spread / one column PER DRAFT PLATFORM) in the
-   .detail-row's colspan cell -- the column-per-platform layout of the ADP
-   Comparison tab, not a text summary.  With 10 columns it can be wider than
-   the panel; the outer .card.tablewrap.scrolltable owns the VERTICAL scroll,
-   and stacking a second overflow container on the same axis is what the
-   earlier .roster-scroll wrapper got wrong.  So this wrapper scrolls ONLY
-   horizontally (no max-height) -- a wide drilldown gets its own x-scrollbar
-   instead of silently clipping ESPN / CBS off the middle-right. */
-/* Making a >panel-width nested table scroll horizontally INSIDE a table
-   cell needs two co-operating rules, both load-bearing:
-     1. `max-width: 0` on the .detail-row's own <td> -- under
-        `table-layout: auto` a cell otherwise grows to fit its content (the
-        wide table), dragging the whole summary table past the panel edge
-        with nothing to scroll it. `max-width: 0` makes the cell take only
-        the width its 7 siblings leave it (the full row), no more.
-     2. `width: 100%` on the wrap div so it fills that now-pinned cell, and
-        `overflow-x: auto` so the table spilling past it gets a scrollbar.
-   (Same class of trap the .roster-scroll `display:block; width:100%`
-   comment above documents.) */
-.preseason-adp .detail-row > td { max-width: 0; }
-.preseason-adp-wrap { display: block; width: 100%; overflow-x: auto; }
-.preseason-adp-picks { width: max-content; }
-/* `nosort` (a 17-pick drill doesn't need column sorting; the .detail-row
-   grouping belongs to the OUTER table), so the .gb-vs-mode nth-child
-   padding tweak above -- meant for the outer Player/Order pair -- must be
-   neutralised on it. */
+/* The Pre-season panel's drilldown: Pick / Player / Consensus / vs, then one
+   column per DRAFT PLATFORM (Sleeper / ESPN / Yahoo / CBS) -- the
+   column-per-platform layout of the ADP Comparison tab.  It lives in a
+   colspan cell of the summary table.  Two things were making the platform
+   columns unreachable:
+     1. it borrowed `.dt-games`, whose `td { padding: 7px 26px 7px 0 }` blew
+        the table ~200px past the panel -- now its OWN class with tight
+        padding, so at a normal panel width all 8 columns fit.
+     2. a bare div with only `overflow-x` inside a table cell grows to its
+        content width and never scrolls.  `max-width: 0` on the <td> pins
+        the cell to the row width its 7 siblings leave it; `width: 100%` on
+        the wrap fills that pinned cell; then `overflow-x: auto` on a
+        `width: max-content` table finally produces a scrollbar when the
+        table is still wider (very narrow panels).  A persistent thin
+        scrollbar (not the OS overlay one, which stays hidden until
+        hovered) makes that state visibly scrollable. */
+.preseason-adp .detail-row > td { max-width: 0; padding: 4px 0 8px; }
+.preseason-adp-wrap { display: block; width: 100%; overflow-x: auto;
+  scrollbar-width: thin; }
+.preseason-adp-wrap::-webkit-scrollbar { height: 8px; }
+.preseason-adp-wrap::-webkit-scrollbar-thumb {
+  background: var(--line); border-radius: 4px; }
+.preseason-adp-picks { width: max-content; min-width: 100%;
+  border-collapse: collapse; font-size: 12px; }
+.preseason-adp-picks th { font-size: 10px; text-transform: uppercase;
+  letter-spacing: .04em; color: var(--faint); font-weight: 600;
+  padding: 4px 12px 5px 0; white-space: nowrap; border-bottom: 1px solid var(--line); }
+.preseason-adp-picks td { padding: 5px 12px 5px 0; white-space: nowrap;
+  border-bottom: 1px solid var(--line); }
+.preseason-adp-picks th:first-child, .preseason-adp-picks td:first-child { padding-left: 4px; }
+.preseason-adp-picks th:last-child, .preseason-adp-picks td:last-child { padding-right: 4px; }
+.preseason-adp-picks tr:last-child td { border-bottom: 0; }
+.preseason-adp-picks td.n, .preseason-adp-picks th.n { text-align: right;
+  font-variant-numeric: tabular-nums; }
+.preseason-adp-picks .q { font-size: 10.5px; color: var(--faint); }
+/* Neutralise the .gb-vs-mode nth-child(2/3) padding tweak (meant for the
+   OUTER Player/Order pair) on this nested table. */
 .gb-vs-mode .preseason-adp-picks td:nth-child(2),
 .gb-vs-mode .preseason-adp-picks td:nth-child(3),
 .gb-vs-mode .preseason-adp-picks th:nth-child(2),
-.gb-vs-mode .preseason-adp-picks th:nth-child(3) { padding-right: 10px; padding-left: 10px; }
-.preseason-adp-picks .q { font-size: 11px; }
+.gb-vs-mode .preseason-adp-picks th:nth-child(3) { padding-right: 12px; padding-left: 0; }
 
 /* Redraft report: the redrafted board's own By-final-season-results / By-ADP
    toggle -- same fixed-id viewswitch idiom as gb-vs-mode above. Standalone

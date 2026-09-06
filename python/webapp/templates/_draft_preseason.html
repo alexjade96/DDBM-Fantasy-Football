@@ -6,16 +6,16 @@
       "managers": [{user_name, slot, ... , picks: [...]}]}
 
    Outer table: one summary row per manager (draft-slot order). Its drilldown
-   is a full nested table -- Pick / Player / Overall / Consensus / vs /
-   Spread, then ONE COLUMN PER DRAFT PLATFORM (ffadp's `apps` group: Sleeper
-   / ESPN / Yahoo / CBS) showing that platform's own draft position for the
-   pick (rank + raw ADP). The analysis platforms (FFCalc, RotoWire) still
-   feed the field Consensus / Spread, they just aren't broken out here. The
-   table sits in a .preseason-adp-wrap div that scrolls ONLY horizontally
-   (no max-height / vertical scroll of its own -- the outer
-   .card.tablewrap.scrolltable owns the vertical axis) so a drilldown wider
-   than the panel doesn't just clip its middle/right columns. makeSortable
-   groups the trigger row with its single following .detail-row. #}
+   is a compact nested table -- Pick / Player / Consensus / vs, then ONE
+   COLUMN PER DRAFT PLATFORM (ffadp's `apps` group: Sleeper / ESPN / Yahoo /
+   CBS) showing that platform's rank + raw ADP for the pick. The analysis
+   platforms (FFCalc, RotoWire) still feed the field Consensus / vs, they
+   just aren't broken out here. Own class `.preseason-adp-picks` (NOT
+   `.dt-games`, whose 26px per-cell right padding blew the width past the
+   panel and hid the platform columns). It sits in a `.preseason-adp-wrap`
+   that scrolls only horizontally, with a persistently visible scrollbar so
+   a still-too-wide drilldown reads as scrollable. makeSortable groups the
+   trigger row with its single following .detail-row. #}
 {% import "_ident.html" as idm with context %}
 {% set sources = preseason_adp.sources %}
 {% set managers = preseason_adp.managers %}
@@ -50,16 +50,13 @@
         <td class="n">{{ m.n_reaches }}</td>
         <td class="n">{{ m.n_values }}</td>
       </tr>
-      {# The outer .card.tablewrap.scrolltable already scrolls both axes, so
-         this nested table sits straight in the cell -- no inner scroll box. #}
       <tr class="detail-row" hidden>
         <td colspan="7">
           <div class="preseason-adp-wrap">
-          <table class="dt-games preseason-adp-picks nosort">
+          <table class="preseason-adp-picks nosort">
             <thead><tr>
               <th class="n">Pick</th><th>Player</th>
-              <th class="n">Overall</th><th class="n">Consensus</th>
-              <th class="n">vs</th><th class="n">Spread</th>
+              <th class="n">Consensus</th><th class="n">vs</th>
               {% for src in sources %}<th class="n">{{ src.label }}</th>{% endfor %}
             </tr></thead>
             <tbody>
@@ -68,13 +65,11 @@
               <td class="n">{{ p.pick }}</td>
               <td>{{ idm.headshot(p.player_id) }}{{ p.player_name }}
                   {%- if p.position %} <span class="q">{{ p.position }}</span>{% endif -%}</td>
-              <td class="n">{{ p.pick_no if p.pick_no is not none else "&ndash;" }}</td>
               <td class="n">{% if p.consensus is not none %}#{{ "%.1f"|format(p.consensus) }}{% else %}&ndash;{% endif %}</td>
               <td class="n">
                 {%- if p.vs_consensus is not none -%}
                   <span class="res {% if p.vs_consensus <= 0 %}w{% else %}l{% endif %}">{{ "+" if p.vs_consensus > 0 }}{{ "%.1f"|format(p.vs_consensus) }}</span>
                 {%- else -%}&ndash;{%- endif -%}</td>
-              <td class="n">{{ p.spread if p.spread is not none else "&ndash;" }}</td>
               {% for src in sources %}
                 {% set rk = p.ranks.get(src.key) %}{% set a = p.adps.get(src.key) %}
                 <td class="n">
