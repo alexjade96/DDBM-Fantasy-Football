@@ -11,10 +11,11 @@
    / ESPN / Yahoo / CBS) showing that platform's own draft position for the
    pick (rank + raw ADP). The analysis platforms (FFCalc, RotoWire) still
    feed the field Consensus / Spread, they just aren't broken out here. The
-   nested table sits straight in the .detail-row's <td colspan> with no
-   inner scroll box: the outer .card.tablewrap.scrolltable already scrolls
-   both axes. makeSortable groups the trigger row with its single following
-   .detail-row. #}
+   table sits in a .preseason-adp-wrap div that scrolls ONLY horizontally
+   (no max-height / vertical scroll of its own -- the outer
+   .card.tablewrap.scrolltable owns the vertical axis) so a drilldown wider
+   than the panel doesn't just clip its middle/right columns. makeSortable
+   groups the trigger row with its single following .detail-row. #}
 {% import "_ident.html" as idm with context %}
 {% set sources = preseason_adp.sources %}
 {% set managers = preseason_adp.managers %}
@@ -53,6 +54,7 @@
          this nested table sits straight in the cell -- no inner scroll box. #}
       <tr class="detail-row" hidden>
         <td colspan="7">
+          <div class="preseason-adp-wrap">
           <table class="dt-games preseason-adp-picks nosort">
             <thead><tr>
               <th class="n">Pick</th><th>Player</th>
@@ -83,6 +85,7 @@
             {% endfor %}
             </tbody>
           </table>
+          </div>
         </td>
       </tr>
     {% endfor %}

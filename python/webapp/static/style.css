@@ -1565,14 +1565,20 @@ footer code { font-family: ui-monospace, Consolas, monospace; }
 .gb-vs-mode table th:nth-child(2), .gb-vs-mode table td:nth-child(2) { padding-right: 4px; }
 .gb-vs-mode table th:nth-child(3), .gb-vs-mode table td:nth-child(3) { padding-left: 4px; }
 /* The Pre-season panel's drilldown is a full nested table (Pick / Player /
-   Overall / Consensus / vs / Spread / one column PER SOURCE) sitting
-   straight in the .detail-row's colspan cell -- the column-per-platform
-   layout of the ADP Comparison tab, not a text summary, and no inner scroll
-   box since the outer .card.tablewrap.scrolltable already scrolls both axes.
-   It carries `nosort` (a 17-pick drill doesn't need column sorting and the
-   .detail-row grouping belongs to the OUTER table), so the .gb-vs-mode
-   nth-child padding tweak above -- meant for the outer Player/Order pair --
-   must be neutralised on it. */
+   Overall / Consensus / vs / Spread / one column PER DRAFT PLATFORM) in the
+   .detail-row's colspan cell -- the column-per-platform layout of the ADP
+   Comparison tab, not a text summary.  With 10 columns it can be wider than
+   the panel; the outer .card.tablewrap.scrolltable owns the VERTICAL scroll,
+   and stacking a second overflow container on the same axis is what the
+   earlier .roster-scroll wrapper got wrong.  So this wrapper scrolls ONLY
+   horizontally (no max-height) -- a wide drilldown gets its own x-scrollbar
+   instead of silently clipping ESPN / CBS off the middle-right. */
+.preseason-adp-wrap { overflow-x: auto; }
+.preseason-adp-picks { width: auto; }
+/* `nosort` (a 17-pick drill doesn't need column sorting; the .detail-row
+   grouping belongs to the OUTER table), so the .gb-vs-mode nth-child
+   padding tweak above -- meant for the outer Player/Order pair -- must be
+   neutralised on it. */
 .gb-vs-mode .preseason-adp-picks td:nth-child(2),
 .gb-vs-mode .preseason-adp-picks td:nth-child(3),
 .gb-vs-mode .preseason-adp-picks th:nth-child(2),
