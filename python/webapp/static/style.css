@@ -1573,8 +1573,20 @@ footer code { font-family: ui-monospace, Consolas, monospace; }
    earlier .roster-scroll wrapper got wrong.  So this wrapper scrolls ONLY
    horizontally (no max-height) -- a wide drilldown gets its own x-scrollbar
    instead of silently clipping ESPN / CBS off the middle-right. */
-.preseason-adp-wrap { overflow-x: auto; }
-.preseason-adp-picks { width: auto; }
+/* Making a >panel-width nested table scroll horizontally INSIDE a table
+   cell needs two co-operating rules, both load-bearing:
+     1. `max-width: 0` on the .detail-row's own <td> -- under
+        `table-layout: auto` a cell otherwise grows to fit its content (the
+        wide table), dragging the whole summary table past the panel edge
+        with nothing to scroll it. `max-width: 0` makes the cell take only
+        the width its 7 siblings leave it (the full row), no more.
+     2. `width: 100%` on the wrap div so it fills that now-pinned cell, and
+        `overflow-x: auto` so the table spilling past it gets a scrollbar.
+   (Same class of trap the .roster-scroll `display:block; width:100%`
+   comment above documents.) */
+.preseason-adp .detail-row > td { max-width: 0; }
+.preseason-adp-wrap { display: block; width: 100%; overflow-x: auto; }
+.preseason-adp-picks { width: max-content; }
 /* `nosort` (a 17-pick drill doesn't need column sorting; the .detail-row
    grouping belongs to the OUTER table), so the .gb-vs-mode nth-child
    padding tweak above -- meant for the outer Player/Order pair -- must be
