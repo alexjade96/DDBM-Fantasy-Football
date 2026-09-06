@@ -1,20 +1,21 @@
 """RotoWire ADP providers.
 
 RotoWire publishes a single public JSON table (ffadp.api.rotowire_adp) that
-lines up a dozen sites' current-season ADP side by side: Yahoo, NFFC, FFPC,
-Underdog, Fantrax, MFL, ESPN, Sleeper, plus RotoWire's own `average`
-consensus. Several of those (Yahoo, NFFC, FFPC, Underdog) have no other
-public no-auth path, so this one feed backs FIVE board columns.
+lines up several sites' current-season ADP side by side plus RotoWire's own
+`average` consensus. This module surfaces two columns from it:
 
-One fetch, fanned out: `_feed(season, scoring, reload)` pulls + trims the
-table once, memoised per season+scoring and snapshotted to
-season/adp/rotowire/<year>.json; each provider below slices its own column
-out of that shared parse. So the board still shows one snapshot per source
-conceptually, but there is only one physical file and one HTTP call.
+  * RotowireAdp -- RotoWire's `average` blended consensus ("analyst" group).
+  * YahooAdp    -- the feed's `yahooppr` column, the only public no-auth path
+                   to a Yahoo redraft ADP ("apps" group).
+
+One fetch, shared: `_feed(season, scoring, reload)` pulls + trims the table
+once, memoised per season+slug and snapshotted to
+season/adp/rotowire/<slug>/<year>.json; each provider slices its own column
+out of that shared parse.
 
 CURRENT SEASON ONLY. The endpoint ignores a year parameter -- it always
-returns the live draft-season board -- so EARLIEST is set to the current
-NFL season at import time and older years simply have no RotoWire data.
+returns the live draft-season board -- so EARLIEST is the current NFL
+season at import time and older years simply have no RotoWire data.
 
 Names are matched by ffadp.identity.resolve() on a normalised
 first+last / position (RotoWire's player id has no Sleeper cross-ref).
@@ -59,31 +60,22 @@ def _val(v):
 # 2qb fall back to PPR.
 _SLUG = {"std": "Standard", "half_ppr": "PPR", "ppr": "PPR", "2qb": "PPR"}
 
-# The per-site columns this module surfaces, per RotoWire scoring slug.
-# {board source name: {"PPR": <col>, "Standard": <col or None>}}. A None
-# under "Standard" means that site only publishes a PPR ADP; the provider's
-# `formats` decides whether a Standard ask falls back to PPR (ESPN-style) or
-# drops the column.
+# The feed columns this module surfaces, per RotoWire scoring slug.
+# {board source name: {"PPR": <col>, "Standard": <col>}}.
 _COLUMN = {
     # RotoWire recomputes its own consensus per scoring mode.
-    "rotowire":  {"PPR": "average",         "Standard": "average"},
-    # Yahoo / Underdog publish one ADP; like the ESPN column it stands in for
-    # whichever mode the board asks for (formats lists both).
-    "yahoo":     {"PPR": "yahooppr",        "Standard": "yahooppr"},
-    "underdog":  {"PPR": "underdoghalfppr", "Standard": "underdoghalfppr"},
-    # NFFC has a real Standard number (RotoWire carries it as mfl12standard).
-    "nffc":      {"PPR": "nffc12ppr",       "Standard": "mfl12standard"},
-    # FFPC's overall is a superflex-ish championship ADP, one value.
-    "ffpc":      {"PPR": "ffpcoverall",     "Standard": "ffpcoverall"},
+    "rotowire": {"PPR": "average",  "Standard": "average"},
+    # Yahoo publishes one ADP; like the ESPN column it stands in for
+    # whichever mode the board asks for.
+    "yahoo":    {"PPR": "yahooppr", "Standard": "yahooppr"},
 }
 
-# feed cache: f"{season}:{slug}" -> list[dict] (trimmed rows, every site col kept)
+# feed cache: f"{season}:{slug}" -> list[dict] (trimmed rows)
 _feed_mem: dict[str, list] = {}
 
 
 def _trim(raw: list) -> list[dict]:
-    """Raw RotoWire rows -> compact rows keeping name/pos/team + every
-    site column we care about."""
+    """Raw RotoWire rows -> compact rows: name/pos/team + the columns we use."""
     wanted = {c for m in _COLUMN.values() for c in m.values() if c}
     out: list[dict] = []
     for r in raw or []:
@@ -110,14 +102,11 @@ def _feed(season: str, scoring: str, reload: bool) -> list[dict]:
 
     Memoised for the process; on a miss it reads
     season/adp/rotowire/<slug>/<year>.json and only calls the live endpoint
-    when that is absent or `reload`.
-
-    This is the ONLY place any RotoWire-derived data is read or written, and
-    it is keyed on the "rotowire" source name + the RotoWire scoring slug --
-    NEVER on a derived column's own name. So the Yahoo / NFFC / FFPC /
-    Underdog columns are pure views over the one upstream snapshot; there is
-    no season/adp/yahoo/ (etc.) datastream that could later collide with a
-    real first-party Yahoo/NFFC provider.
+    when that is absent or `reload`. It is keyed on the "rotowire" source
+    name + the RotoWire scoring slug -- NEVER on a derived column's own name
+    -- so the Yahoo column is a pure view over the one upstream snapshot and
+    there is no season/adp/yahoo/ datastream that could later collide with a
+    real first-party Yahoo provider.
     """
     slug = _SLUG.get(scoring, "PPR")
     key = f"{season}:{slug}"
@@ -189,21 +178,6 @@ class _RotowireColumn(AdpProvider):
 class RotowireAdp(_RotowireColumn):
     name, label, col_key = "rotowire", "RotoWire", "rotowire"
     group = "analyst"          # RotoWire's own compiled consensus
-
-
-class NffcAdp(_RotowireColumn):
-    name, label, col_key = "nffc", "NFFC", "nffc"
-    group = "highstakes"
-
-
-class FfpcAdp(_RotowireColumn):
-    name, label, col_key = "ffpc", "FFPC", "ffpc"
-    group = "highstakes"
-
-
-class UnderdogAdp(_RotowireColumn):
-    name, label, col_key = "underdog", "Underdog", "underdog"
-    group = "highstakes"       # best-ball contest platform
 
 
 class YahooAdp(_RotowireColumn):

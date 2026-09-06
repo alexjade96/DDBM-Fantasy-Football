@@ -69,49 +69,15 @@ def ffc_adp(season, fmt: str = "ppr", teams: int = 12) -> list[dict]:
     return data.get("players") or []
 
 
-# --- MyFantasyLeague ------------------------------------------------------
-# Public developer API, no auth for season-wide reports. The ADP report keys
-# players by MFL id only, so mfl_players() supplies the id -> name/pos/team map.
-_MFL_BASE = "https://api.myfantasyleague.com"
-
-
-def mfl_adp(season, is_ppr: int = 1, fcount: int = 12) -> list[dict]:
-    """MFL's aggregate ADP rows for a season (list of {id, rank, averagePick,
-    minPick, maxPick, draftsSelectedIn, draftSelPct}). Raises on a bad payload.
-
-    The PPR / league-size filters only bite from ~2019 on; for older seasons
-    MFL returns 0 drafts for a filtered request, so this falls back to the
-    unfiltered (format-agnostic) aggregate rather than coming back empty.
-    """
-    url = f"{_MFL_BASE}/{int(season)}/export"
-
-    def _pull(params):
-        resp = requests.get(url, params=params,
-                            headers={"User-Agent": _UA}, timeout=30)
-        resp.raise_for_status()
-        return (resp.json() or {}).get("adp") or {}
-
-    adp = _pull({"TYPE": "adp", "PERIOD": "DRAFT", "FCOUNT": fcount,
-                 "IS_PPR": is_ppr, "IS_KEEPER": "N", "IS_MOCK": 0, "JSON": 1})
-    rows = adp.get("player")
-    if not rows:
-        adp = _pull({"TYPE": "adp", "JSON": 1})
-        rows = adp.get("player")
-    if not isinstance(rows, list):
-        raise ValueError(f"unexpected MFL adp payload for {season}")
-    return rows
-
-
 def rotowire_adp(scoring: str = "PPR") -> list[dict]:
     """RotoWire's ADP comparison table for the CURRENT season (one JSON list).
 
     `scoring` is RotoWire's own slug -- "PPR" or "Standard"; anything else
-    falls back to "PPR". Each row carries a dozen sites' ADP in its own
-    column (yahooppr, nffc12ppr, ffpcoverall, underdoghalfppr, ...) plus
-    RotoWire's `average` consensus, keyed by first/last name + team + pos.
-    There is no year parameter -- the endpoint always returns the live
-    draft-season table. Raises on a non-2xx / non-list payload so a provider
-    can fall back to its snapshot.
+    falls back to "PPR". Each row carries several sites' ADP in its own
+    column plus RotoWire's `average` consensus, keyed by first/last name +
+    team + pos. There is no year parameter -- the endpoint always returns
+    the live draft-season table. Raises on a non-2xx / non-list payload so a
+    provider can fall back to its snapshot.
     """
     slug = "Standard" if str(scoring).lower() in ("standard", "std") else "PPR"
     url = "https://www.rotowire.com/football/tables/adp.php"
@@ -122,20 +88,3 @@ def rotowire_adp(scoring: str = "PPR") -> list[dict]:
     if not isinstance(data, list):
         raise ValueError("unexpected RotoWire adp payload")
     return data
-
-
-def mfl_players(season) -> dict[str, dict]:
-    """MFL id -> {name, position, team} for a season. Names come back
-    "Last, First"; kept verbatim here and flipped by the provider."""
-    url = f"{_MFL_BASE}/{int(season)}/export"
-    resp = requests.get(url, params={"TYPE": "players", "JSON": 1},
-                        headers={"User-Agent": _UA}, timeout=45)
-    resp.raise_for_status()
-    pl = ((resp.json() or {}).get("players") or {}).get("player") or []
-    out: dict[str, dict] = {}
-    for p in pl:
-        pid = str(p.get("id") or "")
-        if pid:
-            out[pid] = {"name": p.get("name") or "", "position": p.get("position"),
-                        "team": p.get("team")}
-    return out

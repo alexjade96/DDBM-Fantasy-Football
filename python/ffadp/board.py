@@ -8,8 +8,7 @@ from .base import GROUP_LABEL, GROUP_ORDER, GROUPS, AdpProvider
 from .espn import EspnAdp
 from .fantasypros import FantasyProsAdp
 from .ffc import FfcAdp
-from .mfl import MflAdp
-from .rotowire import FfpcAdp, NffcAdp, RotowireAdp, UnderdogAdp
+from .rotowire import RotowireAdp
 from .sleeper import SleeperAdp
 from .yahoo import YahooAdp
 
@@ -22,9 +21,8 @@ from .yahoo import YahooAdp
 # CSV/Excel export) picks it up automatically. A source whose fetch() returns
 # [] is dropped from the board and noted as unavailable.
 PROVIDERS: list[AdpProvider] = [
-    SleeperAdp(), EspnAdp(), FfcAdp(), MflAdp(),
-    RotowireAdp(), NffcAdp(), FfpcAdp(), UnderdogAdp(), YahooAdp(),
-    FantasyProsAdp(),
+    SleeperAdp(), EspnAdp(), YahooAdp(),
+    FfcAdp(), RotowireAdp(), FantasyProsAdp(),
 ]
 _BY_NAME = {p.name: p for p in PROVIDERS}
 

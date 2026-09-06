@@ -270,86 +270,20 @@ def test_ffc_provider_degrades_to_empty(monkeypatch):
     cache.clear()
 
 
-# --- MFL provider (fixture payloads, no network) ------------------------
-
-def test_mfl_flip_name_and_rows():
-    from ffadp import mfl
-    assert mfl._flip_name("McCaffrey, Christian") == "Christian McCaffrey"
-    assert mfl._flip_name("Bills, Buffalo") == "Buffalo Bills"
-    adp = [{"id": "1", "averagePick": "2.8"},
-           {"id": "2", "averagePick": "1.5"},
-           {"id": "3", "averagePick": "9.0"},   # a team-slot pos -> dropped
-           {"id": "4", "averagePick": "0"}]     # adp<=0 -> dropped
-    players = {
-        "1": {"name": "McCaffrey, Christian", "position": "RB", "team": "SFO"},
-        "2": {"name": "Taylor, Jonathan", "position": "RB", "team": "IND"},
-        "3": {"name": "Bills, Buffalo", "position": "TMWR", "team": "BUF"},
-        "4": {"name": "Nobody, Zero", "position": "WR", "team": "FA"},
-    }
-    rows = mfl._rows(adp, players)
-    assert [r["name"] for r in rows] == ["Jonathan Taylor", "Christian McCaffrey"]
-    assert rows[0]["adp"] == 1.5 and rows[0]["mfl_id"] == "2"
-
-
-def test_mfl_provider_snapshot_first(monkeypatch):
-    from ffadp import mfl, cache
-    cache.clear()
-    monkeypatch.setattr(cache, "load",
-                        lambda src, sea, force=False, variant=None:
-                        [{"mfl_id": "1", "name": "A", "position": "RB",
-                          "team": "SF", "adp": 1.2}])
-    monkeypatch.setattr(mfl.api, "mfl_adp",
-                        lambda *a, **k: (_ for _ in ()).throw(AssertionError("live hit")))
-    monkeypatch.setattr(mfl.api, "mfl_players",
-                        lambda *a, **k: (_ for _ in ()).throw(AssertionError("live hit")))
-    rows = mfl.MflAdp().fetch("2024", "ppr")
-    assert len(rows) == 1 and rows[0].extra["mfl_id"] == "1"
-    cache.clear()
-
-
-def test_mfl_provider_std_maps_to_non_ppr(monkeypatch):
-    from ffadp import mfl, cache
-    cache.clear()
-    got = {}
-    monkeypatch.setattr(cache, "load",
-                        lambda src, sea, force=False, variant=None: None)
-    monkeypatch.setattr(mfl.api, "mfl_players", lambda season: {
-        "1": {"name": "Doe, John", "position": "RB", "team": "SF"}})
-    monkeypatch.setattr(mfl.api, "mfl_adp",
-                        lambda season, is_ppr=1: got.update(is_ppr=is_ppr) or
-                        [{"id": "1", "averagePick": "3.0"}])
-    mfl.MflAdp().fetch("2024", "std")
-    assert got["is_ppr"] == 0
-    cache.clear()
-
-
-def test_mfl_provider_degrades_to_empty(monkeypatch):
-    from ffadp import mfl, cache
-    cache.clear()
-    monkeypatch.setattr(mfl.api, "mfl_players",
-                        lambda season: (_ for _ in ()).throw(RuntimeError("no net")))
-    monkeypatch.setattr(cache, "load",
-                        lambda src, sea, force=False, variant=None: None)
-    assert mfl.MflAdp().fetch("2024", "ppr") == []
-    cache.clear()
-
-
-# --- RotoWire fan-out (fixture feed, no network) -----------------------
+# --- RotoWire feed (fixture, no network) -------------------------------
 
 _RW_FIXTURE = [
     {"firstname": "Jahmyr", "lastname": "Gibbs", "position": "RB",
      "team": "DET", "playerID": "16808",
-     "average": "1.6", "yahooppr": "1.3", "nffc12ppr": "1.4",
-     "mfl12standard": "1.6", "ffpcoverall": "1.5", "underdoghalfppr": "1.0"},
+     "average": "1.6", "yahooppr": "1.3"},
     {"firstname": "Ja'Marr", "lastname": "Chase", "position": "WR",
      "team": "CIN", "playerID": "2799",
-     "average": "3.8", "yahooppr": "3.5", "nffc12ppr": "3.2",
-     "mfl12standard": "-", "ffpcoverall": "3.6", "underdoghalfppr": "3.1"},
+     "average": "3.8", "yahooppr": "3.5"},
     {"firstname": "Some", "lastname": "Linebacker", "position": "LB",
      "team": "KC", "playerID": "9", "average": "40.0"},      # IDP -> dropped
     {"firstname": "No", "lastname": "Data", "position": "WR",
      "team": "FA", "playerID": "8",
-     "average": "", "yahooppr": "-", "ffpcoverall": "999.0"},  # all sentinel
+     "average": "", "yahooppr": "-"},                        # all sentinel
 ]
 
 
@@ -358,30 +292,9 @@ def test_rotowire_trim_drops_idp_and_sentinels():
     rows = rotowire._trim(_RW_FIXTURE)
     assert [r["name"] for r in rows] == ["Jahmyr Gibbs", "Ja'Marr Chase"]
     assert rows[0]["position"] == "RB" and rows[0]["yahooppr"] == 1.3
-    assert rows[1]["mfl12standard"] is None       # "-" sentinel
 
 
-def test_rotowire_columns_fan_out(monkeypatch):
-    from ffadp import rotowire
-    rotowire._clear_feed_cache()
-    monkeypatch.setattr(rotowire.api, "rotowire_adp", lambda slug="PPR": _RW_FIXTURE)
-    monkeypatch.setattr(rotowire.cache, "load",
-                        lambda *a, **k: None)   # force the (patched) live path
-    monkeypatch.setattr(rotowire.cache, "save", lambda *a, **k: None)
-    # each source slices its own column
-    rw = rotowire.RotowireAdp().fetch("2026", "ppr")
-    yh = rotowire.YahooAdp().fetch("2026", "ppr")
-    nf = rotowire.NffcAdp().fetch("2026", "ppr")
-    ud = rotowire.UnderdogAdp().fetch("2026", "ppr")
-    assert [r.name for r in rw] == ["Jahmyr Gibbs", "Ja'Marr Chase"]
-    assert rw[0].adp == 1.6 and rw[0].overall_rank == 1
-    assert [r.adp for r in yh] == [1.3, 3.5]
-    assert [r.adp for r in nf] == [1.4, 3.2]
-    assert [r.adp for r in ud] == [1.0, 3.1]
-    rotowire._clear_feed_cache()
-
-
-def test_rotowire_one_fetch_feeds_all_columns(monkeypatch):
+def test_rotowire_two_columns_from_one_feed(monkeypatch):
     from ffadp import rotowire
     rotowire._clear_feed_cache()
     calls = []
@@ -389,14 +302,16 @@ def test_rotowire_one_fetch_feeds_all_columns(monkeypatch):
                         lambda slug="PPR": calls.append(slug) or _RW_FIXTURE)
     monkeypatch.setattr(rotowire.cache, "load", lambda *a, **k: None)
     monkeypatch.setattr(rotowire.cache, "save", lambda *a, **k: None)
-    for cls in (rotowire.RotowireAdp, rotowire.NffcAdp, rotowire.FfpcAdp,
-                rotowire.UnderdogAdp, rotowire.YahooAdp):
-        cls().fetch("2026", "ppr")
-    assert calls == ["PPR"]          # one HTTP call backs all five columns
+    rw = rotowire.RotowireAdp().fetch("2026", "ppr")
+    yh = rotowire.YahooAdp().fetch("2026", "ppr")
+    assert [r.name for r in rw] == ["Jahmyr Gibbs", "Ja'Marr Chase"]
+    assert rw[0].adp == 1.6 and rw[0].overall_rank == 1
+    assert [r.adp for r in yh] == [1.3, 3.5]
+    assert calls == ["PPR"]          # one HTTP call backs both columns
     rotowire._clear_feed_cache()
 
 
-def test_rotowire_std_slug_and_yahoo_ppr_only(monkeypatch):
+def test_rotowire_yahoo_stands_in_for_standard(monkeypatch):
     from ffadp import rotowire
     rotowire._clear_feed_cache()
     seen = []
@@ -404,13 +319,9 @@ def test_rotowire_std_slug_and_yahoo_ppr_only(monkeypatch):
                         lambda slug="PPR": seen.append(slug) or _RW_FIXTURE)
     monkeypatch.setattr(rotowire.cache, "load", lambda *a, **k: None)
     monkeypatch.setattr(rotowire.cache, "save", lambda *a, **k: None)
-    # NFFC in Standard maps to the mfl12standard column
-    nf = rotowire.NffcAdp().fetch("2026", "std")
-    assert seen == ["Standard"]
-    assert [r.adp for r in nf] == [1.6]        # only Gibbs has mfl12standard
     # Yahoo publishes one ADP; a Standard ask still shows its yahooppr number
     yh = rotowire.YahooAdp().fetch("2026", "std")
-    assert [r.adp for r in yh] == [1.3, 3.5]
+    assert seen == ["Standard"] and [r.adp for r in yh] == [1.3, 3.5]
     rotowire._clear_feed_cache()
 
 
@@ -432,10 +343,10 @@ def test_rotowire_degrades_to_empty(monkeypatch):
     rotowire._clear_feed_cache()
 
 
-def test_rotowire_derived_columns_never_write_their_own_snapshot(monkeypatch):
-    # The Yahoo / NFFC / FFPC / Underdog columns are views over the one
-    # "rotowire" snapshot; none may read or write a snapshot keyed on its own
-    # source name (which could collide with a future first-party provider).
+def test_rotowire_yahoo_never_writes_its_own_snapshot(monkeypatch):
+    # The Yahoo column is a view over the one "rotowire" snapshot; it must
+    # not read or write a snapshot keyed on its own source name (which could
+    # collide with a future first-party Yahoo provider).
     from ffadp import rotowire
     rotowire._clear_feed_cache()
     seen_names = []
@@ -444,20 +355,17 @@ def test_rotowire_derived_columns_never_write_their_own_snapshot(monkeypatch):
     monkeypatch.setattr(rotowire.cache, "save",
                         lambda src, *a, **k: seen_names.append(("save", src)))
     monkeypatch.setattr(rotowire.api, "rotowire_adp", lambda slug="PPR": _RW_FIXTURE)
-    for cls in (rotowire.YahooAdp, rotowire.NffcAdp, rotowire.FfpcAdp,
-                rotowire.UnderdogAdp, rotowire.RotowireAdp):
-        cls().fetch("2026", "ppr")
+    rotowire.YahooAdp().fetch("2026", "ppr")
+    rotowire.RotowireAdp().fetch("2026", "ppr")
     assert {src for _, src in seen_names} == {"rotowire"}
     rotowire._clear_feed_cache()
 
 
-def test_board_registers_rotowire_family():
+def test_board_registers_expected_sources():
     from ffadp import board
     names = [p.name for p in board.PROVIDERS]
-    for n in ("rotowire", "nffc", "ffpc", "underdog", "yahoo"):
-        assert n in names
-    # all five are current-season-only
-    assert board.FIRST_SEASON["nffc"] == board.FIRST_SEASON["yahoo"]
+    assert names == ["sleeper", "espn", "yahoo", "ffc", "rotowire", "fantasypros"]
+    assert board.FIRST_SEASON["yahoo"] == board.FIRST_SEASON["rotowire"]
     assert board.FIRST_SEASON["fantasypros"] is None
 
 
@@ -474,7 +382,6 @@ def test_expected_group_assignments():
     from ffadp import board
     g = {p.name: p.group for p in board.PROVIDERS}
     assert g["sleeper"] == g["espn"] == g["yahoo"] == "apps"
-    assert g["mfl"] == g["nffc"] == g["ffpc"] == g["underdog"] == "highstakes"
     assert g["ffc"] == g["rotowire"] == g["fantasypros"] == "analyst"
 
 
@@ -492,54 +399,44 @@ class _AnalystStub(AdpProvider):
                        overall_rank=1, sleeper_id="100")]
 
 
-class _HighStakesStub(AdpProvider):
-    name, label, group, formats = "hs1", "Hs1", "highstakes", ("half_ppr",)
-    def fetch(self, season, scoring="half_ppr"):
-        return [AdpRow("hs1", "Ja'Marr Chase", "WR", "CIN", adp=1.1,
-                       overall_rank=1, sleeper_id="100")]
-
-
 def test_combine_orders_columns_by_group_and_reports_groups(monkeypatch):
-    # Register out of group order; combine() must still emit
-    # apps -> highstakes -> analyst.
-    provs = [_AnalystStub(), _AppStub(), _HighStakesStub()]
+    # Register analyst-first; combine() must still emit apps -> analyst.
+    provs = [_AnalystStub(), _AppStub()]
     monkeypatch.setattr(board, "PROVIDERS", provs)
     monkeypatch.setattr(board, "_BY_NAME", {p.name: p for p in provs})
     identity.reset()
     monkeypatch.setattr(identity, "_raw_players", _fake_dump)
 
     b = board.combine("2026", scoring="half_ppr")
-    assert b["columns"] == ["app1", "hs1", "an1"]
-    assert [g["key"] for g in b["groups"]] == ["apps", "highstakes", "analyst"]
+    assert b["columns"] == ["app1", "an1"]
+    assert [g["key"] for g in b["groups"]] == ["apps", "analyst"]
     assert b["groups"][0]["columns"] == ["app1"]
-    assert b["groups"][1]["label"] == "High-stakes & best-ball"
-    # sources carry their group too
+    assert b["groups"][0]["label"] == "Draft apps"
     assert {s["name"]: s["group"] for s in b["sources"]} == {
-        "app1": "apps", "hs1": "highstakes", "an1": "analyst"}
+        "app1": "apps", "an1": "analyst"}
     identity.reset()
 
 
 def test_combine_groups_omits_empty_group(monkeypatch):
-    provs = [_AppStub(), _AnalystStub()]     # no highstakes source
+    provs = [_AppStub()]                      # no analyst source
     monkeypatch.setattr(board, "PROVIDERS", provs)
     monkeypatch.setattr(board, "_BY_NAME", {p.name: p for p in provs})
     identity.reset()
     monkeypatch.setattr(identity, "_raw_players", _fake_dump)
     b = board.combine("2026", scoring="half_ppr")
-    assert [g["key"] for g in b["groups"]] == ["apps", "analyst"]
+    assert [g["key"] for g in b["groups"]] == ["apps"]
     identity.reset()
 
 
 def test_to_frame_follows_grouped_column_order(monkeypatch):
-    provs = [_AnalystStub(), _AppStub(), _HighStakesStub()]
+    provs = [_AnalystStub(), _AppStub()]
     monkeypatch.setattr(board, "PROVIDERS", provs)
     monkeypatch.setattr(board, "_BY_NAME", {p.name: p for p in provs})
     identity.reset()
     monkeypatch.setattr(identity, "_raw_players", _fake_dump)
     df = board.to_frame(board.combine("2026", scoring="half_ppr"))
     cols = list(df.columns)
-    # App1 ADP appears before Hs1 ADP before An1 ADP
-    assert cols.index("App1 ADP") < cols.index("Hs1 ADP") < cols.index("An1 ADP")
+    assert cols.index("App1 ADP") < cols.index("An1 ADP")
     identity.reset()
 
 
