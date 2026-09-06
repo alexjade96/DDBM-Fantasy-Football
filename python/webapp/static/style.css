@@ -85,23 +85,24 @@ a.ghost:hover { filter: brightness(1.06); }
   text-transform: uppercase; color: var(--faint); }
 .adp-actions a.ghost, .adp-actions button.ghost { padding: 7px 12px; }
 
-/* Controls row carries the source toggles on its right edge. */
+/* Controls row carries the Sources checkboxes on its right edge -- laid out
+   like a .controls label: uppercase caption over the control. */
 .adp-controls-row { flex-wrap: wrap; }
 .adp-filter { margin-left: auto; display: flex; flex-direction: column; gap: 4px;
   align-items: flex-start; }
-/* Same caption as .controls span (Season / Scoring / Position). */
-.adp-filter::before { content: "Sources"; font-size: 11px; letter-spacing: .06em;
+.adp-filter-label { font-size: 11px; letter-spacing: .06em;
   text-transform: uppercase; color: var(--faint); }
-.adp-filter .chips { display: flex; gap: 6px; flex-wrap: wrap; }
-/* Toggle buttons match the select control: same border / radius / surface /
-   padding as `input, select` and the `.ghost` buttons. `.is-on` fills like
-   the primary button. */
-.adp-filter .chip { font: inherit; font-size: 13px; padding: 7px 10px;
-  border: 1px solid var(--line); border-radius: 8px; background: var(--surface);
-  color: var(--ink); font-weight: 500; cursor: pointer; }
-.adp-filter .chip:hover { filter: brightness(1.06); }
-.adp-filter .chip.is-on { background: var(--turf); border-color: var(--turf);
-  color: #fff; font-weight: 600; }
+/* Box row is the same height as the sibling <select>s so baselines line up. */
+.adp-filter-boxes { display: flex; align-items: center; gap: 14px;
+  min-height: 35px; }
+.adp-check { display: inline-flex; align-items: center; gap: 6px;
+  font-size: 13px; color: var(--ink); cursor: pointer; user-select: none; }
+/* Override .controls span (uppercase, faint) for the checkbox label text. */
+.adp-check span { font-size: 13px; letter-spacing: normal; text-transform: none;
+  color: var(--ink); }
+.adp-check input { width: 15px; height: 15px; margin: 0; padding: 0;
+  border: 0; border-radius: 0; background: none; appearance: auto;
+  accent-color: var(--turf); cursor: pointer; }
 .adp-col-hidden { display: none; }
 
 /* ADP source-group header. Columns are ordered apps -> analyst; the

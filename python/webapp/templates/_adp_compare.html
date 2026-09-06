@@ -68,16 +68,20 @@
         {% endfor %}
       </select>
     </label>
-    {# Source-group toggles, right-justified on the controls line, styled to
-       match the Season / Scoring / Position blocks (uppercase caption via
-       CSS ::before, then select-like buttons). type="button" so they neither
-       submit the form nor fire its change trigger; the script below wires
-       them and re-applies on each swap. #}
+    {# Source-group toggles, right-justified on the controls line: a checkbox
+       per group. Unchecking a group hides its columns AND drops it from the
+       Consensus / Spread recompute (both done client-side by the script
+       below). These are not form fields the board request cares about, and
+       the script stops their change event from bubbling to the form's
+       hx-trigger, so toggling never re-fetches the board. #}
     <div class="adp-filter" data-adp-filter>
-      <div class="chips">
-        <button type="button" class="chip is-on" data-adp-group="all">All sources</button>
+      <span class="adp-filter-label">Sources</span>
+      <div class="adp-filter-boxes">
         {% for g in adp_groups %}
-          <button type="button" class="chip is-on" data-adp-group="{{ g.key }}">{{ g.label }}</button>
+        <label class="adp-check">
+          <input type="checkbox" data-adp-group="{{ g.key }}" checked>
+          <span>{{ g.label }}</span>
+        </label>
         {% endfor %}
       </div>
     </div>
@@ -108,32 +112,33 @@
     sync();
   })();
 
-  // Source-group toggles: the chips in the controls row's .adp-filter show /
-  // hide whole groups (data-adp-group) of the ADP table. "All sources"
-  // resets. The chips live in #adp-controls, outside #adp-board, so they
-  // persist across table swaps; the current toggle state is re-applied after
-  // every htmx swap of #adp-board. The export links are deliberately NOT
-  // re-scoped -- a download is the full board.
+  // Sources checkboxes (in #adp-controls, outside #adp-board so they persist
+  // across table swaps): each unchecked group has its columns hidden AND is
+  // dropped from the Consensus / Spread values, which are recomputed here
+  // from the checked sources' own ranks. Re-applied after every #adp-board
+  // htmx swap. The CSV / Excel export is deliberately NOT re-scoped -- a
+  // download is always the full board.
   (function () {
     var bar = document.querySelector('[data-adp-filter]');
     if (!bar) return;
+    var boxes = bar.querySelectorAll('input[type="checkbox"][data-adp-group]');
 
     function table() { return document.querySelector('#adp-board table.adp-board'); }
 
-    function apply() {
-      var t = table();
-      if (!t) return;
+    function checkedGroups() {
       var on = {};
-      bar.querySelectorAll('.chip[data-adp-group]').forEach(function (c) {
-        if (c.dataset.adpGroup !== 'all') on[c.dataset.adpGroup] = c.classList.contains('is-on');
-      });
-      // A group is shown unless its chip is explicitly off.
+      boxes.forEach(function (b) { on[b.dataset.adpGroup] = b.checked; });
+      return on;
+    }
+
+    // Hide / show whole column groups, and keep the group-edge divider on the
+    // first visible column of each later group.
+    function applyColumns(t, on) {
       t.querySelectorAll('[data-adp-group]').forEach(function (el) {
         var g = el.dataset.adpGroup;
         if (!(g in on)) return;
         el.classList.toggle('adp-col-hidden', on[g] === false);
       });
-      // Left divider sits on the first visible column of each later group.
       var seenGroup = null, firstOfGroup = true;
       t.querySelectorAll('thead tr:not(.adp-grouprow) th[data-adp-col]').forEach(function (th) {
         var g = th.dataset.adpGroup, hidden = th.classList.contains('adp-col-hidden');
@@ -150,14 +155,93 @@
       });
     }
 
-    bar.addEventListener('click', function (e) {
-      var chip = e.target.closest('.chip[data-adp-group]');
-      if (!chip) return;
-      if (chip.dataset.adpGroup === 'all') {
-        bar.querySelectorAll('.chip').forEach(function (c) { c.classList.add('is-on'); });
-      } else {
-        chip.classList.toggle('is-on');
-      }
+    // Round half-to-even at 1 dp, matching Python's round() (which
+    // ffadp.board.combine and the CSV export use) so a checked-all board
+    // reads identically to the server's own numbers.
+    function round1(x) {
+      var n = x * 10, r = Math.round(n);
+      if (Math.abs(n - Math.trunc(n) - 0.5) < 1e-9 && r % 2 !== 0) r -= 1;
+      return r / 10;
+    }
+    // data-sort formats that keep lexical order == numeric order, matching
+    // _adp_table.html's server-side padding for these two cells.
+    function padConsensus(v) {         // match the template's "%09.1f"
+      var s = v.toFixed(1);
+      while (s.length < 9) s = '0' + s;         // -> "0000022.3"
+      return s;
+    }
+    function padSpread(v) {            // v is an int; offset like the template
+      var s = String(v + 1000);
+      while (s.length < 5) s = '0' + s;
+      return s;
+    }
+
+    // Recompute Consensus (mean of the checked sources' ranks for that row)
+    // and Spread (max - min of those ranks; blank if fewer than two) from the
+    // per-cell data-rank, matching ffadp.board.combine's own arithmetic.
+    function recompute(t, on) {
+      var live = {};   // which data-adp-col headers belong to a checked group
+      t.querySelectorAll('thead th[data-adp-col]').forEach(function (th) {
+        live[th.dataset.adpCol] = on[th.dataset.adpGroup] !== false;
+      });
+      t.tBodies[0] && Array.prototype.forEach.call(t.tBodies[0].rows, function (row) {
+        var ranks = [];
+        row.querySelectorAll('td[data-adp-col]').forEach(function (td) {
+          if (!live[td.dataset.adpCol]) return;
+          var v = parseInt(td.dataset.rank, 10);
+          if (!isNaN(v)) ranks.push(v);
+        });
+        var cCell = row.querySelector('.adp-consensus');
+        var sCell = row.querySelector('.adp-spread');
+        if (cCell) {
+          if (ranks.length) {
+            var mean = round1(ranks.reduce(function (a, b) { return a + b; }, 0)
+                              / ranks.length);
+            cCell.textContent = mean.toFixed(1);
+            cCell.dataset.sort = padConsensus(mean);
+          } else {
+            cCell.textContent = '–';
+            cCell.dataset.sort = '999999999';  // matches the template's no-data value; sorts last
+          }
+        }
+        if (sCell) {
+          if (ranks.length >= 2) {
+            var sp = Math.max.apply(null, ranks) - Math.min.apply(null, ranks);
+            sCell.textContent = String(sp);
+            sCell.dataset.sort = padSpread(sp);
+          } else {
+            sCell.textContent = '–';
+            sCell.dataset.sort = '00000';
+          }
+        }
+      });
+    }
+
+    // After a recompute, restore the board's natural order (Consensus asc) so
+    // the ranking reflects the current source set.
+    function resortByConsensus(t) {
+      var th = t.querySelector('thead tr:not(.adp-grouprow) th.adp-consensus');
+      if (!th) return;
+      th.dataset.dir = 'desc';         // so the click flips it to ascending
+      th.click();
+    }
+
+    function apply() {
+      var t = table();
+      if (!t) return;
+      var on = checkedGroups();
+      applyColumns(t, on);
+      recompute(t, on);
+      resortByConsensus(t);
+    }
+
+    bar.addEventListener('change', function (e) {
+      var box = e.target.closest('input[type="checkbox"][data-adp-group]');
+      if (!box) return;
+      e.stopPropagation();            // don't let it reach the form's hx-trigger
+      // Never leave every group off -- re-check the one just unchecked.
+      var anyOn = Array.prototype.some.call(boxes, function (b) { return b.checked; });
+      if (!anyOn) { box.checked = true; return; }
       apply();
     });
 

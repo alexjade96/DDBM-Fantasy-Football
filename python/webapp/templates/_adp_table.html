@@ -6,9 +6,12 @@
 
    Columns are grouped by source type: a two-row header shows the group
    labels above the per-source headers, and every group / source header +
-   body cell carries data-adp-group / data-adp-col so the group toggles in
-   .adp-toolbar (rendered by _adp_compare.html, outside the card) can show
-   or hide a whole group. #}
+   body cell carries data-adp-group / data-adp-col so the Sources checkboxes
+   in #adp-controls (rendered by _adp_compare.html) can show or hide a whole
+   group. Each source cell also carries data-rank (its own overall rank, ""
+   when it has no ADP for that player); the Consensus cell is .adp-consensus
+   and the Spread cell .adp-spread, so the script can recompute both from
+   the *checked* sources' ranks after a toggle. #}
 {% set unavailable = board.sources | rejectattr("ok") | list %}
 
 {% if not board.columns %}
@@ -49,12 +52,12 @@
         <tr>
           <th>#</th>
           <th>Player</th>
-          <th class="n">Consensus</th>
+          <th class="n adp-consensus">Consensus</th>
           {% for c in board.columns %}
             {%- set s = (board.sources | selectattr("name", "equalto", c) | first) -%}
             <th class="n" data-adp-group="{{ s.group }}" data-adp-col="{{ c }}">{{ s.label }} ADP</th>
           {% endfor %}
-          <th class="n">Spread</th>
+          <th class="n adp-spread">Spread</th>
         </tr>
       </thead>
       <tbody>
@@ -65,18 +68,29 @@
             {%- if r.position %} <span class="q">{{ r.position }}</span>{% endif -%}
             {%- if r.team %} <span class="q">{{ r.team }}</span>{% endif -%}
           </td>
-          <td class="n">{{ "%.1f"|format(r.consensus) if r.consensus is not none else "&ndash;" }}</td>
+          {# data-sort is zero-padded so the shared string-compare sort (which
+             kicks in once data-sort is present) still orders it numerically;
+             the script rewrites BOTH textContent and this attr on a filter
+             recompute. #}
+          <td class="n adp-consensus"
+              data-sort="{{ "%09.1f"|format(r.consensus) if r.consensus is not none else "999999999" }}">
+            {{ "%.1f"|format(r.consensus) if r.consensus is not none else "&ndash;" }}
+          </td>
           {% for c in board.columns %}
             {%- set s = (board.sources | selectattr("name", "equalto", c) | first) -%}
             {%- set a = r.adp.get(c) -%}{%- set rk = r.rank.get(c) -%}
             <td class="n" data-adp-group="{{ s.group }}" data-adp-col="{{ c }}"
+                data-rank="{{ rk if rk is not none else '' }}"
                 data-sort="{{ rk if rk is not none else 99999 }}">
               {%- if a is not none -%}
                 {{ "%.1f"|format(a) }}<span class="adp-rk"> &middot; #{{ rk }}</span>
               {%- else -%}&ndash;{%- endif -%}
             </td>
           {% endfor %}
-          <td class="n" data-sort="{{ r.spread if r.spread is not none else -1 }}">
+          {# offset + zero-pad so lexical data-sort order == numeric order,
+             and a missing spread ("&ndash;") sorts last. #}
+          <td class="n adp-spread"
+              data-sort="{{ "%05d"|format(r.spread + 1000) if r.spread is not none else "00000" }}">
             {{ r.spread if r.spread is not none else "&ndash;" }}
           </td>
         </tr>
