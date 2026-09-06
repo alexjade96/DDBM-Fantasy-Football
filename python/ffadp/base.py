@@ -9,13 +9,13 @@ from dataclasses import dataclass, field
 SCORING = ("std", "half_ppr", "ppr", "2qb")
 
 # How ADP sources are grouped in the comparison table, in display order.
-# `apps` are the mainstream draft apps most people actually draft on;
-# `analyst` is compiled / consensus ADP with no first-party draft app behind
-# it. The board orders its columns by this grouping and returns the groups
-# so the UI can label and filter by them.
+# `apps` are the mainstream draft platforms most people actually draft on;
+# `analyst` is compiled / consensus ADP from an analysis platform with no
+# first-party draft app behind it. The board orders its columns by this
+# grouping and returns the groups so the UI can label and filter by them.
 GROUPS = (
-    ("apps", "Draft apps"),
-    ("analyst", "Analyst consensus"),
+    ("apps", "Draft platforms"),
+    ("analyst", "Analysis platforms"),
 )
 GROUP_ORDER = {key: i for i, (key, _) in enumerate(GROUPS)}
 GROUP_LABEL = dict(GROUPS)

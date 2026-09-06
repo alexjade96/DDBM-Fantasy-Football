@@ -1195,6 +1195,9 @@ def adp_compare(request: Request, season: str | None = None,
         "asset_v": asset_v(), "season": sea, "scoring": scoring, "pos": pos,
         "seasons": seasons, "scorings": _ADP_SCORING, "positions": _ADP_POS,
         "history": hist,
+        # The source-toggle chips live in the shell (outside the card), so
+        # they need the group list up front. Static -- one chip per group.
+        "adp_groups": [{"key": k, "label": v} for k, v in _adpboard.GROUPS],
         "board": None,   # the table streams in via /adp/data
     })
 

@@ -8,17 +8,17 @@
   <p class="hint">Where each source&rsquo;s <strong>redraft</strong> draft rooms
     are taking every player, lined up so you can see who they disagree on.  All
     season-wide published data, no league required.  Columns are grouped by
-    source type: <strong>draft apps</strong> (Sleeper, ESPN, Yahoo), then
-    <strong>analyst consensus</strong> (FFCalc, RotoWire).  The chips above the
-    table show or hide a whole group.  Sort by any column; the
+    source type: <strong>draft platforms</strong> (Sleeper, ESPN, Yahoo), then
+    <strong>analysis platforms</strong> (FFCalc, RotoWire).  The toggles beside
+    the data buttons show or hide a whole group.  Sort by any column; the
     <strong>Spread</strong> column is how far apart the sources rank a player.
     {%- if history %}
       History runs back to
       {%- for yr, name in history %}
         {{ " " }}{{ yr }} ({{ name }}){{ "," if not loop.last }}
       {%- endfor -%};
-      a source is skipped for years before it published ADP, and the
-      high-stakes / analyst live feeds cover the current draft season only.
+      a source is skipped for years before it published ADP, and the analysis
+      platforms&rsquo; live feeds cover the current draft season only.
     {%- endif %}</p>
 
   <form class="controls" id="adp-controls"
@@ -48,22 +48,6 @@
         {% endfor %}
       </select>
     </label>
-    {# Refresh + download the current view. Refresh re-pulls the sources live
-       (&reload=1) and rewrites the snapshots; the downloads are plain <a> so
-       they're real file downloads, not htmx swaps. All three hrefs / the
-       refresh trigger track the controls via the inline script below. #}
-    <span class="adp-actions">
-      <span>Data</span>
-      <button type="button" class="ghost" id="adp-refresh"
-              hx-get="/adp/data" hx-target="#adp-board" hx-swap="innerHTML"
-              hx-include="#adp-controls" hx-vals='{"reload": 1}'>Refresh</button>
-      <a class="ghost" id="adp-csv"
-         href="/adp/export.csv?season={{ season }}&scoring={{ scoring }}&pos={{ pos }}"
-         download>CSV</a>
-      <a class="ghost" id="adp-xlsx"
-         href="/adp/export.xlsx?season={{ season }}&scoring={{ scoring }}&pos={{ pos }}"
-         download>Excel</a>
-    </span>
   </form>
 
   {# First board loads immediately; subsequent loads come from #adp-controls. #}
@@ -73,6 +57,33 @@
     <p class="hint">Loading ADP&hellip;</p>
   </div>
 </section>
+
+{# Data actions + source toggles, OUTSIDE the card. Left: refresh / download
+   the current view (Refresh re-pulls the sources live via &reload=1 and
+   rewrites the snapshots; the downloads are plain <a> real file downloads).
+   Right (same line): one toggle per source group, hiding / showing its
+   columns in the table. All hrefs and the refresh trigger track
+   #adp-controls; the group toggles are wired in the script below. #}
+<div class="adp-toolbar">
+  <span class="adp-actions">
+    <span class="adp-actions-label">Data</span>
+    <button type="button" class="ghost" id="adp-refresh"
+            hx-get="/adp/data" hx-target="#adp-board" hx-swap="innerHTML"
+            hx-include="#adp-controls" hx-vals='{"reload": 1}'>Refresh</button>
+    <a class="ghost" id="adp-csv"
+       href="/adp/export.csv?season={{ season }}&scoring={{ scoring }}&pos={{ pos }}"
+       download>CSV</a>
+    <a class="ghost" id="adp-xlsx"
+       href="/adp/export.xlsx?season={{ season }}&scoring={{ scoring }}&pos={{ pos }}"
+       download>Excel</a>
+  </span>
+  <div class="adp-filter" data-adp-filter>
+    <button type="button" class="chip is-on" data-adp-group="all">All sources</button>
+    {% for g in adp_groups %}
+      <button type="button" class="chip is-on" data-adp-group="{{ g.key }}">{{ g.label }}</button>
+    {% endfor %}
+  </div>
+</div>
 
 <script>
   // Keep the CSV / Excel download links pointing at whatever the controls
@@ -91,65 +102,63 @@
     sync();
   })();
 
-  // Source-group filter: the chips in .adp-filter toggle whole groups
-  // (data-adp-group) of the ADP table on/off. "All sources" resets. Runs on
-  // load and again after every htmx swap of #adp-board. The export links are
-  // deliberately NOT re-scoped -- a download is the full board.
+  // Source-group toggles: the chips in .adp-toolbar's .adp-filter show / hide
+  // whole groups (data-adp-group) of the ADP table. "All sources" resets.
+  // The chips live outside #adp-board (they persist across table swaps); the
+  // current toggle state is re-applied after every htmx swap of #adp-board.
+  // The export links are deliberately NOT re-scoped -- a download is the full
+  // board.
   (function () {
-    var board = document.getElementById('adp-board');
-    if (!board) return;
+    var bar = document.querySelector('[data-adp-filter]');
+    if (!bar) return;
 
-    function apply(root) {
-      var bar = root.querySelector('[data-adp-filter]');
-      var table = root.querySelector('table.adp-board');
-      if (!bar || !table) return;
+    function table() { return document.querySelector('#adp-board table.adp-board'); }
+
+    function apply() {
+      var t = table();
+      if (!t) return;
       var on = {};
       bar.querySelectorAll('.chip[data-adp-group]').forEach(function (c) {
         if (c.dataset.adpGroup !== 'all') on[c.dataset.adpGroup] = c.classList.contains('is-on');
       });
       // A group is shown unless its chip is explicitly off.
-      table.querySelectorAll('[data-adp-group]').forEach(function (el) {
+      t.querySelectorAll('[data-adp-group]').forEach(function (el) {
         var g = el.dataset.adpGroup;
-        if (!(g in on)) return;                 // group headers of empty groups, etc.
+        if (!(g in on)) return;
         el.classList.toggle('adp-col-hidden', on[g] === false);
       });
       // Left divider sits on the first visible column of each later group.
       var seenGroup = null, firstOfGroup = true;
-      table.querySelectorAll('thead tr:not(.adp-grouprow) th[data-adp-col]').forEach(function (th) {
+      t.querySelectorAll('thead tr:not(.adp-grouprow) th[data-adp-col]').forEach(function (th) {
         var g = th.dataset.adpGroup, hidden = th.classList.contains('adp-col-hidden');
         if (g !== seenGroup) { seenGroup = g; firstOfGroup = true; }
         var edge = firstOfGroup && !hidden && th.previousElementSibling &&
                    th.previousElementSibling.dataset.adpCol;
-        markEdge(table, th.dataset.adpCol, edge);
+        markEdge(t, th.dataset.adpCol, edge);
         if (!hidden) firstOfGroup = false;
       });
     }
-    function markEdge(table, col, edge) {
-      table.querySelectorAll('[data-adp-col="' + col + '"]').forEach(function (el) {
+    function markEdge(t, col, edge) {
+      t.querySelectorAll('[data-adp-col="' + col + '"]').forEach(function (el) {
         el.classList.toggle('adp-groupedge', !!edge);
       });
     }
-    function wire(root) {
-      var bar = root.querySelector('[data-adp-filter]');
-      if (!bar || bar.dataset.wired) return;
-      bar.dataset.wired = '1';
-      bar.addEventListener('click', function (e) {
-        var chip = e.target.closest('.chip[data-adp-group]');
-        if (!chip) return;
-        if (chip.dataset.adpGroup === 'all') {
-          bar.querySelectorAll('.chip').forEach(function (c) { c.classList.add('is-on'); });
-        } else {
-          chip.classList.toggle('is-on');
-        }
-        apply(root);
-      });
-      apply(root);
-    }
 
-    wire(board);
+    bar.addEventListener('click', function (e) {
+      var chip = e.target.closest('.chip[data-adp-group]');
+      if (!chip) return;
+      if (chip.dataset.adpGroup === 'all') {
+        bar.querySelectorAll('.chip').forEach(function (c) { c.classList.add('is-on'); });
+      } else {
+        chip.classList.toggle('is-on');
+      }
+      apply();
+    });
+
+    apply();
     document.body.addEventListener('htmx:afterSwap', function (e) {
       if (e.target && (e.target.id === 'adp-board' || e.target.closest('#adp-board'))) {
-        wire(board);
+        apply();
       }
     });
   })();

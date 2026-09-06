@@ -411,7 +411,7 @@ def test_combine_orders_columns_by_group_and_reports_groups(monkeypatch):
     assert b["columns"] == ["app1", "an1"]
     assert [g["key"] for g in b["groups"]] == ["apps", "analyst"]
     assert b["groups"][0]["columns"] == ["app1"]
-    assert b["groups"][0]["label"] == "Draft apps"
+    assert b["groups"][0]["label"] == "Draft platforms"
     assert {s["name"]: s["group"] for s in b["sources"]} == {
         "app1": "apps", "an1": "analyst"}
     identity.reset()
