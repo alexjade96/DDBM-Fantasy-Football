@@ -1567,31 +1567,29 @@ footer code { font-family: ui-monospace, Consolas, monospace; }
 /* The Pre-season panel's drilldown: Pick / Player / Consensus / vs, then one
    column per DRAFT PLATFORM (Sleeper / ESPN / Yahoo / CBS) -- the
    column-per-platform layout of the ADP Comparison tab.  It lives in a
-   colspan cell of the summary table.  Two things were making the platform
-   columns unreachable:
-     1. it borrowed `.dt-games`, whose `td { padding: 7px 26px 7px 0 }` blew
-        the table ~200px past the panel -- now its OWN class with tight
-        padding, so at a normal panel width all 8 columns fit.
-     2. a bare div with only `overflow-x` inside a table cell grows to its
-        content width and never scrolls.  `max-width: 0` on the <td> pins
-        the cell to the row width its 7 siblings leave it; `width: 100%` on
-        the wrap fills that pinned cell; then `overflow-x: auto` on a
-        `width: max-content` table finally produces a scrollbar when the
-        table is still wider (very narrow panels).  A persistent thin
-        scrollbar (not the OS overlay one, which stays hidden until
-        hovered) makes that state visibly scrollable. */
+   colspan cell of the summary table.  What kept the platform columns off
+   the right edge, in order of how much width each cost:
+     1. it borrowed `.dt-games` (`td { padding: 7px 26px 7px 0 }`, ~26px of
+        dead pad per cell).  Now its own class, 8px pad.
+     2. `min-width: 100%` on the table forced it to fill the wrap, and
+        `table-layout: auto` dumped every spare pixel into Player (293px!)
+        and Consensus (131px).  Dropped -- the table now sits at its natural
+        ~570px and fits a ~700px panel with room to spare.  Player is
+        capped + ellipsised so one long name can't reflate it.
+   The `.preseason-adp-wrap` (max-width:0 on the <td>, width:100% +
+   overflow-x:auto on the div) plus a persistent thin scrollbar still catch
+   a phone-width panel where even ~570px overflows. */
 .preseason-adp .detail-row > td { max-width: 0; padding: 4px 0 8px; }
 .preseason-adp-wrap { display: block; width: 100%; overflow-x: auto;
   scrollbar-width: thin; }
 .preseason-adp-wrap::-webkit-scrollbar { height: 8px; }
 .preseason-adp-wrap::-webkit-scrollbar-thumb {
   background: var(--line); border-radius: 4px; }
-.preseason-adp-picks { width: max-content; min-width: 100%;
-  border-collapse: collapse; font-size: 12px; }
+.preseason-adp-picks { width: auto; border-collapse: collapse; font-size: 12px; }
 .preseason-adp-picks th { font-size: 10px; text-transform: uppercase;
   letter-spacing: .04em; color: var(--faint); font-weight: 600;
-  padding: 4px 12px 5px 0; white-space: nowrap; border-bottom: 1px solid var(--line); }
-.preseason-adp-picks td { padding: 5px 12px 5px 0; white-space: nowrap;
+  padding: 4px 8px 5px 0; white-space: nowrap; border-bottom: 1px solid var(--line); }
+.preseason-adp-picks td { padding: 5px 8px 5px 0; white-space: nowrap;
   border-bottom: 1px solid var(--line); }
 .preseason-adp-picks th:first-child, .preseason-adp-picks td:first-child { padding-left: 4px; }
 .preseason-adp-picks th:last-child, .preseason-adp-picks td:last-child { padding-right: 4px; }
@@ -1599,12 +1597,16 @@ footer code { font-family: ui-monospace, Consolas, monospace; }
 .preseason-adp-picks td.n, .preseason-adp-picks th.n { text-align: right;
   font-variant-numeric: tabular-nums; }
 .preseason-adp-picks .q { font-size: 10.5px; color: var(--faint); }
+/* Player column: cap it so a long name can't spread the whole table. */
+.preseason-adp-picks td:nth-child(2) { max-width: 170px; overflow: hidden;
+  text-overflow: ellipsis; }
+.preseason-adp-picks .pface, .preseason-adp-picks .face { width: 18px; height: 18px; }
 /* Neutralise the .gb-vs-mode nth-child(2/3) padding tweak (meant for the
    OUTER Player/Order pair) on this nested table. */
 .gb-vs-mode .preseason-adp-picks td:nth-child(2),
 .gb-vs-mode .preseason-adp-picks td:nth-child(3),
 .gb-vs-mode .preseason-adp-picks th:nth-child(2),
-.gb-vs-mode .preseason-adp-picks th:nth-child(3) { padding-right: 12px; padding-left: 0; }
+.gb-vs-mode .preseason-adp-picks th:nth-child(3) { padding-right: 8px; padding-left: 0; }
 
 /* Redraft report: the redrafted board's own By-final-season-results / By-ADP
    toggle -- same fixed-id viewswitch idiom as gb-vs-mode above. Standalone
