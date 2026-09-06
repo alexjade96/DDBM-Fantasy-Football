@@ -1734,11 +1734,11 @@ _ADP_FIELD_TO_SCORING = {
 }
 
 
-def _preseason_adp_compare(s, board=None) -> list[dict]:
+def _preseason_adp_compare(s, board=None) -> dict:
     """The Draft tab's "Pre-season" finds view: each manager's drafted roster
-    graded against the cross-platform CONSENSUS draft position from
-    ffadp.combine (mean rank across every live source), one entry per manager,
-    ordered by draft slot.
+    laid out against the FULL cross-platform ADP board from ffadp.combine --
+    every live source's own draft position for the pick, plus the field's
+    consensus rank and spread, one drilldown row per pick.
 
     For each pick, `vs_consensus = pick_no - consensus_rank`: negative means
     the manager took the player EARLIER than the field's consensus (a reach),
@@ -1747,34 +1747,42 @@ def _preseason_adp_compare(s, board=None) -> list[dict]:
     guard `_preseason_rosters` uses (a stub / half-run draft can put ADP on a
     different scale from its pick numbers).
 
-    Returns []:
+    Returns `{"sources": [{"key","label"}, ...], "managers": [...]}` -- the
+    `sources` list is the board's live source columns in display order (so
+    the drilldown can render one real column per source), and each `managers`
+    entry carries a `picks` list whose rows have `ranks` / `adps` dicts keyed
+    by source key.
+
+    Returns `{"sources": [], "managers": []}`:
       * when the season has no draft board, or
-      * when ffadp.combine resolves nothing for the season (offline, no
-        committed snapshot) -- the panel then shows a short "no ADP" note.
+      * when ffadp.combine resolves nothing (offline, no committed snapshot)
+        -- the panel then shows a short "no ADP" note.
     Webapp-only; ffadp stays outside the parity-gated engine.
     """
+    empty = {"sources": [], "managers": []}
     if board is None:
         board = draft.draft_board(s)
     if board.empty:
-        return []
+        return empty
     try:
         import ffadp.board as _adpboard
         scoring_key = _ADP_FIELD_TO_SCORING.get(draft._adp_field_for(s), "ppr")
         b = _adpboard.combine(str(s.season), scoring=scoring_key)
     except Exception:
-        return []
+        return empty
     by_pid: dict[str, dict] = {}
     for r in b.get("rows", []):
         pid = r.get("sleeper_id")
         if pid:
             by_pid[str(pid)] = r
     if not by_pid:
-        return []
+        return empty
     src_labels = {sc["name"]: sc["label"] for sc in b.get("sources", [])}
     live_cols = list(b.get("columns", []))
+    sources = [{"key": c, "label": src_labels.get(c, c)} for c in live_cols]
 
     bs = board.sort_values("pick_no")
-    out = []
+    managers = []
     for name, g in bs.groupby("user_name", sort=False):
         slot = None
         picks = []
@@ -1790,12 +1798,10 @@ def _preseason_adp_compare(s, board=None) -> list[dict]:
             spread = adp_row.get("spread") if adp_row else None
             vs = (round(pick_no - consensus, 1)
                   if (consensus is not None and pick_no is not None) else None)
-            per_source = []
-            if adp_row:
-                for c in live_cols:
-                    rk = adp_row.get("rank", {}).get(c)
-                    if rk is not None:
-                        per_source.append({"label": src_labels.get(c, c), "rank": rk})
+            ranks = {c: (adp_row.get("rank", {}).get(c) if adp_row else None)
+                     for c in live_cols}
+            adps = {c: (adp_row.get("adp", {}).get(c) if adp_row else None)
+                    for c in live_cols}
             picks.append({
                 "pick": (f"{rnd}.{pir:02d}" if rnd and pir
                          else (str(pick_no) if pick_no is not None else "-")),
@@ -1806,13 +1812,14 @@ def _preseason_adp_compare(s, board=None) -> list[dict]:
                 "consensus": consensus,
                 "spread": spread,
                 "vs_consensus": vs,
-                "per_source": per_source,
+                "ranks": ranks,
+                "adps": adps,
             })
         priced = [p["vs_consensus"] for p in picks if p["vs_consensus"] is not None]
         avg = round(sum(priced) / len(priced), 1) if priced else None
         if avg is not None and abs(avg) > len(bs):
             avg = None
-        out.append({
+        managers.append({
             "user_name": name,
             "slot": slot,
             "n_picks": len(picks),
@@ -1822,8 +1829,8 @@ def _preseason_adp_compare(s, board=None) -> list[dict]:
             "n_values": sum(1 for v in priced if v > 0),
             "picks": picks,
         })
-    out.sort(key=lambda e: e["slot"] if e["slot"] is not None else 999)
-    return out
+    managers.sort(key=lambda e: e["slot"] if e["slot"] is not None else 999)
+    return {"sources": sources, "managers": managers}
 
 
 def _last_completed_week(s) -> int:

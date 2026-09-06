@@ -1,28 +1,35 @@
 {# "Pre-season" panel of the Draft finds viewswitch: each manager's drafted
-   roster vs the FIELD's cross-platform consensus draft position
-   (ffadp.combine -> mean rank across Sleeper / ESPN / Yahoo / CBS / FFCalc /
-   RotoWire). No points needed, so this is the one finds panel shown before
-   week 1. `preseason_adp` is app._preseason_adp_compare(s): one entry per
-   manager (ordered by draft slot), each with a picks list.
+   roster laid out against the FULL cross-platform ADP board (ffadp.combine).
+   No points needed, so this is the one finds panel shown before week 1.
+   `preseason_adp` is app._preseason_adp_compare(s):
+     {"sources": [{"key","label"}, ...],   # live board columns, display order
+      "managers": [{user_name, slot, ... , picks: [...]}]}
 
-   One summary row per manager, expanding to that manager's picks. Same
-   drilldown furniture as the sibling panels (a trigger row + `.detail-row`
-   siblings, grouped by index.html's makeSortable). #}
+   Outer table: one summary row per manager (draft-slot order). Its drilldown
+   is a full nested table -- Pick / Player / Overall / Consensus / vs, then
+   ONE COLUMN PER SOURCE showing that source's own draft position for the
+   pick (rank, with the raw ADP under it) -- the same column-per-platform
+   layout as the ADP Comparison tab, not a condensed text summary. Nesting a
+   table inside a .detail-row <td colspan> is the Roster Efficiency
+   drilldown's pattern; makeSortable groups the trigger row with its single
+   following .detail-row. #}
 {% import "_ident.html" as idm with context %}
-{% if not preseason_adp %}
+{% set sources = preseason_adp.sources %}
+{% set managers = preseason_adp.managers %}
+{% if not managers %}
   <p class="empty">No cross-platform ADP available for {{ season }} yet.  The
     sources could not be reached and there is no saved snapshot for this
     season.</p>
 {% else %}
 <div class="card tablewrap scrolltable">
-  <table class="sortable">
+  <table class="sortable preseason-adp">
     <thead><tr>
       <th>Slot</th><th>Manager</th><th class="n">Picks</th>
       <th class="n">Priced</th><th class="n">Avg vs consensus</th>
       <th class="n">Reaches</th><th class="n">Values</th>
     </tr></thead>
     <tbody>
-    {% for m in preseason_adp %}
+    {% for m in managers %}
       {% set avg = m.avg_vs_consensus %}
       <tr class="has-detail">
         <td data-sort="{{ '%03d'|format(m.slot) if m.slot is not none else '999' }}">
@@ -31,8 +38,8 @@
         <td class="n">{{ m.n_picks }}</td>
         <td class="n">{{ m.priced }}</td>
         {# Negative = drafted AHEAD of the field's consensus (reached, green);
-           positive = waited past consensus (value, red). Matches the
-           per-pick tint below and _preseason_rosters' own avg_vs_adp cue. #}
+           positive = waited past consensus (value, red). Matches the per-pick
+           `vs` column and _preseason_rosters' own avg_vs_adp cue. #}
         <td class="n" data-sort="{{ '%09.1f'|format(avg + 1000) if avg is not none else '999999999' }}">
           {%- if avg is not none -%}
             <span class="res {% if avg <= 0 %}w{% else %}l{% endif %}">{{ "+" if avg > 0 }}{{ "%.1f"|format(avg) }}</span>
@@ -40,26 +47,42 @@
         <td class="n">{{ m.n_reaches }}</td>
         <td class="n">{{ m.n_values }}</td>
       </tr>
-      {% for p in m.picks %}
       <tr class="detail-row" hidden>
-        <td></td>
-        <td>
-          {{ idm.headshot(p.player_id) }}{{ p.player_name }}
-          {%- if p.position %} <span class="q">{{ p.position }}</span>{% endif -%}
+        <td colspan="7">
+          <div class="roster-scroll preseason-adp-scroll">
+            <table class="dt-games preseason-adp-picks nosort">
+              <thead><tr>
+                <th class="n">Pick</th><th>Player</th>
+                <th class="n">Overall</th><th class="n">Consensus</th>
+                <th class="n">vs</th><th class="n">Spread</th>
+                {% for src in sources %}<th class="n">{{ src.label }}</th>{% endfor %}
+              </tr></thead>
+              <tbody>
+              {% for p in m.picks %}
+              <tr>
+                <td class="n">{{ p.pick }}</td>
+                <td>{{ idm.headshot(p.player_id) }}{{ p.player_name }}
+                    {%- if p.position %} <span class="q">{{ p.position }}</span>{% endif -%}</td>
+                <td class="n">{{ p.pick_no if p.pick_no is not none else "&ndash;" }}</td>
+                <td class="n">{% if p.consensus is not none %}#{{ "%.1f"|format(p.consensus) }}{% else %}&ndash;{% endif %}</td>
+                <td class="n">
+                  {%- if p.vs_consensus is not none -%}
+                    <span class="res {% if p.vs_consensus <= 0 %}w{% else %}l{% endif %}">{{ "+" if p.vs_consensus > 0 }}{{ "%.1f"|format(p.vs_consensus) }}</span>
+                  {%- else -%}&ndash;{%- endif -%}</td>
+                <td class="n">{{ p.spread if p.spread is not none else "&ndash;" }}</td>
+                {% for src in sources %}
+                  {% set rk = p.ranks.get(src.key) %}{% set a = p.adps.get(src.key) %}
+                  <td class="n">
+                    {%- if rk is not none -%}#{{ rk }}{% if a is not none %} <span class="q">{{ "%.1f"|format(a) }}</span>{% endif %}
+                    {%- else -%}&ndash;{%- endif -%}</td>
+                {% endfor %}
+              </tr>
+              {% endfor %}
+              </tbody>
+            </table>
+          </div>
         </td>
-        <td class="n" data-sort="{{ '%07d'|format(p.pick_no) if p.pick_no is not none else '9999999' }}">{{ p.pick }}</td>
-        <td class="n">
-          {%- if p.consensus is not none -%}#{{ "%.1f"|format(p.consensus) }}
-          {%- else -%}&ndash;{%- endif -%}</td>
-        <td class="n">
-          {%- if p.vs_consensus is not none -%}
-            <span class="res {% if p.vs_consensus <= 0 %}w{% else %}l{% endif %}">{{ "+" if p.vs_consensus > 0 }}{{ "%.1f"|format(p.vs_consensus) }}</span>
-          {%- else -%}&ndash;{%- endif -%}</td>
-        <td class="n" colspan="2">
-          {%- if p.spread is not none -%}<span class="q">spread {{ p.spread }}</span>{% endif -%}
-          {%- for src in p.per_source %} <span class="q">{{ src.label }} #{{ src.rank }}</span>{% endfor -%}</td>
       </tr>
-      {% endfor %}
     {% endfor %}
     </tbody>
   </table>

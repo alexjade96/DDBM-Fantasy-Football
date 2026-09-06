@@ -975,26 +975,28 @@ def test_preseason_rosters_are_in_pick_order_with_per_position_counts(season_obj
 
 
 def test_preseason_adp_compare_grades_picks_against_consensus(season_obj, monkeypatch):
-    """The Draft tab's "Pre-season" finds panel: one entry per manager (draft
-    slot order), each pick graded `vs_consensus = pick_no - consensus_rank`
-    (negative = reached ahead of the field, positive = waited). The consensus
-    rank comes from ffadp.combine, joined by Sleeper player_id. See
+    """The Draft tab's "Pre-season" finds panel: `{"sources": [...],
+    "managers": [...]}`, managers in draft-slot order, each pick graded
+    `vs_consensus = pick_no - consensus_rank` (negative = reached ahead of
+    the field, positive = waited) and carrying `ranks` / `adps` dicts keyed
+    by source so the drilldown can render one real column per source. See
     app._preseason_adp_compare."""
     import pandas as pd
     from webapp import app
     from webapp.app import _preseason_adp_compare
 
     monkeypatch.setattr(app.draft, "_adp_field_for", lambda s: "adp_ppr")
-    # Stub the whole ffadp board: three players with a known consensus rank.
+    # Stub the whole ffadp board: two players with a known consensus rank +
+    # per-source rank/adp.
     fake_board = {
         "columns": ["sleeper", "espn"],
         "sources": [{"name": "sleeper", "label": "Sleeper"},
                     {"name": "espn", "label": "ESPN"}],
         "rows": [
             {"sleeper_id": "p1", "consensus": 3.0, "spread": 2,
-             "rank": {"sleeper": 2, "espn": 4}},
+             "rank": {"sleeper": 2, "espn": 4}, "adp": {"sleeper": 2.1, "espn": 4.4}},
             {"sleeper_id": "p2", "consensus": 1.5, "spread": 1,
-             "rank": {"sleeper": 1, "espn": 2}},
+             "rank": {"sleeper": 1, "espn": 2}, "adp": {"sleeper": 1.2, "espn": 1.9}},
             # p3 not in the board -> that pick is unpriced.
         ],
     }
@@ -1002,7 +1004,7 @@ def test_preseason_adp_compare_grades_picks_against_consensus(season_obj, monkey
     monkeypatch.setattr(_ab, "combine", lambda *a, **k: fake_board)
 
     s = season_obj
-    assert _preseason_adp_compare(s, pd.DataFrame()) == []           # no board
+    assert _preseason_adp_compare(s, pd.DataFrame()) == {"sources": [], "managers": []}
 
     board = pd.DataFrame({
         "pick_no":       [1, 2, 3],
@@ -1014,18 +1016,24 @@ def test_preseason_adp_compare_grades_picks_against_consensus(season_obj, monkey
         "player_name":   ["A one", "C one", "A two"],
         "position":      ["rb", "wr", "te"],
     })
-    out = _preseason_adp_compare(s, board)
-    assert [e["user_name"] for e in out] == ["Cy", "Al"]             # slot order (1, 2)
+    res = _preseason_adp_compare(s, board)
+    assert [sc["key"] for sc in res["sources"]] == ["sleeper", "espn"]
+    assert [sc["label"] for sc in res["sources"]] == ["Sleeper", "ESPN"]
+    mgrs = res["managers"]
+    assert [e["user_name"] for e in mgrs] == ["Cy", "Al"]           # slot order (1, 2)
 
-    cy = out[0]
+    cy = mgrs[0]
     assert cy["picks"][0]["consensus"] == 1.5 and cy["picks"][0]["spread"] == 1
     assert cy["picks"][0]["vs_consensus"] == 0.5                     # pick 2 vs rank 1.5 -> waited
-    assert [s["label"] for s in cy["picks"][0]["per_source"]] == ["Sleeper", "ESPN"]
+    assert cy["picks"][0]["ranks"] == {"sleeper": 1, "espn": 2}
+    assert cy["picks"][0]["adps"] == {"sleeper": 1.2, "espn": 1.9}
 
-    al = out[1]
+    al = mgrs[1]
     assert al["picks"][0]["vs_consensus"] == -2.0                    # pick 1 vs rank 3 -> reached
+    assert al["picks"][0]["ranks"] == {"sleeper": 2, "espn": 4}
     assert al["picks"][1]["consensus"] is None                       # p3 not on the board
     assert al["picks"][1]["vs_consensus"] is None
+    assert al["picks"][1]["ranks"] == {"sleeper": None, "espn": None}
     assert al["priced"] == 1 and al["n_picks"] == 2
     assert al["n_reaches"] == 1 and al["n_values"] == 0
     assert al["avg_vs_consensus"] == -2.0                            # mean over the one priced pick
@@ -1047,7 +1055,8 @@ def test_preseason_adp_compare_empty_when_board_resolves_nothing(season_obj, mon
         "user_name": ["Cy"], "player_id": ["p1"], "player_name": ["C one"],
         "position": ["rb"],
     })
-    assert _preseason_adp_compare(s=season_obj, board=board) == []
+    assert _preseason_adp_compare(s=season_obj, board=board) == {
+        "sources": [], "managers": []}
 
 
 def test_bracket_token_is_stable_and_content_addressed():

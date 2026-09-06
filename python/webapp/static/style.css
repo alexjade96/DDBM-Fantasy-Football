@@ -1564,6 +1564,20 @@ footer code { font-family: ui-monospace, Consolas, monospace; }
    viewswitch, not every sortable table. */
 .gb-vs-mode table th:nth-child(2), .gb-vs-mode table td:nth-child(2) { padding-right: 4px; }
 .gb-vs-mode table th:nth-child(3), .gb-vs-mode table td:nth-child(3) { padding-left: 4px; }
+/* The Pre-season panel's drilldown is a full nested table (Pick / Player /
+   Overall / Consensus / vs / Spread / one column PER SOURCE) inside the
+   .detail-row's colspan cell -- the column-per-platform layout of the ADP
+   Comparison tab, not a text summary. It carries `nosort` (a 17-pick drill
+   doesn't need column sorting and the .detail-row grouping belongs to the
+   OUTER table), so the .gb-vs-mode nth-child padding tweak above -- meant
+   for the outer Player/Order pair -- must be neutralised on it, and it gets
+   its own horizontal scroll since the source columns can outrun the panel. */
+.preseason-adp-scroll { overflow-x: auto; }
+.gb-vs-mode .preseason-adp-picks td:nth-child(2),
+.gb-vs-mode .preseason-adp-picks td:nth-child(3),
+.gb-vs-mode .preseason-adp-picks th:nth-child(2),
+.gb-vs-mode .preseason-adp-picks th:nth-child(3) { padding-right: 10px; padding-left: 10px; }
+.preseason-adp-picks .q { font-size: 11px; }
 
 /* Redraft report: the redrafted board's own By-final-season-results / By-ADP
    toggle -- same fixed-id viewswitch idiom as gb-vs-mode above. Standalone
