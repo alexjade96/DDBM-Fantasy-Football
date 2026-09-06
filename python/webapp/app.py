@@ -1748,10 +1748,13 @@ def _preseason_adp_compare(s, board=None) -> dict:
     different scale from its pick numbers).
 
     Returns `{"sources": [{"key","label"}, ...], "managers": [...]}` -- the
-    `sources` list is the board's live source columns in display order (so
-    the drilldown can render one real column per source), and each `managers`
-    entry carries a `picks` list whose rows have `ranks` / `adps` dicts keyed
-    by source key.
+    `sources` list is the board's live DRAFT-PLATFORM columns (ffadp's `apps`
+    group: Sleeper / ESPN / Yahoo / CBS), so the drilldown shows one real
+    column per platform ADP. The analysis platforms (FFCalc, RotoWire) still
+    feed the field `consensus` / `spread` used for `vs_consensus`, they just
+    aren't broken out as their own columns here. Each `managers` entry
+    carries a `picks` list whose rows have `ranks` / `adps` dicts keyed by
+    platform source key.
 
     Returns `{"sources": [], "managers": []}`:
       * when the season has no draft board, or
@@ -1778,8 +1781,15 @@ def _preseason_adp_compare(s, board=None) -> dict:
     if not by_pid:
         return empty
     src_labels = {sc["name"]: sc["label"] for sc in b.get("sources", [])}
-    live_cols = list(b.get("columns", []))
-    sources = [{"key": c, "label": src_labels.get(c, c)} for c in live_cols]
+    # Only break out the DRAFT-PLATFORM columns (ffadp's `apps` group:
+    # Sleeper / ESPN / Yahoo / CBS). The analysis platforms still count
+    # toward the field consensus below, they just don't get their own
+    # column. Fall back to every live column if the board has no groups.
+    plat_cols = next((g["columns"] for g in b.get("groups", [])
+                      if g.get("key") == "apps"), None)
+    if plat_cols is None:
+        plat_cols = list(b.get("columns", []))
+    sources = [{"key": c, "label": src_labels.get(c, c)} for c in plat_cols]
 
     bs = board.sort_values("pick_no")
     managers = []
@@ -1799,9 +1809,9 @@ def _preseason_adp_compare(s, board=None) -> dict:
             vs = (round(pick_no - consensus, 1)
                   if (consensus is not None and pick_no is not None) else None)
             ranks = {c: (adp_row.get("rank", {}).get(c) if adp_row else None)
-                     for c in live_cols}
+                     for c in plat_cols}
             adps = {c: (adp_row.get("adp", {}).get(c) if adp_row else None)
-                    for c in live_cols}
+                    for c in plat_cols}
             picks.append({
                 "pick": (f"{rnd}.{pir:02d}" if rnd and pir
                          else (str(pick_no) if pick_no is not None else "-")),
