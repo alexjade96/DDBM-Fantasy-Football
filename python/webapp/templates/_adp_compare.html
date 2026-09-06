@@ -3,15 +3,35 @@
    scoring format / position are the only controls. The board streams in from
    /adp/data so changing a control re-fetches just the table. Historical years
    are read from committed snapshots; "Refresh" (`&reload=1`) re-pulls live. #}
+{# Data actions, ABOVE the card: refresh / download the current view.
+   Refresh re-pulls the sources live (&reload=1) and rewrites the snapshots;
+   the downloads are plain <a> real file downloads. All hrefs and the refresh
+   trigger track #adp-controls (the selects live in the card below). #}
+<div class="adp-toolbar">
+  <span class="adp-actions">
+    <span class="adp-actions-label">Data</span>
+    <button type="button" class="ghost" id="adp-refresh"
+            hx-get="/adp/data" hx-target="#adp-board" hx-swap="innerHTML"
+            hx-include="#adp-controls" hx-vals='{"reload": 1}'>Refresh</button>
+    <a class="ghost" id="adp-csv"
+       href="/adp/export.csv?season={{ season }}&scoring={{ scoring }}&pos={{ pos }}"
+       download>CSV</a>
+    <a class="ghost" id="adp-xlsx"
+       href="/adp/export.xlsx?season={{ season }}&scoring={{ scoring }}&pos={{ pos }}"
+       download>Excel</a>
+  </span>
+</div>
+
 <section class="card">
   <h2>ADP Comparison: platform vs platform</h2>
   <p class="hint">Where each source&rsquo;s <strong>redraft</strong> draft rooms
     are taking every player, lined up so you can see who they disagree on.  All
     season-wide published data, no league required.  Columns are grouped by
     source type: <strong>draft platforms</strong> (Sleeper, ESPN, Yahoo), then
-    <strong>analysis platforms</strong> (FFCalc, RotoWire).  The toggles beside
-    the data buttons show or hide a whole group.  Sort by any column; the
-    <strong>Spread</strong> column is how far apart the sources rank a player.
+    <strong>analysis platforms</strong> (FFCalc, RotoWire).  The toggles on the
+    right of the controls row show or hide a whole group.  Sort by any column;
+    the <strong>Spread</strong> column is how far apart the sources rank a
+    player.
     {%- if history %}
       History runs back to
       {%- for yr, name in history %}
@@ -21,7 +41,7 @@
       platforms&rsquo; live feeds cover the current draft season only.
     {%- endif %}</p>
 
-  <form class="controls" id="adp-controls"
+  <form class="controls adp-controls-row" id="adp-controls"
         hx-get="/adp/data" hx-target="#adp-board" hx-swap="innerHTML"
         hx-trigger="change, submit" hx-include="#adp-controls">
     <label>
@@ -48,6 +68,19 @@
         {% endfor %}
       </select>
     </label>
+    {# Source-group toggles, right-justified on the controls line, styled to
+       match the Season / Scoring / Position blocks (uppercase caption via
+       CSS ::before, then select-like buttons). type="button" so they neither
+       submit the form nor fire its change trigger; the script below wires
+       them and re-applies on each swap. #}
+    <div class="adp-filter" data-adp-filter>
+      <div class="chips">
+        <button type="button" class="chip is-on" data-adp-group="all">All sources</button>
+        {% for g in adp_groups %}
+          <button type="button" class="chip is-on" data-adp-group="{{ g.key }}">{{ g.label }}</button>
+        {% endfor %}
+      </div>
+    </div>
   </form>
 
   {# First board loads immediately; subsequent loads come from #adp-controls. #}
@@ -57,33 +90,6 @@
     <p class="hint">Loading ADP&hellip;</p>
   </div>
 </section>
-
-{# Data actions + source toggles, OUTSIDE the card. Left: refresh / download
-   the current view (Refresh re-pulls the sources live via &reload=1 and
-   rewrites the snapshots; the downloads are plain <a> real file downloads).
-   Right (same line): one toggle per source group, hiding / showing its
-   columns in the table. All hrefs and the refresh trigger track
-   #adp-controls; the group toggles are wired in the script below. #}
-<div class="adp-toolbar">
-  <span class="adp-actions">
-    <span class="adp-actions-label">Data</span>
-    <button type="button" class="ghost" id="adp-refresh"
-            hx-get="/adp/data" hx-target="#adp-board" hx-swap="innerHTML"
-            hx-include="#adp-controls" hx-vals='{"reload": 1}'>Refresh</button>
-    <a class="ghost" id="adp-csv"
-       href="/adp/export.csv?season={{ season }}&scoring={{ scoring }}&pos={{ pos }}"
-       download>CSV</a>
-    <a class="ghost" id="adp-xlsx"
-       href="/adp/export.xlsx?season={{ season }}&scoring={{ scoring }}&pos={{ pos }}"
-       download>Excel</a>
-  </span>
-  <div class="adp-filter" data-adp-filter>
-    <button type="button" class="chip is-on" data-adp-group="all">All sources</button>
-    {% for g in adp_groups %}
-      <button type="button" class="chip is-on" data-adp-group="{{ g.key }}">{{ g.label }}</button>
-    {% endfor %}
-  </div>
-</div>
 
 <script>
   // Keep the CSV / Excel download links pointing at whatever the controls
@@ -102,12 +108,12 @@
     sync();
   })();
 
-  // Source-group toggles: the chips in .adp-toolbar's .adp-filter show / hide
-  // whole groups (data-adp-group) of the ADP table. "All sources" resets.
-  // The chips live outside #adp-board (they persist across table swaps); the
-  // current toggle state is re-applied after every htmx swap of #adp-board.
-  // The export links are deliberately NOT re-scoped -- a download is the full
-  // board.
+  // Source-group toggles: the chips in the controls row's .adp-filter show /
+  // hide whole groups (data-adp-group) of the ADP table. "All sources"
+  // resets. The chips live in #adp-controls, outside #adp-board, so they
+  // persist across table swaps; the current toggle state is re-applied after
+  // every htmx swap of #adp-board. The export links are deliberately NOT
+  // re-scoped -- a download is the full board.
   (function () {
     var bar = document.querySelector('[data-adp-filter]');
     if (!bar) return;

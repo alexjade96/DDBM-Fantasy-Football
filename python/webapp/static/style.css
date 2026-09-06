@@ -77,32 +77,42 @@ a.ghost:hover { filter: brightness(1.06); }
 #adp-board thead tr:not(.adp-grouprow) th { top: 26px; }
 .adp-rk { color: var(--faint); font-weight: 400; }
 
-/* Data actions + source toggles: one row, OUTSIDE the ADP card. Actions
-   (Refresh / CSV / Excel) sit left; the group toggles are pushed to the
-   right edge of the same line and wrap under on a narrow viewport. */
+/* Data actions, ABOVE the ADP card: Refresh / CSV / Excel on one short row. */
 .adp-toolbar { display: flex; flex-wrap: wrap; align-items: center;
-  justify-content: space-between; gap: 10px 16px; margin: 10px 0 14px; }
+  gap: 8px 16px; margin: 4px 0 10px; }
 .adp-actions { display: flex; gap: 8px; align-items: center; }
 .adp-actions-label { font-size: 11px; letter-spacing: .06em;
   text-transform: uppercase; color: var(--faint); }
 .adp-actions a.ghost, .adp-actions button.ghost { padding: 7px 12px; }
 
-/* ADP source-group header + the group toggles. Columns are ordered
-   apps -> analyst; the .adp-grouphead cells span their group and the
-   toggles flip data-adp-group visibility. */
+/* Controls row carries the source toggles on its right edge. */
+.adp-controls-row { flex-wrap: wrap; }
+.adp-filter { margin-left: auto; display: flex; flex-direction: column; gap: 4px;
+  align-items: flex-start; }
+/* Same caption as .controls span (Season / Scoring / Position). */
+.adp-filter::before { content: "Sources"; font-size: 11px; letter-spacing: .06em;
+  text-transform: uppercase; color: var(--faint); }
+.adp-filter .chips { display: flex; gap: 6px; flex-wrap: wrap; }
+/* Toggle buttons match the select control: same border / radius / surface /
+   padding as `input, select` and the `.ghost` buttons. `.is-on` fills like
+   the primary button. */
+.adp-filter .chip { font: inherit; font-size: 13px; padding: 7px 10px;
+  border: 1px solid var(--line); border-radius: 8px; background: var(--surface);
+  color: var(--ink); font-weight: 500; cursor: pointer; }
+.adp-filter .chip:hover { filter: brightness(1.06); }
+.adp-filter .chip.is-on { background: var(--turf); border-color: var(--turf);
+  color: #fff; font-weight: 600; }
+.adp-col-hidden { display: none; }
+
+/* ADP source-group header. Columns are ordered apps -> analyst; the
+   .adp-grouphead cells span their group and the toggles flip
+   data-adp-group visibility. */
 .adp-grouphead { text-align: center; font-size: 11px; letter-spacing: .04em;
   text-transform: uppercase; color: var(--faint);
   border-bottom: 1px solid var(--line); }
 .adp-grouphead + .adp-grouphead { border-left: 1px solid var(--line); }
 .adp-board td[data-adp-col] { border-left: 1px solid transparent; }
 .adp-board [data-adp-col].adp-groupedge { border-left: 1px solid var(--line); }
-.adp-filter { display: flex; flex-wrap: wrap; gap: 6px; margin-left: auto; }
-.adp-filter .chip { font: inherit; font-size: 12px; padding: 4px 10px;
-  border: 1px solid var(--line); border-radius: 999px; background: transparent;
-  color: var(--faint); cursor: pointer; }
-.adp-filter .chip.is-on { background: var(--accent, #2b6); color: #fff;
-  border-color: transparent; }
-.adp-col-hidden { display: none; }
 
 /* Persistent utility bar in the loaded-page header (index.html): a labelled
    region holding the league lookup and, later, other cross-league tools. */
