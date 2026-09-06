@@ -1,17 +1,13 @@
-"""RotoWire ADP providers.
+"""RotoWire ADP provider.
 
 RotoWire publishes a single public JSON table (ffadp.api.rotowire_adp) that
 lines up several sites' current-season ADP side by side plus RotoWire's own
-`average` consensus. This module surfaces two columns from it:
+`average` blended consensus. This module surfaces that consensus column
+(RotowireAdp, "analyst" group). (Yahoo used to be read from this feed's
+`yahooppr` column too; it is now a first-party source -- see ffadp.yahoo.)
 
-  * RotowireAdp -- RotoWire's `average` blended consensus ("analyst" group).
-  * YahooAdp    -- the feed's `yahooppr` column, the only public no-auth path
-                   to a Yahoo redraft ADP ("apps" group).
-
-One fetch, shared: `_feed(season, scoring, reload)` pulls + trims the table
-once, memoised per season+slug and snapshotted to
-season/adp/rotowire/<slug>/<year>.json; each provider slices its own column
-out of that shared parse.
+`_feed(season, scoring, reload)` pulls + trims the table once, memoised per
+season+slug and snapshotted to season/adp/rotowire/<slug>/<year>.json.
 
 CURRENT SEASON ONLY. The endpoint ignores a year parameter -- it always
 returns the live draft-season board -- so EARLIEST is the current NFL
@@ -60,14 +56,11 @@ def _val(v):
 # 2qb fall back to PPR.
 _SLUG = {"std": "Standard", "half_ppr": "PPR", "ppr": "PPR", "2qb": "PPR"}
 
-# The feed columns this module surfaces, per RotoWire scoring slug.
-# {board source name: {"PPR": <col>, "Standard": <col>}}.
+# The feed column this module surfaces, per RotoWire scoring slug.
+# {board source name: {"PPR": <col>, "Standard": <col>}}.  RotoWire
+# recomputes its own consensus per scoring mode.
 _COLUMN = {
-    # RotoWire recomputes its own consensus per scoring mode.
-    "rotowire": {"PPR": "average",  "Standard": "average"},
-    # Yahoo publishes one ADP; like the ESPN column it stands in for
-    # whichever mode the board asks for.
-    "yahoo":    {"PPR": "yahooppr", "Standard": "yahooppr"},
+    "rotowire": {"PPR": "average", "Standard": "average"},
 }
 
 # feed cache: f"{season}:{slug}" -> list[dict] (trimmed rows)
@@ -178,12 +171,3 @@ class _RotowireColumn(AdpProvider):
 class RotowireAdp(_RotowireColumn):
     name, label, col_key = "rotowire", "RotoWire", "rotowire"
     group = "analyst"          # RotoWire's own compiled consensus
-
-
-class YahooAdp(_RotowireColumn):
-    """Yahoo redraft ADP, sourced from RotoWire's `yahooppr` column (Yahoo's
-    own API is OAuth-only with no anonymous read path). Yahoo publishes one
-    ADP; like the ESPN column it stands in for whatever scoring mode the
-    board asks for."""
-    name, label, col_key = "yahoo", "Yahoo", "yahoo"
-    group = "apps"             # a mainstream draft app

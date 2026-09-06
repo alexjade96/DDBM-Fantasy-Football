@@ -69,6 +69,99 @@ def ffc_adp(season, fmt: str = "ppr", teams: int = 12) -> list[dict]:
     return data.get("players") or []
 
 
+# --- Yahoo (public read-only mirror) ------------------------------------
+# pub-api-ro.fantasysports.yahoo.com serves the same Fantasy API as the
+# OAuth host but WITHOUT auth for read-only, non-league resources -- the
+# platform-wide `players;out=draft_analysis` collection is one of them. No
+# cookies, no key, no UA required (one is sent anyway). It carries
+# `preseason_average_pick` (the pre-draft consensus, stable for a past
+# season) alongside the live `average_pick`, keyed by Yahoo player id.
+_YAHOO_BASE = "https://pub-api-ro.fantasysports.yahoo.com/fantasy/v2"
+# NFL "game key" per season (Yahoo's own id for that year's game). Resolved
+# from /games;game_codes=nfl;seasons=... -- hard-coded through 2026, with a
+# live lookup fallback for later years. (Keys exist back to 2018, but Yahoo
+# only exposes a usable preseason_average_pick from 2022 on -- see
+# ffadp.yahoo.EARLIEST.)
+_YAHOO_GAME_KEY = {
+    2022: "414", 2023: "423", 2024: "449", 2025: "461", 2026: "470",
+}
+
+
+def _yahoo_game_key(season) -> str:
+    """Yahoo's NFL game key for a season. Hard-coded map first; a live
+    /games lookup for a year past the map; "nfl" (the current-year alias)
+    as the last resort."""
+    yr = int(season)
+    if yr in _YAHOO_GAME_KEY:
+        return _YAHOO_GAME_KEY[yr]
+    try:
+        url = f"{_YAHOO_BASE}/games;game_codes=nfl;seasons={yr}?format=json_f"
+        resp = requests.get(url, headers={"User-Agent": _UA}, timeout=20)
+        resp.raise_for_status()
+        for g in resp.json()["fantasy_content"]["games"]:
+            gg = g.get("game") or {}
+            if str(gg.get("season")) == str(yr) and gg.get("game_key"):
+                return str(gg["game_key"])
+    except Exception:
+        pass
+    return "nfl"
+
+
+def yahoo_adp(season, scoring: str = "ppr", page: int = 100) -> list[dict]:
+    """Yahoo draft-analysis rows for a season (flattened `player` dicts).
+
+    Pages the platform-wide players collection (sort=AR = by average draft
+    result) until a short page or a page with no usable pick. `scoring` is
+    accepted for signature parity but Yahoo publishes one ADP. Raises on a
+    non-2xx / non-JSON payload so the provider falls back to its snapshot.
+    """
+    key = _yahoo_game_key(season)
+    out: list[dict] = []
+    start = 0
+    while True:
+        url = (f"{_YAHOO_BASE}/game/{key}/players;position=ALL;sort=AR;"
+               f"start={start};count={page};out=draft_analysis?format=json_f")
+        resp = requests.get(url, headers={"User-Agent": _UA}, timeout=30)
+        resp.raise_for_status()
+        data = resp.json()
+        players = (data.get("fantasy_content", {}).get("game", {})
+                   .get("players") or [])
+        if not isinstance(players, list) or not players:
+            break
+        rows = [p.get("player") or {} for p in players]
+        out.extend(rows)
+        # Stop once the preseason pick values run into the "undrafted" tail.
+        def _pick(r):
+            try:
+                return float((r.get("draft_analysis") or {})
+                             .get("preseason_average_pick"))
+            except (TypeError, ValueError):
+                return None
+        if len(players) < page or not any(
+                (v := _pick(r)) is not None and v < 999 for r in rows[-10:]):
+            break
+        start += len(players)
+        if start >= 600:            # hard cap; a full board is ~250 rows
+            break
+    return out
+
+
+# --- CBS Sports draft averages ----------------------------------------------
+# The public draft-averages page is server-rendered HTML (a "TableBase"
+# table), no auth, no league id. One current-season ADP list -- CBS ignores
+# every scoring / season query param, so there is no format split and no
+# history. The value is a real averaged draft position (e.g. "1.12").
+_CBS_URL = "https://www.cbssports.com/fantasy/football/draft/averages/"
+
+
+def cbs_adp() -> str:
+    """The raw CBS draft-averages HTML for the current season. Raises on a
+    non-2xx so the provider falls back to its snapshot."""
+    resp = requests.get(_CBS_URL, headers={"User-Agent": _UA}, timeout=30)
+    resp.raise_for_status()
+    return resp.text
+
+
 def rotowire_adp(scoring: str = "PPR") -> list[dict]:
     """RotoWire's ADP comparison table for the CURRENT season (one JSON list).
 

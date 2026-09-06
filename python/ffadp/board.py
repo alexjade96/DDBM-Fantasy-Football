@@ -5,6 +5,7 @@ import pandas as pd
 
 from . import identity
 from .base import GROUP_LABEL, GROUP_ORDER, GROUPS, AdpProvider
+from .cbs import CbsAdp
 from .espn import EspnAdp
 from .fantasypros import FantasyProsAdp
 from .ffc import FfcAdp
@@ -21,7 +22,7 @@ from .yahoo import YahooAdp
 # CSV/Excel export) picks it up automatically. A source whose fetch() returns
 # [] is dropped from the board and noted as unavailable.
 PROVIDERS: list[AdpProvider] = [
-    SleeperAdp(), EspnAdp(), YahooAdp(),
+    SleeperAdp(), EspnAdp(), YahooAdp(), CbsAdp(),
     FfcAdp(), RotowireAdp(), FantasyProsAdp(),
 ]
 _BY_NAME = {p.name: p for p in PROVIDERS}

@@ -274,16 +274,13 @@ def test_ffc_provider_degrades_to_empty(monkeypatch):
 
 _RW_FIXTURE = [
     {"firstname": "Jahmyr", "lastname": "Gibbs", "position": "RB",
-     "team": "DET", "playerID": "16808",
-     "average": "1.6", "yahooppr": "1.3"},
+     "team": "DET", "playerID": "16808", "average": "1.6"},
     {"firstname": "Ja'Marr", "lastname": "Chase", "position": "WR",
-     "team": "CIN", "playerID": "2799",
-     "average": "3.8", "yahooppr": "3.5"},
+     "team": "CIN", "playerID": "2799", "average": "3.8"},
     {"firstname": "Some", "lastname": "Linebacker", "position": "LB",
      "team": "KC", "playerID": "9", "average": "40.0"},      # IDP -> dropped
     {"firstname": "No", "lastname": "Data", "position": "WR",
-     "team": "FA", "playerID": "8",
-     "average": "", "yahooppr": "-"},                        # all sentinel
+     "team": "FA", "playerID": "8", "average": ""},          # sentinel
 ]
 
 
@@ -291,10 +288,10 @@ def test_rotowire_trim_drops_idp_and_sentinels():
     from ffadp import rotowire
     rows = rotowire._trim(_RW_FIXTURE)
     assert [r["name"] for r in rows] == ["Jahmyr Gibbs", "Ja'Marr Chase"]
-    assert rows[0]["position"] == "RB" and rows[0]["yahooppr"] == 1.3
+    assert rows[0]["position"] == "RB" and rows[0]["average"] == 1.6
 
 
-def test_rotowire_two_columns_from_one_feed(monkeypatch):
+def test_rotowire_one_call_backs_the_column(monkeypatch):
     from ffadp import rotowire
     rotowire._clear_feed_cache()
     calls = []
@@ -303,25 +300,9 @@ def test_rotowire_two_columns_from_one_feed(monkeypatch):
     monkeypatch.setattr(rotowire.cache, "load", lambda *a, **k: None)
     monkeypatch.setattr(rotowire.cache, "save", lambda *a, **k: None)
     rw = rotowire.RotowireAdp().fetch("2026", "ppr")
-    yh = rotowire.YahooAdp().fetch("2026", "ppr")
     assert [r.name for r in rw] == ["Jahmyr Gibbs", "Ja'Marr Chase"]
     assert rw[0].adp == 1.6 and rw[0].overall_rank == 1
-    assert [r.adp for r in yh] == [1.3, 3.5]
-    assert calls == ["PPR"]          # one HTTP call backs both columns
-    rotowire._clear_feed_cache()
-
-
-def test_rotowire_yahoo_stands_in_for_standard(monkeypatch):
-    from ffadp import rotowire
-    rotowire._clear_feed_cache()
-    seen = []
-    monkeypatch.setattr(rotowire.api, "rotowire_adp",
-                        lambda slug="PPR": seen.append(slug) or _RW_FIXTURE)
-    monkeypatch.setattr(rotowire.cache, "load", lambda *a, **k: None)
-    monkeypatch.setattr(rotowire.cache, "save", lambda *a, **k: None)
-    # Yahoo publishes one ADP; a Standard ask still shows its yahooppr number
-    yh = rotowire.YahooAdp().fetch("2026", "std")
-    assert seen == ["Standard"] and [r.adp for r in yh] == [1.3, 3.5]
+    assert calls == ["PPR"]
     rotowire._clear_feed_cache()
 
 
@@ -343,29 +324,132 @@ def test_rotowire_degrades_to_empty(monkeypatch):
     rotowire._clear_feed_cache()
 
 
-def test_rotowire_yahoo_never_writes_its_own_snapshot(monkeypatch):
-    # The Yahoo column is a view over the one "rotowire" snapshot; it must
-    # not read or write a snapshot keyed on its own source name (which could
-    # collide with a future first-party Yahoo provider).
-    from ffadp import rotowire
-    rotowire._clear_feed_cache()
-    seen_names = []
-    monkeypatch.setattr(rotowire.cache, "load",
-                        lambda src, *a, **k: seen_names.append(("load", src)) or None)
-    monkeypatch.setattr(rotowire.cache, "save",
-                        lambda src, *a, **k: seen_names.append(("save", src)))
-    monkeypatch.setattr(rotowire.api, "rotowire_adp", lambda slug="PPR": _RW_FIXTURE)
-    rotowire.YahooAdp().fetch("2026", "ppr")
-    rotowire.RotowireAdp().fetch("2026", "ppr")
-    assert {src for _, src in seen_names} == {"rotowire"}
-    rotowire._clear_feed_cache()
+# --- Yahoo provider (fixture payload, no network) -----------------------
+
+# Rows as api.yahoo_adp returns them: the flattened inner `player` dicts.
+_YAHOO_FIXTURE = [
+    {"player_id": "40059", "name": {"full": "Jahmyr Gibbs"},
+     "display_position": "RB", "editorial_team_abbr": "Det",
+     "draft_analysis": {"preseason_average_pick": "1.3", "average_pick": "1.4"}},
+    {"player_id": "31002", "name": {"full": "Some Linebacker"},
+     "display_position": "DB,CB", "editorial_team_abbr": "KC",
+     "draft_analysis": {"preseason_average_pick": "40.0"}},          # IDP
+    {"player_id": "33379", "name": {"full": "Ja'Marr Chase"},
+     "display_position": "WR", "editorial_team_abbr": "Cin",
+     "draft_analysis": {"preseason_average_pick": "3.6"}},
+    {"player_id": "9", "name": {"full": "Undrafted Guy"},
+     "display_position": "WR", "editorial_team_abbr": "FA",
+     "draft_analysis": {"preseason_average_pick": "-",
+                        "average_pick": "150.0"}},                   # no preseason
+]
+
+
+def test_yahoo_trim_drops_idp_and_no_preseason_pick():
+    from ffadp import yahoo
+    rows = yahoo._trim(_YAHOO_FIXTURE)
+    assert [r["name"] for r in rows] == ["Jahmyr Gibbs", "Ja'Marr Chase"]
+    assert rows[0]["position"] == "RB" and rows[0]["team"] == "DET"
+    assert rows[0]["adp"] == 1.3 and rows[0]["yahoo_id"] == "40059"
+
+
+def test_yahoo_provider_snapshot_first(monkeypatch):
+    from ffadp import yahoo, cache
+    cache.clear()
+    seen = []
+    monkeypatch.setattr(cache, "load",
+                        lambda src, sea, force=False, variant=None:
+                        (seen.append((src, sea)) or
+                         [{"yahoo_id": "1", "name": "X", "position": "RB",
+                           "team": "SF", "adp": 2.0}]))
+    monkeypatch.setattr(yahoo.api, "yahoo_adp",
+                        lambda *a, **k: (_ for _ in ()).throw(AssertionError("live hit")))
+    rows = yahoo.YahooAdp().fetch("2024", "ppr")
+    assert len(rows) == 1 and rows[0].yahoo_id == "1" and seen == [("yahoo", "2024")]
+    cache.clear()
+
+
+def test_yahoo_provider_predates_and_degrades(monkeypatch):
+    from ffadp import yahoo, cache
+    cache.clear()
+    # a year before Yahoo has a usable preseason pick -> [] without any call
+    monkeypatch.setattr(yahoo.api, "yahoo_adp",
+                        lambda *a, **k: (_ for _ in ()).throw(AssertionError("no call")))
+    assert yahoo.YahooAdp().fetch("2020", "ppr") == []
+    # a live failure with no snapshot -> []
+    monkeypatch.setattr(yahoo.api, "yahoo_adp",
+                        lambda *a, **k: (_ for _ in ()).throw(RuntimeError("no net")))
+    monkeypatch.setattr(cache, "load",
+                        lambda src, sea, force=False, variant=None: None)
+    assert yahoo.YahooAdp().fetch("2024", "ppr") == []
+    cache.clear()
+
+
+# --- CBS provider (fixture HTML, no network) ---------------------------
+
+_CBS_HTML = """
+<table><tbody>
+<tr><td>1</td><td><span class="CellPlayerName--long"><span>
+  <a href="/x">Jahmyr Gibbs</a>
+  <span class="CellPlayerName-position"> RB </span>
+  <span class="CellPlayerName-team"> DET </span></span></span></td>
+  <td>&mdash;</td><td> 1.12 </td><td>1/2</td><td>100.0</td></tr>
+<tr><td>2</td><td><span class="CellPlayerName--long"><span>
+  <a href="/x">Broncos</a>
+  <span class="CellPlayerName-position"> DST </span>
+  <span class="CellPlayerName-team"> DEN </span></span></span></td>
+  <td>&mdash;</td><td> 95.4 </td><td>8/12</td><td>70.0</td></tr>
+<tr><td>3</td><td><span class="CellPlayerName--long"><span>
+  <a href="/x">No Adp</a>
+  <span class="CellPlayerName-position"> WR </span>
+  <span class="CellPlayerName-team"> FA </span></span></span></td>
+  <td>&mdash;</td><td> n/a </td><td>-</td><td>0.0</td></tr>
+</tbody></table>
+"""
+
+
+def test_cbs_parse_maps_positions_and_sorts():
+    from ffadp import cbs
+    rows = cbs._parse(_CBS_HTML)
+    assert [r["name"] for r in rows] == ["Jahmyr Gibbs", "Broncos"]  # n/a dropped
+    assert rows[0]["position"] == "RB" and rows[0]["adp"] == 1.1
+    assert rows[1]["position"] == "DEF"          # DST -> DEF
+
+
+def test_cbs_provider_snapshot_first(monkeypatch):
+    from ffadp import cbs, cache
+    cache.clear()
+    seen = []
+    monkeypatch.setattr(cache, "load",
+                        lambda src, sea, force=False, variant=None:
+                        (seen.append((src, sea)) or
+                         [{"name": "X", "position": "RB", "team": "SF", "adp": 2.0}]))
+    monkeypatch.setattr(cbs.api, "cbs_adp",
+                        lambda: (_ for _ in ()).throw(AssertionError("live hit")))
+    rows = cbs.CbsAdp().fetch(str(cbs.EARLIEST), "ppr")
+    assert len(rows) == 1 and seen == [("cbs", str(cbs.EARLIEST))]
+    cache.clear()
+
+
+def test_cbs_provider_predates_and_degrades(monkeypatch):
+    from ffadp import cbs, cache
+    cache.clear()
+    monkeypatch.setattr(cbs.api, "cbs_adp",
+                        lambda: (_ for _ in ()).throw(AssertionError("no call")))
+    assert cbs.CbsAdp().fetch(str(cbs.EARLIEST - 1), "ppr") == []
+    monkeypatch.setattr(cbs.api, "cbs_adp",
+                        lambda: (_ for _ in ()).throw(RuntimeError("no net")))
+    monkeypatch.setattr(cache, "load",
+                        lambda src, sea, force=False, variant=None: None)
+    assert cbs.CbsAdp().fetch(str(cbs.EARLIEST), "ppr") == []
+    cache.clear()
 
 
 def test_board_registers_expected_sources():
     from ffadp import board
     names = [p.name for p in board.PROVIDERS]
-    assert names == ["sleeper", "espn", "yahoo", "ffc", "rotowire", "fantasypros"]
-    assert board.FIRST_SEASON["yahoo"] == board.FIRST_SEASON["rotowire"]
+    assert names == ["sleeper", "espn", "yahoo", "cbs", "ffc", "rotowire",
+                     "fantasypros"]
+    assert board.FIRST_SEASON["yahoo"] == 2022
     assert board.FIRST_SEASON["fantasypros"] is None
 
 
@@ -381,7 +465,7 @@ def test_every_provider_has_a_valid_group():
 def test_expected_group_assignments():
     from ffadp import board
     g = {p.name: p.group for p in board.PROVIDERS}
-    assert g["sleeper"] == g["espn"] == g["yahoo"] == "apps"
+    assert g["sleeper"] == g["espn"] == g["yahoo"] == g["cbs"] == "apps"
     assert g["ffc"] == g["rotowire"] == g["fantasypros"] == "analyst"
 
 

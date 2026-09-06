@@ -1,0 +1,1507 @@
+[
+  {
+    "adp": 1.4,
+    "name": "Ja'Marr Chase",
+    "position": "WR",
+    "team": "CIN",
+    "yahoo_id": "33393"
+  },
+  {
+    "adp": 2.5,
+    "name": "Bijan Robinson",
+    "position": "RB",
+    "team": "ATL",
+    "yahoo_id": "40055"
+  },
+  {
+    "adp": 2.9,
+    "name": "Saquon Barkley",
+    "position": "RB",
+    "team": "PHI",
+    "yahoo_id": "30972"
+  },
+  {
+    "adp": 4.3,
+    "name": "Jahmyr Gibbs",
+    "position": "RB",
+    "team": "DET",
+    "yahoo_id": "40059"
+  },
+  {
+    "adp": 6.0,
+    "name": "Justin Jefferson",
+    "position": "WR",
+    "team": "MIN",
+    "yahoo_id": "32692"
+  },
+  {
+    "adp": 6.3,
+    "name": "CeeDee Lamb",
+    "position": "WR",
+    "team": "DAL",
+    "yahoo_id": "32687"
+  },
+  {
+    "adp": 8.6,
+    "name": "Christian McCaffrey",
+    "position": "RB",
+    "team": "SF",
+    "yahoo_id": "30121"
+  },
+  {
+    "adp": 9.2,
+    "name": "Derrick Henry",
+    "position": "RB",
+    "team": "BAL",
+    "yahoo_id": "29279"
+  },
+  {
+    "adp": 9.3,
+    "name": "Nico Collins",
+    "position": "WR",
+    "team": "HOU",
+    "yahoo_id": "33477"
+  },
+  {
+    "adp": 10.0,
+    "name": "Amon-Ra St. Brown",
+    "position": "WR",
+    "team": "DET",
+    "yahoo_id": "33500"
+  },
+  {
+    "adp": 12.1,
+    "name": "Malik Nabers",
+    "position": "WR",
+    "team": "NYG",
+    "yahoo_id": "40899"
+  },
+  {
+    "adp": 12.8,
+    "name": "Ashton Jeanty",
+    "position": "RB",
+    "team": "LV",
+    "yahoo_id": "41791"
+  },
+  {
+    "adp": 15.5,
+    "name": "Puka Nacua",
+    "position": "WR",
+    "team": "LAR",
+    "yahoo_id": "40168"
+  },
+  {
+    "adp": 15.5,
+    "name": "Brian Thomas Jr.",
+    "position": "WR",
+    "team": "JAX",
+    "yahoo_id": "40883"
+  },
+  {
+    "adp": 16.0,
+    "name": "Josh Jacobs",
+    "position": "RB",
+    "team": "GB",
+    "yahoo_id": "31856"
+  },
+  {
+    "adp": 16.2,
+    "name": "Drake London",
+    "position": "WR",
+    "team": "ATL",
+    "yahoo_id": "33963"
+  },
+  {
+    "adp": 18.8,
+    "name": "Jonathan Taylor",
+    "position": "RB",
+    "team": "IND",
+    "yahoo_id": "32711"
+  },
+  {
+    "adp": 19.0,
+    "name": "De'Von Achane",
+    "position": "RB",
+    "team": "MIA",
+    "yahoo_id": "40118"
+  },
+  {
+    "adp": 19.4,
+    "name": "Bucky Irving",
+    "position": "RB",
+    "team": "TB",
+    "yahoo_id": "40993"
+  },
+  {
+    "adp": 21.2,
+    "name": "A.J. Brown",
+    "position": "WR",
+    "team": "NE",
+    "yahoo_id": "31883"
+  },
+  {
+    "adp": 22.7,
+    "name": "Josh Allen",
+    "position": "QB",
+    "team": "BUF",
+    "yahoo_id": "30977"
+  },
+  {
+    "adp": 22.8,
+    "name": "Brock Bowers",
+    "position": "TE",
+    "team": "LV",
+    "yahoo_id": "40878"
+  },
+  {
+    "adp": 22.9,
+    "name": "Chase Brown",
+    "position": "RB",
+    "team": "CIN",
+    "yahoo_id": "40196"
+  },
+  {
+    "adp": 22.9,
+    "name": "Lamar Jackson",
+    "position": "QB",
+    "team": "BAL",
+    "yahoo_id": "31002"
+  },
+  {
+    "adp": 24.4,
+    "name": "Ladd McConkey",
+    "position": "WR",
+    "team": "LAC",
+    "yahoo_id": "40908"
+  },
+  {
+    "adp": 26.9,
+    "name": "Kyren Williams",
+    "position": "RB",
+    "team": "LAR",
+    "yahoo_id": "34120"
+  },
+  {
+    "adp": 27.1,
+    "name": "Trey McBride",
+    "position": "TE",
+    "team": "ARI",
+    "yahoo_id": "34010"
+  },
+  {
+    "adp": 29.1,
+    "name": "Jayden Daniels",
+    "position": "QB",
+    "team": "WAS",
+    "yahoo_id": "40896"
+  },
+  {
+    "adp": 29.2,
+    "name": "George Kittle",
+    "position": "TE",
+    "team": "SF",
+    "yahoo_id": "30259"
+  },
+  {
+    "adp": 30.1,
+    "name": "Tee Higgins",
+    "position": "WR",
+    "team": "CIN",
+    "yahoo_id": "32703"
+  },
+  {
+    "adp": 33.3,
+    "name": "James Cook III",
+    "position": "RB",
+    "team": "BUF",
+    "yahoo_id": "34019"
+  },
+  {
+    "adp": 33.4,
+    "name": "Jalen Hurts",
+    "position": "QB",
+    "team": "PHI",
+    "yahoo_id": "32723"
+  },
+  {
+    "adp": 34.2,
+    "name": "Jaxon Smith-Njigba",
+    "position": "WR",
+    "team": "SEA",
+    "yahoo_id": "40041"
+  },
+  {
+    "adp": 34.9,
+    "name": "Mike Evans",
+    "position": "WR",
+    "team": "SF",
+    "yahoo_id": "27535"
+  },
+  {
+    "adp": 35.1,
+    "name": "Omarion Hampton",
+    "position": "RB",
+    "team": "LAC",
+    "yahoo_id": "41807"
+  },
+  {
+    "adp": 38.9,
+    "name": "Tyreek Hill",
+    "position": "WR",
+    "team": "MIA",
+    "yahoo_id": "29399"
+  },
+  {
+    "adp": 39.2,
+    "name": "Marvin Harrison Jr.",
+    "position": "WR",
+    "team": "ARI",
+    "yahoo_id": "40893"
+  },
+  {
+    "adp": 40.1,
+    "name": "Terry McLaurin",
+    "position": "WR",
+    "team": "WAS",
+    "yahoo_id": "31908"
+  },
+  {
+    "adp": 40.2,
+    "name": "Kenneth Walker III",
+    "position": "RB",
+    "team": "KC",
+    "yahoo_id": "33996"
+  },
+  {
+    "adp": 40.8,
+    "name": "Garrett Wilson",
+    "position": "WR",
+    "team": "NYJ",
+    "yahoo_id": "33965"
+  },
+  {
+    "adp": 42.1,
+    "name": "Joe Burrow",
+    "position": "QB",
+    "team": "CIN",
+    "yahoo_id": "32671"
+  },
+  {
+    "adp": 42.1,
+    "name": "Chuba Hubbard",
+    "position": "RB",
+    "team": "CAR",
+    "yahoo_id": "33514"
+  },
+  {
+    "adp": 42.2,
+    "name": "Alvin Kamara",
+    "position": "RB",
+    "team": "NO",
+    "yahoo_id": "30180"
+  },
+  {
+    "adp": 44.1,
+    "name": "Davante Adams",
+    "position": "WR",
+    "team": "LAR",
+    "yahoo_id": "27581"
+  },
+  {
+    "adp": 45.8,
+    "name": "James Conner",
+    "position": "RB",
+    "team": "ARI",
+    "yahoo_id": "30218"
+  },
+  {
+    "adp": 46.1,
+    "name": "Breece Hall",
+    "position": "RB",
+    "team": "NYJ",
+    "yahoo_id": "33991"
+  },
+  {
+    "adp": 50.5,
+    "name": "Sam LaPorta",
+    "position": "TE",
+    "team": "DET",
+    "yahoo_id": "40064"
+  },
+  {
+    "adp": 51.6,
+    "name": "Patrick Mahomes",
+    "position": "QB",
+    "team": "KC",
+    "yahoo_id": "30123"
+  },
+  {
+    "adp": 52.2,
+    "name": "DK Metcalf",
+    "position": "WR",
+    "team": "PIT",
+    "yahoo_id": "31896"
+  },
+  {
+    "adp": 53.1,
+    "name": "DeVonta Smith",
+    "position": "WR",
+    "team": "PHI",
+    "yahoo_id": "33398"
+  },
+  {
+    "adp": 55.1,
+    "name": "TreVeyon Henderson",
+    "position": "RB",
+    "team": "NE",
+    "yahoo_id": "41823"
+  },
+  {
+    "adp": 55.9,
+    "name": "George Pickens",
+    "position": "WR",
+    "team": "DAL",
+    "yahoo_id": "34007"
+  },
+  {
+    "adp": 57.0,
+    "name": "Tony Pollard",
+    "position": "RB",
+    "team": "TEN",
+    "yahoo_id": "31960"
+  },
+  {
+    "adp": 57.5,
+    "name": "David Montgomery",
+    "position": "RB",
+    "team": "HOU",
+    "yahoo_id": "31905"
+  },
+  {
+    "adp": 58.6,
+    "name": "RJ Harvey",
+    "position": "RB",
+    "team": "DEN",
+    "yahoo_id": "41845"
+  },
+  {
+    "adp": 58.6,
+    "name": "T.J. Hockenson",
+    "position": "TE",
+    "team": "MIN",
+    "yahoo_id": "31840"
+  },
+  {
+    "adp": 59.9,
+    "name": "Xavier Worthy",
+    "position": "WR",
+    "team": "KC",
+    "yahoo_id": "40877"
+  },
+  {
+    "adp": 61.3,
+    "name": "Travis Kelce",
+    "position": "TE",
+    "team": "KC",
+    "yahoo_id": "26686"
+  },
+  {
+    "adp": 62.4,
+    "name": "Jaylen Waddle",
+    "position": "WR",
+    "team": "DEN",
+    "yahoo_id": "33394"
+  },
+  {
+    "adp": 62.8,
+    "name": "Mark Andrews",
+    "position": "TE",
+    "team": "BAL",
+    "yahoo_id": "31056"
+  },
+  {
+    "adp": 63.0,
+    "name": "Zay Flowers",
+    "position": "WR",
+    "team": "BAL",
+    "yahoo_id": "40039"
+  },
+  {
+    "adp": 64.7,
+    "name": "Courtland Sutton",
+    "position": "WR",
+    "team": "DEN",
+    "yahoo_id": "31010"
+  },
+  {
+    "adp": 65.3,
+    "name": "Isiah Pacheco",
+    "position": "RB",
+    "team": "DET",
+    "yahoo_id": "34207"
+  },
+  {
+    "adp": 65.4,
+    "name": "Bo Nix",
+    "position": "QB",
+    "team": "DEN",
+    "yahoo_id": "40875"
+  },
+  {
+    "adp": 65.6,
+    "name": "DJ Moore",
+    "position": "WR",
+    "team": "BUF",
+    "yahoo_id": "30994"
+  },
+  {
+    "adp": 67.8,
+    "name": "Jameson Williams",
+    "position": "WR",
+    "team": "DET",
+    "yahoo_id": "33967"
+  },
+  {
+    "adp": 68.4,
+    "name": "D'Andre Swift",
+    "position": "RB",
+    "team": "CHI",
+    "yahoo_id": "32705"
+  },
+  {
+    "adp": 68.9,
+    "name": "Tetairoa McMillan",
+    "position": "WR",
+    "team": "CAR",
+    "yahoo_id": "41793"
+  },
+  {
+    "adp": 70.0,
+    "name": "Brock Purdy",
+    "position": "QB",
+    "team": "SF",
+    "yahoo_id": "34218"
+  },
+  {
+    "adp": 73.1,
+    "name": "Baker Mayfield",
+    "position": "QB",
+    "team": "TB",
+    "yahoo_id": "30971"
+  },
+  {
+    "adp": 73.9,
+    "name": "Calvin Ridley",
+    "position": "WR",
+    "team": "TEN",
+    "yahoo_id": "30996"
+  },
+  {
+    "adp": 74.4,
+    "name": "Travis Hunter",
+    "position": "WR",
+    "team": "JAX",
+    "yahoo_id": "99001"
+  },
+  {
+    "adp": 75.4,
+    "name": "Aaron Jones Sr.",
+    "position": "RB",
+    "team": "MIN",
+    "yahoo_id": "30295"
+  },
+  {
+    "adp": 80.3,
+    "name": "Rashee Rice",
+    "position": "WR",
+    "team": "KC",
+    "yahoo_id": "40084"
+  },
+  {
+    "adp": 81.1,
+    "name": "Rome Odunze",
+    "position": "WR",
+    "team": "CHI",
+    "yahoo_id": "40901"
+  },
+  {
+    "adp": 81.3,
+    "name": "Chris Olave",
+    "position": "WR",
+    "team": "NO",
+    "yahoo_id": "33966"
+  },
+  {
+    "adp": 81.6,
+    "name": "Tucker Kraft",
+    "position": "TE",
+    "team": "GB",
+    "yahoo_id": "40102"
+  },
+  {
+    "adp": 81.7,
+    "name": "Dak Prescott",
+    "position": "QB",
+    "team": "DAL",
+    "yahoo_id": "29369"
+  },
+  {
+    "adp": 81.9,
+    "name": "Tyrone Tracy Jr.",
+    "position": "RB",
+    "team": "NYG",
+    "yahoo_id": "41048"
+  },
+  {
+    "adp": 82.3,
+    "name": "Evan Engram",
+    "position": "TE",
+    "team": "DEN",
+    "yahoo_id": "30136"
+  },
+  {
+    "adp": 84.0,
+    "name": "David Njoku",
+    "position": "TE",
+    "team": "LAC",
+    "yahoo_id": "30142"
+  },
+  {
+    "adp": 87.9,
+    "name": "Emeka Egbuka",
+    "position": "WR",
+    "team": "TB",
+    "yahoo_id": "41804"
+  },
+  {
+    "adp": 88.8,
+    "name": "Jaylen Warren",
+    "position": "RB",
+    "team": "PIT",
+    "yahoo_id": "34447"
+  },
+  {
+    "adp": 88.9,
+    "name": "Jordan Mason",
+    "position": "RB",
+    "team": "MIN",
+    "yahoo_id": "34320"
+  },
+  {
+    "adp": 89.2,
+    "name": "Ricky Pearsall",
+    "position": "WR",
+    "team": "SF",
+    "yahoo_id": "40892"
+  },
+  {
+    "adp": 92.1,
+    "name": "Jerry Jeudy",
+    "position": "WR",
+    "team": "CLE",
+    "yahoo_id": "32685"
+  },
+  {
+    "adp": 93.6,
+    "name": "Kyler Murray",
+    "position": "QB",
+    "team": "MIN",
+    "yahoo_id": "31833"
+  },
+  {
+    "adp": 93.9,
+    "name": "Stefon Diggs",
+    "position": "WR",
+    "team": "WAS",
+    "yahoo_id": "28534"
+  },
+  {
+    "adp": 95.5,
+    "name": "Eagles",
+    "position": "DEF",
+    "team": "PHI",
+    "yahoo_id": "100021"
+  },
+  {
+    "adp": 95.7,
+    "name": "Justin Fields",
+    "position": "QB",
+    "team": "KC",
+    "yahoo_id": "33399"
+  },
+  {
+    "adp": 96.9,
+    "name": "Broncos",
+    "position": "DEF",
+    "team": "DEN",
+    "yahoo_id": "100007"
+  },
+  {
+    "adp": 96.9,
+    "name": "Jakobi Meyers",
+    "position": "WR",
+    "team": "JAX",
+    "yahoo_id": "32231"
+  },
+  {
+    "adp": 97.7,
+    "name": "Brian Robinson",
+    "position": "RB",
+    "team": "ATL",
+    "yahoo_id": "34054"
+  },
+  {
+    "adp": 98.4,
+    "name": "Deebo Samuel Sr.",
+    "position": "WR",
+    "team": "SF",
+    "yahoo_id": "31868"
+  },
+  {
+    "adp": 98.6,
+    "name": "Jordan Addison",
+    "position": "WR",
+    "team": "MIN",
+    "yahoo_id": "40042"
+  },
+  {
+    "adp": 99.7,
+    "name": "Brandon Aubrey",
+    "position": "K",
+    "team": "DAL",
+    "yahoo_id": "40819"
+  },
+  {
+    "adp": 100.2,
+    "name": "J.K. Dobbins",
+    "position": "RB",
+    "team": "DEN",
+    "yahoo_id": "32725"
+  },
+  {
+    "adp": 102.0,
+    "name": "Zach Charbonnet",
+    "position": "RB",
+    "team": "SEA",
+    "yahoo_id": "40075"
+  },
+  {
+    "adp": 102.7,
+    "name": "Matthew Golden",
+    "position": "WR",
+    "team": "GB",
+    "yahoo_id": "41808"
+  },
+  {
+    "adp": 103.8,
+    "name": "Tyler Warren",
+    "position": "TE",
+    "team": "IND",
+    "yahoo_id": "41799"
+  },
+  {
+    "adp": 104.5,
+    "name": "Travis Etienne Jr.",
+    "position": "RB",
+    "team": "NO",
+    "yahoo_id": "33413"
+  },
+  {
+    "adp": 105.7,
+    "name": "Justin Herbert",
+    "position": "QB",
+    "team": "LAC",
+    "yahoo_id": "32676"
+  },
+  {
+    "adp": 105.9,
+    "name": "Drake Maye",
+    "position": "QB",
+    "team": "NE",
+    "yahoo_id": "40881"
+  },
+  {
+    "adp": 106.2,
+    "name": "Jauan Jennings",
+    "position": "WR",
+    "team": "MIN",
+    "yahoo_id": "32887"
+  },
+  {
+    "adp": 106.3,
+    "name": "Jared Goff",
+    "position": "QB",
+    "team": "DET",
+    "yahoo_id": "29235"
+  },
+  {
+    "adp": 108.0,
+    "name": "Jacory Croskey-Merritt",
+    "position": "RB",
+    "team": "WAS",
+    "yahoo_id": "42010"
+  },
+  {
+    "adp": 108.8,
+    "name": "Caleb Williams",
+    "position": "QB",
+    "team": "CHI",
+    "yahoo_id": "40900"
+  },
+  {
+    "adp": 110.1,
+    "name": "Jake Ferguson",
+    "position": "TE",
+    "team": "DAL",
+    "yahoo_id": "34085"
+  },
+  {
+    "adp": 110.6,
+    "name": "Ravens",
+    "position": "DEF",
+    "team": "BAL",
+    "yahoo_id": "100033"
+  },
+  {
+    "adp": 110.6,
+    "name": "Tank Bigsby",
+    "position": "RB",
+    "team": "PHI",
+    "yahoo_id": "40095"
+  },
+  {
+    "adp": 111.7,
+    "name": "Chris Godwin Jr.",
+    "position": "WR",
+    "team": "TB",
+    "yahoo_id": "30197"
+  },
+  {
+    "adp": 111.8,
+    "name": "Jordan Love",
+    "position": "QB",
+    "team": "GB",
+    "yahoo_id": "32696"
+  },
+  {
+    "adp": 113.0,
+    "name": "Dallas Goedert",
+    "position": "TE",
+    "team": "PHI",
+    "yahoo_id": "31019"
+  },
+  {
+    "adp": 113.0,
+    "name": "Steelers",
+    "position": "DEF",
+    "team": "PIT",
+    "yahoo_id": "100023"
+  },
+  {
+    "adp": 113.0,
+    "name": "Dalton Kincaid",
+    "position": "TE",
+    "team": "BUF",
+    "yahoo_id": "40048"
+  },
+  {
+    "adp": 113.8,
+    "name": "Quinshon Judkins",
+    "position": "RB",
+    "team": "CLE",
+    "yahoo_id": "41821"
+  },
+  {
+    "adp": 116.7,
+    "name": "Cooper Kupp",
+    "position": "WR",
+    "team": "SEA",
+    "yahoo_id": "30182"
+  },
+  {
+    "adp": 116.7,
+    "name": "Jayden Reed",
+    "position": "WR",
+    "team": "GB",
+    "yahoo_id": "40063"
+  },
+  {
+    "adp": 117.6,
+    "name": "Aaron Rodgers",
+    "position": "QB",
+    "team": "PIT",
+    "yahoo_id": "7200"
+  },
+  {
+    "adp": 117.7,
+    "name": "Cameron Dicker",
+    "position": "K",
+    "team": "LAC",
+    "yahoo_id": "34344"
+  },
+  {
+    "adp": 117.9,
+    "name": "Colston Loveland",
+    "position": "TE",
+    "team": "CHI",
+    "yahoo_id": "41795"
+  },
+  {
+    "adp": 118.3,
+    "name": "Khalil Shakir",
+    "position": "WR",
+    "team": "BUF",
+    "yahoo_id": "34104"
+  },
+  {
+    "adp": 118.4,
+    "name": "C.J. Stroud",
+    "position": "QB",
+    "team": "HOU",
+    "yahoo_id": "40030"
+  },
+  {
+    "adp": 118.6,
+    "name": "Shedeur Sanders",
+    "position": "QB",
+    "team": "CLE",
+    "yahoo_id": "41930"
+  },
+  {
+    "adp": 118.8,
+    "name": "Rhamondre Stevenson",
+    "position": "RB",
+    "team": "NE",
+    "yahoo_id": "33508"
+  },
+  {
+    "adp": 119.0,
+    "name": "Cam Skattebo",
+    "position": "RB",
+    "team": "NYG",
+    "yahoo_id": "41922"
+  },
+  {
+    "adp": 119.1,
+    "name": "J.J. McCarthy",
+    "position": "QB",
+    "team": "MIN",
+    "yahoo_id": "40905"
+  },
+  {
+    "adp": 121.4,
+    "name": "Nick Chubb",
+    "position": "RB",
+    "team": "HOU",
+    "yahoo_id": "31005"
+  },
+  {
+    "adp": 121.5,
+    "name": "Jonnu Smith",
+    "position": "TE",
+    "team": "GB",
+    "yahoo_id": "30213"
+  },
+  {
+    "adp": 121.9,
+    "name": "Hunter Henry",
+    "position": "TE",
+    "team": "NE",
+    "yahoo_id": "29269"
+  },
+  {
+    "adp": 122.2,
+    "name": "Sam Darnold",
+    "position": "QB",
+    "team": "SEA",
+    "yahoo_id": "30973"
+  },
+  {
+    "adp": 122.5,
+    "name": "Tua Tagovailoa",
+    "position": "QB",
+    "team": "ATL",
+    "yahoo_id": "32675"
+  },
+  {
+    "adp": 122.6,
+    "name": "Josh Downs",
+    "position": "WR",
+    "team": "IND",
+    "yahoo_id": "40126"
+  },
+  {
+    "adp": 122.8,
+    "name": "Chig Okonkwo",
+    "position": "TE",
+    "team": "WAS",
+    "yahoo_id": "34099"
+  },
+  {
+    "adp": 123.0,
+    "name": "Jake Bates",
+    "position": "K",
+    "team": "DET",
+    "yahoo_id": "40835"
+  },
+  {
+    "adp": 123.3,
+    "name": "Matthew Stafford",
+    "position": "QB",
+    "team": "LAR",
+    "yahoo_id": "9265"
+  },
+  {
+    "adp": 123.3,
+    "name": "Cam Ward",
+    "position": "QB",
+    "team": "TEN",
+    "yahoo_id": "41786"
+  },
+  {
+    "adp": 123.5,
+    "name": "Javonte Williams",
+    "position": "RB",
+    "team": "DAL",
+    "yahoo_id": "33423"
+  },
+  {
+    "adp": 123.7,
+    "name": "Zach Ertz",
+    "position": "TE",
+    "team": "WAS",
+    "yahoo_id": "26658"
+  },
+  {
+    "adp": 123.7,
+    "name": "Isaac TeSlaa",
+    "position": "WR",
+    "team": "DET",
+    "yahoo_id": "41865"
+  },
+  {
+    "adp": 123.8,
+    "name": "Dalton Schultz",
+    "position": "TE",
+    "team": "HOU",
+    "yahoo_id": "31107"
+  },
+  {
+    "adp": 123.9,
+    "name": "Geno Smith",
+    "position": "QB",
+    "team": "NYJ",
+    "yahoo_id": "26662"
+  },
+  {
+    "adp": 124.2,
+    "name": "Xavier Legette",
+    "position": "WR",
+    "team": "CAR",
+    "yahoo_id": "40890"
+  },
+  {
+    "adp": 124.4,
+    "name": "Kyle Pitts Sr.",
+    "position": "TE",
+    "team": "ATL",
+    "yahoo_id": "33392"
+  },
+  {
+    "adp": 124.4,
+    "name": "Vikings",
+    "position": "DEF",
+    "team": "MIN",
+    "yahoo_id": "100016"
+  },
+  {
+    "adp": 124.6,
+    "name": "Michael Pittman Jr.",
+    "position": "WR",
+    "team": "PIT",
+    "yahoo_id": "32704"
+  },
+  {
+    "adp": 124.6,
+    "name": "Kareem Hunt",
+    "position": "RB",
+    "team": "KC",
+    "yahoo_id": "30199"
+  },
+  {
+    "adp": 124.8,
+    "name": "Michael Penix Jr.",
+    "position": "QB",
+    "team": "ATL",
+    "yahoo_id": "40889"
+  },
+  {
+    "adp": 124.8,
+    "name": "Pat Freiermuth",
+    "position": "TE",
+    "team": "PIT",
+    "yahoo_id": "33443"
+  },
+  {
+    "adp": 125.0,
+    "name": "DeAndre Hopkins",
+    "position": "WR",
+    "team": "BAL",
+    "yahoo_id": "26650"
+  },
+  {
+    "adp": 125.5,
+    "name": "Bhayshul Tuten",
+    "position": "RB",
+    "team": "JAX",
+    "yahoo_id": "41900"
+  },
+  {
+    "adp": 125.6,
+    "name": "Adam Thielen",
+    "position": "WR",
+    "team": "PIT",
+    "yahoo_id": "27277"
+  },
+  {
+    "adp": 125.7,
+    "name": "Trevor Lawrence",
+    "position": "QB",
+    "team": "JAX",
+    "yahoo_id": "33389"
+  },
+  {
+    "adp": 126.1,
+    "name": "Cade Otton",
+    "position": "TE",
+    "team": "TB",
+    "yahoo_id": "34062"
+  },
+  {
+    "adp": 126.1,
+    "name": "Mike Gesicki",
+    "position": "TE",
+    "team": "CIN",
+    "yahoo_id": "31012"
+  },
+  {
+    "adp": 126.2,
+    "name": "Chiefs",
+    "position": "DEF",
+    "team": "KC",
+    "yahoo_id": "100012"
+  },
+  {
+    "adp": 126.4,
+    "name": "Hollywood Brown",
+    "position": "WR",
+    "team": "PHI",
+    "yahoo_id": "31857"
+  },
+  {
+    "adp": 126.5,
+    "name": "Rashid Shaheed",
+    "position": "WR",
+    "team": "SEA",
+    "yahoo_id": "34659"
+  },
+  {
+    "adp": 126.8,
+    "name": "Bryce Young",
+    "position": "QB",
+    "team": "CAR",
+    "yahoo_id": "40029"
+  },
+  {
+    "adp": 127.1,
+    "name": "Ollie Gordon II",
+    "position": "RB",
+    "team": "MIA",
+    "yahoo_id": "41969"
+  },
+  {
+    "adp": 127.3,
+    "name": "Rico Dowdle",
+    "position": "RB",
+    "team": "PIT",
+    "yahoo_id": "33100"
+  },
+  {
+    "adp": 127.4,
+    "name": "Keon Coleman",
+    "position": "WR",
+    "team": "BUF",
+    "yahoo_id": "40911"
+  },
+  {
+    "adp": 127.8,
+    "name": "Joshua Palmer",
+    "position": "WR",
+    "team": "BUF",
+    "yahoo_id": "33465"
+  },
+  {
+    "adp": 128.1,
+    "name": "Luther Burden III",
+    "position": "WR",
+    "team": "CHI",
+    "yahoo_id": "41824"
+  },
+  {
+    "adp": 128.2,
+    "name": "Isaiah Likely",
+    "position": "TE",
+    "team": "NYG",
+    "yahoo_id": "34095"
+  },
+  {
+    "adp": 128.6,
+    "name": "Keenan Allen",
+    "position": "WR",
+    "team": "IND",
+    "yahoo_id": "26699"
+  },
+  {
+    "adp": 128.6,
+    "name": "Jaylen Wright",
+    "position": "RB",
+    "team": "MIA",
+    "yahoo_id": "41010"
+  },
+  {
+    "adp": 128.8,
+    "name": "Cam Little",
+    "position": "K",
+    "team": "JAX",
+    "yahoo_id": "41062"
+  },
+  {
+    "adp": 128.8,
+    "name": "Ray Davis",
+    "position": "RB",
+    "team": "BUF",
+    "yahoo_id": "40980"
+  },
+  {
+    "adp": 128.8,
+    "name": "Jerome Ford",
+    "position": "RB",
+    "team": "WAS",
+    "yahoo_id": "34112"
+  },
+  {
+    "adp": 129.0,
+    "name": "Jake Moody",
+    "position": "K",
+    "team": "BAL",
+    "yahoo_id": "40129"
+  },
+  {
+    "adp": 129.2,
+    "name": "Rachaad White",
+    "position": "RB",
+    "team": "WAS",
+    "yahoo_id": "34047"
+  },
+  {
+    "adp": 129.2,
+    "name": "Trey Benson",
+    "position": "RB",
+    "team": "ARI",
+    "yahoo_id": "40958"
+  },
+  {
+    "adp": 129.4,
+    "name": "Lions",
+    "position": "DEF",
+    "team": "DET",
+    "yahoo_id": "100008"
+  },
+  {
+    "adp": 129.5,
+    "name": "Brandon McManus",
+    "position": "K",
+    "team": "GB",
+    "yahoo_id": "27120"
+  },
+  {
+    "adp": 129.5,
+    "name": "Dylan Sampson",
+    "position": "RB",
+    "team": "CLE",
+    "yahoo_id": "41907"
+  },
+  {
+    "adp": 129.7,
+    "name": "Giants",
+    "position": "DEF",
+    "team": "NYG",
+    "yahoo_id": "100019"
+  },
+  {
+    "adp": 129.8,
+    "name": "Jayden Higgins",
+    "position": "WR",
+    "team": "HOU",
+    "yahoo_id": "41819"
+  },
+  {
+    "adp": 130.0,
+    "name": "Tyjae Spears",
+    "position": "RB",
+    "team": "TEN",
+    "yahoo_id": "40119"
+  },
+  {
+    "adp": 130.1,
+    "name": "Christian Kirk",
+    "position": "WR",
+    "team": "SF",
+    "yahoo_id": "31017"
+  },
+  {
+    "adp": 130.3,
+    "name": "Tyler Allgeier",
+    "position": "RB",
+    "team": "ARI",
+    "yahoo_id": "34107"
+  },
+  {
+    "adp": 130.3,
+    "name": "Bears",
+    "position": "DEF",
+    "team": "CHI",
+    "yahoo_id": "100003"
+  },
+  {
+    "adp": 130.4,
+    "name": "Buccaneers",
+    "position": "DEF",
+    "team": "TB",
+    "yahoo_id": "100027"
+  },
+  {
+    "adp": 130.4,
+    "name": "Darren Waller",
+    "position": "TE",
+    "team": "CAR",
+    "yahoo_id": "28592"
+  },
+  {
+    "adp": 130.6,
+    "name": "Rashod Bateman",
+    "position": "WR",
+    "team": "BAL",
+    "yahoo_id": "33415"
+  },
+  {
+    "adp": 130.9,
+    "name": "Marvin Mims Jr.",
+    "position": "WR",
+    "team": "DEN",
+    "yahoo_id": "40090"
+  },
+  {
+    "adp": 131.2,
+    "name": "Brenton Strange",
+    "position": "TE",
+    "team": "JAX",
+    "yahoo_id": "40078"
+  },
+  {
+    "adp": 131.3,
+    "name": "49ers",
+    "position": "DEF",
+    "team": "SF",
+    "yahoo_id": "100025"
+  },
+  {
+    "adp": 131.5,
+    "name": "Texans",
+    "position": "DEF",
+    "team": "HOU",
+    "yahoo_id": "100034"
+  },
+  {
+    "adp": 131.7,
+    "name": "Darnell Mooney",
+    "position": "WR",
+    "team": "NYG",
+    "yahoo_id": "32843"
+  },
+  {
+    "adp": 132.2,
+    "name": "Chris Boswell",
+    "position": "K",
+    "team": "PIT",
+    "yahoo_id": "28188"
+  },
+  {
+    "adp": 132.3,
+    "name": "Mason Taylor",
+    "position": "TE",
+    "team": "NYJ",
+    "yahoo_id": "41827"
+  },
+  {
+    "adp": 132.4,
+    "name": "Bills",
+    "position": "DEF",
+    "team": "BUF",
+    "yahoo_id": "100002"
+  },
+  {
+    "adp": 132.5,
+    "name": "Packers",
+    "position": "DEF",
+    "team": "GB",
+    "yahoo_id": "100009"
+  },
+  {
+    "adp": 133.3,
+    "name": "Ka'imi Fairbairn",
+    "position": "K",
+    "team": "HOU",
+    "yahoo_id": "29792"
+  },
+  {
+    "adp": 133.3,
+    "name": "Harrison Butker",
+    "position": "K",
+    "team": "KC",
+    "yahoo_id": "30346"
+  },
+  {
+    "adp": 133.4,
+    "name": "Tyler Loop",
+    "position": "K",
+    "team": "BAL",
+    "yahoo_id": "41988"
+  },
+  {
+    "adp": 133.5,
+    "name": "Daniel Carlson",
+    "position": "K",
+    "team": "NO",
+    "yahoo_id": "31137"
+  },
+  {
+    "adp": 133.6,
+    "name": "Cowboys",
+    "position": "DEF",
+    "team": "DAL",
+    "yahoo_id": "100006"
+  },
+  {
+    "adp": 133.7,
+    "name": "Younghoe Koo",
+    "position": "K",
+    "team": "NYG",
+    "yahoo_id": "30426"
+  },
+  {
+    "adp": 133.8,
+    "name": "Joshua Karty",
+    "position": "K",
+    "team": "ARI",
+    "yahoo_id": "41081"
+  },
+  {
+    "adp": 133.9,
+    "name": "Will Reichard",
+    "position": "K",
+    "team": "MIN",
+    "yahoo_id": "41093"
+  },
+  {
+    "adp": 134.5,
+    "name": "Patriots",
+    "position": "DEF",
+    "team": "NE",
+    "yahoo_id": "100017"
+  },
+  {
+    "adp": 135.4,
+    "name": "Commanders",
+    "position": "DEF",
+    "team": "WAS",
+    "yahoo_id": "100028"
+  },
+  {
+    "adp": 136.2,
+    "name": "Chargers",
+    "position": "DEF",
+    "team": "LAC",
+    "yahoo_id": "100024"
+  },
+  {
+    "adp": 136.6,
+    "name": "Jake Elliott",
+    "position": "K",
+    "team": "PHI",
+    "yahoo_id": "30266"
+  },
+  {
+    "adp": 136.7,
+    "name": "Matt Gay",
+    "position": "K",
+    "team": "LV",
+    "yahoo_id": "31977"
+  },
+  {
+    "adp": 139.3,
+    "name": "Seahawks",
+    "position": "DEF",
+    "team": "SEA",
+    "yahoo_id": "100026"
+  },
+  {
+    "adp": 139.3,
+    "name": "Wil Lutz",
+    "position": "K",
+    "team": "DEN",
+    "yahoo_id": "29754"
+  },
+  {
+    "adp": 139.8,
+    "name": "Browns",
+    "position": "DEF",
+    "team": "CLE",
+    "yahoo_id": "100005"
+  },
+  {
+    "adp": 140.1,
+    "name": "Cardinals",
+    "position": "DEF",
+    "team": "ARI",
+    "yahoo_id": "100022"
+  },
+  {
+    "adp": 140.2,
+    "name": "Rams",
+    "position": "DEF",
+    "team": "LAR",
+    "yahoo_id": "100014"
+  },
+  {
+    "adp": 140.3,
+    "name": "Evan McPherson",
+    "position": "K",
+    "team": "CIN",
+    "yahoo_id": "33537"
+  },
+  {
+    "adp": 141.0,
+    "name": "Jets",
+    "position": "DEF",
+    "team": "NYJ",
+    "yahoo_id": "100020"
+  },
+  {
+    "adp": 141.4,
+    "name": "Chase McLaughlin",
+    "position": "K",
+    "team": "TB",
+    "yahoo_id": "32417"
+  }
+]
