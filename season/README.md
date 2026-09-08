@@ -1,10 +1,13 @@
-# season/: playoff brackets Sleeper can't run, plus the ADP cache
+# season/: playoff brackets Sleeper can't run, plus cached stat data
 
 This directory is the one durable-data location for everything that isn't
 re-derivable straight from the Sleeper API: custom playoff bracket configs
-(one subfolder per league id) and a cache of Sleeper's own ADP data (one
-shared file per year). Both are plain checked-in JSON, read by both the R and
-Python engines (the ADP cache is Python-only for now; see below).
+(one subfolder per league id), a cache of Sleeper's own ADP data (one shared
+file per year), a cache of Sleeper's weekly usage/stat lines, a cache of
+nflverse's public data releases, and a set of canonical default scoring
+charts. The brackets are plain checked-in JSON read by both the R and Python
+engines; the three stat caches and the scoring charts are Python-only for
+now (see below).
 
 ```
 season/
@@ -14,6 +17,16 @@ season/
   adp/<season>.json                # shared across every league (Sleeper
                                     # publishes one ADP set per year, not
                                     # per league)
+  stats/<season>/<week>.json        # trimmed Sleeper weekly usage lines
+                                    # (snap share, targets, air yards, RZ);
+                                    # Python-only, see below
+  nflverse/<dataset>/<season>.parquet  # snapshots of nflverse's own public
+                                    # data releases (player_stats, schedules);
+                                    # Python-only, see below
+  scoring/default_scoring.json     # canonical Sleeper DEFAULT point-calc
+                                    # charts (std / half_ppr / ppr / 2qb);
+                                    # a stand-in when no league is loaded,
+                                    # Python-only, see below
   fixtures/                        # manually-referenced ground-truth fixtures
   scaffold.py                      # generates a bracket config for the
                                     # workflow below; prints the root id
@@ -236,9 +249,80 @@ shared subfolder rather than duplicated into every league's own files.
 This is Python-only for now (same precedent as this codebase's other newer
 draft analytics; see `CLAUDE.md`); nothing here is hand-edited.
 
+## Weekly usage cache (`stats/`)
+
+`sleepermetrics.nflstats` surfaces the volume/usage stats that Sleeper's
+weekly stat line already carries but nothing else in the app reads: snap
+share (`off_snp` / `tm_off_snp`), targets, air yards, red-zone touches,
+efficiency rates. It is the **same** `/stats/nfl/regular/<season>/<week>`
+feed `scoring.py` fetches to price lineups; this module just keeps the
+volume keys instead of only the scoring ones.
+
+`season/stats/<season>/<week>.json` is a trimmed per-week snapshot (one file
+per season+week), written on every successful live fetch so a later offline /
+cold-host run still resolves. The source is labelled `"sleeper"` on every row
+(`nflstats.SOURCE`), so a future multi-source usage board can tell where a
+figure came from. Python-webapp-only, not in the parity-diffed metric
+contract; nothing here is hand-edited.
+
+## nflverse data cache (`nflverse/`)
+
+`python/nflref/` is a thin, dataset-oriented layer over **nflverse's own
+public data releases** -- the `.parquet` files nflverse publishes on GitHub
+(`nflverse/nflverse-data`), the same ones the R `nflreadr` and Python
+`nflreadpy` / `nfl_data_py` packages download. No auth, no API key, CC-BY-4.0
+data. It fetches the release assets directly (`nflref.api.read_release_parquet`)
+rather than take a library dependency.
+
+`season/nflverse/<dataset>/<season>.parquet` snapshots each tidied frame
+(same durable-fallback pattern as `adp/`). Datasets wired so far:
+`player_stats` (nflverse weekly player stats -- carries `target_share` /
+`air_yards_share` / `wopr`, which Sleeper's feed does not) and `schedules`
+(real game results + roof/surface/rest, for a true strength-of-schedule).
+It surfaces on the opening screen as the **NFL Stats** landing tab (next to
+ADP Comparison): a per-season player leaderboard (from EITHER nflverse's own
+weekly release OR Sleeper's own weekly feed -- a Source toggle), the game
+schedule/results, and a **Source comparison** that lines the two feeds up
+player-by-player and reports every season-total stat they disagree on
+(`nflref.compare_sources`). Season-only, CSV/Excel export. Still scaffolding
+for deeper analytics later. Python-webapp-only, outside `sleepermetrics`,
+`verify.py` unaffected. Needs `pyarrow` (in `requirements.txt`).
+
+## Default scoring charts (`scoring/`)
+
+`season/scoring/default_scoring.json` holds four canonical **Sleeper default**
+point-calculation charts, keyed by the scoring-format ids this project already
+uses elsewhere: `std`, `half_ppr`, `ppr`, `2qb`. Each is a flat
+`{stat: weight}` dict in Sleeper's own `scoring_settings` vocabulary -- the
+same shape `sleepermetrics.scoring.rules_from(league_id)` returns -- so a chart
+can stand in for a league's live `scoring_settings` anywhere a scoring chart is
+needed but no league is loaded (e.g. pricing a season from raw stat lines for
+the ADP tab, or a league-free leaderboard).
+
+The four charts differ **only** by the `rec` weight (0 / 0.5 / 1 / 1);
+superflex / 2QB is a roster-slot difference, not a scoring one, so `2qb` is
+identical to `ppr` here.
+
+How it was built: the weights were reconciled from 39 real public Sleeper
+leagues (modal weight per stat key), with `pass_int` set to Sleeper's true
+default of -1, then cross-checked against ESPN's published standard scoring and
+the profootballnetwork / fantasypointcalculators / Sleeper-support references.
+**Verified**: the `std` / `half_ppr` / `ppr` charts reproduce Sleeper's own
+`pts_std` / `pts_half_ppr` / `pts_ppr` **exactly** for every offensive player
+(5008/5008 player-format-weeks across 2023-2025) and every kicker. The DST keys
+are the documented Sleeper defaults but do **not** reproduce Sleeper's DST
+`pts_*` exactly -- Sleeper scores team defense from a richer vocabulary
+(yards-allowed tiers, forced punts, 3-and-outs, return TDs folded into `td`)
+that a linear chart over the basic keys can't express; this is the same reason
+`sleepermetrics.scoring` only scores offensive lineups.
+
+Not league-specific, not a parity artifact, hand-verified once and stable.
+Python-only for now.
+
 ## Location override
 
 Both engines resolve this whole directory from one environment variable,
 `SLEEPERMETRICS_SEASON_DIR` (default: `season/` under the repo root), set by
 `launch.py`, the `Dockerfile`, and `sl_dashboard(playoffs = ...)` alike, so the
-playoff configs and the ADP cache always move together.
+playoff configs, the ADP cache, the stat caches, and the default scoring
+charts always move together.

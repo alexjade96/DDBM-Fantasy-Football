@@ -34,3 +34,8 @@ R/.env
 parity/out_*.json
 
 .scratch_charts/
+
+# Runtime-only stat caches (regenerated on demand; NOT curated fallbacks,
+# unlike season/adp/ which IS committed). Keep the dir markers.
+season/stats/*/
+season/nflverse/
