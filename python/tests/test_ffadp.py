@@ -596,3 +596,23 @@ def test_export_xlsx_route(monkeypatch):
     assert "ADP" in wb.sheetnames
     assert [c.value for c in wb["ADP"][1]][:4] == ["rank", "player", "position", "team"]
     identity.reset()
+
+
+class _Req:
+    scope = {"type": "http"}
+    headers = {}
+
+    def __getattr__(self, _):
+        return None
+
+
+def test_adp_data_route_renders_player_portrait(monkeypatch):
+    _mini_board(monkeypatch)
+    from webapp import app
+    resp = app.adp_data(_Req(), season="2025", scoring="ppr", pos="ALL")
+    body = resp.body.decode()
+    assert resp.status_code == 200
+    # each board row carries a resolved sleeper_id -> _ident.headshot() img
+    assert 'class="pface" src="https://sleepercdn.com/content/nfl/players/100.jpg"' in body
+    assert "Ja&#39;Marr Chase" in body or "Ja'Marr Chase" in body
+    identity.reset()

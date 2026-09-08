@@ -1226,6 +1226,7 @@ def adp_data(request: Request, season: str | None = None,
     return tpl.TemplateResponse(request, "_adp_table.html", {
         "board": board,
         "scorings": _ADP_SCORING, "positions": _ADP_POS,
+        "avatars": {},      # _ident.html reads it; no managers on this tab
     })
 
 
@@ -1264,6 +1265,206 @@ def adp_export_xlsx(season: str | None = None, scoring: str = _ADP_SCORING_DEFAU
     buf = io.BytesIO()
     with pd.ExcelWriter(buf, engine="openpyxl") as xl:
         df.to_excel(xl, index=False, sheet_name="ADP")
+    return Response(
+        buf.getvalue(),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{stem}.xlsx"'})
+
+
+# --- NFL Stats landing tab (nflref data layer) ---------------------------
+# A second no-league landing tab, next to ADP Comparison. It surfaces the
+# nflref/ layer: a per-season player leaderboard (fed by EITHER nflverse's
+# own weekly release OR Sleeper's own weekly stat feed -- a Source toggle),
+# the real game schedule + results, and a Source comparison that lines the
+# two feeds up and reports every stat they disagree on. Season-only, same
+# shape as the ADP tab: a shell with controls, a lazily-streamed table
+# fragment, CSV/Excel export.
+_NFLSTATS_VIEWS = [
+    ("players", "Player leaderboard"),
+    ("schedule", "Schedule & results"),
+    ("compare", "Source comparison"),
+]
+_NFLSTATS_VIEW_DEFAULT = "players"
+_NFLSTATS_SOURCES = [("nflverse", "nflverse"), ("sleeper", "Sleeper")]
+_NFLSTATS_SOURCE_DEFAULT = "nflverse"
+# player_stats begins 2016; schedules go back further but the tab pairs them,
+# so the picker floor is player_stats' floor.
+_NFLSTATS_EARLIEST = 2016
+
+
+def _attach_sleeper_ids(rows, id_field="player_id"):
+    """Add a `sleeper_id` to each row dict so `_ident.html`'s `headshot()`
+    macro can render a portrait.
+
+    The Sleeper-fed leaderboard's own `player_id` IS a Sleeper id -- copy it.
+    For an nflverse row (or a compare row, which is name-keyed) there is no
+    Sleeper id, so resolve one from `ffadp.identity` by normalised
+    name + position -- the same name-match the ADP board falls back to.
+    Best-effort: a miss leaves `sleeper_id` None and the portrait just
+    doesn't render.
+    """
+    try:
+        from ffadp import identity
+    except Exception:
+        identity = None
+    for r in rows:
+        sid = r.get(id_field)
+        # a real Sleeper id is all digits; a GSIS id looks like "00-00xxxxx"
+        if isinstance(sid, str) and sid.isdigit():
+            r["sleeper_id"] = sid
+            continue
+        r["sleeper_id"] = None
+        if identity is not None and r.get("player"):
+            try:
+                r["sleeper_id"] = identity.resolve(
+                    "nflref", name=r["player"], position=r.get("position"))
+            except Exception:
+                pass
+    return rows
+
+
+def _nflstats_params(view, season, pos, week, source=None, team=None):
+    view = view if view in {k for k, _ in _NFLSTATS_VIEWS} else _NFLSTATS_VIEW_DEFAULT
+    cur = int(_current_nfl_season())
+    try:
+        sea = str(int(str(season).strip()))
+    except (TypeError, ValueError):
+        sea = str(cur)
+    if not (_NFLSTATS_EARLIEST <= int(sea) <= cur):
+        sea = str(cur)
+    import nflref
+    pos = (pos or "ALL").upper()
+    if pos not in nflref.summary.POSITIONS:
+        pos = "ALL"
+    tm = (team or "ALL").upper()
+    if tm not in nflref.summary.TEAMS:
+        tm = "ALL"
+    wk = str(week).strip() if week not in (None, "") else "ALL"
+    src = (source or _NFLSTATS_SOURCE_DEFAULT).lower()
+    if src not in {k for k, _ in _NFLSTATS_SOURCES}:
+        src = _NFLSTATS_SOURCE_DEFAULT
+    return view, sea, pos, wk, src, tm
+
+
+@app.get("/nflstats", response_class=HTMLResponse)
+def nflstats_compare(request: Request, view: str = _NFLSTATS_VIEW_DEFAULT,
+                     season: str | None = None, pos: str = "ALL",
+                     week: str | None = None,
+                     source: str = _NFLSTATS_SOURCE_DEFAULT, team: str = "ALL"):
+    """The NFL Stats landing tab: section shell + controls; the table streams
+    in from /nflstats/data so switching a control re-fetches just the table."""
+    import nflref
+
+    view, sea, pos, wk, src, tm = _nflstats_params(view, season, pos, week,
+                                                   source, team)
+    cur = int(_current_nfl_season())
+    seasons = [str(y) for y in range(cur, _NFLSTATS_EARLIEST - 1, -1)]
+    weeks = nflref.schedule_weeks(sea)      # for the Schedule view's week menu
+    return tpl.TemplateResponse(request, "_nflstats_compare.html", {
+        "asset_v": asset_v(), "view": view, "season": sea, "pos": pos,
+        "week": wk, "source": src, "team": tm, "views": _NFLSTATS_VIEWS,
+        "sources": _NFLSTATS_SOURCES, "seasons": seasons,
+        "positions": list(nflref.summary.POSITIONS),
+        "teams": list(nflref.summary.TEAMS), "weeks": weeks,
+        "avatars": {},
+    })
+
+
+@app.get("/nflstats/data", response_class=HTMLResponse)
+def nflstats_data(request: Request, view: str = _NFLSTATS_VIEW_DEFAULT,
+                  season: str | None = None, pos: str = "ALL",
+                  week: str | None = None,
+                  source: str = _NFLSTATS_SOURCE_DEFAULT, team: str = "ALL",
+                  reload: bool = False):
+    """The NFL Stats table itself (HTMX fragment).
+
+    `reload=1` bypasses the on-disk snapshot and re-fetches the source feed
+    live. Degrades to a message rather than 500ing when a feed does not
+    resolve.
+    """
+    import nflref
+
+    view, sea, pos, wk, src, tm = _nflstats_params(view, season, pos, week,
+                                                   source, team)
+    ctx = {"view": view, "season": sea, "pos": pos, "week": wk, "source": src,
+           "team": tm,
+           "avatars": {}}      # _ident.html reads it; no managers on this tab
+    try:
+        if view == "schedule":
+            ctx["rows"] = records(nflref.schedule_grid(sea, week=wk, team=tm,
+                                                       reload=reload))
+        elif view == "compare":
+            # compare_sources already scrubs NaN in its own row dicts.
+            ctx["compare"] = nflref.compare_sources(sea, pos=pos, team=tm,
+                                                    reload=reload)
+            ctx["rows"] = _attach_sleeper_ids(ctx["compare"]["rows"])
+        else:
+            lb = nflref.player_leaderboard(sea, pos=pos, source=src, team=tm,
+                                           reload=reload)
+            ctx["cols"] = nflref.leaderboard_columns(pos, src)
+            ctx["rows"] = _attach_sleeper_ids(records(lb))   # NaN -> None; + portrait id
+    except Exception:
+        ctx["rows"] = []
+        ctx.setdefault("cols", [])
+    return tpl.TemplateResponse(request, "_nflstats_table.html", ctx)
+
+
+def _nflstats_frame_and_name(view, season, pos, week, source=None, team=None,
+                             reload=False):
+    """Shared by the CSV + Excel export routes: the current view as a flat
+    DataFrame plus a filename stem."""
+    import pandas as pd
+
+    import nflref
+
+    view, sea, pos, wk, src, tm = _nflstats_params(view, season, pos, week,
+                                                   source, team)
+    team_sfx = "" if tm == "ALL" else f"-{tm.lower()}"
+    if view == "schedule":
+        df = nflref.schedule_grid(sea, week=wk, team=tm, reload=reload)
+        stem = (f"nfl-schedule-{sea}"
+                + ("" if wk == "ALL" else f"-wk{wk}") + team_sfx)
+    elif view == "compare":
+        cmp = nflref.compare_sources(sea, pos=pos, team=tm, reload=reload)
+        df = pd.DataFrame(cmp["rows"])
+        stem = (f"nfl-compare-{sea}"
+                + ("" if pos == "ALL" else f"-{pos.lower()}") + team_sfx)
+    else:
+        df = nflref.player_leaderboard(sea, pos=pos, source=src, team=tm,
+                                       reload=reload)
+        stem = (f"nfl-players-{src}-{sea}"
+                + ("" if pos == "ALL" else f"-{pos.lower()}") + team_sfx)
+    return df, stem
+
+
+@app.get("/nflstats/export.csv")
+def nflstats_export_csv(view: str = _NFLSTATS_VIEW_DEFAULT, season: str | None = None,
+                        pos: str = "ALL", week: str | None = None,
+                        source: str = _NFLSTATS_SOURCE_DEFAULT, team: str = "ALL",
+                        reload: bool = False):
+    """The current NFL Stats view as CSV (attachment)."""
+    df, stem = _nflstats_frame_and_name(view, season, pos, week, source, team,
+                                        reload)
+    buf = io.StringIO()
+    df.to_csv(buf, index=False)
+    return Response(
+        buf.getvalue(), media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="{stem}.csv"'})
+
+
+@app.get("/nflstats/export.xlsx")
+def nflstats_export_xlsx(view: str = _NFLSTATS_VIEW_DEFAULT, season: str | None = None,
+                         pos: str = "ALL", week: str | None = None,
+                         source: str = _NFLSTATS_SOURCE_DEFAULT, team: str = "ALL",
+                         reload: bool = False):
+    """The current NFL Stats view as an .xlsx workbook (attachment)."""
+    import pandas as pd
+
+    df, stem = _nflstats_frame_and_name(view, season, pos, week, source, team,
+                                        reload)
+    buf = io.BytesIO()
+    with pd.ExcelWriter(buf, engine="openpyxl") as xl:
+        df.to_excel(xl, index=False, sheet_name="NFL")
     return Response(
         buf.getvalue(),
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",

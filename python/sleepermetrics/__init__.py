@@ -3,8 +3,8 @@
 Parallel port of the R package. Same design: compute (metrics) / render (plots)
 / narrate (summaries), fed by season() / seasons() over a league's chain.
 """
-from . import (discord_bot, headshots, metrics, playoffs, plots, scoring,
-               statnames, summaries, weekly)
+from . import (discord_bot, headshots, metrics, nflstats, playoffs, plots,
+               scoring, statnames, summaries, weekly)
 from .api import sleeper_api
 from .league import (clear_forward_cache, current_season_league_id, league,
                      league_chain, nfl_state, root_league_id, starter_slots,
@@ -21,6 +21,7 @@ from .playoffs import (Playoff, apply_playoffs, clutch, load_playoffs, playoff,
                        sleeper_bracket, sleeper_losers_bracket, consolation_bracket,
                        consolation_performances, consolation_players, consolation_clutch,
                        validate_config)
+from .nflstats import player_usage
 from .report import season_report
 from .scoring import score_lineup, scoring_chart
 from .season import (Season, assemble_season, avatar_url, league_accounts,
@@ -36,6 +37,7 @@ __all__ = [
     "Season", "assemble_season", "optimal_points", "season", "seasons",
     "league_accounts", "avatar_url",
     "metrics", "plots", "summaries", "weekly", "discord_bot",
+    "nflstats", "player_usage",
     "summary_season", "summary_career", "summary_week",
     "scoring", "scoring_chart", "score_lineup",
     "statnames", "stat_labels", "scoring_readable",

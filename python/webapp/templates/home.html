@@ -12,9 +12,12 @@
   {# Shared #panel table sort (also loaded by index.html) -- the ADP Comparison
      table uses it. #}
   <script src="/static/table-sort.js?v={{ asset_v }}" defer></script>
-  {# The ADP Comparison tab fetches from ESPN's public read replica. #}
+  {# ADP Comparison fetches from ESPN's public read replica; NFL Stats fetches
+     nflverse's data releases from GitHub. #}
   <link rel="preconnect" href="https://lm-api-reads.fantasy.espn.com" crossorigin>
   <link rel="dns-prefetch" href="https://lm-api-reads.fantasy.espn.com">
+  <link rel="dns-prefetch" href="https://github.com">
+  <link rel="dns-prefetch" href="https://objects.githubusercontent.com">
 </head>
 <body>
   {# The landing page is a loaded-league layout with nothing loaded yet: the
@@ -71,6 +74,7 @@
        onclick="if(event.target.matches('button[role=tab]')){this.querySelectorAll('button').forEach(b=>b.classList.remove('active'));event.target.classList.add('active');}">
     <button type="button" role="tab" class="active" hx-get="/welcome">Get started</button>
     <button type="button" role="tab" hx-get="/adp">ADP Comparison</button>
+    <button type="button" role="tab" hx-get="/nflstats">NFL Stats</button>
   </nav>
 
   <main id="panel">

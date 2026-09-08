@@ -100,6 +100,24 @@ a.ghost:hover { filter: brightness(1.06); }
 .adp-controls-row { flex-wrap: wrap; }
 .adp-filter { margin-left: auto; display: flex; flex-direction: column; gap: 4px;
   align-items: flex-start; }
+/* NFL Stats controls row: the Apply submit sits on the right edge, bottom-
+   aligned with the sibling <select>s (the row is align-items:flex-end). */
+.nfl-apply { margin-left: auto; align-self: flex-end; }
+/* ADP row's Load button: it sits AFTER .adp-filter, which already carries
+   margin-left:auto (it pushes the Sources toggles + Load right as a pair),
+   so the button must NOT add its own or it double-pushes. Just bottom-align. */
+.adp-load { margin-left: 12px; }
+/* Source-comparison table: a two-row header (stat name spanning its SL/NV/Δ
+   trio). The sub-header cells are small and faint; the Δ column of each trio
+   carries a right hairline so the groups read apart. */
+.nfl-cmp table { font-size: 12.5px; }
+.nfl-cmp th.cmp-sub { font-size: 10px; font-weight: 600; color: var(--faint);
+  letter-spacing: .03em; }
+/* smaller portrait in the (already very wide) comparison table */
+.nfl-cmp .pface { width: 16px; height: 16px; margin-right: 5px; }
+.nfl-cmp thead th[colspan] { border-left: 1px solid var(--line); }
+.nfl-cmp .cmp-sub:nth-child(3n) { border-right: 1px solid var(--line); }
+.nfl-cmp tbody td:nth-child(3n+3) { border-right: 1px solid var(--line); }
 .adp-filter-label { font-size: 11px; letter-spacing: .06em;
   text-transform: uppercase; color: var(--faint); }
 /* Box row is the same height as the sibling <select>s so baselines line up. */

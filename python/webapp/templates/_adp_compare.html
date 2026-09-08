@@ -41,9 +41,11 @@
       platforms&rsquo; live feeds cover the current draft season only.
     {%- endif %}</p>
 
+  {# hx-trigger is submit only -- the dropdowns just stage a selection; the
+     board reloads when Load is clicked (same as the NFL Stats tab). #}
   <form class="controls adp-controls-row" id="adp-controls"
         hx-get="/adp/data" hx-target="#adp-board" hx-swap="innerHTML"
-        hx-trigger="change, submit" hx-include="#adp-controls">
+        hx-trigger="submit" hx-include="#adp-controls">
     <label>
       <span>Season</span>
       <select name="season">
@@ -85,13 +87,17 @@
         {% endfor %}
       </div>
     </div>
+    {# Far right, after the Sources toggles. A real submit -- the form's
+       hx-trigger="submit" is what reloads #adp-board. #}
+    <button type="submit" class="nfl-apply adp-load">Load</button>
   </form>
 
-  {# First board loads immediately; subsequent loads come from #adp-controls. #}
-  <div id="adp-board"
-       hx-get="/adp/data?season={{ season }}&scoring={{ scoring }}&pos={{ pos }}"
-       hx-trigger="load" hx-swap="innerHTML">
-    <p class="hint">Loading ADP&hellip;</p>
+  {# The board does NOT auto-load -- switching to this tab shows only the
+     controls. Every load (first included) comes from clicking Load on
+     #adp-controls. #}
+  <div id="adp-board">
+    <p class="hint">Choose a season, scoring format and position, then click
+      <strong>Load</strong>.</p>
   </div>
 </section>
 

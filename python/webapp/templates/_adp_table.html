@@ -7,6 +7,7 @@
    #adp-controls can hide a whole group. Source cells also carry data-rank;
    the .adp-consensus / .adp-spread cells are recomputed client-side from the
    checked sources' ranks after a toggle. #}
+{% import "_ident.html" as idm with context %}
 {% set unavailable = board.sources | rejectattr("ok") | list %}
 
 {% if not board.columns %}
@@ -61,7 +62,7 @@
         {% for r in board.rows %}
         <tr>
           <td class="n">{{ loop.index }}</td>
-          <td data-sort="{{ r.player }}"><strong>{{ r.player }}</strong>
+          <td data-sort="{{ r.player }}">{{ idm.headshot(r.sleeper_id) }}<strong>{{ r.player }}</strong>
             {%- if r.team %} <span class="q">{{ r.team }}</span>{% endif -%}
           </td>
           {# position on its own column; data-sort is the plain string (blank

@@ -1,0 +1,170 @@
+{% import "_ident.html" as idm with context %}
+{# The NFL Stats table (HTMX fragment from /nflstats/data).
+   view == "players":  `rows` are season-total player dicts, `cols` is the
+     (df_key, header) list for the position + source.
+   view == "schedule": `rows` are per-game dicts.
+   view == "compare":  `rows` come from `compare.rows` (players the two feeds
+     disagree on), `compare.stats` names the compared columns, `compare.summary`
+     has the match counts. Each stat renders <sleeper> / <nflverse> with the
+     delta tinted.
+   All degrade to a message when nothing resolved (offline + no snapshot). #}
+{% if not rows and view != "compare" %}
+  {% if team and team != "ALL" %}
+  <p class="empty">No {{ team }} rows for {{ season }}
+    {%- if pos != "ALL" %} at {{ pos }}{% endif %}.  Try another team, or set
+    Team back to ALL.</p>
+  {% else %}
+  <p class="empty">No NFL data available for {{ season }} right now.  The
+    source feed could not be reached and there is no saved snapshot yet.</p>
+  {% endif %}
+
+{% elif view == "schedule" %}
+  <p class="hint">{{ rows | length }} games{% if week != "ALL" %},
+    week {{ week }}{% endif %}{% if team and team != "ALL" %} &middot;
+    {{ team }}{% endif %} &middot; {{ season }} season.  Margin is the
+    final-score gap; O/U is the closing total line.</p>
+  <div class="tablewrap scrolltable">
+    <table class="sortable">
+      <thead><tr>
+        <th class="n">Wk</th><th>Date</th><th>Away</th><th class="n">Pts</th>
+        <th>Home</th><th class="n">Pts</th><th class="n">Margin</th>
+        <th class="n">Total</th><th class="n">O/U line</th>
+        <th>Roof</th><th>Surface</th><th class="n">Rest A/H</th>
+      </tr></thead>
+      <tbody>
+      {% for g in rows %}
+        <tr>
+          <td class="n">{{ g.week }}</td>
+          <td data-sort="{{ g.gameday or '' }}">{{ g.gameday or "" }}</td>
+          <td>{{ g.away_team }}</td>
+          <td class="n">{{ g.away_score | int if g.away_score is not none else "&ndash;" }}</td>
+          <td><strong>{{ g.home_team }}</strong></td>
+          <td class="n">{{ g.home_score | int if g.home_score is not none else "&ndash;" }}</td>
+          <td class="n">{{ g.margin | int if g.margin is not none else "&ndash;" }}</td>
+          <td class="n">{{ g.total | int if g.total is not none else "&ndash;" }}</td>
+          <td class="n">{{ "%.1f"|format(g.total_line) if g.total_line is not none else "&ndash;" }}</td>
+          <td>{{ g.roof or "" }}{% if g.overtime %} <span class="q">OT</span>{% endif %}</td>
+          <td>{{ g.surface or "" }}</td>
+          <td class="n">{{ (g.away_rest | int) ~ " / " ~ (g.home_rest | int)
+                          if g.away_rest is not none and g.home_rest is not none else "&ndash;" }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+{% elif view == "compare" %}
+  {% set sm = compare.summary %}
+  <p class="hint">Sleeper vs nflverse for {{ season }}
+    {%- if pos != "ALL" %} &middot; {{ pos }}{% endif %}
+    {%- if team and team != "ALL" %} &middot; {{ team }}{% endif %}.  Both feeds ingest
+    the same games; a difference is a real pipeline disagreement (a stat
+    corrected on one side, a game counted differently, a fantasy-scoring
+    nuance).  Matched on normalised name + position.
+    <br>
+    <strong>{{ sm.matched }}</strong> players matched &middot;
+    <strong>{{ sm.in_agreement }}</strong> agree on every stat &middot;
+    <strong>{{ sm.differing }}</strong> differ
+    {%- if sm.sleeper_only %} &middot; {{ sm.sleeper_only }} only in Sleeper{% endif %}
+    {%- if sm.nflverse_only %} &middot; {{ sm.nflverse_only }} only in nflverse{% endif %}.
+  </p>
+  {% if not rows %}
+    <p class="empty">
+      {%- if sm.matched -%}
+        Every matched player agrees on all {{ compare.stats | length }} compared
+        stats for {{ season }}{% if pos != "ALL" %} at {{ pos }}{% endif %}.
+      {%- else -%}
+        Could not line the two feeds up for {{ season }} -- one source did not
+        resolve (offline, or no saved snapshot).
+      {%- endif -%}
+    </p>
+  {% else %}
+    <div class="tablewrap scrolltable nfl-cmp">
+      <table class="sortable">
+        <thead>
+          <tr>
+            <th rowspan="2">Player</th><th rowspan="2">Pos</th>
+            <th rowspan="2">Team</th>
+            {% for lbl, key in compare.stats %}
+              <th class="n" colspan="3">{{ lbl }}</th>
+            {% endfor %}
+            <th class="n" rowspan="2">Total &Delta;</th>
+          </tr>
+          <tr>
+            {% for lbl, key in compare.stats %}
+              <th class="n cmp-sub">SL</th><th class="n cmp-sub">NV</th>
+              <th class="n cmp-sub">&Delta;</th>
+            {% endfor %}
+          </tr>
+        </thead>
+        <tbody>
+        {% for r in rows %}
+          <tr>
+            <td data-sort="{{ r.player }}">{{ idm.headshot(r.sleeper_id) }}<strong>{{ r.player }}</strong></td>
+            <td data-sort="{{ r.position or '' }}">
+              {%- if r.position %}<span class="q">{{ r.position }}</span>{% endif -%}</td>
+            <td><span class="q">{{ r.team or "" }}</span></td>
+            {% for lbl, key in compare.stats %}
+              {%- set a = r.get(key ~ "_sleeper") -%}
+              {%- set b = r.get(key ~ "_nflverse") -%}
+              {%- set d = r.get(key ~ "_delta") -%}
+              <td class="n">{{ "%g"|format(a) if a is not none else "&ndash;" }}</td>
+              <td class="n">{{ "%g"|format(b) if b is not none else "&ndash;" }}</td>
+              <td class="n {% if d is not none and d > 0 %}dv-pos{% elif d is not none and d < 0 %}dv-neg{% endif %}"
+                  data-sort="{{ d if d is not none else 0 }}">
+                {%- if d is none -%}&ndash;
+                {%- elif d == 0 -%}0
+                {%- else -%}{{ "%+g"|format(d) }}{%- endif -%}
+              </td>
+            {% endfor %}
+            <td class="n" data-sort="{{ r.total_abs_delta }}">{{ "%g"|format(r.total_abs_delta) }}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <p class="hint q">&Delta; = Sleeper &minus; nflverse.  Green = Sleeper
+      higher, red = nflverse higher.  Rows sorted by total absolute
+      disagreement.</p>
+  {% endif %}
+
+{% else %}
+  <p class="hint">{{ rows | length }} players &middot; {{ season }} season
+    {%- if pos != "ALL" %} &middot; {{ pos }}{% endif %}
+    {%- if team and team != "ALL" %} &middot; {{ team }}{% endif %} &middot;
+    <strong>{{ "Sleeper" if source == "sleeper" else "nflverse" }}</strong>
+    feed &middot; ranked by PPR fantasy points.  Rate columns
+    ({% if source == "sleeper" %}snap / target share, aDOT{% else %}shares,
+    WOPR, RACR, PACR{% endif %}) are season {% if source == "sleeper" %}rates
+    {%- else %}means{% endif %}; everything else is a season total.</p>
+  <div class="tablewrap scrolltable">
+    <table class="sortable">
+      <thead><tr>
+        <th class="n">#</th><th>Player</th><th>Pos</th><th>Team</th>
+        {% for key, hdr in cols %}<th class="n">{{ hdr }}</th>{% endfor %}
+      </tr></thead>
+      <tbody>
+      {% for r in rows %}
+        <tr>
+          <td class="n">{{ r.rank }}</td>
+          <td data-sort="{{ r.player }}">{{ idm.headshot(r.sleeper_id) }}<strong>{{ r.player }}</strong></td>
+          <td data-sort="{{ r.position or '' }}">
+            {%- if r.position %}<span class="q">{{ r.position }}</span>{% endif -%}
+          </td>
+          <td><span class="q">{{ r.team or "" }}</span></td>
+          {% for key, hdr in cols %}
+            {%- set v = r.get(key) -%}
+            <td class="n" data-sort="{{ v if v is not none else -1 }}">
+              {%- if v is none -%}&ndash;
+              {%- elif key in ("tgt_share", "air_yards_share", "wopr", "racr", "pacr", "snap_share") -%}
+                {{ "%.3f"|format(v) }}
+              {%- elif key in ("ppg_ppr", "fpts_ppr", "adot") -%}{{ "%.1f"|format(v) }}
+              {%- else -%}{{ v | int }}{%- endif -%}
+            </td>
+          {% endfor %}
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+{% endif %}

@@ -1,0 +1,137 @@
+{# The "NFL Stats" landing view: nflverse-derived NFL data, no league context.
+   Three views:
+     * Player leaderboard -- per-season season totals, ranked by fantasy
+       points, from EITHER source (the Source toggle): nflverse's weekly
+       release, or Sleeper's own weekly feed. The column set follows the
+       source (nflverse has WOPR / RACR / air-yards share; Sleeper has snap
+       share / aDOT / RZ touches).
+     * Schedule & results -- real game results with the closing line,
+       roof/surface/rest.
+     * Source comparison -- lines the two feeds up player-by-player and
+       reports every season-total stat they disagree on.
+   Season / view / source / position / team / week are the controls; they
+   DON'T auto-fetch on change, and the board does NOT auto-load when this tab
+   opens -- the table loads only when the right-justified "Load" button (a
+   real form submit) is clicked. The toolbar CSV/Excel links track the
+   current control values as they change. #}
+<div class="adp-toolbar">
+  <span class="adp-actions">
+    <span class="adp-actions-label">Data</span>
+    <a class="ghost" id="nfl-csv"
+       href="/nflstats/export.csv?view={{ view }}&season={{ season }}&pos={{ pos }}&team={{ team }}&week={{ week }}&source={{ source }}"
+       download>CSV</a>
+    <a class="ghost" id="nfl-xlsx"
+       href="/nflstats/export.xlsx?view={{ view }}&season={{ season }}&pos={{ pos }}&team={{ team }}&week={{ week }}&source={{ source }}"
+       download>Excel</a>
+  </span>
+</div>
+
+<section class="card">
+  <h2>NFL Stats: the underlying numbers</h2>
+  <p class="hint">Straight from <strong>nflverse</strong>&rsquo;s own public data
+    releases &mdash; the same files the R <code>nflreadr</code> and Python
+    <code>nflreadpy</code> packages read.  No league required.  The
+    <strong>player leaderboard</strong> carries the usage rates a fantasy points
+    total hides: target share, air-yards share, WOPR, RACR / PACR.  The
+    <strong>schedule</strong> view is real game results with the closing line,
+    roof, surface and rest days.  Sort by any column.</p>
+
+  {# hx-trigger is submit only (NOT change) -- the dropdowns just stage a
+     selection; the table reloads when Load is clicked. #}
+  <form class="controls adp-controls-row" id="nfl-controls"
+        hx-get="/nflstats/data" hx-target="#nfl-board" hx-swap="innerHTML"
+        hx-trigger="submit" hx-include="#nfl-controls">
+    <label>
+      <span>View</span>
+      <select name="view">
+        {% for k, lbl in views %}
+        <option value="{{ k }}" {% if k == view %}selected{% endif %}>{{ lbl }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>
+      <span>Season</span>
+      <select name="season">
+        {% for y in seasons %}
+        <option value="{{ y }}" {% if y == season %}selected{% endif %}>{{ y }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    {# Each secondary control matters to some views only; it still stays in
+       the DOM and posts, the script just dims it where it's ignored.
+       Source -> player leaderboard;  Position -> leaderboard + comparison;
+       Team -> all three views;  Week -> schedule. #}
+    <label data-nfl-only="players">
+      <span>Source</span>
+      <select name="source">
+        {% for k, lbl in sources %}
+        <option value="{{ k }}" {% if k == source %}selected{% endif %}>{{ lbl }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label data-nfl-only="players compare">
+      <span>Position</span>
+      <select name="pos">
+        {% for p in positions %}
+        <option value="{{ p }}" {% if p == pos %}selected{% endif %}>{{ p }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label data-nfl-only="players compare schedule">
+      <span>Team</span>
+      <select name="team">
+        {% for t in teams %}
+        <option value="{{ t }}" {% if t == team %}selected{% endif %}>{{ t }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label data-nfl-only="schedule">
+      <span>Week</span>
+      <select name="week">
+        <option value="ALL" {% if week == 'ALL' %}selected{% endif %}>All weeks</option>
+        {% for w in weeks %}
+        <option value="{{ w }}" {% if week == w|string %}selected{% endif %}>Week {{ w }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    {# Right-justified on the controls line (margin-left:auto). A real submit
+       button -- the form's hx-trigger="submit" is what reloads #nfl-board. #}
+    <button type="submit" class="nfl-apply">Load</button>
+  </form>
+
+  {# The board does NOT auto-load -- switching to this tab shows only the
+     controls. Every load (first included) comes from clicking Load. #}
+  <div id="nfl-board">
+    <p class="hint">Choose a view and season, then click <strong>Load</strong>.</p>
+  </div>
+</section>
+
+<script>
+  (function () {
+    var form = document.getElementById('nfl-controls');
+    if (!form) return;
+
+    // Keep the CSV / Excel links matching the visible table.
+    var syncLinks = function () {
+      var qs = new URLSearchParams(new FormData(form)).toString();
+      var csv = document.getElementById('nfl-csv');
+      var xls = document.getElementById('nfl-xlsx');
+      if (csv) csv.href = '/nflstats/export.csv?' + qs;
+      if (xls) xls.href = '/nflstats/export.xlsx?' + qs;
+    };
+
+    // Dim any secondary control the current view ignores. data-nfl-only is a
+    // space-separated list of views the control applies to.
+    var syncControls = function () {
+      var v = form.querySelector('select[name="view"]').value;
+      form.querySelectorAll('[data-nfl-only]').forEach(function (el) {
+        var views = el.dataset.nflOnly.split(/\s+/);
+        el.style.opacity = views.indexOf(v) !== -1 ? '' : '.4';
+      });
+    };
+
+    form.addEventListener('change', function () { syncControls(); syncLinks(); });
+    syncControls();
+    syncLinks();
+  })();
+</script>
