@@ -1,14 +1,22 @@
 {# The ADP comparison table (HTMX fragment from /adp/data). `board` is
    ffadp.combine()'s dict. Columns: #, Player (name + team), Pos, Consensus,
-   one ADP column per live source (grouped apps / analyst), Spread.
+   Final, Diff, one ADP column per live source (grouped apps / analyst),
+   Spread.
+
+   Final = the player's overall end-of-season value rank for the season, in
+   the selected scoring format (priced with the default chart -- league-free).
+   Diff = consensus - final (positive/green = the field drafted him later
+   than he finished; negative/red = a reach).
 
    The two-row header carries group labels; group + source headers and body
    cells carry data-adp-group / data-adp-col so the Sources checkboxes in
    #adp-controls can hide a whole group. Source cells also carry data-rank;
-   the .adp-consensus / .adp-spread cells are recomputed client-side from the
-   checked sources' ranks after a toggle. #}
+   the .adp-consensus / .adp-diff / .adp-spread cells are recomputed
+   client-side from the checked sources' ranks after a toggle (Final is fixed
+   -- it does not depend on which sources are checked). #}
 {% import "_ident.html" as idm with context %}
 {% set unavailable = board.sources | rejectattr("ok") | list %}
+{% set has_final = board.rows | selectattr("final") | list | length > 0 %}
 
 {% if not board.columns %}
   <p class="empty">No ADP data available for {{ board.season }} right now.  The
@@ -30,6 +38,15 @@
         {{ s.label }}{% if s.why %} ({{ s.why }}){% endif %}{{ "" if loop.last else ", " }}
       {%- endfor %}</span>
     {%- endif %}
+    &middot;
+    {% if has_final -%}
+      <span class="q"><strong>Final</strong> is the overall end-of-season value
+      rank ({{ board.scoring }} scoring); <strong>Diff</strong> is
+      consensus &minus; Final.</span>
+    {%- else -%}
+      <span class="q"><strong>Final</strong> / <strong>Diff</strong> fill in once
+      the {{ board.season }} season is complete.</span>
+    {%- endif %}
   </p>
 
   <div class="tablewrap scrolltable adp-scroll">
@@ -39,6 +56,8 @@
           <th></th>
           <th></th>
           <th></th>
+          <th class="n"></th>
+          <th class="n"></th>
           <th class="n"></th>
           {% for g in board.groups %}
             <th class="n adp-grouphead" colspan="{{ g.columns | length }}"
@@ -51,6 +70,8 @@
           <th>Player</th>
           <th>Pos</th>
           <th class="n adp-consensus">Consensus</th>
+          <th class="n adp-final">Final</th>
+          <th class="n adp-diff">Diff</th>
           {% for c in board.columns %}
             {%- set s = (board.sources | selectattr("name", "equalto", c) | first) -%}
             <th class="n" data-adp-group="{{ s.group }}" data-adp-col="{{ c }}">{{ s.label }} ADP</th>
@@ -77,6 +98,24 @@
           <td class="n adp-consensus"
               data-sort="{{ "%09.1f"|format(r.consensus) if r.consensus is not none else "999999999" }}">
             {{ "%.1f"|format(r.consensus) if r.consensus is not none else "&ndash;" }}
+          </td>
+          {# Final = overall end-of-season value rank; fixed, source-toggle
+             independent. #}
+          <td class="n adp-final"
+              data-sort="{{ "%06d"|format(r.final) if r.final is not none else "999999" }}">
+            {{ "#%d"|format(r.final) if r.final is not none else "&ndash;" }}
+          </td>
+          {# Diff = consensus - final. Positive (green) = drafted later than he
+             finished; negative (red) = a reach. data-sort offset + zero-pad so
+             the lexical string sort still orders it numerically; the toggle
+             script rewrites textContent + data-sort + the tint class. #}
+          <td class="n adp-diff
+                     {%- if r.diff is not none and r.diff > 0 %} dv-pos
+                     {%- elif r.diff is not none and r.diff < 0 %} dv-neg{% endif %}"
+              data-sort="{{ "%08.1f"|format(r.diff + 100000) if r.diff is not none else "99999999" }}">
+            {%- if r.diff is none -%}&ndash;
+            {%- elif r.diff == 0 -%}0
+            {%- else -%}{{ "%+.1f"|format(r.diff) }}{%- endif -%}
           </td>
           {% for c in board.columns %}
             {%- set s = (board.sources | selectattr("name", "equalto", c) | first) -%}

@@ -17,6 +17,10 @@ season/
   adp/<season>.json                # shared across every league (Sleeper
                                     # publishes one ADP set per year, not
                                     # per league)
+  adp/finish/<season>-<fmt>.json    # each player's overall end-of-season
+                                    # value rank, per scoring format; feeds
+                                    # the ADP Comparison tab's Final/Diff
+                                    # columns, Python-only, see below
   stats/<season>/<week>.json        # trimmed Sleeper weekly usage lines
                                     # (snap share, targets, air yards, RZ);
                                     # Python-only, see below
@@ -248,6 +252,34 @@ shared subfolder rather than duplicated into every league's own files.
 
 This is Python-only for now (same precedent as this codebase's other newer
 draft analytics; see `CLAUDE.md`); nothing here is hand-edited.
+
+### Finish ranks (`adp/finish/`)
+
+`season/adp/finish/<season>-<fmt>.json` is a `{sleeper_id: rank}` map giving
+each player's **overall end-of-season value rank** for that season (1 = the
+year's top scorer, all positions together), one file per scoring format
+(`std` / `half_ppr` / `ppr` / `2qb`). It backs the ADP Comparison tab's
+**Final** column, and **Diff** (`consensus - final`: positive = the field
+drafted the player later than he finished, i.e. a value; negative = a reach).
+
+Priced league-free from raw NFL stat lines (`/stats/nfl/regular/<season>/
+<week>`) times the canonical **default** scoring chart for the format
+(`season/scoring/default_scoring.json`, via
+`sleepermetrics.scoring.default_rules()`), since the ADP tab has no league
+context. Built by `ffadp.finish.season_value_ranks(season, fmt)` -- snapshot
+first, live compute only on a miss, and a completed season's compute is
+written back here (an in-progress season's is not: it would churn week to
+week, and the tab shows a "fills in once the season is complete" note
+instead). `ffadp.finish.rebuild_season(season)` regenerates every format for a
+season; it is a **backend maintenance function**, not wired to any UI control,
+for when the stat feed or the default chart changes. `2qb` is currently a
+duplicate of `ppr` (the default charts are identical -- superflex is a
+roster-slot difference, not a scoring one); it becomes distinct for free if a
+real 6-pt-passing-TD superflex chart is ever added.
+
+Committed as a durable fallback, same as the rest of `adp/`. Sleeper's stat
+feed only reaches back to ~2009, so earlier seasons in the picker simply show
+`-` for Final. Python-webapp-only.
 
 ## Weekly usage cache (`stats/`)
 

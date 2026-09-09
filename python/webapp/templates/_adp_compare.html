@@ -170,7 +170,7 @@
       return r / 10;
     }
     // data-sort formats that keep lexical order == numeric order, matching
-    // _adp_table.html's server-side padding for these two cells.
+    // _adp_table.html's server-side padding for these cells.
     function padConsensus(v) {         // match the template's "%09.1f"
       var s = v.toFixed(1);
       while (s.length < 9) s = '0' + s;         // -> "0000022.3"
@@ -181,10 +181,16 @@
       while (s.length < 5) s = '0' + s;
       return s;
     }
+    function padDiff(v) {              // match the template's "%08.1f" of v+100000
+      var s = (v + 100000).toFixed(1);
+      while (s.length < 8) s = '0' + s;
+      return s;
+    }
 
-    // Recompute Consensus (mean of the checked sources' ranks for that row)
-    // and Spread (max - min of those ranks; blank if fewer than two) from the
-    // per-cell data-rank, matching ffadp.board.combine's own arithmetic.
+    // Recompute Consensus (mean of the checked sources' ranks for that row),
+    // Spread (max - min of those ranks; blank if fewer than two) and Diff
+    // (consensus - Final; Final itself is fixed and source-independent) from
+    // the per-cell data-rank, matching ffadp.board.combine's own arithmetic.
     function recompute(t, on) {
       var live = {};   // which data-adp-col headers belong to a checked group
       t.querySelectorAll('thead th[data-adp-col]').forEach(function (th) {
@@ -199,10 +205,13 @@
         });
         var cCell = row.querySelector('.adp-consensus');
         var sCell = row.querySelector('.adp-spread');
+        var fCell = row.querySelector('.adp-final');
+        var dCell = row.querySelector('.adp-diff');
+        var mean = null;
         if (cCell) {
           if (ranks.length) {
-            var mean = round1(ranks.reduce(function (a, b) { return a + b; }, 0)
-                              / ranks.length);
+            mean = round1(ranks.reduce(function (a, b) { return a + b; }, 0)
+                          / ranks.length);
             cCell.textContent = mean.toFixed(1);
             cCell.dataset.sort = padConsensus(mean);
           } else {
@@ -218,6 +227,21 @@
           } else {
             sCell.textContent = '–';
             sCell.dataset.sort = '00000';
+          }
+        }
+        if (dCell) {
+          // Final rank is parsed from the fixed .adp-final cell ("#12" -> 12).
+          var fin = fCell ? parseInt((fCell.textContent || '').replace(/[^0-9]/g, ''), 10) : NaN;
+          if (mean !== null && !isNaN(fin)) {
+            var diff = round1(mean - fin);
+            dCell.textContent = diff === 0 ? '0' : (diff > 0 ? '+' : '') + diff.toFixed(1);
+            dCell.dataset.sort = padDiff(diff);
+            dCell.classList.toggle('dv-pos', diff > 0);
+            dCell.classList.toggle('dv-neg', diff < 0);
+          } else {
+            dCell.textContent = '–';
+            dCell.dataset.sort = '99999999';
+            dCell.classList.remove('dv-pos', 'dv-neg');
           }
         }
       });

@@ -63,11 +63,18 @@ def _key_of(row) -> str:
 
 def combine(season: str, sources: list[str] | None = None,
             scoring: str = "ppr", pos: str = "ALL",
-            reload: bool = False) -> dict:
+            reload: bool = False, finish: bool = True) -> dict:
     """Build the comparison board for a season.
 
     `reload=True` is threaded to every provider so it re-fetches live and
     rewrites its snapshot; otherwise each provider is snapshot-first.
+
+    `finish=True` (default) also attaches, per row, the player's overall
+    end-of-season value rank in the requested `scoring` format (`final`) and
+    `diff = consensus - final` (positive = the field drafted him later than he
+    finished). Both are `None` for a season with no finish data (in progress,
+    or offline with no snapshot) or a player with no stat line. See
+    `ffadp.finish`.
 
     Returns a dict:
       {
@@ -79,6 +86,8 @@ def combine(season: str, sources: list[str] | None = None,
                         adp:  {src: float|None},
                         rank: {src: int|None},
                         consensus: float,   # mean available rank
+                        final: int|None,    # overall end-of-season value rank
+                        diff:  float|None,  # consensus - final
                         spread: int|None},  # max-min available rank, None if <2
                        ... ]  sorted by consensus asc
       }
@@ -160,6 +169,16 @@ def combine(season: str, sources: list[str] | None = None,
             rec["adp"][name] = r.adp
             rec["rank"][name] = r.overall_rank
 
+    # End-of-season value ranks (overall, all positions), keyed by sleeper id.
+    # League-free -- priced with the default chart for the requested format.
+    final_by_sid: dict = {}
+    if finish:
+        try:
+            from .finish import season_value_ranks
+            final_by_sid = season_value_ranks(season, scoring, reload=reload)
+        except Exception:
+            final_by_sid = {}
+
     rows_out = []
     for rec in merged.values():
         if pos != "ALL" and (rec["position"] or "").upper() != pos.upper():
@@ -167,6 +186,11 @@ def combine(season: str, sources: list[str] | None = None,
         ranks = [v for v in rec["rank"].values() if v is not None]
         rec["consensus"] = round(sum(ranks) / len(ranks), 1) if ranks else None
         rec["spread"] = (max(ranks) - min(ranks)) if len(ranks) >= 2 else None
+        fin = final_by_sid.get(str(rec.get("sleeper_id"))) if rec.get("sleeper_id") else None
+        rec["final"] = int(fin) if fin is not None else None
+        rec["diff"] = (round(rec["consensus"] - rec["final"], 1)
+                       if rec["consensus"] is not None and rec["final"] is not None
+                       else None)
         rows_out.append(rec)
 
     rows_out.sort(key=lambda r: (r["consensus"] is None, r["consensus"] or 0.0))
@@ -181,9 +205,10 @@ def combine(season: str, sources: list[str] | None = None,
 def to_frame(board: dict) -> pd.DataFrame:
     """Flat DataFrame view of combine()'s rows -- for tests and CSV/Excel
     export. Column order mirrors the on-screen table: board rank, player,
-    position, team, consensus, then each source's ADP + that source's own
-    overall rank (in the board's grouped column order: draft apps, then
-    high-stakes / best-ball, then analyst consensus), and spread last."""
+    position, team, consensus, final (overall end-of-season value rank), diff
+    (consensus - final), then each source's ADP + that source's own overall
+    rank (in the board's grouped column order: draft apps, then high-stakes /
+    best-ball, then analyst consensus), and spread last."""
     recs = []
     for i, r in enumerate(board["rows"], 1):
         rec = {
@@ -192,6 +217,8 @@ def to_frame(board: dict) -> pd.DataFrame:
             "position": r["position"],
             "team": r["team"],
             "consensus": r["consensus"],
+            "final": r.get("final"),
+            "diff": r.get("diff"),
         }
         for c in board["columns"]:
             lbl = next((s["label"] for s in board["sources"] if s["name"] == c), c)

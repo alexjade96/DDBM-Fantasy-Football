@@ -67,7 +67,7 @@ def test_combine_merges_and_computes_spread(monkeypatch):
     identity.reset()
     monkeypatch.setattr(identity, "_raw_players", _fake_dump)
 
-    b = board.combine("2025", scoring="half_ppr", pos="ALL")
+    b = board.combine("2025", scoring="half_ppr", pos="ALL", finish=False)
     # empty source dropped from columns, kept in sources with ok=False
     assert b["columns"] == ["a", "b"]
     assert {s["name"]: s["ok"] for s in b["sources"]} == {"a": True, "b": True, "c": False}
@@ -91,7 +91,7 @@ def test_combine_position_filter(monkeypatch):
     monkeypatch.setattr(board, "_BY_NAME", {p.name: p for p in board.PROVIDERS})
     identity.reset()
     monkeypatch.setattr(identity, "_raw_players", _fake_dump)
-    b = board.combine("2025", pos="RB")
+    b = board.combine("2025", pos="RB", finish=False)
     assert [r["player"] for r in b["rows"]] == ["Bijan Robinson"]
     identity.reset()
 
@@ -99,9 +99,85 @@ def test_combine_position_filter(monkeypatch):
 def test_combine_all_sources_empty(monkeypatch):
     monkeypatch.setattr(board, "PROVIDERS", [_StubEmpty()])
     monkeypatch.setattr(board, "_BY_NAME", {p.name: p for p in board.PROVIDERS})
-    b = board.combine("2099")
+    b = board.combine("2099", finish=False)
     assert b["columns"] == []
     assert b["rows"] == []
+
+
+# --- board.combine: Final / Diff columns -------------------------------
+
+def test_combine_attaches_final_and_diff(monkeypatch):
+    monkeypatch.setattr(board, "PROVIDERS", [_StubA(), _StubB()])
+    monkeypatch.setattr(board, "_BY_NAME", {p.name: p for p in board.PROVIDERS})
+    identity.reset()
+    monkeypatch.setattr(identity, "_raw_players", _fake_dump)
+    # Chase (sid 100) finished the year 4th overall; Bijan (sid 200) 1st.
+    from ffadp import finish
+    monkeypatch.setattr(finish, "season_value_ranks",
+                        lambda season, fmt, reload=False: {"100": 4, "200": 1})
+
+    b = board.combine("2024", scoring="ppr", pos="ALL")
+    chase = next(r for r in b["rows"] if r["player"] == "Ja'Marr Chase")
+    bijan = next(r for r in b["rows"] if r["player"] == "Bijan Robinson")
+    # both have consensus 1.5 (ranks 1 & 2 across the two stubs)
+    assert chase["final"] == 4
+    assert chase["diff"] == -2.5           # 1.5 - 4
+    assert bijan["final"] == 1
+    assert bijan["diff"] == 0.5            # 1.5 - 1
+    # to_frame carries the new columns, right after consensus
+    from ffadp.board import to_frame
+    cols = list(to_frame(b).columns)
+    assert cols[:7] == ["rank", "player", "position", "team",
+                        "consensus", "final", "diff"]
+    identity.reset()
+
+
+def test_combine_final_none_when_no_finish_data(monkeypatch):
+    monkeypatch.setattr(board, "PROVIDERS", [_StubA(), _StubB()])
+    monkeypatch.setattr(board, "_BY_NAME", {p.name: p for p in board.PROVIDERS})
+    identity.reset()
+    monkeypatch.setattr(identity, "_raw_players", _fake_dump)
+    from ffadp import finish
+    monkeypatch.setattr(finish, "season_value_ranks",
+                        lambda season, fmt, reload=False: {})   # in-progress season
+
+    b = board.combine("2026", scoring="ppr", pos="ALL")
+    for r in b["rows"]:
+        assert r["final"] is None and r["diff"] is None
+    identity.reset()
+
+
+def test_finish_season_value_ranks_overall_rank(monkeypatch, tmp_path):
+    """_compute prices every fantasy player's stat lines with the default
+    chart and ranks OVERALL (all positions together)."""
+    from ffadp import finish
+    from sleepermetrics import scoring
+    import pandas as pd
+
+    finish.clear_cache()
+    monkeypatch.setattr(finish, "_FINISH_DIR", tmp_path / "finish")
+    monkeypatch.setattr(finish, "_season_complete", lambda season: False)
+    monkeypatch.setattr(scoring, "default_rules",
+                        lambda fmt="ppr": {"rec": 1.0, "rec_td": 6.0, "rush_yd": 0.1})
+    monkeypatch.setattr(finish, "players", lambda: pd.DataFrame([
+        {"player_id": "w1", "position": "WR"},
+        {"player_id": "r1", "position": "RB"},
+        {"player_id": "x1", "position": "OL"},        # not a fantasy pos -> skipped
+    ]))
+    weeks = {
+        1: {"w1": {"rec": 8, "rec_td": 1},     # 14
+            "r1": {"rush_yd": 50},             # 5
+            "x1": {"rush_yd": 999}},           # dropped (position)
+        2: {"w1": {"rec": 2},                  # +2 -> 16 total
+            "r1": {"rush_yd": 200, "rec_td": 1}},  # +26 -> 31 total
+    }
+    monkeypatch.setattr(scoring, "nfl_stats",
+                        lambda season, wk: weeks.get(int(wk), {}))
+
+    ranks = finish.season_value_ranks("2024", "ppr")
+    assert ranks == {"r1": 1, "w1": 2}        # RB 31 > WR 16, overall
+    assert "x1" not in ranks
+    finish.clear_cache()
 
 
 def test_sleeper_provider_degrades_offline(monkeypatch):

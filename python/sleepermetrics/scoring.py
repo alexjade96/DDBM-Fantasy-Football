@@ -7,12 +7,27 @@ one a commissioner collected by hand that Sleeper never had on a roster.
 """
 from __future__ import annotations
 
+import json
+import os
+from pathlib import Path
+
 import pandas as pd
 
 from .api import sleeper_api
 
 _stats_cache: dict = {}
 _chart_cache: dict = {}
+_default_rules_cache: dict = {}
+
+# season/ root (same override every other season/ consumer honours).
+_SEASON_DIR = Path(os.environ.get(
+    "SLEEPERMETRICS_SEASON_DIR",
+    str(Path(__file__).resolve().parents[2] / "season")))
+_DEFAULT_SCORING_FILE = _SEASON_DIR / "scoring" / "default_scoring.json"
+
+#: the format ids `default_scoring.json` carries, and what a bad ask falls to.
+DEFAULT_SCORING_FORMATS = ("std", "half_ppr", "ppr", "2qb")
+_DEFAULT_SCORING_FALLBACK = "ppr"
 
 
 def scoring_chart(league_id: str) -> pd.DataFrame:
@@ -66,3 +81,27 @@ def score_lineup(player_ids, season: str, weeks, rules: dict) -> pd.DataFrame:
 def rules_from(league_id: str) -> dict:
     """Fetch the league's scoring rules as a plain {stat: weight} dict."""
     return {r.stat: r.weight for r in scoring_chart(league_id).itertuples()}
+
+
+def default_rules(fmt: str = "ppr") -> dict:
+    """A canonical Sleeper DEFAULT point-calculation chart as a {stat: weight}
+    dict -- same shape as `rules_from()` but needs NO league. `fmt` is one of
+    `DEFAULT_SCORING_FORMATS` (std / half_ppr / ppr / 2qb); an unknown value
+    falls back to ppr.
+
+    Read from `season/scoring/default_scoring.json` (see `season/README.md`).
+    Cached in-process. Returns `{}` if the file is missing or malformed.
+    """
+    key = (fmt or "").lower()
+    if key not in DEFAULT_SCORING_FORMATS:
+        key = _DEFAULT_SCORING_FALLBACK
+    if key in _default_rules_cache:
+        return dict(_default_rules_cache[key])
+    try:
+        data = json.loads(_DEFAULT_SCORING_FILE.read_text(encoding="utf-8"))
+        formats = data.get("formats", {})
+        chart = {k: float(v) for k, v in formats.get(key, {}).items()}
+    except Exception:
+        chart = {}
+    _default_rules_cache[key] = chart
+    return dict(chart)
