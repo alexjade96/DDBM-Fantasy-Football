@@ -89,8 +89,12 @@ def default_rules(fmt: str = "ppr") -> dict:
     `DEFAULT_SCORING_FORMATS` (std / half_ppr / ppr / 2qb); an unknown value
     falls back to ppr.
 
-    Read from `season/scoring/default_scoring.json` (see `season/README.md`).
-    Cached in-process. Returns `{}` if the file is missing or malformed.
+    The file stores the chart once as `base` (every rule except
+    points-per-reception -- the only thing that differs between the standard
+    formats) plus `rec_by_format`; this merges the two: `base` + the format's
+    `rec` weight. Read from `season/scoring/default_scoring.json` (see
+    `season/README.md`). Cached in-process. Returns `{}` if the file is
+    missing or malformed.
     """
     key = (fmt or "").lower()
     if key not in DEFAULT_SCORING_FORMATS:
@@ -99,8 +103,12 @@ def default_rules(fmt: str = "ppr") -> dict:
         return dict(_default_rules_cache[key])
     try:
         data = json.loads(_DEFAULT_SCORING_FILE.read_text(encoding="utf-8"))
-        formats = data.get("formats", {})
-        chart = {k: float(v) for k, v in formats.get(key, {}).items()}
+        chart = {k: float(v) for k, v in data.get("base", {}).items()}
+        rec = data.get("rec_by_format", {}).get(key)
+        if rec is not None:
+            chart["rec"] = float(rec)
+        if not chart:
+            raise ValueError("empty base")
     except Exception:
         chart = {}
     _default_rules_cache[key] = chart

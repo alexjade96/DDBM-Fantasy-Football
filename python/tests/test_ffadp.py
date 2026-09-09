@@ -212,6 +212,32 @@ def test_finish_season_value_ranks_overall_rank(monkeypatch, tmp_path):
     finish.clear_cache()
 
 
+def test_default_rules_merges_base_and_per_format_rec(monkeypatch, tmp_path):
+    """default_scoring.json stores the chart once as `base` (no rec) plus a
+    per-format `rec_by_format`; default_rules() merges the two."""
+    import json
+    from sleepermetrics import scoring
+
+    f = tmp_path / "default_scoring.json"
+    f.write_text(json.dumps({
+        "base": {"pass_td": 4.0, "rush_yd": 0.1, "rec_td": 6.0, "pass_int": -1.0},
+        "rec_by_format": {"std": 0.0, "half_ppr": 0.5, "ppr": 1.0, "2qb": 1.0},
+    }), encoding="utf-8")
+    monkeypatch.setattr(scoring, "_DEFAULT_SCORING_FILE", f)
+    scoring._default_rules_cache.clear()
+
+    assert scoring.default_rules("std")["rec"] == 0.0
+    assert scoring.default_rules("half_ppr")["rec"] == 0.5
+    assert scoring.default_rules("ppr")["rec"] == 1.0
+    # every non-rec key is the shared base
+    ppr = scoring.default_rules("ppr")
+    assert ppr["pass_td"] == 4.0 and ppr["pass_int"] == -1.0 and ppr["rush_yd"] == 0.1
+    # ppr == 2qb; unknown format falls back to ppr
+    assert scoring.default_rules("ppr") == scoring.default_rules("2qb")
+    assert scoring.default_rules("nonsense")["rec"] == 1.0
+    scoring._default_rules_cache.clear()
+
+
 def test_sleeper_provider_degrades_offline(monkeypatch):
     # No committed snapshot + draft._fetch_adp_raw returns {} -> [].
     from sleepermetrics import draft

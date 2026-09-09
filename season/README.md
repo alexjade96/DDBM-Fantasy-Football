@@ -28,9 +28,9 @@ season/
                                     # data releases (player_stats, schedules);
                                     # Python-only, see below
   scoring/default_scoring.json     # canonical Sleeper DEFAULT point-calc
-                                    # charts (std / half_ppr / ppr / 2qb);
-                                    # a stand-in when no league is loaded,
-                                    # Python-only, see below
+                                    # chart: `base` + per-format `rec`
+                                    # (std/half_ppr/ppr/2qb); a stand-in
+                                    # when no league is loaded, Python-only
   fixtures/                        # manually-referenced ground-truth fixtures
   scaffold.py                      # generates a bracket config for the
                                     # workflow below; prints the root id
@@ -326,26 +326,35 @@ for deeper analytics later. Python-webapp-only, outside `sleepermetrics`,
 
 ## Default scoring charts (`scoring/`)
 
-`season/scoring/default_scoring.json` holds four canonical **Sleeper default**
-point-calculation charts, keyed by the scoring-format ids this project already
-uses elsewhere: `std`, `half_ppr`, `ppr`, `2qb`. Each is a flat
-`{stat: weight}` dict in Sleeper's own `scoring_settings` vocabulary -- the
-same shape `sleepermetrics.scoring.rules_from(league_id)` returns -- so a chart
-can stand in for a league's live `scoring_settings` anywhere a scoring chart is
+`season/scoring/default_scoring.json` holds the canonical **Sleeper default**
+point-calculation chart in Sleeper's own `scoring_settings` vocabulary -- the
+same shape `sleepermetrics.scoring.rules_from(league_id)` returns -- so it can
+stand in for a league's live `scoring_settings` anywhere a scoring chart is
 needed but no league is loaded (e.g. pricing a season from raw stat lines for
 the ADP tab, or a league-free leaderboard).
 
-The four charts differ **only** by the `rec` weight (0 / 0.5 / 1 / 1);
-superflex / 2QB is a roster-slot difference, not a scoring one, so `2qb` is
-identical to `ppr` here.
+**Points-per-reception is the only thing that differs between the standard
+scoring formats**, so the file stores the chart once:
+
+- `base` -- every scoring rule except `rec` (41 keys).
+- `rec_by_format` -- the per-format reception weight: `std` 0, `half_ppr` 0.5,
+  `ppr` 1.0, `2qb` 1.0.
+
+`sleepermetrics.scoring.default_rules(fmt)` merges the two (`base` + that
+format's `rec`) and returns a plain `{stat: weight}` dict, in-process cached.
+Superflex / 2QB is a roster-slot difference, not a scoring one, so its chart
+equals PPR. A TE-premium variant would add a `bonus_rec_te` key (a
+per-position reception boost that stacks on `rec`); no ADP source this project
+reads publishes TEP, so it is not included.
 
 How it was built: the weights were reconciled from 39 real public Sleeper
 leagues (modal weight per stat key), with `pass_int` set to Sleeper's true
 default of -1, then cross-checked against ESPN's published standard scoring and
 the profootballnetwork / fantasypointcalculators / Sleeper-support references.
-**Verified**: the `std` / `half_ppr` / `ppr` charts reproduce Sleeper's own
-`pts_std` / `pts_half_ppr` / `pts_ppr` **exactly** for every offensive player
-(5008/5008 player-format-weeks across 2023-2025) and every kicker. The DST keys
+**Verified**: `base` plus the `std` / `half_ppr` / `ppr` rec weight reproduces
+Sleeper's own `pts_std` / `pts_half_ppr` / `pts_ppr` **exactly** for every
+offensive player (5008/5008 player-format-weeks across 2023-2025) and every
+kicker. The DST keys
 are the documented Sleeper defaults but do **not** reproduce Sleeper's DST
 `pts_*` exactly -- Sleeper scores team defense from a richer vocabulary
 (yards-allowed tiers, forced punts, 3-and-outs, return TDs folded into `td`)
