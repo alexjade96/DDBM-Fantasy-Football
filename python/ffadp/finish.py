@@ -27,9 +27,11 @@ from sleepermetrics import scoring
 from sleepermetrics.league import nfl_state
 from sleepermetrics.players import players
 
-# Fantasy positions we rank (a stat-line row for anyone else -- an OL, a
-# long-snapper -- is dropped, same as metrics._position_totals).
-_FANTASY_POS = {"QB", "RB", "WR", "TE", "K", "DEF"}
+# Fantasy positions we rank. IDP (LB / DE / DB / DT / CB / S / EDGE), punters
+# and anyone unpositioned are dropped, same as metrics._position_totals and
+# ffadp.board's own filter. FB counts (fullbacks are RB-eligible and Sleeper's
+# players() sometimes tags one that way).
+_FANTASY_POS = {"QB", "RB", "WR", "TE", "K", "DEF", "FB"}
 
 # Weeks to sweep. 1..18 covers the full NFL regular season across every
 # season this project sees; a week with no stat lines is simply skipped.

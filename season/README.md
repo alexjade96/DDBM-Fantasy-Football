@@ -262,6 +262,10 @@ year's top scorer, all positions together), one file per scoring format
 **Final** column, and **Diff** (`consensus - final`: positive = the field
 drafted the player later than he finished, i.e. a value; negative = a reach).
 
+Only standard fantasy positions are ranked (`QB`/`RB`/`WR`/`TE`/`K`/`DEF`,
+with `FB` folded in); IDP, punters and unpositioned rows are excluded, the
+same filter `ffadp.board.combine()` applies to the ADP rows themselves.
+
 Priced league-free from raw NFL stat lines (`/stats/nfl/regular/<season>/
 <week>`) times the canonical **default** scoring chart for the format
 (`season/scoring/default_scoring.json`, via

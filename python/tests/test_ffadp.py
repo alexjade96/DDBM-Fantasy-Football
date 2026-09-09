@@ -60,6 +60,19 @@ class _StubEmpty(AdpProvider):
         return []
 
 
+class _StubIDP(AdpProvider):
+    """A source that carries IDP / punters / team-QB aggregates with no
+    fantasy position -- like ESPN's real feed does."""
+    name, label, formats = "d", "D", ("half_ppr",)
+    def fetch(self, season, scoring="half_ppr"):
+        return [
+            AdpRow("d", "Micah Parsons", "LB", "DAL", adp=120.0, overall_rank=1),
+            AdpRow("d", "Ryan Stonehouse", "P", "TEN", adp=200.0, overall_rank=2),
+            AdpRow("d", "Packers TQB", None, "GB", adp=70.0, overall_rank=3),
+            AdpRow("d", "Kyle Juszczyk", "FB", "SF", adp=180.0, overall_rank=4),
+        ]
+
+
 def test_combine_merges_and_computes_spread(monkeypatch):
     monkeypatch.setattr(board, "PROVIDERS", [_StubA(), _StubB(), _StubEmpty()])
     monkeypatch.setattr(board, "_BY_NAME",
@@ -102,6 +115,25 @@ def test_combine_all_sources_empty(monkeypatch):
     b = board.combine("2099", finish=False)
     assert b["columns"] == []
     assert b["rows"] == []
+
+
+def test_combine_drops_idp_and_non_fantasy_positions(monkeypatch):
+    monkeypatch.setattr(board, "PROVIDERS", [_StubA(), _StubIDP()])
+    monkeypatch.setattr(board, "_BY_NAME", {p.name: p for p in board.PROVIDERS})
+    identity.reset()
+    monkeypatch.setattr(identity, "_raw_players", _fake_dump)
+    b = board.combine("2025", scoring="half_ppr", pos="ALL", finish=False)
+    names = {r["player"] for r in b["rows"]}
+    # IDP (LB), punter (P), team-QB aggregate (no position) all gone
+    assert "Micah Parsons" not in names
+    assert "Ryan Stonehouse" not in names
+    assert "Packers TQB" not in names
+    # the two real fantasy players from _StubA survive
+    assert names == {"Ja'Marr Chase", "Bijan Robinson", "Kyle Juszczyk"}
+    # FB folds to RB
+    jusz = next(r for r in b["rows"] if r["player"] == "Kyle Juszczyk")
+    assert jusz["position"] == "RB"
+    identity.reset()
 
 
 # --- board.combine: Final / Diff columns -------------------------------

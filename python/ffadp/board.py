@@ -27,6 +27,23 @@ PROVIDERS: list[AdpProvider] = [
 ]
 _BY_NAME = {p.name: p for p in PROVIDERS}
 
+# Standard redraft fantasy positions the board keeps. ESPN's ADP feed in
+# particular carries IDP (LB / DE / DB / DT / CB / S / EDGE), punters, team-QB
+# aggregates and head coaches -- rows with no fantasy position (or a defensive
+# one) that show up with every column but one blank and a "-" Final. They are
+# not redraft ADP rows, so a row whose position isn't in this set is dropped.
+# FB maps to RB (fullbacks are RB-eligible); anything else (P, IDP, blank) is
+# out.
+_FANTASY_POS = {"QB", "RB", "WR", "TE", "K", "DEF", "FB"}
+_POS_ALIAS = {"FB": "RB", "DST": "DEF", "D/ST": "DEF", "PK": "K"}
+
+
+def _canon_pos(pos: str | None) -> str | None:
+    """Uppercased position, FB->RB / DST->DEF etc.; None if not a fantasy one."""
+    p = (pos or "").upper().strip()
+    p = _POS_ALIAS.get(p, p)
+    return p if p in {"QB", "RB", "WR", "TE", "K", "DEF"} else None
+
 
 def _earliest_of(p: AdpProvider):
     """The oldest season a provider has public no-auth ADP for. A class
@@ -181,7 +198,15 @@ def combine(season: str, sources: list[str] | None = None,
 
     rows_out = []
     for rec in merged.values():
-        if pos != "ALL" and (rec["position"] or "").upper() != pos.upper():
+        # IDP / punters / team-QB aggregates / coaches: not redraft ADP rows.
+        # A row whose position doesn't canonicalise to a standard fantasy one
+        # (QB/RB/WR/TE/K/DEF; FB folds to RB) is dropped. FantasyPros' stub and
+        # a source that gives no position at all also fall out here.
+        cpos = _canon_pos(rec["position"])
+        if cpos is None:
+            continue
+        rec["position"] = cpos
+        if pos != "ALL" and cpos != pos.upper():
             continue
         ranks = [v for v in rec["rank"].values() if v is not None]
         rec["consensus"] = round(sum(ranks) / len(ranks), 1) if ranks else None
