@@ -26,7 +26,11 @@
   function makeSortable(table) {
     if (table.dataset.sortable || table.closest('.nosort')) return;
     table.dataset.sortable = '1';
-    var head = table.tHead && table.tHead.rows[0];
+    // The clickable header row is the LAST row of <thead> -- a table with a
+    // spanning group-label row above its real column headers (the ADP board)
+    // keeps those on the second row; a plain table has just the one.
+    var hrows = table.tHead && table.tHead.rows;
+    var head = hrows && hrows[hrows.length - 1];
     var body = table.tBodies[0];
     if (!head || !body || body.rows.length < 2) return;
     Array.prototype.forEach.call(head.cells, function (th, i) {

@@ -72,9 +72,19 @@ def provider(name: str) -> AdpProvider | None:
 
 def _key_of(row) -> str:
     """Merge key for a row: canonical sleeper id when known, else a
-    normalised name+position so cross-source rows still line up."""
+    normalised name+position so cross-source rows still line up.
+
+    Team defenses are the exception: only Sleeper carries a cross-id for one,
+    so "SF" / "49ers" / "San Francisco Defense" / "49ers D/ST" from four
+    sources were four separate rows (~95 for 32 teams). A DEF row is keyed by
+    its NFL abbreviation (from `identity.def_team`) so they all collapse.
+    """
     if row.sleeper_id:
         return f"sid:{row.sleeper_id}"
+    if _canon_pos(row.position) == "DEF":
+        abbr = identity.def_team(row.name, row.team)
+        if abbr:
+            return f"sid:{abbr}"
     return f"nm:{identity._norm(row.name)}|{(row.position or '').upper()}"
 
 
@@ -183,6 +193,13 @@ def combine(season: str, sources: list[str] | None = None,
             rec["player"] = m.get("name") or rec["player"] or r.name
             rec["position"] = m.get("position") or rec["position"] or r.position
             rec["team"] = m.get("team") or rec["team"] or r.team
+            # A merged DEF row reads as its NFL abbreviation, not whichever
+            # source's spelling won ("49ers" vs "Vikings D/ST" vs "SF").
+            if k.startswith("sid:") and _canon_pos(rec["position"]) == "DEF":
+                abbr = k[4:]
+                rec["player"] = abbr
+                rec["position"] = "DEF"
+                rec["team"] = abbr
             rec["adp"][name] = r.adp
             rec["rank"][name] = r.overall_rank
 

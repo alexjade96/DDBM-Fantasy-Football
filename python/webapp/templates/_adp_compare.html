@@ -28,10 +28,11 @@
     are taking every player, lined up so you can see who they disagree on.  All
     season-wide published data, no league required.  Columns are grouped by
     source type: <strong>draft platforms</strong> (Sleeper, ESPN, Yahoo), then
-    <strong>analysis platforms</strong> (FFCalc, RotoWire).  The toggles on the
-    right of the controls row show or hide a whole group.  Sort by any column;
-    the <strong>Spread</strong> column is how far apart the sources rank a
-    player.
+    <strong>analysis platforms</strong> (FFCalc, RotoWire) &mdash; only draft
+    platforms are shown by default; tick <strong>Analysis platforms</strong> to
+    add them.  Untick a <strong>Position</strong> box to hide those rows.
+    Click any column header to sort.  The <strong>Spread</strong> column is how
+    far apart the sources rank a player.
     {%- if history %}
       History runs back to
       {%- for yr, name in history %}
@@ -62,18 +63,27 @@
         {% endfor %}
       </select>
     </label>
-    <label>
-      <span>Position</span>
-      <select name="pos">
-        {% for p in positions %}
-        <option value="{{ p }}" {% if p == pos %}selected{% endif %}>{{ p }}</option>
+    {# Position is a checkbox group, not a single-pick dropdown: every position
+       shows by default, unticking one hides just those rows (client-side, like
+       the Sources toggle). The hidden `pos` field keeps the board request at
+       ALL so the # / rank columns stay full-board. #}
+    <div class="adp-filter adp-pos-filter" data-adp-pos-filter>
+      <span class="adp-filter-label">Position</span>
+      <div class="adp-filter-boxes">
+        {% for p in positions if p != "ALL" %}
+        <label class="adp-check">
+          <input type="checkbox" data-adp-pos="{{ p }}" checked>
+          <span>{{ p }}</span>
+        </label>
         {% endfor %}
-      </select>
-    </label>
+      </div>
+    </div>
+    <input type="hidden" name="pos" value="ALL">
     {# Source-group toggles, right-justified on the controls line: a checkbox
        per group. Unchecking a group hides its columns AND drops it from the
        Consensus / Spread recompute (both done client-side by the script
-       below). These are not form fields the board request cares about, and
+       below). Analysis platforms start UNticked -- draft platforms only by
+       default. These are not form fields the board request cares about, and
        the script stops their change event from bubbling to the form's
        hx-trigger, so toggling never re-fetches the board. #}
     <div class="adp-filter" data-adp-filter>
@@ -81,7 +91,8 @@
       <div class="adp-filter-boxes">
         {% for g in adp_groups %}
         <label class="adp-check">
-          <input type="checkbox" data-adp-group="{{ g.key }}" checked>
+          <input type="checkbox" data-adp-group="{{ g.key }}"
+                 {% if g.key != "analyst" %}checked{% endif %}>
           <span>{{ g.label }}</span>
         </label>
         {% endfor %}
@@ -118,12 +129,56 @@
     sync();
   })();
 
+  // Position checkboxes (in #adp-controls, outside #adp-board so they persist
+  // across table swaps): unticking one hides that position's rows. Display
+  // only -- the board request stays pos=ALL, so the # / rank columns keep the
+  // full-board numbering. Re-applied after every #adp-board swap.
+  (function () {
+    var bar = document.querySelector('[data-adp-pos-filter]');
+    if (!bar) return;
+    var boxes = bar.querySelectorAll('input[type="checkbox"][data-adp-pos]');
+
+    function table() { return document.querySelector('#adp-board table.adp-board'); }
+
+    function checkedPos() {
+      var on = {};
+      boxes.forEach(function (b) { on[b.dataset.adpPos.toUpperCase()] = b.checked; });
+      return on;
+    }
+
+    function apply() {
+      var t = table();
+      if (!t || !t.tBodies[0]) return;
+      var on = checkedPos();
+      Array.prototype.forEach.call(t.tBodies[0].rows, function (row) {
+        var cell = row.cells[2];               // #, Player, Pos
+        var p = cell ? (cell.textContent || '').trim().toUpperCase() : '';
+        // a team defense with no position stays visible unless DEF is unticked
+        var key = p || 'DEF';
+        row.classList.toggle('adp-row-hidden', on[key] === false);
+      });
+    }
+
+    bar.addEventListener('change', function (e) {
+      if (!e.target.closest('input[type="checkbox"][data-adp-pos]')) return;
+      e.stopPropagation();                      // don't reach the form's hx-trigger
+      apply();
+    });
+
+    apply();
+    document.body.addEventListener('htmx:afterSwap', function (e) {
+      if (e.target && (e.target.id === 'adp-board' || e.target.closest('#adp-board'))) {
+        apply();
+      }
+    });
+  })();
+
   // Sources checkboxes (in #adp-controls, outside #adp-board so they persist
   // across table swaps): each unchecked group has its columns hidden AND is
   // dropped from the Consensus / Spread values, which are recomputed here
-  // from the checked sources' own ranks. Re-applied after every #adp-board
-  // htmx swap. The CSV / Excel export is deliberately NOT re-scoped -- a
-  // download is always the full board.
+  // from the checked sources' own ranks. Analysis platforms start unticked.
+  // Re-applied after every #adp-board htmx swap. The CSV / Excel export is
+  // deliberately NOT re-scoped -- a download is always the full board.
   (function () {
     var bar = document.querySelector('[data-adp-filter]');
     if (!bar) return;

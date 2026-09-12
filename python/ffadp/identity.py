@@ -33,6 +33,73 @@ def _norm(name: str) -> str:
     return re.sub(r"\s+", " ", n).strip()
 
 
+# Team defenses arrive named a dozen ways across ADP sources -- "SF", "49ers",
+# "San Francisco", "San Francisco Defense", "49ers D/ST", "Niners" -- and only
+# Sleeper carries a cross-id, so every other source's DEF row was merging on
+# its own name and the board showed ~95 rows for 32 teams. This maps any of
+# those spellings to the abbreviation so all of a team's DEF rows collapse.
+_DEF_ABBR = {
+    "ari": "ARI", "arizona": "ARI", "cardinals": "ARI",
+    "atl": "ATL", "atlanta": "ATL", "falcons": "ATL",
+    "bal": "BAL", "baltimore": "BAL", "ravens": "BAL",
+    "buf": "BUF", "buffalo": "BUF", "bills": "BUF",
+    "car": "CAR", "carolina": "CAR", "panthers": "CAR",
+    "chi": "CHI", "chicago": "CHI", "bears": "CHI",
+    "cin": "CIN", "cincinnati": "CIN", "bengals": "CIN",
+    "cle": "CLE", "cleveland": "CLE", "browns": "CLE",
+    "dal": "DAL", "dallas": "DAL", "cowboys": "DAL",
+    "den": "DEN", "denver": "DEN", "broncos": "DEN",
+    "det": "DET", "detroit": "DET", "lions": "DET",
+    "gb": "GB", "gnb": "GB", "green bay": "GB", "packers": "GB",
+    "hou": "HOU", "houston": "HOU", "texans": "HOU",
+    "ind": "IND", "indianapolis": "IND", "colts": "IND",
+    "jax": "JAX", "jac": "JAX", "jacksonville": "JAX", "jaguars": "JAX",
+    "kc": "KC", "kan": "KC", "kansas city": "KC", "chiefs": "KC",
+    "lv": "LV", "lvr": "LV", "las vegas": "LV", "oakland": "LV",
+    "raiders": "LV",
+    "lac": "LAC", "los angeles chargers": "LAC", "san diego": "LAC",
+    "chargers": "LAC",
+    "lar": "LAR", "la": "LAR", "los angeles rams": "LAR",
+    "st louis": "LAR", "rams": "LAR",
+    "mia": "MIA", "miami": "MIA", "dolphins": "MIA",
+    "min": "MIN", "minnesota": "MIN", "vikings": "MIN",
+    "ne": "NE", "nwe": "NE", "new england": "NE", "patriots": "NE",
+    "no": "NO", "nor": "NO", "new orleans": "NO", "saints": "NO",
+    "nyg": "NYG", "ny giants": "NYG", "new york giants": "NYG",
+    "giants": "NYG",
+    "nyj": "NYJ", "ny jets": "NYJ", "new york jets": "NYJ", "jets": "NYJ",
+    "phi": "PHI", "philadelphia": "PHI", "eagles": "PHI",
+    "pit": "PIT", "pittsburgh": "PIT", "steelers": "PIT",
+    "sf": "SF", "sfo": "SF", "san francisco": "SF", "49ers": "SF",
+    "niners": "SF",
+    "sea": "SEA", "seattle": "SEA", "seahawks": "SEA",
+    "tb": "TB", "tam": "TB", "tampa bay": "TB", "buccaneers": "TB",
+    "bucs": "TB",
+    "ten": "TEN", "tennessee": "TEN", "titans": "TEN",
+    "was": "WAS", "wsh": "WAS", "washington": "WAS",
+    "commanders": "WAS", "football team": "WAS", "redskins": "WAS",
+}
+
+
+def def_team(name: str | None, team: str | None = None) -> str | None:
+    """The NFL abbreviation for a team-defense row, from its `team` field or by
+    stripping "defense" / "d/st" / "dst" off its name and looking up the rest.
+    None if nothing matches."""
+    if team and str(team).upper() in _DEF_ABBR.values():
+        return str(team).upper()
+    n = _norm(name or "")
+    n = re.sub(r"\b(defense|def|dst|d st|special teams)\b", "", n).strip()
+    n = re.sub(r"\s+", " ", n)
+    if n in _DEF_ABBR:
+        return _DEF_ABBR[n]
+    # last word (nickname) often resolves even in "the new york jets defense"
+    if n:
+        last = n.split()[-1]
+        if last in _DEF_ABBR:
+            return _DEF_ABBR[last]
+    return None
+
+
 def _raw_players() -> dict:
     """The raw Sleeper player dump (dict keyed by sleeper id), from the shared
     daily cache file; fetched only if that file is missing or stale."""

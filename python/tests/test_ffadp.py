@@ -136,6 +136,55 @@ def test_combine_drops_idp_and_non_fantasy_positions(monkeypatch):
     identity.reset()
 
 
+class _StubDefA(AdpProvider):
+    name, label, formats = "da", "DA", ("half_ppr",)
+    def fetch(self, season, scoring="half_ppr"):
+        return [
+            AdpRow("da", "49ers", "DEF", "SF", adp=70.0, overall_rank=1),
+            AdpRow("da", "Philadelphia Eagles", "DEF", None, adp=80.0, overall_rank=2),
+        ]
+
+
+class _StubDefB(AdpProvider):
+    name, label, formats = "db2", "DB2", ("half_ppr",)
+    def fetch(self, season, scoring="half_ppr"):
+        return [
+            AdpRow("db2", "San Francisco Defense", "DST", "SF", adp=75.0, overall_rank=1),
+            AdpRow("db2", "Eagles D/ST", "D/ST", None, adp=85.0, overall_rank=2),
+            AdpRow("db2", "SF", "DEF", "SF", adp=72.0, overall_rank=3),
+        ]
+
+
+def test_combine_reconciles_duplicate_defenses(monkeypatch):
+    """"49ers" / "San Francisco Defense" / "SF" from three sources are ONE
+    row, keyed by the NFL abbreviation and displayed as it."""
+    monkeypatch.setattr(board, "PROVIDERS", [_StubDefA(), _StubDefB()])
+    monkeypatch.setattr(board, "_BY_NAME", {p.name: p for p in board.PROVIDERS})
+    identity.reset()
+    monkeypatch.setattr(identity, "_raw_players", _fake_dump)
+    b = board.combine("2025", scoring="half_ppr", pos="ALL", finish=False)
+
+    assert len(b["rows"]) == 2                       # SF + PHI, not 5
+    sf = next(r for r in b["rows"] if r["player"] == "SF")
+    phi = next(r for r in b["rows"] if r["player"] == "PHI")
+    # every source's rank folds into the one row
+    assert sf["rank"] == {"da": 1, "db2": 3}         # da's "49ers", db2's "SF"
+    assert sf["position"] == "DEF" and sf["team"] == "SF"
+    assert phi["rank"] == {"da": 2, "db2": 2}        # "Philadelphia Eagles" + "Eagles D/ST"
+    identity.reset()
+
+
+def test_def_team_resolves_spellings():
+    from ffadp import identity as _id
+    assert _id.def_team("49ers") == "SF"
+    assert _id.def_team("San Francisco Defense") == "SF"
+    assert _id.def_team("Eagles D/ST") == "PHI"
+    assert _id.def_team("Philadelphia Eagles") == "PHI"
+    assert _id.def_team("Vikings D/ST", None) == "MIN"
+    assert _id.def_team("something", "KC") == "KC"
+    assert _id.def_team("Not A Team") is None
+
+
 # --- board.combine: Final / Diff columns -------------------------------
 
 def test_combine_attaches_final_and_diff(monkeypatch):
