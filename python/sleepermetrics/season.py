@@ -277,6 +277,78 @@ def _result(points, pa):
     return "T"
 
 
+def fetch_live_week(s: "Season", week: int) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    """`(team_wk, pl_wk, lineup)` for ONE week fetched fresh, independent of
+    `assemble_season` -- for a week `last_scored_leg` hasn't advanced past
+    yet (it may still equal `s.last_week`, which is floored to >= 1 even
+    before week 1 has scored -- see `_live_week_view` in the webapp) that
+    Sleeper is nonetheless already returning live, in-progress matchup data
+    for. Shaped identically to the real
+    `Season` fields (same columns) so `metrics.week_stats`/`week_matchups` can
+    read it unmodified via `dataclasses.replace(s, team_wk=..., pl_wk=...,
+    lineup=...)` -- a throwaway view, never assigned back onto the real
+    `Season` or its cache. Deliberately NOT wired into `assemble_season`
+    itself: that function's `standings`/playoff-split/parity-checked logic all
+    assume `lw` is the last *scored* week, and this data is explicitly NOT
+    that (it's a partial, still-changing week no downstream metric should
+    treat as final). Returns three empty-but-correctly-columned frames if the
+    week has no matchups yet (mirrors `assemble_season`'s own empty-frame
+    guard) or the fetch fails.
+    """
+    lid = s.league_id
+    empty = (
+        pd.DataFrame({"week": pd.Series(dtype="int64"), "roster_id": pd.Series(dtype="int64"),
+                      "matchup_id": pd.Series(dtype="float64"), "points": pd.Series(dtype="float64"),
+                      "opp": pd.Series(dtype="float64"), "pa": pd.Series(dtype="float64"),
+                      "result": pd.Series(dtype="object"), "user_id": pd.Series(dtype="object"),
+                      "user_name": pd.Series(dtype="object")}),
+        pd.DataFrame({"week": pd.Series(dtype="int64"), "roster_id": pd.Series(dtype="int64"),
+                      "player_id": pd.Series(dtype="object"), "points": pd.Series(dtype="float64"),
+                      "is_starter": pd.Series(dtype="bool"), "player_name": pd.Series(dtype="object"),
+                      "position": pd.Series(dtype="object")}),
+        pd.DataFrame({"user_name": pd.Series(dtype="object"), "week": pd.Series(dtype="int64"),
+                      "actual": pd.Series(dtype="float64"), "optimal": pd.Series(dtype="float64"),
+                      "left_on_bench": pd.Series(dtype="float64")}),
+    )
+    try:
+        matchups = sleeper_api(f"/league/{lid}/matchups/{week}") or []
+    except Exception:
+        return empty
+    if not matchups:
+        return empty
+    pinfo = players()
+    tw_rows, pl_rows = [], []
+    for m in matchups:
+        tw_rows.append({"week": week, "roster_id": m["roster_id"],
+                        "matchup_id": m.get("matchup_id"), "points": m.get("points") or 0.0})
+        pp = m.get("players_points") or {}
+        starters = set(m.get("starters") or [])
+        for pid in (m.get("players") or []):
+            pts = pp.get(pid)
+            pl_rows.append({"week": week, "roster_id": m["roster_id"], "player_id": pid,
+                            "points": 0.0 if pts is None else float(pts),
+                            "is_starter": pid in starters})
+    base = pd.DataFrame(tw_rows)
+    opp = (base.dropna(subset=["matchup_id"])[["week", "matchup_id", "roster_id", "points"]]
+           .rename(columns={"roster_id": "opp", "points": "pa"}))
+    tw = base.merge(opp, on=["week", "matchup_id"], how="left")
+    tw = tw[tw["opp"].isna() | (tw["roster_id"] != tw["opp"])].copy()
+    tw["result"] = [_result(p, a) for p, a in zip(tw["points"], tw["pa"])]
+    tw = tw.merge(s.user_map, on="roster_id", how="left")
+
+    pl = (pd.DataFrame(pl_rows)
+          .merge(pinfo[["player_id", "player_name", "position"]], on="player_id", how="left"))
+    pl_named = pl.merge(s.user_map[["roster_id", "user_name"]], on="roster_id", how="left")
+    lineup_rows = []
+    for un, g in pl_named.groupby("user_name"):
+        actual = float(g.loc[g["is_starter"], "points"].sum())
+        opt = optimal_points(g[["player_id", "position", "points"]], s.slots)
+        lineup_rows.append({"user_name": un, "week": week, "actual": actual,
+                            "optimal": opt, "left_on_bench": max(opt - actual, 0.0)})
+    lineup = pd.DataFrame(lineup_rows)
+    return tw, pl, lineup
+
+
 def assemble_season(link: dict) -> Season:
     lid = link["league_id"]
     lw = max(int(link["last_scored_leg"]), 1)

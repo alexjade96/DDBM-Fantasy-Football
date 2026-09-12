@@ -14,10 +14,30 @@
 
 {# ---- Lead: pre-season draft, last completed week, playoff round, or
        season complete --------------------------------------------------------
-   `preseason` (the season is drafted but no week has been scored yet): the
-   Overview is JUST the drafted rosters -- no headline tiles, no week charts,
-   no season-to-date section, because there is no data for any of it yet. #}
+   `preseason` (the season is drafted but no week has finished scoring yet):
+   the Overview is the drafted rosters -- no headline tiles, no week charts,
+   no season-to-date section, because nothing is complete enough for them
+   yet. `live_week` can still be set here (week 1 kicked off but hasn't
+   finished scoring): the live scoreboard leads, same section the "regular"
+   phase below uses, and the drafted rosters follow rather than a duplicate
+   "Latest week" for a week that isn't done. #}
 {% if preseason %}
+{% if live_week %}
+<div class="rowhead">
+  <h2>Week {{ live_week.week }} in progress
+    <span class="live-badge">Live</span>
+  </h2>
+  <div class="rowhead-actions">
+    <button class="ghost"
+            hx-get="/tab/overview?refresh=1" hx-target="#panel" hx-swap="innerHTML"
+            hx-include="#league, #season, #theme">Refresh scores</button>
+  </div>
+</div>
+<p class="hint">This week's games as Sleeper has them right now. Some players may not
+  have played their game yet, so a low or zero score doesn&rsquo;t necessarily mean a
+  poor outing.</p>
+{{ lz.lazy("/tab/overview/part/scoreboard?league=" ~ league|urlencode ~ "&season=" ~ season|urlencode ~ "&theme=" ~ theme ~ "&week=live", height="200px") }}
+{% endif %}
 <div class="rowhead">
   <h2>Pre-season: the draft</h2>
   <div class="rowhead-actions">
@@ -27,9 +47,12 @@
       Draft Board &rarr;</button>
   </div>
 </div>
-<p class="hint">The season has been drafted but no week has been played yet, so
+<p class="hint">
+  {%- if live_week %} Nothing has finished scoring yet, so here&rsquo;s every roster
+  as it was drafted while week {{ live_week.week }} plays out; the
+  {%- else %} The season has been drafted but no week has been played yet, so
    there are no results to show. Below is every roster as it was drafted; the
-   <em>Draft</em> tab has the board and draft grades.</p>
+  {%- endif %} <em>Draft</em> tab has the board and draft grades.</p>
 {% include "_preseason_rosters.html" %}
 
 {% else %}
@@ -69,18 +92,39 @@
   season. See <em>Regular season</em> for the full picture.</p>
 {% endif %}
 {% else %}
+{% if live_week %}
+{# A real in-progress week, past what's fully scored yet -- just the games
+   themselves (see _live_week_ctx in app.py), no headline tiles/charts: those
+   read as a VERDICT on the week (a highest score, a "biggest blowout"), and
+   nothing here is decided yet. The completed-week section right below is
+   where that verdict belongs, reframed as "last week" now that this one
+   leads. #}
 <div class="rowhead">
-  <h2>
-    {% if live %}This week{% else %}Latest week{% endif %}: Week {{ week }}
-    {% if live %}<span class="live-badge">Live</span>{% endif %}
+  <h2>Week {{ live_week.week }} in progress
+    <span class="live-badge">Live</span>
   </h2>
   <div class="rowhead-actions">
-    {% if live %}
     {# refresh=1 re-assembles the league so live matchup points aren't served stale. #}
     <button class="ghost"
             hx-get="/tab/overview?refresh=1" hx-target="#panel" hx-swap="innerHTML"
             hx-include="#league, #season, #theme">Refresh scores</button>
-    {% endif %}
+  </div>
+</div>
+<p class="hint">This week's games as Sleeper has them right now. Some players may not
+  have played their game yet, so a low or zero score doesn&rsquo;t necessarily mean a
+  poor outing. Headline numbers and charts land here, in "What happened last week"
+  below, once this week is final.</p>
+{# The live scoreboard: same shared lazy part the completed-week section uses
+   (@tab_part("overview", "scoreboard")), pointed at the live week via the
+   "live" sentinel -- _scoreboard_ctx resolves it off the substituted live
+   Season view rather than the real one. #}
+{{ lz.lazy("/tab/overview/part/scoreboard?league=" ~ league|urlencode ~ "&season=" ~ season|urlencode ~ "&theme=" ~ theme ~ "&week=live", height="200px") }}
+{% endif %}
+<div class="rowhead">
+  <h2>
+    {% if live_week %}What happened last week{% else %}Latest week{% endif %}: Week {{ week }}
+  </h2>
+  <div class="rowhead-actions">
     {# Activate the Weekly nav button so the full drill-down opens and the tab
        strip tracks it -- a bare panel swap would leave Overview highlighted. #}
     <button type="button" class="ghost"
@@ -88,11 +132,10 @@
       Latest week &rarr;</button>
   </div>
 </div>
-<p class="hint">
-  {% if live %}The week in progress at a glance.{% else %}The most recent week played.{% endif %}
-  Headline numbers, then the games as a picture and in full; expand a row for both
-  lineups in slot order, what sat on the bench, and the single legal same-position swap that
-  cost the most. Full week analysis is on the <em>Weekly</em> tab.</p>
+<p class="hint">The most recent week played. Headline numbers, then the games as a
+  picture and how the result compares to what the numbers alone would say.
+  Full week analysis -- both lineups, the bench, and the single legal
+  same-position swap that cost the most -- is on the <em>Weekly</em> tab.</p>
 {% endif %}
 
 <section class="stats">
@@ -118,16 +161,11 @@
 {{ ch.chart("bracket", bracket=bracket, alt="Playoff bracket") }}
 {% endif %}
 {% else %}
+{# The completed week's own verdict: the matchups picture and the luck read
+   (was the result deserved?). No scoreboard drilldown here any more -- that
+   per-game lineup/bench/swap detail lives on the Weekly tab (linked above);
+   this section is headline numbers + charts only, not the games in full. #}
 {{ ch.chart("week_matchups", week=week, alt="Week " ~ week ~ " matchups") }}
-
-{# The scoreboard as a per-game drilldown (shared with the Weekly tab): expand a
-   row for both lineups in slot order, benches, and the costliest legal swap.
-   Deferred -- week_matchups() builds the full lineup/optimal-lineup detail for
-   every game, so it shouldn't block this lead section's headline tiles/charts.
-   See app.py's @tab_part("overview", "scoreboard"). #}
-{{ lz.lazy("/tab/overview/part/scoreboard?league=" ~ league|urlencode ~ "&season=" ~ season|urlencode ~ "&theme=" ~ theme ~ "&week=" ~ week, height="200px") }}
-
-{# The one week-context chart that stays in the lead: was the result deserved? #}
 {{ ch.chart("week_luck", week=week, alt="Week " ~ week ~ " luck") }}
 {% endif %}
 
@@ -159,7 +197,12 @@
       {% for r in t.rows %}
       <div class="insight-row {{ r.tone }}">
         <span class="ir-mark">{{ "▲" if r.tone == "good" else "▼" }}</span>
-        <span class="ir-who">{{ idm.who(r.holder) }}</span>
+        {# A tied extreme (2+ teams sharing one value -- only week-scoped
+           tiles currently produce this) shows "N teams" with a hover
+           tooltip listing every name, comma-separated, instead of a joined
+           name list that overflows the tile's fixed width. #}
+        {% if r.tied %}<span class="ir-who" title="{{ r.holder_names }}">{{ r.holder }}</span>
+        {% else %}<span class="ir-who">{{ idm.who(r.holder) }}</span>{% endif %}
         <span class="ir-val">{{ r.value }}</span>
         {% if r.detail %}<span class="ir-det">{{ r.detail }}</span>{% endif %}
       </div>

@@ -11,6 +11,7 @@ layer adds no new plotting code.
 from __future__ import annotations
 
 import contextlib
+import dataclasses
 import io
 import json
 import os
@@ -1554,6 +1555,108 @@ def _current_nfl_season() -> str:
         return "2025"
 
 
+def _real_scored_leg(s) -> int:
+    """Sleeper's RAW `last_scored_leg` for this league, fetched fresh via
+    `sm.league()` -- `Season` only keeps the FLOORED value (`s.last_week`,
+    forced to >= 1 even before week 1 has scored, season.py), so anything
+    that needs to tell "nothing is complete yet" apart from "week 1 is
+    complete" must read the real number here instead. Also NOT safe to infer
+    from `team_wk`'s own points (`_last_completed_week`): a live week's
+    `team_wk` rows are populated from the SAME partial/in-progress matchup
+    feed, so an early score already on the board would make a
+    still-in-progress week look "complete" by that measure too -- the exact
+    bug this fixed (DDBM 2026 week 1 in progress: the Overview's "last
+    completed week" section re-showed week 1 as if it were done, right below
+    the correctly-live section for the same week).
+
+    Best-effort: any failure (offline, `league()` unreachable) falls back to
+    `s.last_week` so a caller degrades to its old, pre-live-aware behavior
+    rather than raising.
+    """
+    try:
+        raw = sm.league(s.league_id) or {}
+        return int(raw.get("last_scored_leg") or 0)
+    except Exception:
+        return s.last_week
+
+
+def _live_week_view(s, scored_leg: int | None = None) -> tuple[int, "sm.Season", int] | tuple[None, None, int]:
+    """`(week, live_s, scored_leg)` for a week that Sleeper has NOT yet
+    marked fully scored (the real, unfloored `last_scored_leg`, returned as
+    the 3rd element even on a miss so callers can size the numbered week
+    range correctly) but is actively playing RIGHT NOW, or `(None, None,
+    scored_leg)` when there isn't one -- season not in progress, or
+    `/state/nfl`'s live week isn't past `last_scored_leg` yet.
+
+    `scored_leg` may be passed in (from `_real_scored_leg`) when a caller
+    already fetched it this request -- `_season_phase` does, and hands its
+    value to the "overview" route's own `_live_week_view` call so `sm.league()`
+    is fetched once per request, not twice. Left `None`, it's fetched here.
+
+    Deliberately does NOT compare against `s.last_week` (season.py floors
+    `last_scored_leg` to >= 1, so week 1 in progress -- nothing fully scored
+    yet -- still reads `last_week == 1`, the same week `/state/nfl` reports
+    as live; comparing against it made week 1 of an in-progress season read
+    as "nothing live"). See `_real_scored_leg` for why `team_wk`'s own points
+    aren't a safe signal either.
+
+    `/state/nfl`'s `week` is the real live NFL week during the season (unlike
+    `last_scored_leg`, it does NOT wait for a week to finish scoring); it
+    resets to 0 in the offseason, which reads as "not live" here too.
+    `sleepermetrics.fetch_live_week` pulls that week's matchups straight from
+    Sleeper (partial/in-progress points included) as a standalone frame set;
+    `live_s` is a THROWAWAY `Season` view (`dataclasses.replace`) carrying
+    those frames in place of `team_wk`/`pl_wk`/`lineup` -- never merged back
+    into the real Season or its cache, since this data is explicitly not
+    final. Every metrics function that only reads those three fields
+    (`week_stats`, `week_matchups`, ...) works on it unmodified; anything that
+    reads `standings`/`transactions`/season-aggregate frames must NOT be
+    pointed at `live_s` (those are untouched real-season data, correct as is).
+
+    Best-effort throughout: any failure (offline, `/state/nfl` unreachable, a
+    week with no matchups posted yet) returns `(None, None, scored_leg)`
+    rather than raising, same contract as `_current_nfl_season`.
+    """
+    if not s.in_progress:
+        return None, None, (scored_leg if scored_leg is not None else s.last_week)
+    try:
+        st = sm.nfl_state() or {}
+        wk = int(st.get("week") or 0)
+    except Exception:
+        return None, None, (scored_leg if scored_leg is not None else s.last_week)
+    if wk <= 0:
+        return None, None, (scored_leg if scored_leg is not None else s.last_week)
+    if scored_leg is None:
+        scored_leg = _real_scored_leg(s)
+    if wk <= scored_leg:
+        return None, None, scored_leg
+    try:
+        tw, pl, lineup = sm.fetch_live_week(s, wk)
+    except Exception:
+        return None, None, scored_leg
+    if not len(tw):
+        return None, None, scored_leg
+    return wk, dataclasses.replace(s, team_wk=tw, pl_wk=pl, lineup=lineup), scored_leg
+
+
+def _live_week_ctx(s, scored_leg: int | None = None) -> dict | None:
+    """The Overview's OTHER lead section: just the live week's number, when
+    one exists (see `_live_week_view`) -- the template points the shared
+    scoreboard lazy part (`@tab_part("overview", "scoreboard")`, already
+    "live"-aware, see `_scoreboard_ctx`) at it. No KPI tiles here: those read
+    as a verdict on the week, which belongs with the COMPLETED week's section
+    below (`overview_tiles`) -- the live section shows only the games
+    themselves, as they stand right now.
+
+    `scored_leg`, when the caller already has it (the "overview" route reuses
+    `_season_phase`'s own `sm.league()` fetch), skips a second one.
+    """
+    wk, live_s, _scored_leg = _live_week_view(s, scored_leg)
+    if live_s is None:
+        return None
+    return {"week": wk}
+
+
 @app.get("/user-leagues", response_class=HTMLResponse)
 def user_leagues(request: Request, user: str = "", season: str | None = None):
     """List the leagues a Sleeper user belongs to for a season (HTMX fragment).
@@ -1615,6 +1718,15 @@ def _resolve_week(s, week: str | int | None, allow_zero: bool = False) -> int:
     `allow_zero` lets the lower bound drop to 0, the Weekly tab's synthetic
     "Pre-season" slot (the draft, not a scored week) -- only passed when the
     season actually has draft data, so week 0 can't be reached otherwise.
+
+    The Weekly tab's OTHER synthetic slot, `week="live"` (the in-progress
+    week, see _live_week_view), is deliberately NOT handled here: every lazy
+    part/chart route that calls this function wants a real, already-scored
+    week to solve lineups/optimal-lineup/free-agent comparisons against, none
+    of which are shown for the live week (see tab_weekly.html) -- `int("live")`
+    raises and falls through to the `except`, so it degrades to `s.last_week`
+    exactly like any other bad input, never a crash. Only `_week_context` and
+    the "weekly" route branch handle "live" explicitly.
     """
     lo = 0 if allow_zero else 1
     wk = s.last_week
@@ -1627,7 +1739,7 @@ def _resolve_week(s, week: str | int | None, allow_zero: bool = False) -> int:
 
 
 def _week_context(s, week: str | int | None = None,
-                  allow_zero: bool = False) -> dict:
+                  allow_zero: bool = False, allow_live: bool = False) -> dict:
     """Everything the current-week view needs EXCEPT the scoreboard itself:
     the selected week (defaulting to the current one) and its KPI tiles.
 
@@ -1645,20 +1757,106 @@ def _week_context(s, week: str | int | None = None,
     (there is no scored game) -- the template branches on `week == 0` to show
     the draft instead. Only the Weekly TAB passes it; the Overview lead and the
     standalone weekly report never do (they are about a played week).
+
+    `allow_live` adds the Weekly tab's OTHER synthetic slot, the literal
+    string `"live"`, to `weeks` whenever a week Sleeper hasn't marked fully
+    scored yet is actively playing right now (see _live_week_view), and
+    resolves `week="live"` to it. `"live"` is what's SUBMITTED (the rail
+    button's `hx-get` target, and what `_resolve_week`/`_scoreboard_ctx` key
+    off), never a number -- but `live_week_num` (also returned here) is that
+    week's REAL number, and the rail renders the button showing it instead
+    of the word "Live" (so the rail reads "Pre 1 2 3", not "Pre 1 2 Live"),
+    styled the same way the ordinary current-week button already is. Only
+    the Weekly tab passes `allow_live`; Overview builds its own separate live
+    section (`_live_week_ctx`) since it always leads with the last COMPLETED
+    week regardless.
+
+    `s.last_week` is `last_scored_leg` FLOORED to >= 1 (season.py), so while
+    week 1 is still being played (nothing fully scored yet) it already equals
+    1 -- the same number the live week resolves to. Left alone, the numbered
+    rail range `range(lo, s.last_week + 1)` would offer a plain "1" button
+    showing that same in-progress data as if it were a completed week (Best
+    of the Week, charts, recap and all), right next to the
+    correctly-suppressed "Live" one. `numbered_max` is the REAL
+    `scored_leg` `_live_week_view` reads (its 3rd return value, valid even on
+    a miss) rather than `s.last_week` -- when nothing has actually been
+    scored yet (`scored_leg == 0`), `numbered_max` is 0 and the whole
+    numbered range is empty, leaving only "Live"; the moment the week
+    finishes scoring and `last_scored_leg` advances to 1, `numbered_max`
+    follows and week 1's ordinary numbered slot appears with real, final
+    data. A bare request (`week=None`) in that same situation -- nothing
+    complete, only a live week -- opens on "live" rather than defaulting to a
+    now-nonexistent numbered slot.
     """
-    wk = _resolve_week(s, week, allow_zero=allow_zero)
+    live_wk, live_s, scored_leg = (_live_week_view(s) if allow_live else (None, None, s.last_week))
+    numbered_max = scored_leg if allow_live else s.last_week
     lo = 0 if allow_zero else 1
-    weeks = list(range(lo, s.last_week + 1))
+    # An explicit "live", or one naming a week that isn't in the numbered
+    # range at all (out of range, or the exact number a nonexistent floored
+    # slot would have been), lands on "live" -- but a BLANK request only does
+    # when there's no completed WEEK to default to either. Deliberately
+    # `numbered_max >= 1`, NOT `numbered_max >= lo`: `lo` is 0 whenever the
+    # Pre-season/draft slot is offered (allow_zero=True), and that slot is
+    # NOT a completed week -- checking against `lo` let a bare request with a
+    # draft board present but nothing yet scored fall through to
+    # `_resolve_week`, which defaults to `s.last_week` (floored to >= 1 even
+    # with nothing complete, season.py) and rendered week 1 as if it were
+    # done. A blank request WITH a real completed week on the board must
+    # still default to the last completed one (numbered_max), same as
+    # always -- not jump to "live" just because a live week also exists.
+    if week in (None, ""):
+        wants_numbered = numbered_max >= 1
+    elif week == "live":
+        wants_numbered = False
+    else:
+        try:
+            wants_numbered = lo <= int(week) <= numbered_max
+        except (TypeError, ValueError):
+            wants_numbered = False
+    if allow_live and live_wk is not None and not wants_numbered:
+        weeks = list(range(0 if allow_zero else 1, numbered_max + 1)) + ["live"]
+        return {
+            "week": "live", "live_week_num": live_wk, "weeks": weeks,
+            "current_week": s.current_week, "live": True, "is_current": False,
+            "is_live_week": True,
+            # Same 6-tile insights format a completed week gets (Scoring,
+            # Efficiency, Bench, Luck, Opponent, Margin), computed against the
+            # substituted live Season view -- `live=True` skips the
+            # _week_scored gate (this data is partial by design) and swaps in
+            # in-progress wording (Luck/Margin read "leading"/"trailing"
+            # rather than "won"/"lost", since nothing is decided yet).
+            "week_insight_rows": _week_insight_rows(live_s, live_wk, live=True),
+        }
+    wk = _resolve_week(s, week, allow_zero=allow_zero)
+    weeks = list(range(lo, numbered_max + 1))
+    if live_wk is not None:
+        weeks = weeks + ["live"]
     if wk == 0:
         # No scored game in the pre-season slot: every KPI tile is empty and
         # the template shows the draft board / standouts instead. Skip
         # week_stats() entirely rather than call it with an out-of-range week.
         return {
             "week": 0, "weeks": weeks, "current_week": s.current_week,
-            "live": s.in_progress, "is_current": False,
+            "live": s.in_progress, "is_current": False, "live_week_num": live_wk,
             "kpi_top": None, "kpi_blow": None, "kpi_close": None, "kpi_bench": None,
         }
     ws = metrics.week_stats(s, wk)
+    return {
+        "week": wk, "weeks": weeks, "live_week_num": live_wk,
+        # Current-week framing: during a live season the view opens on
+        # current_week and badges it live; on a finished season `live` is False.
+        "current_week": s.current_week, "live": s.in_progress,
+        "is_current": wk == s.current_week,
+        **_week_kpi_tiles(ws),
+    }
+
+
+def _week_kpi_tiles(ws) -> dict:
+    """The four headline KPI tiles (`kpi_top`/`kpi_blow`/`kpi_close`/
+    `kpi_bench`) from a `metrics.week_stats()`-shaped frame -- split out of
+    `_week_context` so the Overview's live (in-progress) week tiles can reuse
+    the exact same tile math against `week_stats()` run over a substituted,
+    live-fetched view of the season (see `_live_week_ctx`)."""
     decided = ws[ws["result"].isin(["W", "L", "T"])]
     wins = decided[decided["margin"] > 0]
     top = ws.iloc[0] if len(ws) else None
@@ -1673,11 +1871,6 @@ def _week_context(s, week: str | int | None = None,
         return None if row is None else {"value": fmt(row[val]), "user_name": row["user_name"]}
 
     return {
-        "week": wk, "weeks": weeks,
-        # Current-week framing: during a live season the view opens on
-        # current_week and badges it live; on a finished season `live` is False.
-        "current_week": s.current_week, "live": s.in_progress,
-        "is_current": wk == s.current_week,
         "kpi_top": kpi(top, "points", lambda v: f"{v:.1f}"),
         "kpi_blow": kpi(blow, "margin", lambda v: f"+{v:.1f}"),
         "kpi_close": kpi(close, "margin", lambda v: f"+{v:.1f}"),
@@ -1685,7 +1878,7 @@ def _week_context(s, week: str | int | None = None,
     }
 
 
-def _week_insight_rows(s, wk: int) -> list[dict]:
+def _week_insight_rows(s, wk: int, live: bool = False) -> list[dict]:
     """Per-WEEK analogue of `_overview_insight_rows` -- six merged good/bad
     tiles, same `{label, rows: [{tone, holder, value, detail}]}` shape and the
     same template block, but every fact is scoped to one week's games instead
@@ -1696,13 +1889,45 @@ def _week_insight_rows(s, wk: int) -> list[dict]:
     Order mirrors the Overview: Scoring, Coaching, Luck, Opponent, Margin,
     Bench. Returns [] when the week has no scored games (the template's
     `{% if week_insight_rows %}` then skips the section).
+
+    `live=True` is for the Weekly tab's in-progress-week section: `s` is
+    already the THROWAWAY live `Season` view (see `_live_week_view`), so the
+    `_week_scored` gate below (which would otherwise read this week as
+    "not complete, nothing to show") is skipped -- partial data is exactly
+    what this call wants. Each tile's wording is adjusted on its own terms,
+    not by a single find-and-replace qualifier, and each stays a real clause
+    rather than a noun phrase with a qualifier stapled on: Scoring reads
+    "current highest/lowest score" (a real superlative, not "high/low");
+    Efficiency reads "best/worst lineup efficiency so far" -- unlike the
+    completed version (one shared suffix, since "started X% of optimal" is
+    already a complete clause on its own), the live phrasing needs a
+    good/bad word of its own, since "so far" alone doesn't say anything the
+    percentage doesn't; Bench reads "fewest/most bench points so far";
+    Opponent reads "currently facing the weakest/toughest opponent" (a full
+    clause, not "opponent so far"); Luck and Margin assert a DECIDED result
+    in their normal wording ("won with...", "lost with...", "biggest win of
+    the week"), which isn't true yet, so they read "current lowest winning
+    score"/"current highest losing score" and "current largest lead"/
+    "current closest game" instead -- the same fact (an extreme score, a
+    lead size) without the settled-result verb.
+
+    Every extreme (highest/lowest score, most/fewest bench points, etc.) is
+    found via `_extreme()`, which names EVERY team tied at that value
+    ("Al and Bo", "Al, Bo, and Cy") instead of the single row a bare
+    `idxmax()`/`idxmin()` would pick arbitrarily -- real case: a live week
+    where two teams both showed 0.0 points on the bench used to render the
+    same team as both "most" and "fewest". `merged()` also drops the "bad"
+    row entirely when it lands on the identical holder(s) and value as the
+    "good" row (every eligible team tied at one number), rather than
+    stating the same fact twice under different labels.
     """
     import pandas as pd
 
     # An in-progress (or not-yet-played) week has team rows but all-zero
     # scores -- nothing to derive a "high score" / "biggest blowout" from --
-    # so the section stays hidden until the week is complete.
-    if not _week_scored(s, wk):
+    # so the section stays hidden until the week is complete. Skipped for the
+    # live view: its data IS the partial/in-progress state, by design.
+    if not live and not _week_scored(s, wk):
         return []
     ws = metrics.week_stats(s, wk)
     if not len(ws):
@@ -1713,73 +1938,143 @@ def _week_insight_rows(s, wk: int) -> list[dict]:
         return h is not None and not (isinstance(h, float) and pd.isna(h))
 
     def merged(label, best, worst):
-        """best/worst are (holder, value, detail) triples; either may be None."""
-        rows = [{"tone": tone, "holder": str(trip[0]), "value": trip[1],
-                 "detail": trip[2]}
-                for tone, trip in (("good", best), ("bad", worst))
-                if trip is not None and _ok(trip[0])]
+        """best/worst are (names, value, detail) triples; either may be None.
+        `names` (from `_extreme`) is the list of every team actually tied at
+        that extreme, not just one arbitrarily chosen row. A single name
+        renders as itself; two or more render as "N teams" (a joined name
+        list reliably overflowed a tile's fixed width) with `holder_names` --
+        a plain comma-separated list, no "and" -- carried alongside for a
+        hover tooltip (see tab_weekly.html/tab_overview.html's `title=`).
+        If best and worst land on the EXACT same holder(s) and value (every
+        eligible team tied at one number, so "highest" and "lowest" are the
+        same fact), only the good row is kept -- showing both would repeat
+        the identical name/value twice under different labels."""
+        if (best is not None and worst is not None
+                and best[0] == worst[0] and best[1] == worst[1]):
+            worst = None
+        rows = []
+        for tone, trip in (("good", best), ("bad", worst)):
+            if trip is None or not trip[0] or not _ok(trip[0][0]):
+                continue
+            names, value, detail = trip
+            row = {"tone": tone, "value": value, "detail": detail}
+            if len(names) > 1:
+                row["holder"] = f"{len(names)} teams"
+                row["holder_names"] = ", ".join(str(n) for n in names)
+                row["tied"] = True
+            else:
+                row["holder"] = str(names[0])
+                row["holder_names"] = None
+                row["tied"] = False
+            rows.append(row)
         if rows:
             tiles.append({"label": label, "rows": rows})
+
+    def _extreme(df, col, largest: bool):
+        """(tied_names, shared_value) for the max/min of `col` in `df` --
+        EVERY row tied at that value (as a plain list, de-duplicated, in
+        frame order), not one arbitrarily chosen row. `df` must carry
+        `user_name`. None if `df` is empty. Real case this fixed: a live/
+        partial week where two teams both showed 0.0 on the bench, and the
+        old idxmax()-based code showed the SAME team as both "most" and
+        "fewest"."""
+        if not len(df):
+            return None
+        val = df[col].max() if largest else df[col].min()
+        names = df.loc[df[col] == val, "user_name"].drop_duplicates().tolist()
+        return names, val
 
     played = ws[ws["points"].notna()]
     decided = ws[ws["result"].isin(["W", "L", "T"])]
 
-    # 1. Scoring -- highest and lowest team score of the week.
+    # 1. Scoring -- highest and lowest team score of the week (so far, live).
+    #    A tie at either end (real case: two teams both benched, or a live
+    #    week where several games haven't kicked off yet and share 0.0) names
+    #    every team tied there, not whichever `idxmax()` picked arbitrarily.
     if len(played) >= 2:
-        hi, lo = played.iloc[0], played.iloc[-1]        # week_stats() is points-desc
+        hi = _extreme(played, "points", largest=True)
+        lo = _extreme(played, "points", largest=False)
         merged("Scoring",
-               (hi["user_name"], f"{hi['points']:.1f}", "high score of the week"),
-               (lo["user_name"], f"{lo['points']:.1f}", "low score of the week"))
+               (hi[0], f"{hi[1]:.1f}",
+                "current highest score" if live else "high score of the week"),
+               (lo[0], f"{lo[1]:.1f}",
+                "current lowest score" if live else "low score of the week"))
 
     # 2. Efficiency -- lineup efficiency (started / optimal) this week.
+    #    Completed weeks share one detail string for both rows: "started X%
+    #    of the optimal lineup" is a complete clause on its own, and the
+    #    percentage is what shows which row is better. Live needs its own
+    #    good/bad word per row ("best"/"worst lineup efficiency so far") --
+    #    "so far" alone doesn't say anything the percentage doesn't.
     effw = played[played["optimal"].notna() & (played["optimal"] > 0)].copy()
     if len(effw) >= 2:
         effw["eff"] = (effw["points"] / effw["optimal"] * 100)
-        be, we = effw.loc[effw["eff"].idxmax()], effw.loc[effw["eff"].idxmin()]
+        be, we = _extreme(effw, "eff", largest=True), _extreme(effw, "eff", largest=False)
+        if live:
+            be_detail, we_detail = "best lineup efficiency so far", "worst lineup efficiency so far"
+        else:
+            be_detail = we_detail = "of the optimal lineup started"
         merged("Efficiency",
-               (be["user_name"], f"{be['eff']:.0f}%", "of the optimal lineup started"),
-               (we["user_name"], f"{we['eff']:.0f}%", "of the optimal lineup started"))
+               (be[0], f"{be[1]:.0f}%", be_detail),
+               (we[0], f"{we[1]:.0f}%", we_detail))
 
     # 3. Bench -- least / most points on the bench this week. Sits right after
     #    Efficiency (the two lineup-quality reads together) rather than last.
     benchw = played[played["left_on_bench"].notna()]
     if len(benchw) >= 2:
-        most = benchw.loc[benchw["left_on_bench"].idxmax()]
-        least = benchw.loc[benchw["left_on_bench"].idxmin()]
+        most = _extreme(benchw, "left_on_bench", largest=True)
+        least = _extreme(benchw, "left_on_bench", largest=False)
+        bench_suffix = " so far" if live else ""
         merged("Bench",
-               (least["user_name"], f"{least['left_on_bench']:.1f}", "points on the bench, fewest"),
-               (most["user_name"], f"{most['left_on_bench']:.1f}", "points on the bench, most"))
+               (least[0], f"{least[1]:.1f}", f"fewest bench points{bench_suffix}"),
+               (most[0], f"{most[1]:.1f}", f"most bench points{bench_suffix}"))
 
     # 4. Luck -- won on a low score / lost on a high score this week (the
-    #    single-week version of all-play luck).
+    #    single-week version of all-play luck). Live: nobody has technically
+    #    won or lost yet, but "current lowest winning score"/"current highest
+    #    losing score" still names the same fact -- whoever is ahead/behind
+    #    right now on an extreme score -- without a settled-result verb.
     if len(decided) >= 2:
         wins = decided[decided["margin"] > 0]
         losses = decided[decided["margin"] < 0]
-        lucky = wins.loc[wins["points"].idxmin()] if len(wins) else None
-        unlucky = losses.loc[losses["points"].idxmax()] if len(losses) else None
+        lucky = _extreme(wins, "points", largest=False) if len(wins) else None
+        unlucky = _extreme(losses, "points", largest=True) if len(losses) else None
+        if live:
+            lucky_detail = "current lowest winning score"
+            unlucky_detail = "current highest losing score"
+        else:
+            lucky_detail = "won with the week's lowest winning score"
+            unlucky_detail = "lost with the week's highest losing score"
         merged("Luck",
-               ((lucky["user_name"], f"{lucky['points']:.1f}", "won with the week's lowest winning score")
-                if lucky is not None else None),
-               ((unlucky["user_name"], f"{unlucky['points']:.1f}", "lost with the week's highest losing score")
-                if unlucky is not None else None))
+               ((lucky[0], f"{lucky[1]:.1f}", lucky_detail) if lucky is not None else None),
+               ((unlucky[0], f"{unlucky[1]:.1f}", unlucky_detail) if unlucky is not None else None))
 
     # 5. Opponent -- weakest / toughest opponent faced this week (points allowed).
     opp = decided[decided["opp_points"].notna()]
     if len(opp) >= 2:
-        soft = opp.loc[opp["opp_points"].idxmin()]
-        hard = opp.loc[opp["opp_points"].idxmax()]
+        soft = _extreme(opp, "opp_points", largest=False)
+        hard = _extreme(opp, "opp_points", largest=True)
+        if live:
+            soft_detail, hard_detail = "currently facing the weakest opponent", "currently facing the toughest opponent"
+        else:
+            soft_detail, hard_detail = "weakest opponent this week", "toughest opponent this week"
         merged("Opponent",
-               (soft["user_name"], f"{soft['opp_points']:.1f}", "weakest opponent this week"),
-               (hard["user_name"], f"{hard['opp_points']:.1f}", "toughest opponent this week"))
+               (soft[0], f"{soft[1]:.1f}", soft_detail),
+               (hard[0], f"{hard[1]:.1f}", hard_detail))
 
-    # 6. Margin -- biggest blowout / closest game (the winner in each).
+    # 6. Margin -- biggest blowout / closest game (the winner in each). Live:
+    #    no game is decided yet, so this is the current lead size, not a win.
     wins = decided[decided["margin"] > 0]
     if len(wins) >= 2:
-        blow = wins.loc[wins["margin"].idxmax()]
-        close = wins.loc[wins["margin"].idxmin()]
+        blow = _extreme(wins, "margin", largest=True)
+        close = _extreme(wins, "margin", largest=False)
+        if live:
+            blow_detail, close_detail = "current largest lead", "current closest game"
+        else:
+            blow_detail, close_detail = "biggest win of the week", "closest game of the week"
         merged("Margin",
-               (blow["user_name"], f"+{blow['margin']:.1f}", "biggest win of the week"),
-               (close["user_name"], f"+{close['margin']:.1f}", "closest game of the week"))
+               (blow[0], f"+{blow[1]:.1f}", blow_detail),
+               (close[0], f"+{close[1]:.1f}", close_detail))
 
     return tiles
 
@@ -2158,17 +2453,30 @@ def _season_phase(s, d: dict, key: str) -> dict:
         # completed week analysis", so it deliberately does not jump ahead to a
         # round that exists only as PENDING placeholders.
         return {"phase": "playoffs", "playoff": p, "current_round": played_rounds[-1]}
-    lcw = _last_completed_week(s)
-    if lcw == 0:
-        # Nothing scored yet. If the draft is in, lead with the drafted rosters
-        # (a real "here's where the season stands" view); otherwise fall through
-        # to a bare "regular" with week 0 so the template still renders.
+    # The REAL last_scored_leg (see _real_scored_leg), NOT _last_completed_week
+    # (team_wk's own points > 0): a live week's team_wk rows are populated from
+    # the SAME partial matchup feed, so an early in-progress score would make
+    # _last_completed_week call that week "done" too -- real case: DDBM 2026
+    # week 1 in progress read as its own "last completed week", so the
+    # Overview's completed-week section re-showed week 1 a second time,
+    # directly under the (correctly) live section for that same week, instead
+    # of falling back to preseason since nothing has actually finished yet.
+    scored_leg = _real_scored_leg(s)
+    if scored_leg == 0:
+        # Nothing has FINISHED scoring yet (a live week 1 in progress counts
+        # as nothing here, deliberately). If the draft is in, lead with the
+        # drafted rosters (a real "here's where the season stands" view);
+        # otherwise fall through to a bare "regular" with week 0 so the
+        # template still renders. The live section (built separately, off
+        # `_live_week_view`) still shows week 1's games if it's underway --
+        # this only decides what the COMPLETED-week section falls back to.
         try:
             has_draft = not draft.draft_board(s).empty
         except Exception:
             has_draft = False
-        return {"phase": "preseason" if has_draft else "regular", "last_week": 0}
-    return {"phase": "regular", "last_week": lcw}
+        return {"phase": "preseason" if has_draft else "regular", "last_week": 0,
+                "scored_leg": scored_leg}
+    return {"phase": "regular", "last_week": scored_leg, "scored_leg": scored_leg}
 
 
 def _playoff_tiles(games: list[dict], lead: tuple | None = None,
@@ -2709,7 +3017,27 @@ def tab(name: str, request: Request, league: str = DEFAULT_LEAGUE,
         # the tab is just the drafted rosters.
         phase = _season_phase(s, d, key)
         ctx["phase"] = phase["phase"]
+        # A live week can exist even in "preseason"/a scoreless "regular" phase
+        # (week 1 kicked off but hasn't finished scoring) -- check once here so
+        # both the true-preseason branch and the "nothing completed yet"
+        # regular branch below can show it, and so `_season_phase`'s own
+        # `scored_leg` (already fetched via `sm.league()`) is reused rather
+        # than fetched a second time by `_live_week_view`.
+        ctx["live_week"] = (_live_week_ctx(s, phase.get("scored_leg"))
+                            if phase["phase"] in ("preseason", "regular") else None)
+        # `_season_phase` only calls it "preseason" when nothing has finished
+        # scoring AND a draft board exists (else "regular" with last_week=0,
+        # a completely bare league -- falls through below unchanged;
+        # `_resolve_week` clamps 0 up to 1 there, same as always). So this
+        # check alone already covers "week 1 is live but nothing is complete
+        # yet, and there's a draft to show" -- `ctx["live_week"]` (computed
+        # above) still carries the in-progress week regardless of this branch.
         if phase["phase"] == "preseason":
+            # Nothing has FINISHED scoring yet, so the "completed week"
+            # section is the drafted-rosters view instead -- whether or not a
+            # week is currently live (`ctx["live_week"]`, rendered above this
+            # by the template): a live week 1 doesn't make week 1 itself the
+            # "last completed week" a second time.
             board = draft.draft_board(s)
             ctx["preseason"] = True
             ctx["preseason_rosters"] = _preseason_rosters(s, board)
@@ -2724,11 +3052,14 @@ def tab(name: str, request: Request, league: str = DEFAULT_LEAGUE,
         # metrics, scoreboard and the two week-analytics charts -- then restate
         # the season-to-date metrics below. Same computation the Weekly tab uses.
         ctx.update(_week_context(s, phase.get("last_week")))
-        # The Overview lead is now always a FINISHED week, so drop the live
-        # framing (the "This week"/Live badge/Refresh-scores affordances) even
-        # while the season itself is in progress -- there is nothing live to
-        # refresh in a week that is already scored. The "Regular season" section
-        # below keeps its own `current_week`-based "through week N" label.
+        # The section built above is always a FINISHED week (phase["last_week"]
+        # has a real score on the board), so `live` (which _week_context sets
+        # from `s.in_progress`) would badge an already-scored week as "Live" --
+        # wrong; force it off. A genuinely in-progress week -- one Sleeper is
+        # actively scoring, past what's shown here -- gets its OWN section
+        # instead (`live_week`, computed above), rendered ABOVE this one with
+        # "What happened last week" as this section's own heading/button once
+        # that live section is present.
         ctx["live"] = False
         # Only the two charts that answer "who's actually good" at a glance
         # stay on this page -- standings (the record) and power_rank (the
@@ -2843,9 +3174,25 @@ def tab(name: str, request: Request, league: str = DEFAULT_LEAGUE,
         # that phase. An explicit ?week=N is still honoured.
         if week in (None, "") and has_draft and not _has_scored_data(s):
             week = 0
-        ctx.update(_week_context(s, week, allow_zero=has_draft))
+        # A bare open of this tab still defaults to the last COMPLETED week
+        # whenever one exists -- a viewer who wants the in-progress week
+        # clicks its "Live" rail entry (?week=live), same as picking any
+        # other week. It's ONLY the default when there is no completed week
+        # at all yet (see _week_context's `numbered_max`/`wants_numbered`):
+        # otherwise a blank request would land on week 1 while it's still
+        # being played and show it as final, which is the bug this guards.
+        ctx.update(_week_context(s, week, allow_zero=has_draft, allow_live=True))
         ctx["preseason"] = ctx["week"] == 0
-        if ctx["preseason"]:
+        ctx["is_live_week"] = ctx["week"] == "live"
+        if ctx["is_live_week"]:
+            # Headline tiles + a live scoreboard only -- Best of the Week, the
+            # context charts and the recap narrative all solve a full
+            # optimal-lineup/free-agent comparison, which isn't worth building
+            # against a week Sleeper is still actively scoring. See
+            # tab_weekly.html's live_week branch and _week_part_scoreboard's
+            # live handling below.
+            pass
+        elif ctx["preseason"]:
             # The pre-season view is a collapsible roster-as-drafted list, one
             # <details> per member (same shape as the Roster tab's league-scope
             # manager list) -- plus a plain redirect button to the full Draft
@@ -3166,7 +3513,23 @@ def _scoreboard_ctx(s, week: str | int | None) -> dict:
     lazy tab part (below) and report_weekly() (the standalone, non-deferred
     shareable weekly report), which needs this computed eagerly since it's a
     single page meant to render whole, not a progressively-loaded tab.
+
+    `week="live"` (Overview and Weekly tabs only -- report_weekly() never
+    sees it) reads the in-progress week straight off `_live_week_view`
+    instead: `records` is
+    dropped entirely (table_position() is a regular-season-through-last_week
+    cumulative record; the live week isn't in it, and mid-week win/loss counts
+    that only reflect PARTIAL scores would misread as final), and `wk_games`
+    solves off the substituted live `Season` view rather than the real one.
+    A live week that's vanished since the page loaded (season wrapped, or a
+    refresh landed after this request started) falls back to an empty board
+    rather than erroring.
     """
+    if week == "live":
+        live_wk, live_s, _scored_leg = _live_week_view(s)
+        if live_s is None:
+            return {"records": {}, "wk_games": []}
+        return {"records": {}, "wk_games": metrics.week_matchups(live_s, live_wk)}
     wk = _resolve_week(s, week)
     tp = metrics.table_position(s)
     tp_wk = tp[tp["week"] == wk]

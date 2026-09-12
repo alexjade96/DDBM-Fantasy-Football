@@ -6,7 +6,12 @@
    scores; on a finished season `live` is False and it is a plain week browser.
    Week 0 ("Pre") is a synthetic slot -- the draft, not a scored week -- only
    present when the season has a Sleeper draft board; `preseason` is True when
-   it is selected and the whole page becomes a draft view. #}
+   it is selected and the whole page becomes a draft view. A second synthetic
+   slot, "live" (only in the rail when a week beyond what's fully scored is
+   actually being played -- see app._live_week_view), opens the week that's
+   IN PROGRESS RIGHT NOW: headline tiles + a live scoreboard only, no Best of
+   the Week / context charts / recap, since those all read as final results
+   and this week isn't one yet. `is_live_week` is True when it's selected. #}
 {% import "_chartmacro.html" as ch with context %}
 {% import "_ident.html" as idm with context %}
 {% import "_lazy.html" as lz %}
@@ -14,11 +19,12 @@
 <div class="rowhead">
   <h2>
     {% if preseason %}Pre-season: the draft
+    {% elif is_live_week %}Week {{ live_week_num }} in progress
     {% elif live and is_current %}Current week{% else %}Week detail{% endif %}
-    {% if live and not preseason %}<span class="live-badge">Live</span>{% endif %}
+    {% if (live and not preseason) or is_live_week %}<span class="live-badge">Live</span>{% endif %}
   </h2>
   <div class="rowhead-actions">
-    {% if live and not preseason %}
+    {% if (live and not preseason) or is_live_week %}
     {# refresh=1 re-assembles the league (fresh scores) and keeps the week you're on. #}
     <button class="ghost"
             hx-get="/tab/weekly?refresh=1&week={{ week }}"
@@ -32,9 +38,10 @@
     <button type="button" class="ghost"
             onclick="[...document.querySelectorAll('.tabs button')].find(b=>b.getAttribute('hx-get')==='/tab/draft').click()">
       Draft Board &rarr;</button>
-    {% else %}
+    {% elif not is_live_week %}
     {# A stand-alone, shareable version of this week -- safe to link out or drop
-       in a group chat, unlike this tab which lives inside the dashboard shell. #}
+       in a group chat, unlike this tab which lives inside the dashboard shell.
+       Not offered for the live week: report_weekly() doesn't know "live". #}
     <a class="ghost" target="_blank" rel="noopener"
        href="/report/weekly?league={{ league }}&season={{ season }}&week={{ week }}"
        title="A shareable page for this week">Shareable report &#8599;</a>
@@ -44,9 +51,14 @@
 <nav class="rail" hx-target="#panel" hx-swap="innerHTML" hx-include="#league, #season, #theme">
   <span class="k">Week</span>
   {% for w in weeks %}
-  <button class="year {% if w == week %}on{% endif %}{% if live and w == current_week %} now{% endif %}"
-          {% if live and w == current_week %}title="Current week"{% elif w == 0 %}title="Pre-season: the draft"{% endif %}
-          hx-get="/tab/weekly?week={{ w }}">{{ "Pre" if w == 0 else w }}</button>
+  {# The "live" sentinel is what's SUBMITTED (?week=live) -- _week_context
+     resolves it specially so this in-progress week never renders as a
+     finished one -- but the button itself shows the week's REAL number
+     (live_week_num), styled like the ordinary current-week button, so the
+     rail reads "Pre 1 2 3", not "Pre 1 2 Live". #}
+  <button class="year {% if w == week %}on{% endif %}{% if w == "live" or (live and w == current_week) %} now{% endif %}"
+          {% if w == "live" %}title="Week {{ live_week_num }}: in progress right now"{% elif live and w == current_week %}title="Current week"{% elif w == 0 %}title="Pre-season: the draft"{% endif %}
+          hx-get="/tab/weekly?week={{ w }}">{{ "Pre" if w == 0 else (live_week_num if w == "live" else w) }}</button>
   {% endfor %}
 </nav>
 
@@ -58,6 +70,56 @@
    "Draft Board" button in the header (above) goes there for the value/grade
    charts, gem/bust reads and the redraft sim. #}
 {% include "_preseason_rosters.html" %}
+
+{% elif is_live_week %}
+{# ---- Live: the week in progress right now --------------------------------
+   The same six-tile "insights" format a completed week uses (Scoring,
+   Efficiency, Bench, Luck, Opponent, Margin -- see app._week_insight_rows,
+   called here with live=True: partial data, and Luck/Margin phrased as
+   "leading"/"trailing" rather than "won"/"lost" since nothing is decided
+   yet) + a live scoreboard -- games and scores as Sleeper has them right
+   now. Deliberately NOT shown here: Best of the Week, the context charts
+   (week_race/week_matchups), and the recap narrative -- all three read as a
+   FINAL verdict on the week (a best lineup vs. free agents pick, a
+   season-bump chart, a written recap), and this week isn't final. They
+   reappear automatically once the week finishes scoring and `last_scored_leg`
+   advances past it -- at that point this becomes an ordinary numbered week. #}
+<p class="hint">This week&rsquo;s games at a glance, updating live as Sleeper scores
+  them. Some players may not have played their game yet, so early in the week a
+  low or zero score doesn&rsquo;t necessarily mean a poor outing. The games and full
+  lineups are below; Best of the Week, the week&rsquo;s charts and the recap all
+  land here once the week is fully scored.</p>
+{% if week_insight_rows %}
+<section class="stats">
+  {% for t in week_insight_rows %}
+  <div class="stat {% if loop.index0 == 0 %}gold{% endif %}">
+    <span class="k">{{ t.label }}</span>
+    <div class="insight-rows">
+      {% for r in t.rows %}
+      <div class="insight-row {{ r.tone }}">
+        <span class="ir-mark">{{ "▲" if r.tone == "good" else "▼" }}</span>
+        {# A tied extreme (2+ teams sharing one value) shows "N teams" with a
+           hover tooltip listing every name, comma-separated -- a joined name
+           list ("Al, Bo, and Cy") reliably overflowed the tile's fixed
+           width. Only a single holder goes through idm.who() (portrait +
+           avatar lookup, which only makes sense for one real manager). #}
+        {% if r.tied %}<span class="ir-who" title="{{ r.holder_names }}">{{ r.holder }}</span>
+        {% else %}<span class="ir-who">{{ idm.who(r.holder) }}</span>{% endif %}
+        <span class="ir-val">{{ r.value }}</span>
+        {% if r.detail %}<span class="ir-det">{{ r.detail }}</span>{% endif %}
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  {% endfor %}
+</section>
+{% endif %}
+
+<h2>Week {{ live_week_num }} scoreboard</h2>
+<p class="hint">The week&rsquo;s games so far. Rows run biggest lead first; expand one
+   for both lineups in scoreboard order and what each manager has on the bench.
+   Scores update on <strong>Refresh scores</strong> above.</p>
+{{ lz.lazy("/tab/weekly/part/scoreboard" ~ part_qs, height="200px") }}
 
 {% else %}
 {% if live and not is_current %}
@@ -81,7 +143,9 @@
       {% for r in t.rows %}
       <div class="insight-row {{ r.tone }}">
         <span class="ir-mark">{{ "▲" if r.tone == "good" else "▼" }}</span>
-        <span class="ir-who">{{ idm.who(r.holder) }}</span>
+        {# See the live section above for why a tied extreme skips idm.who(). #}
+        {% if r.tied %}<span class="ir-who" title="{{ r.holder_names }}">{{ r.holder }}</span>
+        {% else %}<span class="ir-who">{{ idm.who(r.holder) }}</span>{% endif %}
         <span class="ir-val">{{ r.value }}</span>
         {% if r.detail %}<span class="ir-det">{{ r.detail }}</span>{% endif %}
       </div>

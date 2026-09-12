@@ -100,6 +100,9 @@ a.ghost:hover { filter: brightness(1.06); }
 .adp-controls-row { flex-wrap: wrap; }
 .adp-filter { margin-left: auto; display: flex; flex-direction: column; gap: 4px;
   align-items: flex-start; }
+/* The Position checkbox group sits inline with the Season / Scoring selects
+   (no margin-left:auto -- only the Sources group is right-justified). */
+.adp-pos-filter { margin-left: 0; }
 /* NFL Stats controls row: the Apply submit sits on the right edge, bottom-
    aligned with the sibling <select>s (the row is align-items:flex-end). */
 .nfl-apply { margin-left: auto; align-self: flex-end; }
@@ -132,6 +135,7 @@ a.ghost:hover { filter: brightness(1.06); }
   border: 0; border-radius: 0; background: none; appearance: auto;
   accent-color: var(--turf); cursor: pointer; }
 .adp-col-hidden { display: none; }
+.adp-row-hidden { display: none; }
 
 /* ADP source-group header. Columns are ordered apps -> analyst; the
    .adp-grouphead cells span their group and the toggles flip
@@ -536,10 +540,15 @@ details summary { cursor: pointer; font-weight: 600; }
 
 /* Inline identity: a manager's team portrait beside their name, used in tiles,
    drilldown rows and tables (see _ident.html). Small, round, degrades to text. */
-.ident { display: inline-flex; align-items: center; gap: 6px; min-width: 0; vertical-align: middle; }
+.ident { display: inline-flex; align-items: center; gap: 6px; min-width: 0; max-width: 100%; vertical-align: middle; }
 .ident .face { width: 20px; height: 20px; border-radius: 50%; flex: 0 0 20px;
   object-fit: cover; background: var(--bg); border: 1px solid var(--line); }
-.ident .idn { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* min-width: 0 is required for a flex ITEM to shrink below its content's
+   natural width -- without it, .idn's own overflow/ellipsis rules never
+   engage (the box just grows and spills past .ident/its container instead).
+   Bit for real once a tile's holder became a joined name list ("Al, Bo, and
+   Cy") rather than always one short manager name. */
+.ident .idn { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 /* A player's headshot, shown before their name in the standout-player tables. */
 .pface { width: 22px; height: 22px; border-radius: 50%; object-fit: cover;
   background: var(--bg); border: 1px solid var(--line); vertical-align: middle;

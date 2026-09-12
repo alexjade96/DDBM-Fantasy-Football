@@ -628,40 +628,62 @@ def test_insight_gates_hide_everything_until_a_week_is_scored():
 def test_season_phase_preseason_when_drafted_but_nothing_scored(monkeypatch):
     """A season that has been drafted but has no scored week is `preseason`:
     the Overview then shows only the drafted rosters, no week tiles/charts.
-    Without a draft board it degrades to a bare `regular` (week 0)."""
-    import dataclasses
+    Without a draft board it degrades to a bare `regular` (week 0).
+
+    Uses the REAL `last_scored_leg` (via sm.league(), mocked here), not
+    team_wk's own points -- a live week's team_wk carries the same
+    live/partial data this function would otherwise misread as "scored"."""
     from webapp import app
 
     s = make_season()
-    tw = s.team_wk.copy()
-    tw.loc[:, "points"] = 0.0                  # nothing scored
-    s0 = dataclasses.replace(s, team_wk=tw, status="in_season")
-
+    monkeypatch.setattr(s, "status", "in_season", raising=False)
     monkeypatch.setattr(app.sm, "consolation_bracket", lambda *a, **k: {})
+    monkeypatch.setattr(app.sm, "league", lambda lid: {"last_scored_leg": 0})
     monkeypatch.setattr(app.draft, "draft_board",
                         lambda *a, **k: pd.DataFrame({"player_id": ["1"]}))
-    ph = app._season_phase(s0, {"playoffs": {}}, "2025")
+    ph = app._season_phase(s, {"playoffs": {}}, "2025")
     assert ph["phase"] == "preseason" and ph["last_week"] == 0
+    assert ph["scored_leg"] == 0
 
     # No draft either -> just "regular" with week 0, so the template still renders.
     monkeypatch.setattr(app.draft, "draft_board", lambda *a, **k: pd.DataFrame())
-    ph = app._season_phase(s0, {"playoffs": {}}, "2025")
+    ph = app._season_phase(s, {"playoffs": {}}, "2025")
     assert ph["phase"] == "regular" and ph["last_week"] == 0
+
+
+def test_season_phase_preseason_stays_preseason_with_a_live_week_in_progress(monkeypatch):
+    """Regression: week 1 in progress (team_wk already carries real partial
+    scores from the live feed) must NOT read as "the last completed week" --
+    nothing has actually FINISHED scoring, so the phase is still "preseason"
+    (drafted-rosters view), not "regular" re-showing week 1 as if it were
+    done."""
+    from webapp import app
+
+    s = make_season()  # team_wk has real (non-live) points > 0 for weeks 1-2
+    monkeypatch.setattr(s, "status", "in_season", raising=False)
+    monkeypatch.setattr(app.sm, "consolation_bracket", lambda *a, **k: {})
+    # last_scored_leg is still 0 -- Sleeper hasn't marked anything finished,
+    # regardless of what team_wk's own points look like.
+    monkeypatch.setattr(app.sm, "league", lambda lid: {"last_scored_leg": 0})
+    monkeypatch.setattr(app.draft, "draft_board",
+                        lambda *a, **k: pd.DataFrame({"player_id": ["1"]}))
+    ph = app._season_phase(s, {"playoffs": {}}, "2025")
+    assert ph["phase"] == "preseason" and ph["last_week"] == 0
+    assert ph["scored_leg"] == 0
 
 
 def test_season_phase_regular_leads_with_last_completed_week(monkeypatch):
     """Mid-regular-season with the latest week still unscored: the lead opens on
-    the last COMPLETED week, not Season.last_week."""
-    import dataclasses
+    the last COMPLETED week (the real last_scored_leg), not Season.last_week."""
     from webapp import app
 
-    s = make_season()
-    tw = s.team_wk.copy()
-    tw.loc[tw["week"] == 2, "points"] = 0.0    # week 2 in progress, unscored
-    s1 = dataclasses.replace(s, team_wk=tw, status="in_season")
+    s = make_season()  # last_week = 2
+    monkeypatch.setattr(s, "status", "in_season", raising=False)
     monkeypatch.setattr(app.sm, "consolation_bracket", lambda *a, **k: {})
-    ph = app._season_phase(s1, {"playoffs": {}}, "2025")
+    monkeypatch.setattr(app.sm, "league", lambda lid: {"last_scored_leg": 1})
+    ph = app._season_phase(s, {"playoffs": {}}, "2025")
     assert ph["phase"] == "regular" and ph["last_week"] == 1
+    assert ph["scored_leg"] == 1
 
 
 def test_season_phase_complete_recaps_every_round(monkeypatch):
@@ -686,6 +708,336 @@ def test_season_phase_complete_recaps_every_round(monkeypatch):
     assert ph["phase"] == "complete"
     assert [g["key"] for g in ph["title_rounds"]] == ["R1", "R2", "R3"]
     assert ph["champion"] == "Al"
+
+
+def test_live_week_ctx_none_when_season_not_in_progress():
+    """`_live_week_ctx` never even calls `/state/nfl` for a finished/not-yet-
+    started season -- there is no "later, live" week to find."""
+    from webapp import app
+
+    s = make_season()  # status=None -> not in_progress
+    assert app._live_week_ctx(s) is None
+
+
+def test_live_week_ctx_none_when_nfl_week_not_past_last_scored(monkeypatch):
+    """`/state/nfl` week caught up to (or behind) the REAL `last_scored_leg`
+    means there is nothing live beyond what's already scored."""
+    from webapp import app
+
+    s = make_season()
+    monkeypatch.setattr(s, "status", "in_season", raising=False)
+    monkeypatch.setattr(app.sm, "nfl_state", lambda: {"week": s.last_week})
+    monkeypatch.setattr(app.sm, "league", lambda lid: {"last_scored_leg": s.last_week})
+    assert app._live_week_ctx(s) is None
+
+
+def test_live_week_ctx_returns_week_number_only(monkeypatch):
+    """`_live_week_ctx` no longer builds KPI tiles -- the Overview's live
+    section shows the games themselves (via the shared scoreboard lazy part
+    pointed at "live"), not a verdict on the week. It just confirms a live
+    week exists and hands back its number for the template to use."""
+    from webapp import app
+
+    s = make_season()  # last_week = 2
+    monkeypatch.setattr(s, "status", "in_season", raising=False)
+    monkeypatch.setattr(app.sm, "nfl_state", lambda: {"week": 3})
+    monkeypatch.setattr(app.sm, "league", lambda lid: {"last_scored_leg": 2})
+
+    live_tw = pd.DataFrame({
+        "week": [3, 3], "roster_id": [1, 2], "user_id": ["1", "2"],
+        "user_name": ["Al", "Bo"], "matchup_id": [1, 1],
+        "points": [55.0, 20.0], "opp": [2, 1], "pa": [20.0, 55.0],
+        "result": ["W", "L"],
+    })
+    live_pl = pd.DataFrame({"week": [], "roster_id": [], "player_id": [],
+                            "points": [], "is_starter": []})
+    live_lineup = pd.DataFrame({
+        "user_name": ["Al", "Bo"], "week": [3, 3],
+        "actual": [55.0, 20.0], "optimal": [60.0, 25.0],
+        "left_on_bench": [5.0, 5.0],
+    })
+    monkeypatch.setattr(app.sm, "fetch_live_week",
+                        lambda s_, wk: (live_tw, live_pl, live_lineup))
+
+    out = app._live_week_ctx(s)
+    assert out == {"week": 3}
+
+
+def test_live_week_ctx_reuses_passed_in_scored_leg(monkeypatch):
+    """When the caller already has `scored_leg` (the "overview" route reuses
+    `_season_phase`'s own `sm.league()` fetch), `_live_week_ctx` must not
+    call `sm.league()` a second time for the same request."""
+    from webapp import app
+
+    s = make_season()  # last_week = 2
+    monkeypatch.setattr(s, "status", "in_season", raising=False)
+    monkeypatch.setattr(app.sm, "nfl_state", lambda: {"week": 3})
+
+    def _boom(lid):
+        raise AssertionError("sm.league() should not be called again")
+    monkeypatch.setattr(app.sm, "league", _boom)
+
+    live_tw = pd.DataFrame({
+        "week": [3, 3], "roster_id": [1, 2], "user_id": ["1", "2"],
+        "user_name": ["Al", "Bo"], "matchup_id": [1, 1],
+        "points": [55.0, 20.0], "opp": [2, 1], "pa": [20.0, 55.0],
+        "result": ["W", "L"],
+    })
+    live_pl = pd.DataFrame({"week": [], "roster_id": [], "player_id": [],
+                            "points": [], "is_starter": []})
+    live_lineup = pd.DataFrame({
+        "user_name": ["Al", "Bo"], "week": [3, 3],
+        "actual": [55.0, 20.0], "optimal": [60.0, 25.0],
+        "left_on_bench": [5.0, 5.0],
+    })
+    monkeypatch.setattr(app.sm, "fetch_live_week",
+                        lambda s_, wk: (live_tw, live_pl, live_lineup))
+
+    out = app._live_week_ctx(s, scored_leg=2)
+    assert out == {"week": 3}
+
+
+def test_live_week_ctx_none_on_fetch_failure(monkeypatch):
+    """Best-effort: a failed/offline live fetch reads as no live week rather
+    than raising, same contract as `_current_nfl_season`."""
+    from webapp import app
+
+    s = make_season()
+    monkeypatch.setattr(s, "status", "in_season", raising=False)
+    monkeypatch.setattr(app.sm, "nfl_state", lambda: {"week": 3})
+    monkeypatch.setattr(app.sm, "league", lambda lid: {"last_scored_leg": 2})
+
+    def _boom(*a, **k):
+        raise RuntimeError("offline")
+    monkeypatch.setattr(app.sm, "fetch_live_week", _boom)
+    assert app._live_week_ctx(s) is None
+
+
+def test_live_week_view_week1_in_progress_reads_live_despite_floored_last_week(monkeypatch):
+    """Regression for the reported bug (DDBM 2026 week 1 in progress): before
+    any week has been fully scored, `last_scored_leg` is 0 but `s.last_week`
+    is FLOORED to 1 (season.py) -- the same number `/state/nfl` reports as
+    the live week. Comparing against `s.last_week` made this read as "nothing
+    live" and the Weekly tab kept showing Best of the Week/charts/recap for
+    week 1 as if it were final. `_live_week_view` must compare against the
+    real, unfloored `last_scored_leg` (fetched via `sm.league`) instead."""
+    from webapp import app
+
+    s = make_season()
+    monkeypatch.setattr(s, "last_week", 1, raising=False)
+    monkeypatch.setattr(s, "status", "in_season", raising=False)
+    monkeypatch.setattr(app.sm, "nfl_state", lambda: {"week": 1})
+    monkeypatch.setattr(app.sm, "league", lambda lid: {"last_scored_leg": 0})
+
+    live_tw = pd.DataFrame({
+        "week": [1, 1], "roster_id": [1, 2], "user_id": ["1", "2"],
+        "user_name": ["Al", "Bo"], "matchup_id": [1, 1],
+        "points": [12.0, 3.0], "opp": [2, 1], "pa": [3.0, 12.0],
+        "result": ["W", "L"],
+    })
+    live_pl = pd.DataFrame({"week": [], "roster_id": [], "player_id": [],
+                            "points": [], "is_starter": []})
+    live_lineup = pd.DataFrame({"user_name": [], "week": [], "actual": [],
+                                "optimal": [], "left_on_bench": []})
+    monkeypatch.setattr(app.sm, "fetch_live_week",
+                        lambda s_, wk: (live_tw, live_pl, live_lineup))
+
+    wk, live_s, scored_leg = app._live_week_view(s)
+    assert wk == 1 and live_s is not None and scored_leg == 0
+
+    ctx = app._week_context(s, None, allow_live=True)
+    assert ctx["is_live_week"] is True
+    assert ctx["week"] == "live"
+    # No numbered "1" slot -- nothing is actually complete yet, only "live".
+    assert ctx["weeks"] == ["live"]
+
+
+def test_fetch_live_week_empty_when_no_matchups(monkeypatch):
+    """A week Sleeper has no matchups for yet (not yet posted) degrades to
+    three correctly-columned empty frames, not an error."""
+    import sys
+    import sleepermetrics.season  # noqa: F401 -- populates sys.modules
+    season_mod = sys.modules["sleepermetrics.season"]
+
+    s = make_season()
+    monkeypatch.setattr(season_mod, "sleeper_api", lambda path: [])
+    tw, pl, lineup = season_mod.fetch_live_week(s, 3)
+    assert tw.empty and pl.empty and lineup.empty
+    assert list(tw.columns) == ["week", "roster_id", "matchup_id", "points",
+                                "opp", "pa", "result", "user_id", "user_name"]
+
+
+def test_fetch_live_week_shapes_partial_matchup_data(monkeypatch):
+    """A real live week: Sleeper's matchups payload (partial points, mid-week)
+    shaped into the same team_wk/pl_wk/lineup columns assemble_season uses,
+    so metrics.week_stats can read it unmodified."""
+    import sys
+    import sleepermetrics.season  # noqa: F401 -- populates sys.modules
+    season_mod = sys.modules["sleepermetrics.season"]
+
+    s = make_season()
+    raw = [
+        {"roster_id": 1, "matchup_id": 1, "points": 55.0,
+         "starters": ["p1"], "players": ["p1", "p2"],
+         "players_points": {"p1": 55.0, "p2": 5.0}},
+        {"roster_id": 2, "matchup_id": 1, "points": 20.0,
+         "starters": ["p3"], "players": ["p3"],
+         "players_points": {"p3": 20.0}},
+    ]
+    monkeypatch.setattr(season_mod, "sleeper_api", lambda path: raw)
+    monkeypatch.setattr(season_mod, "players", lambda: pd.DataFrame({
+        "player_id": ["p1", "p2", "p3"],
+        "player_name": ["P1", "P2", "P3"],
+        "position": ["QB", "RB", "WR"],
+    }))
+    tw, pl, lineup = season_mod.fetch_live_week(s, 3)
+    assert set(tw["user_name"]) == {"Al", "Bo"}
+    al = tw[tw["user_name"] == "Al"].iloc[0]
+    assert al["points"] == 55.0 and al["pa"] == 20.0 and al["result"] == "W"
+    assert len(pl) == 3
+    assert lineup[lineup["user_name"] == "Al"].iloc[0]["actual"] == 55.0
+
+
+def _patch_live_week(monkeypatch, app, week=3, last_scored_leg=2):
+    """Shared setup: an in_progress season whose live week (per _live_week_view)
+    resolves to a small, fixed two-team matchup."""
+    live_tw = pd.DataFrame({
+        "week": [week, week], "roster_id": [1, 2], "user_id": ["1", "2"],
+        "user_name": ["Al", "Bo"], "matchup_id": [1, 1],
+        "points": [55.0, 20.0], "opp": [2, 1], "pa": [20.0, 55.0],
+        "result": ["W", "L"],
+    })
+    live_pl = pd.DataFrame({"week": [], "roster_id": [], "player_id": [],
+                            "points": [], "is_starter": []})
+    live_lineup = pd.DataFrame({
+        "user_name": ["Al", "Bo"], "week": [week, week],
+        "actual": [55.0, 20.0], "optimal": [60.0, 25.0],
+        "left_on_bench": [5.0, 5.0],
+    })
+    monkeypatch.setattr(app.sm, "nfl_state", lambda: {"week": week})
+    monkeypatch.setattr(app.sm, "league", lambda lid: {"last_scored_leg": last_scored_leg})
+    monkeypatch.setattr(app.sm, "fetch_live_week",
+                        lambda s_, wk: (live_tw, live_pl, live_lineup))
+
+
+def test_week_context_allow_live_adds_live_slot_to_rail(monkeypatch):
+    """When a live week exists, `weeks` gains a trailing "live" entry
+    regardless of which week is actually selected -- the rail always offers
+    it once one exists."""
+    from webapp import app
+
+    s = make_season()  # last_week = 2
+    monkeypatch.setattr(s, "status", "in_season", raising=False)
+    _patch_live_week(monkeypatch, app, week=3)
+
+    ctx = app._week_context(s, 1, allow_live=True)
+    assert ctx["weeks"] == [1, 2, "live"]
+    assert ctx["week"] == 1  # unaffected -- explicit week 1 still selected
+
+
+def test_week_context_bare_request_defaults_to_completed_week_not_live(monkeypatch):
+    """Regression: a bare/default Weekly-tab open (week=None) must default to
+    the last COMPLETED week whenever one exists, even though a live week also
+    exists -- it should NOT jump to "live" just because one is available.
+    The earlier bug routed every bare request to "live" the moment ANY live
+    week existed, showing the live section's simpler 4-tile layout instead of
+    a completed week's 6-tile insights, even with finished weeks on the
+    board."""
+    from webapp import app
+
+    s = make_season()  # last_week = 2, both weeks fully scored
+    monkeypatch.setattr(s, "status", "in_season", raising=False)
+    _patch_live_week(monkeypatch, app, week=3, last_scored_leg=2)
+
+    ctx = app._week_context(s, None, allow_live=True)
+    assert ctx["week"] == 2          # the last COMPLETED week, not "live"
+    assert ctx.get("is_live_week") is not True
+    assert ctx["weeks"] == [1, 2, "live"]
+
+
+def test_week_context_bare_request_with_draft_and_nothing_complete_defaults_to_live(monkeypatch):
+    """Regression: with a draft board present (allow_zero=True, so lo=0) and
+    NOTHING actually finished scoring yet (last_scored_leg=0), a bare request
+    must still route to "live", not fall through to a plain week-1 render.
+    The bug: checking `numbered_max >= lo` treated `lo=0` (the Pre-season
+    slot's own floor, unrelated to real weeks) as if it meant "a completed
+    week exists" the moment allow_zero was True, so `_resolve_week` took over
+    and defaulted to `s.last_week` (floored to >= 1 even with nothing
+    complete), rendering week 1's live/partial data as an ordinary finished
+    week -- the exact "finality language on an in-progress week" symptom."""
+    from webapp import app
+
+    s = make_season()
+    monkeypatch.setattr(s, "status", "in_season", raising=False)
+    _patch_live_week(monkeypatch, app, week=1, last_scored_leg=0)
+
+    ctx = app._week_context(s, None, allow_zero=True, allow_live=True)
+    assert ctx["week"] == "live"
+    assert ctx["is_live_week"] is True
+    assert ctx["weeks"] == [0, "live"]     # week 1's numbered slot doesn't exist yet
+
+
+def test_week_context_no_live_slot_when_nothing_in_progress(monkeypatch):
+    from webapp import app
+
+    s = make_season()  # status=None -> not in_progress
+    ctx = app._week_context(s, 1, allow_live=True)
+    assert ctx["weeks"] == [1, 2]
+
+
+def test_week_context_live_selection_returns_insight_rows_and_flags(monkeypatch):
+    """Selecting week="live" returns the SAME six-tile insight-row format a
+    completed week gets (built off the substituted live Season view via
+    _week_insight_rows(..., live=True)), not the old four-tile KPI shape,
+    plus the flags the template branches on."""
+    from webapp import app
+
+    s = make_season()
+    monkeypatch.setattr(s, "status", "in_season", raising=False)
+    _patch_live_week(monkeypatch, app, week=3)
+
+    ctx = app._week_context(s, "live", allow_live=True)
+    assert ctx["week"] == "live" and ctx["live_week_num"] == 3
+    assert ctx["is_live_week"] is True
+    assert ctx["weeks"] == [1, 2, "live"]
+    assert "kpi_top" not in ctx
+    labels = {t["label"] for t in ctx["week_insight_rows"]}
+    assert "Scoring" in labels
+    scoring = next(t for t in ctx["week_insight_rows"] if t["label"] == "Scoring")
+    assert scoring["rows"][0] == {"tone": "good", "holder": "Al", "value": "55.0",
+                                  "detail": "current highest score",
+                                  "holder_names": None, "tied": False}
+    # Luck/Margin use in-progress wording, not "won"/"lost".
+    luck = next(t for t in ctx["week_insight_rows"] if t["label"] == "Luck")
+    assert "winning score" in luck["rows"][0]["detail"]
+    assert "won" not in luck["rows"][0]["detail"]
+
+
+def test_scoreboard_ctx_live_drops_records_and_uses_live_season(monkeypatch):
+    """`_scoreboard_ctx(s, "live")` never reads the real table_position()
+    cumulative record (meaningless for an in-progress week) and solves
+    week_matchups against the substituted live Season."""
+    from webapp import app
+
+    s = make_season()
+    monkeypatch.setattr(s, "status", "in_season", raising=False)
+    _patch_live_week(monkeypatch, app, week=3)
+
+    out = app._scoreboard_ctx(s, "live")
+    assert out["records"] == {}
+    assert len(out["wk_games"]) == 1
+    game = out["wk_games"][0]
+    assert {sd["user_name"] for sd in game["sides"]} == {"Al", "Bo"}
+
+
+def test_scoreboard_ctx_live_empty_when_no_live_week(monkeypatch):
+    """A stale `week=live` request (the live week vanished -- season wrapped,
+    or a refresh landed) degrades to an empty board, not an error."""
+    from webapp import app
+
+    s = make_season()  # not in_progress -> _live_week_view finds nothing
+    out = app._scoreboard_ctx(s, "live")
+    assert out == {"records": {}, "wk_games": []}
 
 
 def test_playoff_tiles_are_all_superlatives_no_game_count():
@@ -793,9 +1145,16 @@ def test_week_insight_rows_are_per_week_merged_tiles(season_obj):
         assert set(t) == {"label", "rows"}
         assert 1 <= len(t["rows"]) <= 2
         for r in t["rows"]:
-            assert set(r) == {"tone", "holder", "value", "detail"}
+            assert set(r) == {"tone", "holder", "value", "detail", "holder_names", "tied"}
             assert r["holder"] and isinstance(r["holder"], str) and r["holder"] != "nan"
             assert r["tone"] in ("good", "bad") and r["value"]
+            # `tied`/`holder_names` are consistent with each other regardless
+            # of whether THIS particular row happens to be tied (Bench's own
+            # fixture data ties Al and Bo at 10.0 -- see the dedicated tie
+            # tests below for that behavior in isolation).
+            assert r["tied"] == (r["holder_names"] is not None)
+            if r["tied"]:
+                assert r["holder"].endswith(" teams")
     # Scoring: high score is the good row, low score the bad one.
     scoring = next(t for t in tiles if t["label"] == "Scoring")
     good = next(r for r in scoring["rows"] if r["tone"] == "good")
@@ -804,6 +1163,133 @@ def test_week_insight_rows_are_per_week_merged_tiles(season_obj):
 
     # A week with no scored games -> no tiles (template skips the section).
     assert _week_insight_rows(season_obj, 99) == []
+
+
+def test_week_insight_rows_names_every_team_tied_at_an_extreme(monkeypatch):
+    """Regression: a bare idxmax()/idxmin() silently picks ONE row when
+    several teams share the extreme value -- real case, a live week where
+    two teams both showed 0.0 points on the bench, and the old code named
+    the same team as both "most" and "fewest". `_extreme()` must name every
+    team actually tied there instead -- surfaced as "N teams" (a joined name
+    list overflowed the tile) plus `holder_names`, a plain comma-separated
+    list for a hover tooltip."""
+    import dataclasses
+    from webapp.app import _week_insight_rows
+
+    s = make_season()
+    tw = pd.DataFrame({
+        "week": [3, 3, 3, 3], "roster_id": [1, 2, 3, 4],
+        "user_id": ["1", "2", "3", "4"], "user_name": ["Al", "Bo", "Cy", "Di"],
+        "matchup_id": [1, 1, 2, 2],
+        "points": [100.0, 100.0, 20.0, 20.0], "opp": [2, 1, 4, 3],
+        "pa": [100.0, 100.0, 20.0, 20.0], "result": ["T", "T", "T", "T"],
+    })
+    pl = pd.DataFrame({"week": [], "roster_id": [], "player_id": [], "points": [], "is_starter": []})
+    lineup = pd.DataFrame({
+        "user_name": ["Al", "Bo", "Cy", "Di"], "week": [3, 3, 3, 3],
+        "actual": [100.0, 100.0, 20.0, 20.0], "optimal": [110.0, 120.0, 25.0, 30.0],
+        "left_on_bench": [10.0, 20.0, 5.0, 10.0],
+    })
+    s2 = dataclasses.replace(s, team_wk=tw, pl_wk=pl, lineup=lineup)
+
+    tiles = _week_insight_rows(s2, 3, live=True)
+    scoring = next(t for t in tiles if t["label"] == "Scoring")
+    good = next(r for r in scoring["rows"] if r["tone"] == "good")
+    bad = next(r for r in scoring["rows"] if r["tone"] == "bad")
+    assert good["holder"] == "2 teams" and good["tied"] is True
+    assert good["holder_names"] == "Al, Bo" and float(good["value"]) == 100.0
+    assert bad["holder"] == "2 teams" and bad["holder_names"] == "Cy, Di"
+    assert float(bad["value"]) == 20.0
+
+    opp = next(t for t in tiles if t["label"] == "Opponent")
+    weak = next(r for r in opp["rows"] if r["tone"] == "good")
+    tough = next(r for r in opp["rows"] if r["tone"] == "bad")
+    assert weak["holder_names"] == "Cy, Di"
+    assert tough["holder_names"] == "Al, Bo"
+    # Never joined with "and" -- that's what overflowed the tile in the first place.
+    assert "and" not in weak["holder_names"] and "and" not in tough["holder_names"]
+
+
+def test_week_insight_rows_collapses_a_wholly_tied_tile_to_one_row(monkeypatch):
+    """When EVERY eligible team ties at one value (real case: two teams both
+    left 5.0 points on the bench), "most" and "fewest" are the identical
+    fact -- the tile keeps just the good row instead of repeating the same
+    name/value twice under two different labels."""
+    import dataclasses
+    from webapp.app import _week_insight_rows
+
+    s = make_season()
+    tw = pd.DataFrame({
+        "week": [3, 3], "roster_id": [1, 2], "user_id": ["1", "2"],
+        "user_name": ["Al", "Bo"], "matchup_id": [1, 1],
+        "points": [55.0, 20.0], "opp": [2, 1], "pa": [20.0, 55.0],
+        "result": ["W", "L"],
+    })
+    pl = pd.DataFrame({"week": [], "roster_id": [], "player_id": [], "points": [], "is_starter": []})
+    lineup = pd.DataFrame({
+        "user_name": ["Al", "Bo"], "week": [3, 3],
+        "actual": [55.0, 20.0], "optimal": [60.0, 25.0],
+        "left_on_bench": [5.0, 5.0],           # every team tied
+    })
+    s2 = dataclasses.replace(s, team_wk=tw, pl_wk=pl, lineup=lineup)
+
+    tiles = _week_insight_rows(s2, 3, live=True)
+    bench = next(t for t in tiles if t["label"] == "Bench")
+    assert len(bench["rows"]) == 1
+    assert bench["rows"][0]["holder"] == "2 teams"
+    assert bench["rows"][0]["holder_names"] == "Al, Bo"
+    assert bench["rows"][0]["tone"] == "good"
+
+
+def test_week_insight_rows_live_skips_scored_gate_and_uses_in_progress_wording(monkeypatch):
+    """`live=True` bypasses the `_week_scored` gate (the live view's data is
+    partial by design) and swaps in in-progress wording -- each tile worded
+    on its own terms (not one qualifier stamped everywhere): Scoring gets a
+    real superlative ("current highest/lowest score"); Efficiency and
+    Opponent keep their shared suffix, just an in-progress version of it;
+    Luck and Margin drop the settled-result verb ("won"/"lost", "biggest win
+    of the week") for the same fact without it."""
+    import dataclasses
+    from webapp.app import _week_insight_rows
+
+    s = make_season()
+    tw = s.team_wk.copy()
+    tw.loc[tw["week"] == 1, "points"] = 0.0    # week 1 in progress, unscored
+    s_live = dataclasses.replace(s, team_wk=tw)
+
+    # Without live=True, an in-progress week is hidden (all-zero scores).
+    assert _week_insight_rows(s_live, 1) == []
+
+    # With live=True, the section renders anyway, off whatever live_s carries.
+    tiles = _week_insight_rows(s, 1, live=True)
+    assert tiles
+
+    scoring = next(t for t in tiles if t["label"] == "Scoring")
+    assert {r["detail"] for r in scoring["rows"]} == {"current highest score", "current lowest score"}
+
+    eff = next((t for t in tiles if t["label"] == "Efficiency"), None)
+    if eff:
+        assert {r["detail"] for r in eff["rows"]} == \
+            {"best lineup efficiency so far", "worst lineup efficiency so far"}
+
+    opp = next((t for t in tiles if t["label"] == "Opponent"), None)
+    if opp:
+        assert {r["detail"] for r in opp["rows"]} == \
+            {"currently facing the weakest opponent", "currently facing the toughest opponent"}
+        for r in opp["rows"]:
+            assert "this week" not in r["detail"]
+
+    luck = next((t for t in tiles if t["label"] == "Luck"), None)
+    if luck:
+        assert {r["detail"] for r in luck["rows"]} == \
+            {"current lowest winning score", "current highest losing score"}
+        for r in luck["rows"]:
+            assert "won" not in r["detail"] and "lost" not in r["detail"]
+
+    margin = next((t for t in tiles if t["label"] == "Margin"), None)
+    if margin:
+        assert {r["detail"] for r in margin["rows"]} == \
+            {"current largest lead", "current closest game"}
 
 
 def test_both_optimal_flips_is_a_recap_chip_not_a_top_level_tile(monkeypatch, season_obj):

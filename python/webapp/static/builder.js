@@ -185,7 +185,7 @@
       var self = this;
       var cur = mu[key] && mu[key].team != null ? String(mu[key].team) : '';
       // Re-render on change: a pick changes what the NEXT round has available.
-      return this._pickSelect(cur, '— team —', this._teamOptions(ri, true), function (v) {
+      return this._pickSelect(cur, '-- team --', this._teamOptions(ri, true), function (v) {
         if (!mu[key]) mu[key] = { team: '', starters: [] };
         mu[key].team = v; mu[key].starters = [];   // lineup belonged to the old team
         self.setCfg(self.cfg); self.preview();
@@ -218,7 +218,7 @@
       if (Object.prototype.hasOwnProperty.call(mu, 'bye')) {
         var row = elt('div', 'bkr-side');
         // A bye team can be any seed (see _seedOptions), so it's always fillable.
-        row.appendChild(this._pickSelect(mu.bye == null ? '' : String(mu.bye), '— bye team —',
+        row.appendChild(this._pickSelect(mu.bye == null ? '' : String(mu.bye), '-- bye team --',
           this._seedOptions(), function (v) { mu.bye = v; self.setCfg(self.cfg); self.preview(); }));
         row.appendChild(elt('span', 'tag', 'bye'));
         card.appendChild(row);
@@ -281,7 +281,7 @@
       box._openKey = key;
       var name = mu[key] && mu[key].team;
       if (!name || String(name).indexOf('W:') === 0) {
-        box.innerHTML = ''; box.appendChild(elt('p', 'q', 'Pick a team first — the lineup opens once it is a concrete manager.'));
+        box.innerHTML = ''; box.appendChild(elt('p', 'q', 'Pick a team first -- the lineup opens once it is a concrete manager.'));
         return;
       }
       box.innerHTML = ''; box.appendChild(elt('p', 'q', 'Loading lineup…'));
@@ -317,13 +317,13 @@
       var starters = (mu[key].starters && mu[key].starters.length) ? mu[key].starters : (data.prefill || []);
       var perSlot = this._assign(starters, slots, players);
       box.innerHTML = '';
-      box.appendChild(elt('div', 'bkr-ltitle', mu[key].team + ' — week ' + (data.week || '')));
+      box.appendChild(elt('div', 'bkr-ltitle', mu[key].team + ' -- week ' + (data.week || '')));
       var selects = [];
       slots.forEach(function (slot, i) {
         var row = elt('div', 'bkr-slot');
         row.appendChild(elt('span', 'bkr-slab', slot.slot));
         var sel = elt('select');
-        sel.appendChild(opt('', '— empty —', !perSlot[i]));
+        sel.appendChild(opt('', '-- empty --', !perSlot[i]));
         players.forEach(function (p) { sel.appendChild(opt(p.id, p.name + ' · ' + p.position, String(perSlot[i]) === String(p.id))); });
         sel.onchange = function () {
           mu[key].starters = selects.map(function (s) { return s.value; }).filter(Boolean);
@@ -357,13 +357,13 @@
         if (j.warnings && j.warnings.length) this.msg(champ + ' · ' + j.warnings.length + ' still to fill', 'warn');
         else this.msg(champ + ' · looks complete', 'ok');
       } else {
-        this.msg('Cannot preview — ' + ((j.errors || ['unknown error']).join('; ')), 'err');
+        this.msg('Cannot preview -- ' + ((j.errors || ['unknown error']).join('; ')), 'err');
       }
     },
 
     apply: async function () {
       var j = await SMBracket.apply(this.cfg);        // scores + reloads the tab
-      if (j && !j.ok) this.msg('Not applied — ' + (j.errors || []).join('; '), 'err');
+      if (j && !j.ok) this.msg('Not applied -- ' + (j.errors || []).join('; '), 'err');
     },
     validate: async function () {
       try {
@@ -379,7 +379,7 @@
     scaffold: async function () {
       var cfg = await this._tryCfg('/playoffs/scaffold?league=' + enc(this._league()) + '&season=' + enc(this._season())
         + '&weeks=' + enc(this._el('bkr-weeks').value) + '&teams=' + enc(this._el('bkr-teams').value));
-      if (cfg) { this.setCfg(cfg); this.preview(); this.msg('New scaffold — edit teams and lineups.', ''); }
+      if (cfg) { this.setCfg(cfg); this.preview(); this.msg('New scaffold -- edit teams and lineups.', ''); }
       else this.msg('Could not scaffold.', 'err');
     },
     loadInto: async function (source) {

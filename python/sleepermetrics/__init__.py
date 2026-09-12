@@ -24,8 +24,8 @@ from .playoffs import (Playoff, apply_playoffs, clutch, load_playoffs, playoff,
 from .nflstats import player_usage
 from .report import season_report
 from .scoring import score_lineup, scoring_chart
-from .season import (Season, assemble_season, avatar_url, league_accounts,
-                     optimal_points, season, seasons)
+from .season import (Season, assemble_season, avatar_url, fetch_live_week,
+                     league_accounts, optimal_points, season, seasons)
 from .statnames import scoring_readable, stat_labels
 from .summaries import summary_career, summary_season
 from .weekly import summary_week
@@ -34,7 +34,7 @@ __all__ = [
     "sleeper_api", "league", "league_chain", "root_league_id", "starter_slots",
     "current_season_league_id", "clear_forward_cache",
     "nfl_state", "user", "user_leagues", "players",
-    "Season", "assemble_season", "optimal_points", "season", "seasons",
+    "Season", "assemble_season", "fetch_live_week", "optimal_points", "season", "seasons",
     "league_accounts", "avatar_url",
     "metrics", "plots", "summaries", "weekly", "discord_bot",
     "nflstats", "player_usage",
