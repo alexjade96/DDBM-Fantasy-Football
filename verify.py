@@ -4,9 +4,9 @@
 Runs and verifies BOTH implementations operate correctly and produce mirrored
 outputs:
 
-  1. Python unit tests (pytest, python/tests)
-  2. R unit tests (testthat, R/sleepermetrics)
-  3. Both exporters (parity/export_{py,r}.py/R) -> canonical metric JSON
+  1. Python unit tests (pytest, fantasy-football-4-fun/tests)
+  2. R unit tests (testthat, r-analysis/sleepermetrics)
+  3. Both exporters (tools/parity/export_{py,r}.py/R) -> canonical metric JSON
   4. A field-by-field parity diff of the two JSONs (numbers within tolerance,
      summary text exact)
 
@@ -25,7 +25,12 @@ import sys
 from pathlib import Path
 
 BASE = Path(__file__).resolve().parent
-PY = BASE / "python" / ("venv/Scripts/python.exe" if os.name == "nt" else "venv/bin/python")
+PY = BASE / "fantasy-football-4-fun" / ("venv/Scripts/python.exe" if os.name == "nt" else "venv/bin/python")
+# Both exporters round every number to 2dp before writing (export_py.py's
+# `.round(2)`, export_r.R's `round(.x, 2)`), so a real match differs by at
+# most one 2dp ulp; 0.011 covers that plus slack for an R/Python half-to-even
+# tie landing on opposite sides of a .x5 boundary (the same tie CLAUDE.md
+# notes power_rank must stay unrounded internally to avoid).
 TOL = 0.011
 
 
@@ -48,9 +53,10 @@ def _run(label, cmd, cwd=None, env=None) -> bool:
 
 def _num(x):
     try:
-        return float(x)
+        f = float(x)
     except (TypeError, ValueError):
         return None
+    return None if f != f else f  # NaN never compares equal to itself
 
 
 def _cmp(path, a, b, errs):
@@ -67,6 +73,16 @@ def _cmp(path, a, b, errs):
         for k in set(a) | set(b):
             _cmp(f"{path}.{k}", a.get(k), b.get(k), errs)
     else:
+        # A NaN on EITHER side is a mismatch even if both are NaN: neither
+        # exporter should ever emit one (CLAUDE.md documents NaN-vs-None as
+        # a recurring bug class -- the champion, the scoreboard opponent,
+        # manager avatars -- so treating it as "equal" here would bless the
+        # exact failure the harness exists to catch).
+        a_is_nan = isinstance(a, float) and a != a
+        b_is_nan = isinstance(b, float) and b != b
+        if a_is_nan or b_is_nan:
+            errs.append(f"{path}: NaN ({a!r} vs {b!r})")
+            return
         na, nb = _num(a), _num(b)
         if na is not None and nb is not None:
             if abs(na - nb) > TOL:
@@ -77,7 +93,9 @@ def _cmp(path, a, b, errs):
 
 def _compare(rj, pj):
     errs = []
-    for k in [k for k in rj if k != "impl"]:
+    for k in set(rj) | set(pj):
+        if k == "impl":
+            continue
         _cmp(k, rj.get(k), pj.get(k), errs)
     return errs
 
@@ -89,31 +107,31 @@ def main(argv=None):
     env = dict(os.environ, PYTHONIOENCODING="utf-8")
     if not PY.exists():
         sys.exit(f"Python venv missing at {PY}. Create it: "
-                 "python -m venv python/venv && "
-                 "python/venv/Scripts/pip install -r python/requirements.txt")
+                 "python -m venv fantasy-football-4-fun/venv && "
+                 "fantasy-football-4-fun/venv/Scripts/pip install -r fantasy-football-4-fun/requirements.txt")
     res = {}
 
     res["pytest"] = _run("pytest (Python unit tests)",
-                         [str(PY), "-m", "pytest", "tests", "-q"], cwd=str(BASE / "python"))
+                         [str(PY), "-m", "pytest", "tests", "-q"], cwd=str(BASE / "fantasy-football-4-fun"))
     res["testthat"] = _run("testthat (R unit tests)", [rs, "-e", (
-        'r <- as.data.frame(testthat::test_local("R/sleepermetrics", reporter="minimal"));'
+        'r <- as.data.frame(testthat::test_local("r-analysis/sleepermetrics", reporter="minimal"));'
         ' quit(status = as.integer(sum(r$failed) + sum(r$error) > 0))')], cwd=str(BASE))
     res["playoffs"] = _run("playoff champions (recomputed from lineups)",
-                           [str(PY), "parity/check_playoffs.py"],
+                           [str(PY), "tools/parity/check_playoffs.py"],
                            cwd=str(BASE), env=env)
     res["export_py"] = _run("export metrics (Python)",
-                            [str(PY), "parity/export_py.py", league, "parity/out_py.json"],
+                            [str(PY), "tools/parity/export_py.py", league, "tools/parity/out_py.json"],
                             cwd=str(BASE), env=env)
     res["export_r"] = _run("export metrics (R)",
-                           [rs, "parity/export_r.R", league, "parity/out_r.json"], cwd=str(BASE))
+                           [rs, "tools/parity/export_r.R", league, "tools/parity/out_r.json"], cwd=str(BASE))
 
     print("\n>>> parity diff (R vs Python)")
     if not (res["export_py"] and res["export_r"]):
         print("    [FAIL] exporters did not both succeed; skipping diff")
         res["parity"] = False
     else:
-        rj = json.loads((BASE / "parity" / "out_r.json").read_text(encoding="utf-8"))
-        pj = json.loads((BASE / "parity" / "out_py.json").read_text(encoding="utf-8"))
+        rj = json.loads((BASE / "tools" / "parity" / "out_r.json").read_text(encoding="utf-8"))
+        pj = json.loads((BASE / "tools" / "parity" / "out_py.json").read_text(encoding="utf-8"))
         errs = _compare(rj, pj)
         if errs:
             print(f"    [FAIL] {len(errs)} mismatch(es):")

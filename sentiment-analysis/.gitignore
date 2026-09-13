@@ -1,0 +1,19 @@
+venv/
+__pycache__/
+*.pyc
+.hf_cache/
+results/
+
+# Downloaded model weights/checkpoints -- large, reproducible from
+# benchmark/models.py's model ids, not meant to be committed. .gitkeep stays
+# tracked so the directory itself is visible in git.
+Models/*
+!Models/.gitkeep
+
+# Scraped source dumps (once a real scraper writes here) -- likely large and
+# high-churn. hand-labeled/ is NOT covered by this: it's small and
+# hand-authored, so it's tracked like data/seasons/adp/ elsewhere in this repo.
+Data/beat-writers/*
+!Data/beat-writers/.gitkeep
+Data/news-feeds/*
+!Data/news-feeds/.gitkeep

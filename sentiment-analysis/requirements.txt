@@ -1,0 +1,9 @@
+# Benchmarking-only dependencies. Deliberately separate from
+# fantasy-football-4-fun/requirements.txt -- these are heavy (torch) and this
+# subproject is not wired into the production webapp. See README.md.
+transformers>=4.40
+torch>=2.2
+vaderSentiment>=3.3
+datasets>=2.19
+pandas>=2.0
+scikit-learn>=1.4

@@ -17,12 +17,12 @@ explicit). The flag may sit before or after the mode.
     python launch.py --r weekly --dry-run         # R weekly recap (preview)
 
 Instances live in separate subdirectories:
-    python/   -> venv + Python package (sleepermetrics) + bot.py + webapp/
-    r/        -> launcher for the R package (../sleepermetrics)
+    fantasy-football-4-fun/   -> venv + Python package (sleepermetrics) + bot.py + webapp/
+    r-analysis/               -> R package (sleepermetrics), origin scripts, launchers
 
 Anything after the mode is passed through to that instance's runner (e.g.
 `dashboard --port 8000`). Config is read from each instance's .env
-(python/.env, r/.env) or the environment.
+(fantasy-football-4-fun/.env, r-analysis/.env) or the environment.
 """
 from __future__ import annotations
 
@@ -34,8 +34,8 @@ import sys
 from pathlib import Path
 
 BASE = Path(__file__).resolve().parent
-PY_DIR = BASE / "python"
-R_DIR = BASE / "R"
+PY_DIR = BASE / "fantasy-football-4-fun"
+R_DIR = BASE / "r-analysis"
 
 
 def _find_rscript() -> str:
@@ -67,11 +67,11 @@ def _run_python(mode: str, extra: list[str]) -> int:
     venv_py = PY_DIR / ("venv/Scripts/python.exe" if os.name == "nt" else "venv/bin/python")
     if not venv_py.exists():
         sys.exit("Python venv missing. Set it up:\n"
-                 "  python -m venv python/venv && "
-                 "python/venv/Scripts/pip install -r python/requirements.txt")
+                 "  python -m venv fantasy-football-4-fun/venv && "
+                 "fantasy-football-4-fun/venv/Scripts/pip install -r fantasy-football-4-fun/requirements.txt")
     if mode == "dashboard":
         port, rest = _parse_port(extra, 8000)
-        env = dict(os.environ, SLEEPERMETRICS_SEASON_DIR=str(BASE / "season"))
+        env = dict(os.environ, SLEEPERMETRICS_SEASON_DIR=str(BASE / "data" / "seasons"))
         # Jinja reloads templates on its own, so WITHOUT --reload a long-running
         # server picks up template edits while still holding the old app.py --
         # the two drift apart and blow up on the mismatch. Reload both together.
@@ -83,9 +83,9 @@ def _run_python(mode: str, extra: list[str]) -> int:
              "--host", "127.0.0.1", "--port", str(port), *reload],
             cwd=str(PY_DIR), env=env).returncode
     if mode == "report":
-        env = dict(os.environ, SLEEPERMETRICS_SEASON_DIR=str(BASE / "season"))
-        # Reports land in the repo root, not python/, so run from BASE with the
-        # package importable via the venv's site-packages editable install.
+        env = dict(os.environ, SLEEPERMETRICS_SEASON_DIR=str(BASE / "data" / "seasons"))
+        # Reports land in the repo root, not fantasy-football-4-fun/, so run from
+        # BASE with the package importable via the venv's site-packages editable install.
         return subprocess.run([str(venv_py), str(PY_DIR / "make_report.py"), *extra],
                               cwd=str(BASE), env=env).returncode
     return subprocess.run([str(venv_py), "bot.py", mode, *extra], cwd=str(PY_DIR)).returncode
@@ -96,13 +96,13 @@ def _run_r(mode: str, extra: list[str]) -> int:
     if mode == "dashboard":
         port, _rest = _parse_port(extra, 8100)
         print(f"Dashboard: http://127.0.0.1:{port}  (Ctrl+C to stop)")
-        return subprocess.run([rscript, "tools/run_dashboard.R", str(port)],
+        return subprocess.run([rscript, "tools/dev/run_dashboard.R", str(port)],
                               cwd=str(BASE)).returncode
     if mode == "report":
-        env = dict(os.environ, SLEEPERMETRICS_SEASON_DIR=str(BASE / "season"))
-        return subprocess.run([rscript, "R/make_report.R", *extra],
+        env = dict(os.environ, SLEEPERMETRICS_SEASON_DIR=str(BASE / "data" / "seasons"))
+        return subprocess.run([rscript, "r-analysis/make_report.R", *extra],
                               cwd=str(BASE), env=env).returncode
-    return subprocess.run([rscript, "R/run_bot.R", mode, *extra], cwd=str(BASE)).returncode
+    return subprocess.run([rscript, "r-analysis/run_bot.R", mode, *extra], cwd=str(BASE)).returncode
 
 
 def main(argv=None) -> int:

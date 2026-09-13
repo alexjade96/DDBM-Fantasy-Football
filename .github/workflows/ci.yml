@@ -15,16 +15,30 @@ jobs:
         with:
           python-version: "3.12"
           cache: pip
-          cache-dependency-path: python/requirements.txt
+          cache-dependency-path: fantasy-football-4-fun/requirements.txt
 
       - name: Install deps
-        run: pip install -r python/requirements.txt
+        run: pip install -r fantasy-football-4-fun/requirements.txt
 
       - name: pytest (network-free)
-        working-directory: python
+        working-directory: fantasy-football-4-fun
         env:
           SLEEPERMETRICS_NO_IMAGES: "1"
         run: python -m pytest -q
+
+  docker-build:
+    # Build-only, never pushed anywhere: catches a broken Dockerfile (a COPY
+    # path left behind by a restructure, a missing file) before Render's own
+    # auto-deploy does. Render builds from this exact Dockerfile on every
+    # push to main, so this is the cheapest possible rehearsal of that build.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/build-push-action@v7
+        with:
+          context: .
+          push: false
 
   deploy-health:
     # Informational only: Render auto-deploys from main regardless of this job.

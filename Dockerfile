@@ -1,5 +1,5 @@
 # Python web dashboard (FastAPI + HTMX). Builds from the repo root, because the
-# app reads the bracket configs and ADP cache in season/.
+# app reads the bracket configs and ADP cache in data/seasons/.
 #
 #   docker build -t sleepermetrics .
 #   docker run -p 8000:8000 sleepermetrics
@@ -15,20 +15,21 @@ ENV PYTHONUNBUFFERED=1 \
 
 WORKDIR /app
 
-COPY python/requirements.txt ./requirements.txt
+COPY fantasy-football-4-fun/requirements.txt ./requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt
 
-# The metrics package, the cross-platform ADP layer (landing-page ADP compare),
-# the nflverse-derived data layer, the web layer, and the season data (bracket
-# configs the Playoffs tab reads, plus the ADP + weekly-stats snapshots under
-# season/adp/ and season/stats/ and season/nflverse/).
-COPY python/sleepermetrics ./sleepermetrics
-COPY python/ffadp ./ffadp
-COPY python/nflref ./nflref
-COPY python/webapp ./webapp
-COPY season ./season
+# repo_paths.py (the shared path-resolution helper), the metrics package, and
+# the web layer -- which carries its own cross-platform ADP layer
+# (landing-page ADP compare) and nflverse-derived data layer under
+# webapp/sources/ -- plus the season data (bracket configs the Playoffs tab
+# reads, plus the ADP + weekly-stats snapshots under data/seasons/adp/ and
+# data/seasons/stats/ and data/seasons/nflverse/).
+COPY fantasy-football-4-fun/repo_paths.py ./repo_paths.py
+COPY fantasy-football-4-fun/sleepermetrics ./sleepermetrics
+COPY fantasy-football-4-fun/webapp ./webapp
+COPY data/seasons ./data/seasons
 
-ENV SLEEPERMETRICS_SEASON_DIR=/app/season
+ENV SLEEPERMETRICS_SEASON_DIR=/app/data/seasons
 
 EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s \

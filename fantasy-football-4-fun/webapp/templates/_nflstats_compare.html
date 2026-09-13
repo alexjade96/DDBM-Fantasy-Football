@@ -1,0 +1,236 @@
+{# The "NFL Stats" landing view: nflverse-derived NFL data, no league context.
+   Three views:
+     * Player leaderboard -- per-season season totals, ranked by fantasy
+       points, from EITHER source (the Source toggle): nflverse's weekly
+       release, or Sleeper's own weekly feed. The column set follows the
+       source (nflverse has WOPR / RACR / air-yards share; Sleeper has snap
+       share / aDOT / RZ touches).
+     * Schedule & results -- real game results with the closing line,
+       roof/surface/rest.
+     * Source comparison -- lines the two feeds up player-by-player and
+       reports every season-total stat they disagree on.
+   Season / view / source / position / team / week are the controls; they
+   DON'T auto-fetch on change, and the board does NOT auto-load when this tab
+   opens -- the table loads only when the right-justified "Load" button (a
+   real form submit) is clicked. The toolbar CSV/Excel links track the
+   current control values as they change. #}
+<div class="adp-toolbar">
+  <span class="adp-actions">
+    <span class="adp-actions-label">Data</span>
+    <a class="ghost" id="nfl-csv"
+       href="/nflstats/export.csv?view={{ view }}&season={{ season }}&pos={{ pos }}&team={{ team }}&week={{ week }}&source={{ source }}"
+       download>CSV</a>
+    <a class="ghost" id="nfl-xlsx"
+       href="/nflstats/export.xlsx?view={{ view }}&season={{ season }}&pos={{ pos }}&team={{ team }}&week={{ week }}&source={{ source }}"
+       download>Excel</a>
+  </span>
+</div>
+
+<section class="card">
+  <h2>NFL Stats: the underlying numbers</h2>
+  <p class="hint">Straight from <strong>nflverse</strong>&rsquo;s own public data
+    releases &mdash; the same files the R <code>nflreadr</code> and Python
+    <code>nflreadpy</code> packages read.  No league required.  The
+    <strong>player leaderboard</strong> carries the usage rates a fantasy points
+    total hides: target share, air-yards share, WOPR, RACR / PACR.  The
+    <strong>schedule</strong> view is real game results with the closing line,
+    roof, surface and rest days.  Sort by any column.</p>
+
+  {# hx-trigger is submit only (NOT change) -- the dropdowns just stage a
+     selection; the table reloads when Load is clicked. Only View / Season /
+     Source (and Position on the leaderboard view) change the underlying
+     dataset the server assembles -- see the note above `data-nfl-clientfilter`
+     below for why Position/Team/Week are handled differently per view. #}
+  <form class="controls adp-controls-row" id="nfl-controls"
+        hx-get="/nflstats/data" hx-target="#nfl-board" hx-swap="innerHTML"
+        hx-trigger="submit" hx-include="#nfl-controls">
+    <label>
+      <span>View</span>
+      <select name="view">
+        {% for k, lbl in views %}
+        <option value="{{ k }}" {% if k == view %}selected{% endif %}>{{ lbl }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    {# Each secondary control matters to some views only; it still stays in
+       the DOM and posts, the script just dims it where it's ignored.
+       Source -> player leaderboard;  Position -> leaderboard + comparison;
+       Team -> all three views;  Week -> schedule. #}
+    <label data-nfl-only="players">
+      <span>Source</span>
+      <select name="source">
+        {% for k, lbl in sources %}
+        <option value="{{ k }}" {% if k == source %}selected{% endif %}>{{ lbl }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>
+      <span>Season</span>
+      <select name="season">
+        {% for y in seasons %}
+        <option value="{{ y }}" {% if y == season %}selected{% endif %}>{{ y }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    {# Position changes the leaderboard's own COLUMN SET (QB vs skill stats)
+       and its rank numbering (server re-ranks within the filtered set), so it
+       stays a server reload on the "players" view. On "compare" the column
+       set and rank are position-independent -- pure row filtering -- so it is
+       fetched once at pos=ALL and filtered client-side there instead;
+       `data-nfl-clientfilter="compare"` marks that. #}
+    <label data-nfl-only="players compare" data-nfl-clientfilter="compare">
+      <span>Position</span>
+      <select name="pos" data-nfl-filter-key="position">
+        {% for p in positions %}
+        <option value="{{ p }}" {% if p == pos %}selected{% endif %}>{{ p }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    {# Team has the same rank-renumbering issue as Position on the leaderboard
+       (the server re-ranks 1..N within one team), so it stays a server reload
+       there too. On schedule/compare, filtering by team doesn't change the
+       column set or any ranking, so both fetch once at team=ALL and filter
+       client-side; `data-nfl-clientfilter` lists which views do that. #}
+    <label data-nfl-only="players compare schedule" data-nfl-clientfilter="compare schedule">
+      <span>Team</span>
+      <select name="team" data-nfl-filter-key="team">
+        {% for t in teams %}
+        <option value="{{ t }}" {% if t == team %}selected{% endif %}>{{ t }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    {# Week never changes the schedule table's columns or a rank, so it is
+       always a client-side filter there: fetch the whole season (week=ALL)
+       once and filter rows in the browser as the control changes. #}
+    <label data-nfl-only="schedule" data-nfl-clientfilter="schedule">
+      <span>Week</span>
+      <select name="week" data-nfl-filter-key="week">
+        <option value="ALL" {% if week == 'ALL' %}selected{% endif %}>All weeks</option>
+        {% for w in weeks %}
+        <option value="{{ w }}" {% if week == w|string %}selected{% endif %}>Week {{ w }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    {# Right-justified on the controls line (margin-left:auto). A real submit
+       button -- the form's hx-trigger="submit" is what reloads #nfl-board. #}
+    <button type="submit" class="nfl-apply">Load</button>
+  </form>
+
+  {# The board does NOT auto-load -- switching to this tab shows only the
+     controls. Every load (first included) comes from clicking Load. Once
+     loaded, a client-side filter control (see data-nfl-clientfilter above)
+     updates the visible rows immediately with no further request. #}
+  <div id="nfl-board">
+    <p class="hint">Choose a view and season, then click <strong>Load</strong>.</p>
+  </div>
+</section>
+
+<script>
+  (function () {
+    var form = document.getElementById('nfl-controls');
+    if (!form) return;
+
+    // Keep the CSV / Excel links matching the visible table.
+    var syncLinks = function () {
+      var qs = new URLSearchParams(new FormData(form)).toString();
+      var csv = document.getElementById('nfl-csv');
+      var xls = document.getElementById('nfl-xlsx');
+      if (csv) csv.href = '/nflstats/export.csv?' + qs;
+      if (xls) xls.href = '/nflstats/export.xlsx?' + qs;
+    };
+
+    // Dim any secondary control the current view ignores. data-nfl-only is a
+    // space-separated list of views the control applies to.
+    var syncControls = function () {
+      var v = form.querySelector('select[name="view"]').value;
+      form.querySelectorAll('[data-nfl-only]').forEach(function (el) {
+        var views = el.dataset.nflOnly.split(/\s+/);
+        el.style.opacity = views.indexOf(v) !== -1 ? '' : '.4';
+      });
+    };
+
+    form.addEventListener('change', function () { syncControls(); syncLinks(); });
+    syncControls();
+    syncLinks();
+  })();
+
+  // Client-side filtering for controls marked data-nfl-clientfilter: on the
+  // views listed there, the server fetches the WHOLE dataset once (see the
+  // matching comments in nflstats_data / _nflstats_table.html) and these
+  // controls just hide/show already-loaded rows instead of triggering
+  // another request. A control still reloads normally (via the form's
+  // submit) on any other view it applies to -- e.g. Position/Team on the
+  // "players" leaderboard, where the column set and rank genuinely change.
+  (function () {
+    var form = document.getElementById('nfl-controls');
+    var board = document.getElementById('nfl-board');
+    if (!form || !board) return;
+
+    function currentView() {
+      var el = form.querySelector('select[name="view"]');
+      return el ? el.value : '';
+    }
+
+    function clientFilterKeys() {
+      // Which data-nfl-filter-key controls are client-side for the CURRENT
+      // view, e.g. {week: <select>, team: <select>} on the schedule view.
+      var view = currentView();
+      var out = {};
+      form.querySelectorAll('[data-nfl-clientfilter]').forEach(function (el) {
+        var views = el.dataset.nflClientfilter.split(/\s+/);
+        if (views.indexOf(view) === -1) return;
+        var sel = el.querySelector('[data-nfl-filter-key]');
+        if (sel) out[sel.dataset.nflFilterKey] = sel;
+      });
+      return out;
+    }
+
+    function apply() {
+      var keys = clientFilterKeys();
+      var names = Object.keys(keys);
+      if (!names.length) return;
+      var table = board.querySelector('table');
+      if (!table || !table.tBodies[0]) return;
+      var rows = table.tBodies[0].rows;
+      var shown = 0;
+      Array.prototype.forEach.call(rows, function (row) {
+        var visible = names.every(function (key) {
+          var want = keys[key].value;
+          if (want === 'ALL' || !want) return true;
+          var have = (row.dataset[key] || '').toUpperCase();
+          // week: an exact match; team/position: the value appears as one of
+          // the (possibly space-separated, e.g. schedule's "away home") codes
+          // the row carries.
+          if (key === 'week') return have === String(want);
+          return have.split(/\s+/).indexOf(want.toUpperCase()) !== -1;
+        });
+        row.classList.toggle('adp-row-hidden', !visible);
+        if (visible) shown++;
+      });
+      var count = board.querySelector('[data-nfl-count]');
+      if (count) {
+        var label = / games$| players$/.test(count.textContent)
+          ? count.textContent.replace(/^[\d,]+( of [\d,]+)?/, String(shown))
+          : count.textContent.replace(/^[\d,]+ of [\d,]+/,
+              shown + ' of ' + rows.length);
+        count.textContent = label;
+      }
+    }
+
+    form.addEventListener('change', function (e) {
+      var key = e.target && e.target.dataset && e.target.dataset.nflFilterKey;
+      if (!key) return;
+      var keys = clientFilterKeys();
+      if (!(key in keys)) return;   // this view reloads server-side for it
+      e.stopPropagation();          // don't let it reach the form's hx-trigger
+      apply();
+    });
+
+    document.body.addEventListener('htmx:afterSwap', function (e) {
+      if (e.target === board || (e.target && e.target.closest &&
+                                  e.target.closest('#nfl-board'))) {
+        apply();
+      }
+    });
+  })();
+</script>

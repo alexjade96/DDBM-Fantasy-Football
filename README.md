@@ -39,7 +39,7 @@ found automatically.
 
 > On Windows, R is often not on `PATH`. `launch.py --r dashboard` locates
 > `Rscript.exe` for you. There is also a direct launcher:
-> `.\tools\run_dashboard.ps1 [-Port 8100]`.
+> `.\tools\dev\run_dashboard.ps1 [-Port 8100]`.
 
 ### Discord bot
 
@@ -50,8 +50,9 @@ python launch.py --r serve                     # R interactions endpoint (plumbe
 python launch.py --r weekly --dry-run
 ```
 
-Config lives in each instance's `.env` (`python/.env`, `R/.env`); copy the
-`*.env.example` templates and fill in your Discord token / webhook.
+Config lives in each instance's `.env` (`fantasy-football-4-fun/.env`,
+`r-analysis/.env`); copy the `*.env.example` templates and fill in your
+Discord token / webhook.
 
 ### Verify everything
 
@@ -66,8 +67,8 @@ field. Exit 0 only if all pass. **Run this after changing either implementation.
 ### Regenerate charts
 
 ```bash
-Rscript tools/render_examples.R                          # 22 charts -> results/examples/r/
-python/venv/Scripts/python tools/render_examples.py      # 22 charts -> results/examples/py/
+Rscript tools/dev/render_examples.R                                         # 22 charts -> r-analysis/data/results/examples/r/
+fantasy-football-4-fun/venv/Scripts/python tools/dev/render_examples.py     # 22 charts -> r-analysis/data/results/examples/py/
 ```
 
 ---
@@ -76,12 +77,12 @@ python/venv/Scripts/python tools/render_examples.py      # 22 charts -> results/
 
 ```bash
 # Python instance
-python -m venv python/venv
-python/venv/Scripts/pip install -r python/requirements.txt   # Windows
-# python/venv/bin/pip install -r python/requirements.txt     # macOS/Linux
+python -m venv fantasy-football-4-fun/venv
+fantasy-football-4-fun/venv/Scripts/pip install -r fantasy-football-4-fun/requirements.txt   # Windows
+# fantasy-football-4-fun/venv/bin/pip install -r fantasy-football-4-fun/requirements.txt     # macOS/Linux
 
 # R instance: install the deps once, then load the package
-# install.packages(c("tidyverse","httr2","ggplot2","ggrepel","shiny","bslib","DT","ragg","pkgload"))
+# install.packages(c("tidyverse","httr2","ggplot2","ggrepel","shiny","bslib","DT","ragg","pkgload","this.path"))
 ```
 
 ---
@@ -90,13 +91,14 @@ python/venv/Scripts/pip install -r python/requirements.txt   # Windows
 
 | Path | What it is |
 |---|---|
-| `R/sleepermetrics/` | the R package: metrics, plots, summaries, Shiny app, Discord bot |
-| `python/sleepermetrics/` | the Python port: same modules, `pandas` + `matplotlib` |
-| `python/webapp/` | the Python web dashboard (FastAPI + HTMX) |
-| `season/` | custom playoff engine configs (one bracket per league+season) and the Python Draft tab's ADP cache |
-| `parity/` + `verify.py` | the cross-language harness that keeps R and Python identical |
-| `tools/` | launchers and chart regeneration |
-| `ddbmFF.R` | the **origin script**, historical basis, left untouched |
+| `r-analysis/sleepermetrics/` | the R package: metrics, plots, summaries, Shiny app, Discord bot |
+| `r-analysis/ddbmFF.R`, `app.R`, `leagueAnalytics.R` | the **origin scripts**, historical basis, left largely untouched |
+| `r-analysis/FantasyFootball.Rproj` | the RStudio project for the R instance |
+| `fantasy-football-4-fun/sleepermetrics/` | the Python port: same modules, `pandas` + `matplotlib` |
+| `fantasy-football-4-fun/webapp/` | the Python web dashboard (FastAPI + HTMX) |
+| `data/seasons/` | custom playoff engine configs (one bracket per league+season) and the Python Draft tab's ADP cache |
+| `tools/parity/` + `verify.py` | the cross-language harness that keeps R and Python identical |
+| `tools/dev/` | launchers and chart regeneration |
 | `Dockerfile` | builds the Python dashboard for free hosting |
 
 ### The playoff engine
@@ -113,7 +115,7 @@ matchup; winners advance automatically.
 This is verified exact: it reproduces Sleeper's own player points (175/175 in
 wk15) and, replaying Sleeper's own bracket, all 12 matchup winners with zero
 mismatches. Season champions come from these brackets, not Sleeper's
-`winners_bracket`. See [`season/README.md`](season/README.md).
+`winners_bracket`. See [`data/seasons/README.md`](data/seasons/README.md).
 
 ### Free hosting
 
@@ -129,7 +131,7 @@ The weekly Discord recap runs on a GitHub Actions scheduled workflow rather than
 a Render cron (Render crons are paid). Hugging Face Spaces is a fallback (same
 `Dockerfile`, no card) but the Space is public.
 
-See also [`python/webapp/README.md`](python/webapp/README.md).
+See also [`fantasy-football-4-fun/webapp/README.md`](fantasy-football-4-fun/webapp/README.md).
 
 ---
 

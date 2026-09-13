@@ -1,0 +1,589 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  {# The shell paints before the real league name is known (league_name is
+     just the id at that point -- see dashboard()); _shell_sync.html swaps
+     this <title> out-of-band once league_data() has run. #}
+  <title>{% if league_name and league_name != league %}{{ league_name }} Fantasy Football{% else %}Sleeper League Analytics{% endif %}</title>
+  {# Start the TLS handshake to the hosts the panel/chart fetches will hit
+     while the shell is still parsing, so the first request to each saves a
+     round trip. Sleeper's API + CDN are used by every league; unpkg only if a
+     vendored script 404s (it shouldn't). #}
+  <link rel="preconnect" href="https://api.sleeper.app" crossorigin>
+  <link rel="preconnect" href="https://sleepercdn.com" crossorigin>
+  <link rel="dns-prefetch" href="https://api.sleeper.app">
+  <link rel="dns-prefetch" href="https://sleepercdn.com">
+  <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+  {# ?v=<mtime> so a CSS edit is never served from a stale browser cache #}
+  <link rel="stylesheet" href="/static/style.css?v={{ asset_v }}">
+  {# htmx + its preload extension are vendored into static/ (version pinned in
+     the filename) rather than pulled from unpkg: one less third-party origin
+     to DNS/TLS/fetch on a cold open, and an unpkg outage can't break the app. #}
+  <script src="/static/htmx-1.9.12.min.js" defer></script>
+  {# preload extension: a tab's panel is fetched in the background on hover
+     (and its lazy-part / chart <img> URLs warmed too, preload-images) so the
+     click that follows swaps an already-cached response. See the .tabs nav. #}
+  <script src="/static/htmx-ext-preload-1.9.12.js" defer></script>
+  {# The visual playoff-bracket builder (SMBuilder). Sits on window.SMBracket
+     (defined inline below) and the /playoffs data endpoints. #}
+  <script src="/static/builder.js?v={{ asset_v }}" defer></script>
+  {# Shared #panel table sort (also loaded by home.html). #}
+  <script src="/static/table-sort.js?v={{ asset_v }}" defer></script>
+</head>
+<body hx-indicator="#bar">
+  <div id="bar"></div>
+
+  <!-- Charts are server-rendered PNGs, so the viewer's colour scheme has to ride
+       along in the request. This hidden field carries it; hx-include pulls it
+       into every panel/chart fetch. Set synchronously at parse time so it is
+       already correct before htmx fires the initial `load` trigger below. -->
+  <input type="hidden" id="theme" name="theme" value="light">
+  <!-- Active custom/rolled-back playoff bracket token. Empty = committed bracket.
+       Persists across tab switches (outside #panel); the config behind it lives in
+       localStorage (see window.SMBracket). hx-include rides it on every request. -->
+  <input type="hidden" id="bracket" name="bracket" value="">
+  <script>
+    (function () {
+      var mq = matchMedia('(prefers-color-scheme: dark)');
+      var el = document.getElementById('theme');
+      el.value = mq.matches ? 'dark' : 'light';
+      // Follow the OS toggle live: update the field, then reload the open tab so
+      // its charts re-fetch in the new theme.
+      mq.addEventListener('change', function (e) {
+        el.value = e.matches ? 'dark' : 'light';
+        var b = document.querySelector('.tabs button.active');
+        if (b) b.click();
+      });
+    })();
+
+    // --- Custom playoff brackets (client-side) ---------------------------
+    // The bracket is the visitor's own: kept in localStorage + downloadable, and
+    // POSTed to the server only to be validated/scored into an ephemeral token.
+    // So one visitor's bracket never changes what another sees, and there is no
+    // server write path. "Roll back to Sleeper default" fetches Sleeper's bracket
+    // and applies it; "reset" drops the token so the committed bracket returns.
+    // Low-level bracket persistence + scoring. The visual builder (SMBuilder in
+    // builder.js) sits on top of this; these are the primitives it and the tab
+    // header buttons share.
+    window.SMBracket = {
+      _restoreTried: {},
+      _el: function (id) { return document.getElementById(id); },
+      _league: function () { return this._el('league').value; },
+      _season: function () { return this._el('season').value; },
+      key: function () { return 'smbr:' + this._league() + ':' + this._season(); },
+      saved: function () {
+        try { return JSON.parse(localStorage.getItem(this.key()) || 'null'); }
+        catch (e) { return null; }
+      },
+      _reloadPlayoffs: function () {
+        var b = [].slice.call(document.querySelectorAll('.tabs button'))
+          .find(function (x) { return x.getAttribute('hx-get') === '/tab/playoffs'; });
+        if (b) b.click();
+      },
+      msg: function (html, cls) {
+        var m = this._el('bkr-msg'); if (m) { m.className = 'bkr-msg ' + (cls || ''); m.innerHTML = html; }
+      },
+      // Validate + score a config into a token; store it + set #bracket. No
+      // reload -- used for the builder's live preview. Returns the server json.
+      score: async function (cfg) {
+        try {
+          var r = await fetch('/playoffs/custom?league=' + encodeURIComponent(this._league()),
+            { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(cfg) });
+          var j = await r.json();
+          if (j.ok) { localStorage.setItem(this.key(), JSON.stringify(cfg)); this._el('bracket').value = j.token; }
+          return j;
+        } catch (e) { return { ok: false, errors: [String(e)] }; }
+      },
+      // Score, then reload the whole Playoffs tab so it reflects the bracket.
+      apply: async function (cfg) {
+        var j = await this.score(cfg);
+        if (!j.ok) { this.msg('Not applied: ' + (j.errors || []).join('; '), 'err'); return j; }
+        this._reloadPlayoffs();
+        return j;
+      },
+      reset: function () { localStorage.removeItem(this.key()); this._el('bracket').value = ''; this._reloadPlayoffs(); },
+      rollbackSleeper: async function () {
+        try {
+          var r = await fetch('/playoffs/default?league=' + encodeURIComponent(this._league())
+            + '&season=' + encodeURIComponent(this._season()) + '&source=sleeper');
+          if (!r.ok) { alert('Could not load the Sleeper bracket for this season.'); return; }
+          await this.apply(await r.json());
+        } catch (e) { alert('Roll back failed: ' + e); }
+      }
+    };
+    // A stale token belongs to the old league/season -- clear it on any switch so
+    // the new season loads its own bracket (the restore script re-applies from
+    // localStorage if this browser saved one for it).
+    ['change', 'submit'].forEach(function (ev) {
+      document.addEventListener(ev, function (e) {
+        if (e.target && (e.target.id === 'season' || (e.target.classList && e.target.classList.contains('controls')))) {
+          var bf = document.getElementById('bracket'); if (bf) bf.value = '';
+        }
+      }, true);
+    });
+
+    // Per-chart loading skeleton: after each panel swap, give every chart figure
+    // a shimmer placeholder until its PNG loads (or errors), then fade the image
+    // in. Runs once per image (data-sk guard), and handles the cached case where
+    // the image is already complete. On error the figure shows a one-click
+    // Retry instead of a silent empty gap (a flaky Sleeper API or a slow cold
+    // render is exactly what the free host will hit).
+    function prepCharts() {
+      document.querySelectorAll('.card.chart img:not([data-sk])').forEach(function (img) {
+        img.setAttribute('data-sk', '1');
+        var fig = img.closest('.card.chart');
+        var ok = function () {
+          fig.classList.remove('skeleton', 'chart-failed'); img.classList.add('loaded');
+        };
+        var fail = function () {
+          fig.classList.remove('skeleton');
+          fig.classList.add('chart-failed');
+          if (fig.querySelector('.chart-retry')) return;
+          var b = document.createElement('button');
+          b.className = 'chart-retry';
+          b.textContent = 'Chart didn’t load. Retry';
+          b.onclick = function () {
+            b.remove();
+            fig.classList.remove('chart-failed');
+            fig.classList.add('skeleton');
+            img.classList.remove('loaded');
+            // Re-point src with a fresh cache-buster so the browser refetches.
+            img.src = /([?&])_=\d+/.test(img.src)
+              ? img.src.replace(/([?&])_=\d+/, '$1_=' + Date.now())
+              : img.src + '&_=' + Date.now();
+          };
+          fig.appendChild(b);
+        };
+        if (img.complete && img.naturalWidth) { ok(); return; }
+        fig.classList.add('skeleton');
+        img.addEventListener('load', ok);
+        img.addEventListener('error', fail);
+      });
+      // Hint the browser to request the first couple of charts in each grid
+      // ahead of the rest, so the server's single render lock serves
+      // top-of-panel charts first and the shimmer resolves top-to-bottom
+      // rather than in scrambled arrival order. Ignored by older browsers.
+      document.querySelectorAll('.grid').forEach(function (g) {
+        g.querySelectorAll('.card.chart img').forEach(function (im, i) {
+          im.setAttribute('fetchpriority', i < 2 ? 'high' : 'low');
+        });
+      });
+    }
+    // Panel table sort lives in /static/table-sort.js (shared with home.html's
+    // ADP compare table). SMTableSort.prepTables() applies it to every
+    // #panel table; SMTableSort.makeSortable(table) does one.
+    function prepTables() { window.SMTableSort.prepTables(); }
+    // Roster tab, per-manager scope: clicking a position-build row's
+    // .pblabel chip (e.g. "RB") filters the Full player list drilldown
+    // below to just that position, reusing the chip that's already there
+    // rather than adding a second set of filter controls -- see
+    // _roster_by_manager.html's own comment. Scoped per [data-roster-filter]
+    // details block (one per manager row) so filtering one manager's list
+    // can't reach another's. Clicking the ALREADY-active chip clears the
+    // filter back to every row. Guarded by dataset.filterable so a repeat
+    // htmx swap doesn't double-bind.
+    function prepRosterFilters() {
+      document.querySelectorAll('[data-roster-filter]').forEach(function (det) {
+        if (det.dataset.filterable) return;
+        det.dataset.filterable = '1';
+        var chips = det.parentElement.querySelectorAll('[data-filter-pos]');
+        var rows = det.querySelectorAll('table.dt-games tbody tr');
+        chips.forEach(function (chip) {
+          chip.addEventListener('click', function () {
+            var pos = chip.dataset.filterPos;
+            var active = chip.classList.contains('active');
+            chips.forEach(function (c) { c.classList.remove('active'); });
+            rows.forEach(function (r) { r.hidden = false; });
+            if (!active) {
+              chip.classList.add('active');
+              rows.forEach(function (r) { r.hidden = r.dataset.pos !== pos; });
+              det.open = true;
+            }
+          });
+        });
+      });
+    }
+    // Draft tab, "Draft finds" panels: the .dffilter position bar-chart above
+    // each panel's table (rendered by _draft_finds.html's pos_filter_bar
+    // macro) filters that panel's rows by position. Each .pblabel chip carries
+    // data-filter-pos. Scoped per .vs-panel so one panel's filter can't touch
+    // another's. Default (no chip active) shows every player; clicking a chip
+    // filters to that position; clicking the active chip clears back to all.
+    // A row is hidden together with its immediately-following .detail-row
+    // siblings (per-team splits) so a filtered-out player takes his drilldown
+    // with him. Guarded by dataset.dfFilterable against a repeat htmx swap.
+    function prepDraftFilters() {
+      document.querySelectorAll('.dffilter').forEach(function (bar) {
+        if (bar.dataset.dfFilterable) return;
+        bar.dataset.dfFilterable = '1';
+        var panel = bar.closest('.vs-panel');
+        var body = panel && panel.querySelector('table.sortable tbody');
+        if (!body) return;
+        var chips = bar.querySelectorAll('[data-filter-pos]');
+        chips.forEach(function (chip) {
+          chip.addEventListener('click', function () {
+            var clear = chip.classList.contains('active');
+            var pos = chip.dataset.filterPos;
+            chips.forEach(function (c) { c.classList.remove('active'); });
+            if (!clear) chip.classList.add('active');
+            Array.prototype.forEach.call(body.rows, function (r) {
+              if (r.classList.contains('detail-row')) {
+                // Changing the filter collapses every drilldown -- simpler and
+                // less surprising than trying to preserve which splits were
+                // open across a row set that just changed. prepFaRows' own
+                // toggle re-opens them on click.
+                r.hidden = true;
+                return;
+              }
+              if (r.classList.contains('has-detail')) {
+                r.classList.remove('open');
+                r.setAttribute('aria-expanded', 'false');
+              }
+              r.hidden = !clear && r.dataset.pos !== pos;
+            });
+          });
+        });
+      });
+    }
+    // Row-level drilldown (the Weekly tab's free-agent table, ported from
+    // weekly_report.html's own copy of this same function -- the standalone
+    // page has no shell to reach, so it keeps its inline original). Clicking
+    // a row with one or more immediately-following .detail-row siblings
+    // toggles all of them together (a multi-team split renders one
+    // .detail-row per team); native <details> can't wrap a <tr>, so this is
+    // the table equivalent of the scoreboard's <details> rows. Guarded by
+    // dataset.expandable so a repeat htmx swap doesn't double-bind listeners
+    // on rows that survive the swap.
+    function prepFaRows() {
+      document.querySelectorAll('#panel table.sortable').forEach(function (table) {
+        var body = table.tBodies[0];
+        if (!body) return;
+        Array.prototype.forEach.call(body.rows, function (row) {
+          if (row.dataset.expandable || row.classList.contains('detail-row')) return;
+          var details = [];
+          var sib = row.nextElementSibling;
+          while (sib && sib.classList.contains('detail-row')) { details.push(sib); sib = sib.nextElementSibling; }
+          if (!details.length) return;
+          row.dataset.expandable = '1';
+          row.classList.add('has-detail');
+          row.tabIndex = 0;
+          row.setAttribute('role', 'button');
+          row.setAttribute('aria-expanded', 'false');
+          var toggle = function () {
+            var willOpen = details[0].hidden;
+            details.forEach(function (d) { d.hidden = !willOpen; });
+            row.classList.toggle('open', willOpen);
+            row.setAttribute('aria-expanded', String(willOpen));
+          };
+          row.addEventListener('click', toggle);
+          row.addEventListener('keydown', function (e) {
+            if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); }
+          });
+        });
+      });
+    }
+    // Keep the stylesheet current without a reload. htmx only swaps #panel, so
+    // the <link> in <head> keeps whatever ?v= it had at page load -- a page left
+    // open across a CSS edit renders new markup unstyled (grid rows collapse to
+    // inline spans). Every response carries X-Asset-V; if it moved, re-point the
+    // link. Swapping href is enough, the browser refetches.
+    document.body.addEventListener('htmx:afterRequest', function (e) {
+      var xhr = e.detail && e.detail.xhr;
+      if (!xhr) return;
+      var v = xhr.getResponseHeader('X-Asset-V');
+      if (!v) return;
+      var link = document.querySelector('link[rel="stylesheet"]');
+      if (link && link.getAttribute('href').indexOf('v=' + v) === -1) {
+        link.setAttribute('href', '/static/style.css?v=' + v);
+      }
+    });
+    document.body.addEventListener('htmx:afterSwap', prepCharts);
+    document.body.addEventListener('htmx:afterSwap', prepTables);
+    document.body.addEventListener('htmx:afterSwap', prepFaRows);
+    document.body.addEventListener('htmx:afterSwap', prepRosterFilters);
+    document.body.addEventListener('htmx:afterSwap', prepDraftFilters);
+
+    // --- Background chart warm ------------------------------------------------
+    // After the first Overview panel settles, quietly fetch every OTHER tab's
+    // panel HTML and every /chart/ PNG + lazy tab-part inside it, one at a
+    // time, so a later tab click is an instant swap with images already in the
+    // browser cache (prepCharts then sees img.complete and never shimmers).
+    //
+    // Never competes with a real request: waitIdle() pauses the walk while any
+    // htmx request is in flight, while a warm fetch of its own is pending, and
+    // while the browser tab is hidden. Sequential + an 80ms gap between fetches
+    // so the server's single plots._render_lock drains in order and a real
+    // click's chart jumps ahead naturally. Best-effort: a warm miss just means
+    // that chart renders on click as it does today. Depth: charts + one level
+    // into each lazy part, in the viewer's CURRENT theme (the other theme
+    // re-renders on the rare OS dark/light toggle). Testing is prototypes, not
+    // in the list. Restarts on a league/season switch (panel from /load).
+    (function backgroundWarm() {
+      var TABS = ['weekly', 'playoffs', 'roster', 'draft',
+                  'transactions', 'career', 'report'];
+      var running = false, cancelled = false, inFlight = 0, started = false;
+
+      function qs() {
+        var g = function (id) { var e = document.getElementById(id); return e ? e.value : ''; };
+        return 'league=' + encodeURIComponent(g('league')) +
+               '&season=' + encodeURIComponent(g('season')) +
+               '&theme=' + encodeURIComponent(g('theme')) +
+               '&bracket=' + encodeURIComponent(g('bracket'));
+      }
+      function idle() {
+        return !document.hidden && inFlight === 0 &&
+               !document.querySelector('.htmx-request');
+      }
+      function waitIdle() {
+        return new Promise(function (res) {
+          (function poll() { idle() ? res() : setTimeout(poll, 400); })();
+        });
+      }
+      var sleep = function (ms) { return new Promise(function (r) { setTimeout(r, ms); }); };
+
+      function warm(url) {
+        inFlight++;
+        return fetch(url, { credentials: 'same-origin' })
+          .then(function (r) { return r.ok ? r.text() : ''; })
+          .catch(function () { return ''; })
+          .then(function (t) { inFlight--; return t; },
+                function () { inFlight--; return ''; });
+      }
+      function itemsIn(html) {
+        var d = new DOMParser().parseFromString(html, 'text/html'), out = [];
+        d.querySelectorAll('img[src*="/chart/"]').forEach(function (im) {
+          out.push(im.getAttribute('src'));
+        });
+        d.querySelectorAll('.lazysec[hx-get]').forEach(function (lz) {
+          out.push({ part: lz.getAttribute('hx-get') });
+        });
+        return out;
+      }
+      function walkTab(id) {
+        return waitIdle().then(function () {
+          if (cancelled) return;
+          return warm('/tab/' + id + '?' + qs()).then(function (panel) {
+            if (cancelled || !panel) return;
+            var chain = Promise.resolve();
+            itemsIn(panel).forEach(function (item) {
+              chain = chain.then(function () {
+                if (cancelled) return;
+                return waitIdle().then(function () {
+                  if (cancelled) return;
+                  if (typeof item === 'string') return warm(item).then(function () { return sleep(80); });
+                  return warm(item.part).then(function (frag) {
+                    if (cancelled || !frag) return;
+                    var sub = Promise.resolve();
+                    itemsIn(frag).forEach(function (u) {
+                      if (typeof u !== 'string') return;
+                      sub = sub.then(function () {
+                        if (cancelled) return;
+                        return waitIdle().then(function () {
+                          return cancelled ? undefined : warm(u).then(function () { return sleep(80); });
+                        });
+                      });
+                    });
+                    return sub;
+                  }).then(function () { return sleep(80); });
+                });
+              });
+            });
+            return chain;
+          });
+        });
+      }
+      function run() {
+        if (running) return;
+        running = true; cancelled = false;
+        var chain = Promise.resolve();
+        TABS.forEach(function (id) {
+          chain = chain.then(function () { return cancelled ? undefined : walkTab(id); });
+        });
+        chain.then(function () { running = false; });
+      }
+      function kickoff() {
+        if (started) return;
+        started = true;
+        window.requestIdleCallback
+          ? requestIdleCallback(run, { timeout: 4000 })
+          : setTimeout(run, 3000);
+      }
+      document.body.addEventListener('htmx:afterSwap', function (e) {
+        if (!e.target || e.target.id !== 'panel') return;
+        // A league/season switch makes an in-progress walk stale -- cancel and
+        // re-kick for the new context (the old warmed entries are harmless).
+        if (started) { cancelled = true; running = false; started = false; }
+        kickoff();
+      });
+    })();
+
+    // When the Playoffs tab loads (its editor is present) and no bracket token is
+    // active, restore this browser's saved custom bracket by re-POSTing it for a
+    // fresh token, then reloading. Guarded per league:season so a failed restore
+    // can't loop. Handled here (not inline in the swapped panel) so it doesn't
+    // depend on <script> executing inside injected content.
+    document.body.addEventListener('htmx:afterSwap', function (e) {
+      var B = window.SMBracket;
+      if (!B || !e.target || e.target.id !== 'panel') return;
+      if (!document.getElementById('bkr-editor')) return;      // not the Playoffs tab
+      var bf = document.getElementById('bracket'), cfg = B.saved(), k = B.key();
+      if (cfg && bf && !bf.value && !B._restoreTried[k]) {
+        B._restoreTried[k] = true;
+        B.apply(cfg);
+      }
+    });
+
+    // The Season-report tab hosts the report in a same-origin iframe. Size it to
+    // its content (no inner scrollbar) and keep it sized as the report's own
+    // drill-downs expand/collapse, via a ResizeObserver on the framed document.
+    function sizeReportFrame(f) {
+      try {
+        var doc = f.contentWindow.document;
+        var fit = function () { f.style.height = doc.body.scrollHeight + 'px'; };
+        fit();
+        if (f._ro) f._ro.disconnect();
+        f._ro = new ResizeObserver(fit);
+        f._ro.observe(doc.body);
+      } catch (e) { /* cross-navigation timing; the next load re-runs this */ }
+    }
+  </script>
+
+  <header class="top">
+    {# Back to the landing page (ADP Comparison / NFL Stats live there, not
+       inside any loaded league) -- a plain link, no JS/htmx, since it's
+       leaving the loaded-league app entirely. #}
+    <a class="brand" href="/" title="Back to home (ADP Comparison, NFL Stats)">
+      <span class="mark"></span>
+      <div>
+        <h1 id="league-name">{{ league_name }}</h1>
+        <p class="sub" id="league-sub">League Analytics | {{ league }}</p>
+      </div>
+    </a>
+
+    <!-- Persistent utility bar: league-agnostic controls that stay put on every
+         loaded page, independent of which league/season/tab is showing. Today
+         it holds the League / User lookup; it's the home for further
+         cross-league tools (see the Testing tab's "persistent league bar"
+         mockup). -->
+    <div class="utilbar" role="group" aria-label="League tools">
+      <span class="utilbar-label">Look up a league</span>
+
+      <!-- One lookup control with a League / User mode toggle.
+           League mode -> GET /load (swaps #panel, and /load also re-syncs the
+           title + season list out-of-band). User mode -> GET /user-leagues,
+           rendering the "which of this account's leagues?" list into #panel;
+           picking one there navigates to /league=<id> (a full load), which
+           corrects #league/#season for the tab nav's hx-include. #league and
+           #season stay the canonical state fields either way -- the tabs
+           nav includes them by id, so their names/ids must not change.
+           Endpoint + submit target are switched per-mode in htmx:configRequest
+           below. `change from:#season` reloads the current league on a season
+           switch (League mode only; ignored in User mode). -->
+      <form id="lookup" class="controls" hx-get="/load" hx-target="#panel" hx-swap="innerHTML"
+            hx-include="#theme" hx-trigger="change from:#season, submit" hx-push-url="true"
+            hx-on="htmx:afterRequest: document.querySelectorAll('.tabs button').forEach((b,i)=>b.classList.toggle('active', i===0))">
+        <div class="lookup-mode" role="radiogroup" aria-label="Look up by">
+          <label><input type="radio" name="mode" value="league" checked> League</label>
+          <label><input type="radio" name="mode" value="user"> User</label>
+        </div>
+        <label>
+          <span id="lookup-label">League ID</span>
+          <input type="text" name="league" id="league" value="{{ league }}"
+                 autocomplete="off" spellcheck="false"
+                 data-ph-league="Sleeper league ID" data-ph-user="Sleeper username or user ID">
+        </label>
+        <label>
+          <span>Season</span>
+          {% include "_seasons.html" %}
+        </label>
+        <button type="submit" id="lookup-go">Load</button>
+      </form>
+    </div>
+
+  </header>
+
+  <script>
+    // League / User lookup toggle for the header form (#lookup).
+    // - swaps the submit endpoint + the field's label/placeholder/name
+    // - in User mode the id box carries name="user" (League mode: name="league")
+    //   so one box serves both; the request path is rewritten just-in-time.
+    (function () {
+      var form = document.getElementById('lookup');
+      if (!form) return;
+      var lbl = document.getElementById('lookup-label');
+      var go = document.getElementById('lookup-go');
+      var modeOf = function () {
+        var r = form.querySelector('input[name="mode"]:checked');
+        return r ? r.value : 'league';
+      };
+      var syncUI = function () {
+        // Re-query every call: /load's out-of-band shell sync can REPLACE the
+        // #league <input> (when a pasted older-season id was resolved forward
+        // to the current-season one), so a reference captured once would be
+        // left pointing at a detached node and User mode would stop switching.
+        var box = document.getElementById('league');
+        if (!box) return;
+        var user = modeOf() === 'user';
+        lbl.textContent = user ? 'Username / user ID' : 'League ID';
+        box.name = user ? 'user' : 'league';
+        box.placeholder = box.dataset[user ? 'phUser' : 'phLeague'] || '';
+        go.textContent = user ? 'Find' : 'Load';
+      };
+      form.querySelectorAll('input[name="mode"]').forEach(function (r) {
+        r.addEventListener('change', syncUI);
+      });
+      // Point the request at the right endpoint for the current mode. htmx
+      // reads path from the triggering element's hx-get by default; overriding
+      // it here keeps a single form instead of two.
+      form.addEventListener('htmx:configRequest', function (e) {
+        e.detail.path = modeOf() === 'user' ? '/user-leagues' : '/load';
+      });
+      syncUI();
+    })();
+  </script>
+
+  {# hx-ext="preload": each tab button below carries preload="mousedown", so
+     PRESSING a tab (mousedown fires ~100ms before click) fetches its /tab/<id>
+     panel (and, via preload-images, the chart <img> URLs it contains) in the
+     background; the click that follows swaps from cache. mousedown rather than
+     mouseover so a trackpad pointer brushing across the tab bar doesn't warm
+     three or four panels the user never opens -- those wasted renders compete
+     for plots._render_lock against the chart the user is actually waiting on.
+     A press that doesn't become a click still costs one warmed request, but
+     that's a deliberate action, not an accident. #}
+  <nav class="tabs" role="tablist" hx-push-url="true" hx-ext="preload"
+       hx-target="#panel" hx-swap="innerHTML" hx-include="#league, #season, #theme, #bracket">
+    {% for id, label in tabs %}
+    <button role="tab" hx-get="/tab/{{ id }}" preload="mousedown" preload-images="true"
+            class="{% if id == initial_tab %}active{% endif %}"
+            onclick="document.querySelectorAll('.tabs button').forEach(b=>b.classList.remove('active'));this.classList.add('active')">
+      {{ label }}
+    </button>
+    {% endfor %}
+  </nav>
+
+  <main id="panel"
+        hx-get="/tab/{{ initial_tab }}?boot=1" hx-trigger="load" hx-include="#league, #season, #theme, #bracket">
+    {# First cold panel load runs league_data()'s full Sleeper chain walk (can
+       be 10-30s on a cold container). A bare "Loading..." for that long reads
+       as a hung page; a skeleton shaped like the real Overview (tile row + a
+       chart grid) plus the #bar top progress indicator reads as "working". #}
+    <div class="panel-boot" aria-busy="true" aria-label="Loading">
+      <div class="skeleton pb-tiles"></div>
+      <div class="pb-grid">
+        <div class="skeleton pb-chart"></div>
+        <div class="skeleton pb-chart"></div>
+        <div class="skeleton pb-chart"></div>
+        <div class="skeleton pb-chart"></div>
+      </div>
+    </div>
+  </main>
+
+  <footer>
+    Data: public Sleeper API. Champions come from the stored playoff brackets, not
+    Sleeper&rsquo;s <code>winners_bracket</code>; see <code>playoffs/README.md</code>.
+  </footer>
+</body>
+</html>

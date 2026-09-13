@@ -42,9 +42,9 @@ never leaves CI.
   cached *in-process* (`_cache`, 15-min TTL) plus a few disk caches
   (`sleeperPlayerData_py.pkl` ~8 MB daily; `~/.cache/sleepermetrics/headshots/`).
   Losing the disk caches costs a slower first request, never data.
-- **Committed data ships in the image.**  `season/**/*.json` bracket configs and
-  `season/adp/*.json` are read from disk; the existing Dockerfile already
-  `COPY season ./season`.
+- **Committed data ships in the image.**  `data/seasons/**/*.json` bracket configs and
+  `data/seasons/adp/*.json` are read from disk; the existing Dockerfile already
+  `COPY data/seasons ./data/seasons`.
 - **CPU-bound, single-threaded rendering.**  `plots._render_lock` serialises
   every matplotlib render.  Concurrency comes from more containers, not threads.
   One small instance serves a private league comfortably.
@@ -153,19 +153,19 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with: { python-version: "3.12", cache: pip }
-      - run: pip install -r python/requirements.txt
+      - run: pip install -r fantasy-football-4-fun/requirements.txt
       - name: pytest (network-free)
         env: { SLEEPERMETRICS_NO_IMAGES: "1" }
-        working-directory: python
+        working-directory: fantasy-football-4-fun
         run: python -m pytest -q
 ```
 
-- **Optional lint**: add a `ruff check python/` step.  Not used in the repo
+- **Optional lint**: add a `ruff check fantasy-football-4-fun/` step.  Not used in the repo
   today, so introduce it `continue-on-error: true` first -- don't wall off a
   green repo on day one.
 - **R parity (`verify.py`)** needs R, `Rscript` and the `sleepermetrics` R
   package.  Put it in a *separate, optional* job (`r-lib/actions/setup-r@v2` +
-  `setup-r-dependencies`) gated with a `paths:` filter on `R/**`, `parity/**`,
+  `setup-r-dependencies`) gated with a `paths:` filter on `r-analysis/**`, `tools/parity/**`,
   plus `workflow_dispatch`.  The R toolchain install is ~5-10 min -- don't pay it
   in minutes on a Python-only PR.
 
@@ -204,8 +204,8 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with: { python-version: "3.12", cache: pip }
-      - run: pip install -r python/requirements.txt
-      - working-directory: python
+      - run: pip install -r fantasy-football-4-fun/requirements.txt
+      - working-directory: fantasy-football-4-fun
         env:
           DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
           SLEEPERMETRICS_LEAGUE: "1252770181306929152"
@@ -247,8 +247,8 @@ automating them together.
 
 ### 01 -- `.dockerignore` (new)
 
-Exclude `python/venv/` (259 MB), `**/__pycache__`, `.git`, `samples/`,
-`.claude*`, `R/`, `*.rds`.  The venv must never enter the build context (it would
+Exclude `fantasy-football-4-fun/venv/` (259 MB), `**/__pycache__`, `.git`, `samples/`,
+`.claude*`, `r-analysis/`, `*.rds`.  The venv must never enter the build context (it would
 also blow past Render's build limits).
 
 *Zero risk, no runtime change.*
@@ -287,7 +287,7 @@ Add the workflow, set the `DISCORD_WEBHOOK` repo secret, test immediately with
 
 ### 06 -- Optional follow-ups
 
-- The R-parity CI job, `paths:`-gated to `R/**` and `parity/**`.
+- The R-parity CI job, `paths:`-gated to `r-analysis/**` and `tools/parity/**`.
 - A non-blocking `ruff` lint step.
 - The two cosmetic gaps from the last review (`plot_clutch` empty guard,
   `_liveband.html` pre-season copy) -- unrelated to hosting, tracked in
@@ -329,7 +329,7 @@ own.
   `*.onrender.com` URL; a domain is a 10-minute add later (free on Render, you
   just pay the registrar).
 - **Access control?**  The dashboard is currently open to anyone with the URL.
-  If that matters, a single basic-auth middleware in `webapp/app.py` is the
+  If that matters, a single basic-auth middleware in `fantasy-football-4-fun/webapp/app.py` is the
   lightest fix -- it becomes a new Phase 3b and needs one secret
   (`DASHBOARD_PASSWORD`) in the Render service env.
 

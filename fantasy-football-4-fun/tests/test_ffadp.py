@@ -1,0 +1,821 @@
+"""Network-free tests for the cross-platform ADP layer (fantasy-football-4-fun/webapp/sources/ffadp)."""
+import webapp.sources.ffadp as ffadp
+from webapp.sources.ffadp import board, identity
+from webapp.sources.ffadp.base import AdpProvider, AdpRow
+
+
+# --- identity ---------------------------------------------------------------
+
+def _fake_dump():
+    return {
+        "100": {"full_name": "Ja'Marr Chase", "position": "WR", "team": "CIN",
+                "espn_id": "4262921", "yahoo_id": "33379"},
+        "200": {"full_name": "Bijan Robinson", "position": "RB", "team": "ATL",
+                "espn_id": "4430807", "yahoo_id": "40120"},
+        "DEF_SF": {"position": "DEF", "team": "SF"},
+    }
+
+
+def test_identity_resolves_by_cross_id(monkeypatch):
+    identity.reset()
+    monkeypatch.setattr(identity, "_raw_players", _fake_dump)
+    assert identity.resolve("espn", espn_id="4262921") == "100"
+    assert identity.resolve("yahoo", yahoo_id="40120") == "200"
+    identity.reset()
+
+
+def test_identity_name_fallback(monkeypatch):
+    identity.reset()
+    monkeypatch.setattr(identity, "_raw_players", _fake_dump)
+    # No cross-id, but the normalised name+pos still hits.
+    assert identity.resolve("x", name="Ja'Marr Chase", position="WR") == "100"
+    assert identity.resolve("x", name="jamarr chase", position="WR") == "100"
+    assert identity.resolve("x", name="Nobody Here", position="WR") is None
+    identity.reset()
+
+
+# --- board.combine -------------------------------------------------------
+
+class _StubA(AdpProvider):
+    name, label, formats = "a", "A", ("half_ppr",)
+    def fetch(self, season, scoring="half_ppr"):
+        return [
+            AdpRow("a", "Ja'Marr Chase", "WR", "CIN", adp=1.4, overall_rank=1, sleeper_id="100"),
+            AdpRow("a", "Bijan Robinson", "RB", "ATL", adp=2.6, overall_rank=2, sleeper_id="200"),
+        ]
+
+
+class _StubB(AdpProvider):
+    name, label, formats = "b", "B", ("half_ppr",)
+    def fetch(self, season, scoring="half_ppr"):
+        return [
+            AdpRow("b", "Bijan Robinson", "RB", "ATL", adp=1.9, overall_rank=1, sleeper_id="200"),
+            AdpRow("b", "Ja'Marr Chase", "WR", "CIN", adp=3.1, overall_rank=2, sleeper_id="100"),
+        ]
+
+
+class _StubEmpty(AdpProvider):
+    name, label, formats = "c", "C", ("half_ppr",)
+    def fetch(self, season, scoring="half_ppr"):
+        return []
+
+
+class _StubIDP(AdpProvider):
+    """A source that carries IDP / punters / team-QB aggregates with no
+    fantasy position -- like ESPN's real feed does."""
+    name, label, formats = "d", "D", ("half_ppr",)
+    def fetch(self, season, scoring="half_ppr"):
+        return [
+            AdpRow("d", "Micah Parsons", "LB", "DAL", adp=120.0, overall_rank=1),
+            AdpRow("d", "Ryan Stonehouse", "P", "TEN", adp=200.0, overall_rank=2),
+            AdpRow("d", "Packers TQB", None, "GB", adp=70.0, overall_rank=3),
+            AdpRow("d", "Kyle Juszczyk", "FB", "SF", adp=180.0, overall_rank=4),
+        ]
+
+
+def test_combine_merges_and_computes_spread(monkeypatch):
+    monkeypatch.setattr(board, "PROVIDERS", [_StubA(), _StubB(), _StubEmpty()])
+    monkeypatch.setattr(board, "_BY_NAME",
+                        {p.name: p for p in board.PROVIDERS})
+    identity.reset()
+    monkeypatch.setattr(identity, "_raw_players", _fake_dump)
+
+    b = board.combine("2025", scoring="half_ppr", pos="ALL", finish=False)
+    # empty source dropped from columns, kept in sources with ok=False
+    assert b["columns"] == ["a", "b"]
+    assert {s["name"]: s["ok"] for s in b["sources"]} == {"a": True, "b": True, "c": False}
+    assert len(b["rows"]) == 2
+
+    chase = next(r for r in b["rows"] if r["player"] == "Ja'Marr Chase")
+    bijan = next(r for r in b["rows"] if r["player"] == "Bijan Robinson")
+    # Chase: ranks 1 (a) and 2 (b) -> consensus 1.5, spread 1
+    assert chase["rank"] == {"a": 1, "b": 2}
+    assert chase["consensus"] == 1.5
+    assert chase["spread"] == 1
+    # Bijan: ranks 2 (a) and 1 (b) -> consensus 1.5, spread 1
+    assert bijan["consensus"] == 1.5 and bijan["spread"] == 1
+    # sorted by consensus asc; tie -> stable, both present
+    assert {r["player"] for r in b["rows"]} == {"Ja'Marr Chase", "Bijan Robinson"}
+    identity.reset()
+
+
+def test_combine_position_filter(monkeypatch):
+    monkeypatch.setattr(board, "PROVIDERS", [_StubA(), _StubB()])
+    monkeypatch.setattr(board, "_BY_NAME", {p.name: p for p in board.PROVIDERS})
+    identity.reset()
+    monkeypatch.setattr(identity, "_raw_players", _fake_dump)
+    b = board.combine("2025", pos="RB", finish=False)
+    assert [r["player"] for r in b["rows"]] == ["Bijan Robinson"]
+    identity.reset()
+
+
+def test_combine_all_sources_empty(monkeypatch):
+    monkeypatch.setattr(board, "PROVIDERS", [_StubEmpty()])
+    monkeypatch.setattr(board, "_BY_NAME", {p.name: p for p in board.PROVIDERS})
+    b = board.combine("2099", finish=False)
+    assert b["columns"] == []
+    assert b["rows"] == []
+
+
+def test_combine_drops_idp_and_non_fantasy_positions(monkeypatch):
+    monkeypatch.setattr(board, "PROVIDERS", [_StubA(), _StubIDP()])
+    monkeypatch.setattr(board, "_BY_NAME", {p.name: p for p in board.PROVIDERS})
+    identity.reset()
+    monkeypatch.setattr(identity, "_raw_players", _fake_dump)
+    b = board.combine("2025", scoring="half_ppr", pos="ALL", finish=False)
+    names = {r["player"] for r in b["rows"]}
+    # IDP (LB), punter (P), team-QB aggregate (no position) all gone
+    assert "Micah Parsons" not in names
+    assert "Ryan Stonehouse" not in names
+    assert "Packers TQB" not in names
+    # the two real fantasy players from _StubA survive
+    assert names == {"Ja'Marr Chase", "Bijan Robinson", "Kyle Juszczyk"}
+    # FB folds to RB
+    jusz = next(r for r in b["rows"] if r["player"] == "Kyle Juszczyk")
+    assert jusz["position"] == "RB"
+    identity.reset()
+
+
+class _StubDefA(AdpProvider):
+    name, label, formats = "da", "DA", ("half_ppr",)
+    def fetch(self, season, scoring="half_ppr"):
+        return [
+            AdpRow("da", "49ers", "DEF", "SF", adp=70.0, overall_rank=1),
+            AdpRow("da", "Philadelphia Eagles", "DEF", None, adp=80.0, overall_rank=2),
+        ]
+
+
+class _StubDefB(AdpProvider):
+    name, label, formats = "db2", "DB2", ("half_ppr",)
+    def fetch(self, season, scoring="half_ppr"):
+        return [
+            AdpRow("db2", "San Francisco Defense", "DST", "SF", adp=75.0, overall_rank=1),
+            AdpRow("db2", "Eagles D/ST", "D/ST", None, adp=85.0, overall_rank=2),
+            AdpRow("db2", "SF", "DEF", "SF", adp=72.0, overall_rank=3),
+        ]
+
+
+def test_combine_reconciles_duplicate_defenses(monkeypatch):
+    """"49ers" / "San Francisco Defense" / "SF" from three sources are ONE
+    row, keyed by the NFL abbreviation and displayed as it."""
+    monkeypatch.setattr(board, "PROVIDERS", [_StubDefA(), _StubDefB()])
+    monkeypatch.setattr(board, "_BY_NAME", {p.name: p for p in board.PROVIDERS})
+    identity.reset()
+    monkeypatch.setattr(identity, "_raw_players", _fake_dump)
+    b = board.combine("2025", scoring="half_ppr", pos="ALL", finish=False)
+
+    assert len(b["rows"]) == 2                       # SF + PHI, not 5
+    sf = next(r for r in b["rows"] if r["player"] == "SF")
+    phi = next(r for r in b["rows"] if r["player"] == "PHI")
+    # every source's rank folds into the one row
+    assert sf["rank"] == {"da": 1, "db2": 3}         # da's "49ers", db2's "SF"
+    assert sf["position"] == "DEF" and sf["team"] == "SF"
+    assert phi["rank"] == {"da": 2, "db2": 2}        # "Philadelphia Eagles" + "Eagles D/ST"
+    identity.reset()
+
+
+def test_def_team_resolves_spellings():
+    from webapp.sources.ffadp import identity as _id
+    assert _id.def_team("49ers") == "SF"
+    assert _id.def_team("San Francisco Defense") == "SF"
+    assert _id.def_team("Eagles D/ST") == "PHI"
+    assert _id.def_team("Philadelphia Eagles") == "PHI"
+    assert _id.def_team("Vikings D/ST", None) == "MIN"
+    assert _id.def_team("something", "KC") == "KC"
+    assert _id.def_team("Not A Team") is None
+
+
+# --- board.combine: Final / Diff columns -------------------------------
+
+def test_combine_attaches_final_and_diff(monkeypatch):
+    monkeypatch.setattr(board, "PROVIDERS", [_StubA(), _StubB()])
+    monkeypatch.setattr(board, "_BY_NAME", {p.name: p for p in board.PROVIDERS})
+    identity.reset()
+    monkeypatch.setattr(identity, "_raw_players", _fake_dump)
+    # Chase (sid 100) finished the year 4th overall; Bijan (sid 200) 1st.
+    from webapp.sources.ffadp import finish
+    monkeypatch.setattr(finish, "season_value_ranks",
+                        lambda season, fmt, reload=False: {"100": 4, "200": 1})
+
+    b = board.combine("2024", scoring="ppr", pos="ALL")
+    chase = next(r for r in b["rows"] if r["player"] == "Ja'Marr Chase")
+    bijan = next(r for r in b["rows"] if r["player"] == "Bijan Robinson")
+    # both have consensus 1.5 (ranks 1 & 2 across the two stubs)
+    assert chase["final"] == 4
+    assert chase["diff"] == -2.5           # 1.5 - 4
+    assert bijan["final"] == 1
+    assert bijan["diff"] == 0.5            # 1.5 - 1
+    # to_frame carries the new columns, right after consensus
+    from webapp.sources.ffadp.board import to_frame
+    cols = list(to_frame(b).columns)
+    assert cols[:7] == ["rank", "player", "position", "team",
+                        "consensus", "final", "diff"]
+    identity.reset()
+
+
+def test_combine_final_none_when_no_finish_data(monkeypatch):
+    monkeypatch.setattr(board, "PROVIDERS", [_StubA(), _StubB()])
+    monkeypatch.setattr(board, "_BY_NAME", {p.name: p for p in board.PROVIDERS})
+    identity.reset()
+    monkeypatch.setattr(identity, "_raw_players", _fake_dump)
+    from webapp.sources.ffadp import finish
+    monkeypatch.setattr(finish, "season_value_ranks",
+                        lambda season, fmt, reload=False: {})   # in-progress season
+
+    b = board.combine("2026", scoring="ppr", pos="ALL")
+    for r in b["rows"]:
+        assert r["final"] is None and r["diff"] is None
+    identity.reset()
+
+
+def test_finish_season_value_ranks_overall_rank(monkeypatch, tmp_path):
+    """_compute prices every fantasy player's stat lines with the default
+    chart and ranks OVERALL (all positions together)."""
+    from webapp.sources.ffadp import finish
+    from sleepermetrics import scoring
+    import pandas as pd
+
+    finish.clear_cache()
+    monkeypatch.setattr(finish, "_FINISH_DIR", tmp_path / "finish")
+    monkeypatch.setattr(finish, "_season_complete", lambda season: False)
+    monkeypatch.setattr(scoring, "default_rules",
+                        lambda fmt="ppr": {"rec": 1.0, "rec_td": 6.0, "rush_yd": 0.1})
+    monkeypatch.setattr(finish, "players", lambda: pd.DataFrame([
+        {"player_id": "w1", "position": "WR"},
+        {"player_id": "r1", "position": "RB"},
+        {"player_id": "x1", "position": "OL"},        # not a fantasy pos -> skipped
+    ]))
+    weeks = {
+        1: {"w1": {"rec": 8, "rec_td": 1},     # 14
+            "r1": {"rush_yd": 50},             # 5
+            "x1": {"rush_yd": 999}},           # dropped (position)
+        2: {"w1": {"rec": 2},                  # +2 -> 16 total
+            "r1": {"rush_yd": 200, "rec_td": 1}},  # +26 -> 31 total
+    }
+    monkeypatch.setattr(scoring, "nfl_stats",
+                        lambda season, wk: weeks.get(int(wk), {}))
+
+    ranks = finish.season_value_ranks("2024", "ppr")
+    assert ranks == {"r1": 1, "w1": 2}        # RB 31 > WR 16, overall
+    assert "x1" not in ranks
+    finish.clear_cache()
+
+
+def test_default_rules_merges_base_and_per_format_rec(monkeypatch, tmp_path):
+    """default_scoring.json stores the chart once as `base` (no rec) plus a
+    per-format `rec_by_format`; default_rules() merges the two."""
+    import json
+    from sleepermetrics import scoring
+
+    f = tmp_path / "default_scoring.json"
+    f.write_text(json.dumps({
+        "base": {"pass_td": 4.0, "rush_yd": 0.1, "rec_td": 6.0, "pass_int": -1.0},
+        "rec_by_format": {"std": 0.0, "half_ppr": 0.5, "ppr": 1.0, "2qb": 1.0},
+    }), encoding="utf-8")
+    monkeypatch.setattr(scoring, "_DEFAULT_SCORING_FILE", f)
+    scoring._default_rules_cache.clear()
+
+    assert scoring.default_rules("std")["rec"] == 0.0
+    assert scoring.default_rules("half_ppr")["rec"] == 0.5
+    assert scoring.default_rules("ppr")["rec"] == 1.0
+    # every non-rec key is the shared base
+    ppr = scoring.default_rules("ppr")
+    assert ppr["pass_td"] == 4.0 and ppr["pass_int"] == -1.0 and ppr["rush_yd"] == 0.1
+    # ppr == 2qb; unknown format falls back to ppr
+    assert scoring.default_rules("ppr") == scoring.default_rules("2qb")
+    assert scoring.default_rules("nonsense")["rec"] == 1.0
+    scoring._default_rules_cache.clear()
+
+
+def test_sleeper_provider_degrades_offline(monkeypatch):
+    # No committed snapshot + draft._fetch_adp_raw returns {} -> [].
+    from sleepermetrics import draft
+    from webapp.sources.ffadp import sleeper as slp
+    monkeypatch.setattr(slp, "_snapshot", lambda season: None)
+    monkeypatch.setattr(draft, "_fetch_adp_raw", lambda season: {})
+    assert slp.SleeperAdp().fetch("2099", "ppr") == []
+
+
+def test_sleeper_provider_skips_prehistoric_years(monkeypatch):
+    # A year before Sleeper's ADP history must not even call the endpoint
+    # (a miss there writes an empty data/seasons/adp/<y>.json).
+    from sleepermetrics import draft
+    from webapp.sources.ffadp.sleeper import SleeperAdp
+    called = []
+    monkeypatch.setattr(draft, "_fetch_adp_raw",
+                        lambda season: called.append(season) or {})
+    assert SleeperAdp().fetch("2015", "ppr") == []
+    assert called == []
+
+
+def test_sleeper_provider_snapshot_first(monkeypatch):
+    # A committed snapshot is used as-is; the live endpoint is NOT hit.
+    from sleepermetrics import draft
+    from webapp.sources.ffadp import sleeper as slp
+    snap = {"100": {"player_name": "A", "position": "RB", "adp_ppr": 1.2},
+            "200": {"player_name": "B", "position": "WR", "adp_ppr": 3.4}}
+    monkeypatch.setattr(slp, "_snapshot", lambda season: dict(snap))
+    called = []
+    monkeypatch.setattr(draft, "_fetch_adp_raw",
+                        lambda season: called.append(season) or {})
+    rows = slp.SleeperAdp().fetch("2024", "ppr")
+    assert [r.name for r in rows] == ["A", "B"] and called == []
+    # reload bypasses the snapshot -> the endpoint IS hit.
+    slp.SleeperAdp().fetch("2024", "ppr", reload=True)
+    assert called == ["2024"]
+
+
+def test_espn_provider_snapshot_first(monkeypatch):
+    from webapp.sources.ffadp import espn, cache
+    cache.clear()
+    hit = []
+    monkeypatch.setattr(cache, "load",
+                        lambda src, sea, force=False: (hit.append((sea, force)) or
+                        [{"espn_id": "1", "name": "X", "position": "RB", "adp": 2.0}]))
+    # A broad except in fetch() would swallow a raised sentinel and let the
+    # snapshot branch mask a live-first regression, so count calls instead.
+    live_calls = []
+    monkeypatch.setattr(espn.api, "espn_players",
+                        lambda season: live_calls.append(season))
+    rows = espn.EspnAdp().fetch("2024", "ppr")
+    assert len(rows) == 1 and hit == [("2024", False)] and live_calls == []
+    cache.clear()
+
+
+# --- ESPN provider (fixture payload, no network) --------------------------
+
+_ESPN_FIXTURE = [
+    {"id": 3929630, "fullName": "Saquon Barkley", "defaultPositionId": 2,
+     "ownership": {"averageDraftPosition": 3.4, "percentOwned": 98.0}},
+    {"id": 4262921, "fullName": "Justin Jefferson", "defaultPositionId": 3,
+     "ownership": {"averageDraftPosition": 9.0, "percentOwned": 100.0}},
+    {"id": 999001, "fullName": "Deep Bench Guy", "defaultPositionId": 2,
+     "ownership": {"averageDraftPosition": 170.0, "percentOwned": 0.0}},   # sentinel
+    {"id": 999002, "fullName": "No ADP Guy", "defaultPositionId": 3,
+     "ownership": {"averageDraftPosition": None, "percentOwned": 0.0}},
+    {"id": 16, "fullName": "SF D/ST", "defaultPositionId": 16,
+     "ownership": {"averageDraftPosition": 120.0, "percentOwned": 40.0}},
+]
+
+
+def test_espn_trim_filters_sentinel_and_maps_position():
+    from webapp.sources.ffadp import espn
+    rows = espn._trim(_ESPN_FIXTURE)
+    names = [r["name"] for r in rows]
+    assert "Deep Bench Guy" not in names and "No ADP Guy" not in names
+    assert names[0] == "Saquon Barkley"          # sorted by adp asc
+    barkley = rows[0]
+    assert barkley["position"] == "RB" and barkley["espn_id"] == "3929630"
+    assert any(r["position"] == "DEF" for r in rows)
+
+
+def test_espn_provider_uses_snapshot_when_fetch_fails(monkeypatch):
+    from webapp.sources.ffadp import espn, cache
+    cache.clear()
+    monkeypatch.setattr(espn.api, "espn_players",
+                        lambda season: (_ for _ in ()).throw(RuntimeError("no net")))
+    monkeypatch.setattr(cache, "load", lambda src, sea: [
+        {"espn_id": "3929630", "name": "Saquon Barkley", "position": "RB", "adp": 3.4},
+    ])
+    rows = espn.EspnAdp().fetch("2024", "ppr")
+    assert len(rows) == 1 and rows[0].espn_id == "3929630" and rows[0].overall_rank == 1
+    cache.clear()
+
+
+def test_espn_provider_degrades_to_empty(monkeypatch):
+    from webapp.sources.ffadp import espn, cache
+    cache.clear()
+    monkeypatch.setattr(espn.api, "espn_players",
+                        lambda season: (_ for _ in ()).throw(RuntimeError("no net")))
+    monkeypatch.setattr(cache, "load", lambda src, sea: None)
+    assert espn.EspnAdp().fetch("2099", "ppr") == []
+    cache.clear()
+
+
+# --- FFC provider (fixture payload, no network) --------------------------
+
+_FFC_FIXTURE = {
+    "status": "Success",
+    "meta": {"type": "PPR", "teams": 12},
+    "players": [
+        {"name": "Christian McCaffrey", "position": "RB", "team": "SF",
+         "adp": 1.4},
+        {"name": "Justin Jefferson", "position": "WR", "team": "MIN",
+         "adp": 3.2},
+        {"name": "Harrison Butker", "position": "PK", "team": "KC",
+         "adp": 130.0},                       # PK -> K
+        {"name": "Bad Row", "position": "RB", "team": "X", "adp": 0},   # dropped
+    ],
+}
+
+
+def test_ffc_trim_normalises_and_sorts():
+    from webapp.sources.ffadp import ffc
+    rows = ffc._trim(_FFC_FIXTURE["players"])
+    assert [r["name"] for r in rows] == [
+        "Christian McCaffrey", "Justin Jefferson", "Harrison Butker"]
+    assert rows[2]["position"] == "K"          # PK normalised
+    assert all(r["adp"] > 0 for r in rows)     # adp<=0 dropped
+
+
+def test_ffc_provider_snapshot_first(monkeypatch):
+    from webapp.sources.ffadp import ffc, cache
+    cache.clear()
+    seen = []
+    monkeypatch.setattr(cache, "load",
+                        lambda src, sea, force=False, variant=None:
+                        (seen.append((src, sea, variant)) or
+                         [{"name": "A", "position": "RB", "team": "SF", "adp": 1.1}]))
+    # A broad except in fetch() would swallow a raised sentinel and let the
+    # snapshot branch mask a live-first regression, so count calls instead.
+    live_calls = []
+    monkeypatch.setattr(ffc.api, "ffc_adp",
+                        lambda *a, **k: live_calls.append((a, k)))
+    rows = ffc.FfcAdp().fetch("2024", "ppr")
+    assert len(rows) == 1 and seen == [("ffc", "2024", "ppr")] and live_calls == []
+    cache.clear()
+
+
+def test_ffc_provider_format_fallback_and_skip(monkeypatch):
+    from webapp.sources.ffadp import ffc, cache
+    cache.clear()
+    # the real fallback branch: an unsupported format resolves to formats[0]
+    assert ffc.FfcAdp()._format_or_fallback("nonsense") == "std"
+    assert ffc.FfcAdp()._format_or_fallback("half_ppr") == "half_ppr"
+    # a year before FFC history returns [] without any fetch
+    live_calls = []
+    monkeypatch.setattr(ffc.api, "ffc_adp",
+                        lambda *a, **k: live_calls.append((a, k)))
+    assert ffc.FfcAdp().fetch("2008", "ppr") == []
+    assert live_calls == []
+    cache.clear()
+
+
+def test_ffc_provider_degrades_to_empty(monkeypatch):
+    from webapp.sources.ffadp import ffc, cache
+    cache.clear()
+    monkeypatch.setattr(ffc.api, "ffc_adp",
+                        lambda *a, **k: (_ for _ in ()).throw(RuntimeError("no net")))
+    monkeypatch.setattr(cache, "load",
+                        lambda src, sea, force=False, variant=None: None)
+    assert ffc.FfcAdp().fetch("2024", "ppr") == []
+    cache.clear()
+
+
+# --- RotoWire feed (fixture, no network) -------------------------------
+
+_RW_FIXTURE = [
+    {"firstname": "Jahmyr", "lastname": "Gibbs", "position": "RB",
+     "team": "DET", "playerID": "16808", "average": "1.6"},
+    {"firstname": "Ja'Marr", "lastname": "Chase", "position": "WR",
+     "team": "CIN", "playerID": "2799", "average": "3.8"},
+    {"firstname": "Some", "lastname": "Linebacker", "position": "LB",
+     "team": "KC", "playerID": "9", "average": "40.0"},      # IDP -> dropped
+    {"firstname": "No", "lastname": "Data", "position": "WR",
+     "team": "FA", "playerID": "8", "average": ""},          # sentinel
+]
+
+
+def test_rotowire_trim_drops_idp_and_sentinels():
+    from webapp.sources.ffadp import rotowire
+    rows = rotowire._trim(_RW_FIXTURE)
+    assert [r["name"] for r in rows] == ["Jahmyr Gibbs", "Ja'Marr Chase"]
+    assert rows[0]["position"] == "RB" and rows[0]["average"] == 1.6
+
+
+def test_rotowire_one_call_backs_the_column(monkeypatch):
+    from webapp.sources.ffadp import rotowire
+    rotowire._clear_feed_cache()
+    calls = []
+    monkeypatch.setattr(rotowire.api, "rotowire_adp",
+                        lambda slug="PPR": calls.append(slug) or _RW_FIXTURE)
+    monkeypatch.setattr(rotowire.cache, "load", lambda *a, **k: None)
+    monkeypatch.setattr(rotowire.cache, "save", lambda *a, **k: None)
+    rw = rotowire.RotowireAdp().fetch("2026", "ppr")
+    assert [r.name for r in rw] == ["Jahmyr Gibbs", "Ja'Marr Chase"]
+    assert rw[0].adp == 1.6 and rw[0].overall_rank == 1
+    assert calls == ["PPR"]
+    rotowire._clear_feed_cache()
+
+
+def test_rotowire_predates_returns_empty(monkeypatch):
+    from webapp.sources.ffadp import rotowire
+    live_calls = []
+    monkeypatch.setattr(rotowire.api, "rotowire_adp",
+                        lambda slug="PPR": live_calls.append(slug))
+    # a year before the feed's (current-season) EARLIEST
+    assert rotowire.RotowireAdp().fetch(str(rotowire.EARLIEST - 1), "ppr") == []
+    assert live_calls == []
+
+
+def test_rotowire_degrades_to_empty(monkeypatch):
+    from webapp.sources.ffadp import rotowire
+    rotowire._clear_feed_cache()
+    monkeypatch.setattr(rotowire.api, "rotowire_adp",
+                        lambda slug="PPR": (_ for _ in ()).throw(RuntimeError("no net")))
+    monkeypatch.setattr(rotowire.cache, "load", lambda *a, **k: None)
+    assert rotowire.RotowireAdp().fetch(str(rotowire.EARLIEST), "ppr") == []
+    rotowire._clear_feed_cache()
+
+
+# --- Yahoo provider (fixture payload, no network) -----------------------
+
+# Rows as api.yahoo_adp returns them: the flattened inner `player` dicts.
+_YAHOO_FIXTURE = [
+    {"player_id": "40059", "name": {"full": "Jahmyr Gibbs"},
+     "display_position": "RB", "editorial_team_abbr": "Det",
+     "draft_analysis": {"preseason_average_pick": "1.3", "average_pick": "1.4"}},
+    {"player_id": "31002", "name": {"full": "Some Linebacker"},
+     "display_position": "DB,CB", "editorial_team_abbr": "KC",
+     "draft_analysis": {"preseason_average_pick": "40.0"}},          # IDP
+    {"player_id": "33379", "name": {"full": "Ja'Marr Chase"},
+     "display_position": "WR", "editorial_team_abbr": "Cin",
+     "draft_analysis": {"preseason_average_pick": "3.6"}},
+    {"player_id": "9", "name": {"full": "Undrafted Guy"},
+     "display_position": "WR", "editorial_team_abbr": "FA",
+     "draft_analysis": {"preseason_average_pick": "-",
+                        "average_pick": "150.0"}},                   # no preseason
+]
+
+
+def test_yahoo_trim_drops_idp_and_no_preseason_pick():
+    from webapp.sources.ffadp import yahoo
+    rows = yahoo._trim(_YAHOO_FIXTURE)
+    assert [r["name"] for r in rows] == ["Jahmyr Gibbs", "Ja'Marr Chase"]
+    assert rows[0]["position"] == "RB" and rows[0]["team"] == "DET"
+    assert rows[0]["adp"] == 1.3 and rows[0]["yahoo_id"] == "40059"
+
+
+def test_yahoo_provider_snapshot_first(monkeypatch):
+    from webapp.sources.ffadp import yahoo, cache
+    cache.clear()
+    seen = []
+    monkeypatch.setattr(cache, "load",
+                        lambda src, sea, force=False, variant=None:
+                        (seen.append((src, sea)) or
+                         [{"yahoo_id": "1", "name": "X", "position": "RB",
+                           "team": "SF", "adp": 2.0}]))
+    # A broad except in fetch() would swallow a raised sentinel and let the
+    # snapshot branch mask a live-first regression, so count calls instead.
+    live_calls = []
+    monkeypatch.setattr(yahoo.api, "yahoo_adp",
+                        lambda *a, **k: live_calls.append((a, k)))
+    rows = yahoo.YahooAdp().fetch("2024", "ppr")
+    assert (len(rows) == 1 and rows[0].yahoo_id == "1" and seen == [("yahoo", "2024")]
+            and live_calls == [])
+    cache.clear()
+
+
+def test_yahoo_provider_predates_and_degrades(monkeypatch):
+    from webapp.sources.ffadp import yahoo, cache
+    cache.clear()
+    # a year before Yahoo has a usable preseason pick -> [] without any call
+    live_calls = []
+    monkeypatch.setattr(yahoo.api, "yahoo_adp",
+                        lambda *a, **k: live_calls.append((a, k)))
+    assert yahoo.YahooAdp().fetch("2020", "ppr") == []
+    assert live_calls == []
+    # a live failure with no snapshot -> []
+    monkeypatch.setattr(yahoo.api, "yahoo_adp",
+                        lambda *a, **k: (_ for _ in ()).throw(RuntimeError("no net")))
+    monkeypatch.setattr(cache, "load",
+                        lambda src, sea, force=False, variant=None: None)
+    assert yahoo.YahooAdp().fetch("2024", "ppr") == []
+    cache.clear()
+
+
+# --- CBS provider (fixture HTML, no network) ---------------------------
+
+_CBS_HTML = """
+<table><tbody>
+<tr><td>1</td><td><span class="CellPlayerName--long"><span>
+  <a href="/x">Jahmyr Gibbs</a>
+  <span class="CellPlayerName-position"> RB </span>
+  <span class="CellPlayerName-team"> DET </span></span></span></td>
+  <td>&mdash;</td><td> 1.12 </td><td>1/2</td><td>100.0</td></tr>
+<tr><td>2</td><td><span class="CellPlayerName--long"><span>
+  <a href="/x">Broncos</a>
+  <span class="CellPlayerName-position"> DST </span>
+  <span class="CellPlayerName-team"> DEN </span></span></span></td>
+  <td>&mdash;</td><td> 95.4 </td><td>8/12</td><td>70.0</td></tr>
+<tr><td>3</td><td><span class="CellPlayerName--long"><span>
+  <a href="/x">No Adp</a>
+  <span class="CellPlayerName-position"> WR </span>
+  <span class="CellPlayerName-team"> FA </span></span></span></td>
+  <td>&mdash;</td><td> n/a </td><td>-</td><td>0.0</td></tr>
+</tbody></table>
+"""
+
+
+def test_cbs_parse_maps_positions_and_sorts():
+    from webapp.sources.ffadp import cbs
+    rows = cbs._parse(_CBS_HTML)
+    assert [r["name"] for r in rows] == ["Jahmyr Gibbs", "Broncos"]  # n/a dropped
+    assert rows[0]["position"] == "RB" and rows[0]["adp"] == 1.1
+    assert rows[1]["position"] == "DEF"          # DST -> DEF
+
+
+def test_cbs_provider_snapshot_first(monkeypatch):
+    from webapp.sources.ffadp import cbs, cache
+    cache.clear()
+    seen = []
+    monkeypatch.setattr(cache, "load",
+                        lambda src, sea, force=False, variant=None:
+                        (seen.append((src, sea)) or
+                         [{"name": "X", "position": "RB", "team": "SF", "adp": 2.0}]))
+    # A broad except in fetch() would swallow a raised sentinel and let the
+    # snapshot branch mask a live-first regression, so count calls instead.
+    live_calls = []
+    monkeypatch.setattr(cbs.api, "cbs_adp", lambda: live_calls.append(1))
+    rows = cbs.CbsAdp().fetch(str(cbs.EARLIEST), "ppr")
+    assert len(rows) == 1 and seen == [("cbs", str(cbs.EARLIEST))] and live_calls == []
+    cache.clear()
+
+
+def test_cbs_provider_predates_and_degrades(monkeypatch):
+    from webapp.sources.ffadp import cbs, cache
+    cache.clear()
+    live_calls = []
+    monkeypatch.setattr(cbs.api, "cbs_adp", lambda: live_calls.append(1))
+    assert cbs.CbsAdp().fetch(str(cbs.EARLIEST - 1), "ppr") == []
+    assert live_calls == []
+    monkeypatch.setattr(cbs.api, "cbs_adp",
+                        lambda: (_ for _ in ()).throw(RuntimeError("no net")))
+    monkeypatch.setattr(cache, "load",
+                        lambda src, sea, force=False, variant=None: None)
+    assert cbs.CbsAdp().fetch(str(cbs.EARLIEST), "ppr") == []
+    cache.clear()
+
+
+def test_board_registers_expected_sources():
+    from webapp.sources.ffadp import board
+    names = [p.name for p in board.PROVIDERS]
+    assert names == ["sleeper", "espn", "yahoo", "cbs", "ffc", "rotowire",
+                     "fantasypros"]
+    assert board.FIRST_SEASON["yahoo"] == 2022
+    assert board.FIRST_SEASON["fantasypros"] is None
+
+
+# --- source grouping --------------------------------------------------------
+
+def test_every_provider_has_a_valid_group():
+    from webapp.sources.ffadp import board
+    from webapp.sources.ffadp.base import GROUP_ORDER
+    for p in board.PROVIDERS:
+        assert getattr(p, "group", None) in GROUP_ORDER, p.name
+
+
+def test_expected_group_assignments():
+    from webapp.sources.ffadp import board
+    g = {p.name: p.group for p in board.PROVIDERS}
+    assert g["sleeper"] == g["espn"] == g["yahoo"] == g["cbs"] == "apps"
+    assert g["ffc"] == g["rotowire"] == g["fantasypros"] == "analyst"
+
+
+class _AppStub(AdpProvider):
+    name, label, group, formats = "app1", "App1", "apps", ("half_ppr",)
+    def fetch(self, season, scoring="half_ppr"):
+        return [AdpRow("app1", "Ja'Marr Chase", "WR", "CIN", adp=1.0,
+                       overall_rank=1, sleeper_id="100")]
+
+
+class _AnalystStub(AdpProvider):
+    name, label, group, formats = "an1", "An1", "analyst", ("half_ppr",)
+    def fetch(self, season, scoring="half_ppr"):
+        return [AdpRow("an1", "Ja'Marr Chase", "WR", "CIN", adp=1.2,
+                       overall_rank=1, sleeper_id="100")]
+
+
+def test_combine_orders_columns_by_group_and_reports_groups(monkeypatch):
+    # Register analyst-first; combine() must still emit apps -> analyst.
+    provs = [_AnalystStub(), _AppStub()]
+    monkeypatch.setattr(board, "PROVIDERS", provs)
+    monkeypatch.setattr(board, "_BY_NAME", {p.name: p for p in provs})
+    identity.reset()
+    monkeypatch.setattr(identity, "_raw_players", _fake_dump)
+
+    b = board.combine("2026", scoring="half_ppr")
+    assert b["columns"] == ["app1", "an1"]
+    assert [g["key"] for g in b["groups"]] == ["apps", "analyst"]
+    assert b["groups"][0]["columns"] == ["app1"]
+    assert b["groups"][0]["label"] == "Draft platforms"
+    assert {s["name"]: s["group"] for s in b["sources"]} == {
+        "app1": "apps", "an1": "analyst"}
+    identity.reset()
+
+
+def test_combine_groups_omits_empty_group(monkeypatch):
+    provs = [_AppStub()]                      # no analyst source
+    monkeypatch.setattr(board, "PROVIDERS", provs)
+    monkeypatch.setattr(board, "_BY_NAME", {p.name: p for p in provs})
+    identity.reset()
+    monkeypatch.setattr(identity, "_raw_players", _fake_dump)
+    b = board.combine("2026", scoring="half_ppr")
+    assert [g["key"] for g in b["groups"]] == ["apps"]
+    identity.reset()
+
+
+def test_to_frame_follows_grouped_column_order(monkeypatch):
+    provs = [_AnalystStub(), _AppStub()]
+    monkeypatch.setattr(board, "PROVIDERS", provs)
+    monkeypatch.setattr(board, "_BY_NAME", {p.name: p for p in provs})
+    identity.reset()
+    monkeypatch.setattr(identity, "_raw_players", _fake_dump)
+    df = board.to_frame(board.combine("2026", scoring="half_ppr"))
+    cols = list(df.columns)
+    assert cols.index("App1 ADP") < cols.index("An1 ADP")
+    identity.reset()
+
+
+def test_combine_tags_source_coverage(monkeypatch):
+    # ESPN present for a year, Sleeper predates it -> Sleeper column dropped
+    # with a "from <year>" note; ESPN column kept.
+    from webapp.sources.ffadp import board, espn, identity
+
+    class _EspnStub(board.EspnAdp):
+        def fetch(self, season, scoring="half_ppr"):
+            return [AdpRow("espn", "Chris Johnson", "RB", "TEN", adp=1.5,
+                           overall_rank=1, espn_id="e1")]
+
+    monkeypatch.setattr(board, "PROVIDERS", [board.SleeperAdp(), _EspnStub()])
+    monkeypatch.setattr(board, "_BY_NAME", {p.name: p for p in board.PROVIDERS})
+    monkeypatch.setattr(board, "FIRST_SEASON", {"sleeper": 2020, "espn": 2004})
+    identity.reset()
+    monkeypatch.setattr(identity, "_raw_players", lambda: {})
+    b = board.combine("2010", scoring="ppr", pos="ALL")
+    assert b["columns"] == ["espn"]
+    sl = next(s for s in b["sources"] if s["name"] == "sleeper")
+    assert sl["ok"] is False and sl["why"] == "from 2020"
+    identity.reset()
+
+
+def test_to_frame_shape(monkeypatch):
+    monkeypatch.setattr(board, "PROVIDERS", [_StubA(), _StubB()])
+    monkeypatch.setattr(board, "_BY_NAME", {p.name: p for p in board.PROVIDERS})
+    identity.reset()
+    monkeypatch.setattr(identity, "_raw_players", _fake_dump)
+    df = board.to_frame(board.combine("2025"))
+    # Column order mirrors the table: rank, player, position, team, consensus,
+    # then per-source ADP + rank (labelled), spread last.
+    cols = list(df.columns)
+    assert cols[:5] == ["rank", "player", "position", "team", "consensus"]
+    assert cols[-1] == "spread"
+    assert "A ADP" in cols and "A rank" in cols and "B ADP" in cols
+    assert len(df) == 2 and df.iloc[0]["rank"] == 1
+    identity.reset()
+
+
+# --- export routes --------------------------------------------------------
+
+def _mini_board(monkeypatch):
+    monkeypatch.setattr(board, "PROVIDERS", [_StubA(), _StubB()])
+    monkeypatch.setattr(board, "_BY_NAME", {p.name: p for p in board.PROVIDERS})
+    identity.reset()
+    monkeypatch.setattr(identity, "_raw_players", _fake_dump)
+
+
+def test_export_csv_route(monkeypatch):
+    _mini_board(monkeypatch)
+    from webapp import app
+    r = app.adp_export_csv(season="2025", scoring="half_ppr", pos="ALL")
+    assert r.status_code == 200 and r.media_type == "text/csv"
+    assert 'attachment; filename="adp-2025-half_ppr.csv"' in r.headers["content-disposition"]
+    body = r.body.decode()
+    assert body.splitlines()[0].startswith("rank,player,position,team,consensus")
+    assert "Ja'Marr Chase" in body
+    identity.reset()
+
+
+def test_export_xlsx_route(monkeypatch):
+    _mini_board(monkeypatch)
+    from webapp import app
+    r = app.adp_export_xlsx(season="2025", scoring="ppr", pos="RB")
+    assert r.status_code == 200
+    assert r.media_type.endswith("spreadsheetml.sheet")
+    assert 'filename="adp-2025-ppr-rb.xlsx"' in r.headers["content-disposition"]
+    import io
+    import openpyxl
+    wb = openpyxl.load_workbook(io.BytesIO(r.body))
+    assert "ADP" in wb.sheetnames
+    assert [c.value for c in wb["ADP"][1]][:4] == ["rank", "player", "position", "team"]
+    identity.reset()
+
+
+class _Req:
+    scope = {"type": "http"}
+    headers = {}
+
+    def __getattr__(self, _):
+        return None
+
+
+def test_adp_data_route_renders_player_portrait(monkeypatch):
+    _mini_board(monkeypatch)
+    from webapp import app
+    resp = app.adp_data(_Req(), season="2025", scoring="ppr", pos="ALL")
+    body = resp.body.decode()
+    assert resp.status_code == 200
+    # each board row carries a resolved sleeper_id -> _ident.headshot() img
+    assert 'class="pface" src="https://sleepercdn.com/content/nfl/players/100.jpg"' in body
+    assert "Ja&#39;Marr Chase" in body or "Ja'Marr Chase" in body
+    identity.reset()

@@ -1,0 +1,798 @@
+<title>Hosting & CI/CD Implementation Plan</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
+<style>
+  :root {
+    --ground: #f6f7f9;
+    --surface: #ffffff;
+    --surface-sunk: #f0f2f5;
+    --ink: #1e2530;
+    --muted: #5c6673;
+    --accent: #2f6f4f;
+    --accent-soft: #e7f0ea;
+    --line: #e2e5ea;
+    --warn: #9a6b1f;
+    --warn-soft: #f6efe1;
+    --stop: #8a3a3a;
+    --stop-soft: #f5e9e9;
+
+    --measure: 68ch;
+    --step--1: 0.86rem;
+    --step-0: 1rem;
+    --step-1: 1.18rem;
+    --step-2: 1.5rem;
+    --step-3: 2rem;
+    --step-4: 2.75rem;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground: #12151a;
+      --surface: #1a1f27;
+      --surface-sunk: #161b22;
+      --ink: #e8ecf2;
+      --muted: #8b96a5;
+      --accent: #5bbd8b;
+      --accent-soft: #17251d;
+      --line: #2a323d;
+      --warn: #d3a566;
+      --warn-soft: #2a2115;
+      --stop: #d98a8a;
+      --stop-soft: #2a1a1a;
+    }
+  }
+
+  :root[data-theme="dark"] {
+    --ground: #12151a;
+    --surface: #1a1f27;
+    --surface-sunk: #161b22;
+    --ink: #e8ecf2;
+    --muted: #8b96a5;
+    --accent: #5bbd8b;
+    --accent-soft: #17251d;
+    --line: #2a323d;
+    --warn: #d3a566;
+    --warn-soft: #2a2115;
+    --stop: #d98a8a;
+    --stop-soft: #2a1a1a;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--ground);
+    color: var(--ink);
+    font-family: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
+    font-size: var(--step-0);
+    line-height: 1.62;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .wrap {
+    max-width: 880px;
+    margin: 0 auto;
+    padding: clamp(2rem, 5vw, 4.5rem) clamp(1.1rem, 4vw, 2.5rem) 6rem;
+  }
+
+  /* ---- masthead ---- */
+  .masthead {
+    border-bottom: 2px solid var(--ink);
+    padding-bottom: 1.4rem;
+    margin-bottom: 2.6rem;
+  }
+  .eyebrow {
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: var(--step--1);
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin: 0 0 0.9rem;
+  }
+  h1 {
+    font-family: "Fraunces", Georgia, serif;
+    font-weight: 600;
+    font-size: clamp(2rem, 6vw, var(--step-4));
+    line-height: 1.08;
+    letter-spacing: -0.015em;
+    text-wrap: balance;
+    margin: 0 0 0.8rem;
+  }
+  .standfirst {
+    font-size: var(--step-1);
+    color: var(--muted);
+    max-width: var(--measure);
+    margin: 0 0 1.2rem;
+  }
+  .badge-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.55rem;
+    margin-bottom: 1.5rem;
+  }
+  .badge {
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: var(--step--1);
+    letter-spacing: 0.04em;
+    padding: 0.28rem 0.7rem;
+    border-radius: 3px;
+    border: 1px solid var(--line);
+    background: var(--surface);
+    color: var(--muted);
+  }
+  .badge.free {
+    border-color: var(--accent);
+    background: var(--accent-soft);
+    color: var(--accent);
+    font-weight: 600;
+  }
+  .meta {
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: var(--step--1);
+    color: var(--muted);
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem 1.6rem;
+  }
+  .meta b { color: var(--ink); font-weight: 600; }
+
+  /* ---- generic prose ---- */
+  p, ul, ol { max-width: var(--measure); }
+  p { margin: 0 0 1.1rem; }
+  a {
+    color: var(--accent);
+    text-underline-offset: 2px;
+    text-decoration-thickness: 1px;
+  }
+  a:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+    border-radius: 2px;
+  }
+  strong { font-weight: 600; }
+  code {
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: 0.88em;
+    background: var(--surface-sunk);
+    border: 1px solid var(--line);
+    border-radius: 3px;
+    padding: 0.08em 0.36em;
+  }
+
+  /* ---- section scaffolding ---- */
+  section { margin-top: 3.4rem; }
+  h2 {
+    font-family: "Fraunces", Georgia, serif;
+    font-weight: 600;
+    font-size: var(--step-3);
+    letter-spacing: -0.01em;
+    line-height: 1.15;
+    text-wrap: balance;
+    margin: 0 0 0.4rem;
+    padding-bottom: 0.5rem;
+    border-bottom: 1px solid var(--line);
+  }
+  h3 {
+    font-family: "IBM Plex Sans", sans-serif;
+    font-weight: 700;
+    font-size: var(--step-1);
+    letter-spacing: 0.005em;
+    margin: 2rem 0 0.5rem;
+  }
+  .lede {
+    color: var(--muted);
+    font-size: var(--step-0);
+    margin-bottom: 1.6rem;
+  }
+
+  /* ---- phase list: numbering is a real sequence ---- */
+  .phases {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    max-width: none;
+  }
+  .phase {
+    display: grid;
+    grid-template-columns: 3.2rem 1fr;
+    gap: 0 1.4rem;
+    padding: 1.7rem 0;
+    border-top: 1px solid var(--line);
+  }
+  .phase:last-child { border-bottom: 1px solid var(--line); }
+  .phase-num {
+    font-family: "Fraunces", Georgia, serif;
+    font-weight: 500;
+    font-size: var(--step-2);
+    color: var(--accent);
+    line-height: 1;
+    padding-top: 0.15rem;
+    font-variant-numeric: tabular-nums;
+  }
+  .phase-body { min-width: 0; }
+  .phase-body h3 { margin-top: 0; }
+  .phase-body p:last-child, .phase-body ul:last-child { margin-bottom: 0; }
+  .phase-risk {
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: var(--step--1);
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    display: inline-block;
+    margin-top: 0.7rem;
+    padding: 0.2rem 0.55rem;
+    border-radius: 3px;
+    background: var(--accent-soft);
+    color: var(--accent);
+  }
+  .phase-risk.med { background: var(--warn-soft); color: var(--warn); }
+
+  /* ---- callouts: semantic left stripe, not a card ---- */
+  .note {
+    border: 1px solid var(--line);
+    border-left: 3px solid var(--muted);
+    background: var(--surface);
+    padding: 1rem 1.2rem;
+    margin: 1.5rem 0;
+    max-width: var(--measure);
+  }
+  .note > :first-child { margin-top: 0; }
+  .note > :last-child { margin-bottom: 0; }
+  .note .tag {
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: var(--step--1);
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    color: var(--muted);
+    display: block;
+    margin-bottom: 0.4rem;
+  }
+  .note.decision { border-left-color: var(--accent); }
+  .note.decision .tag { color: var(--accent); }
+  .note.gotcha { border-left-color: var(--warn); background: var(--warn-soft); }
+  .note.gotcha .tag { color: var(--warn); }
+  .note.stop { border-left-color: var(--stop); background: var(--stop-soft); }
+  .note.stop .tag { color: var(--stop); }
+
+  /* ---- table ---- */
+  .tablewrap {
+    overflow-x: auto;
+    margin: 1.5rem 0;
+    border: 1px solid var(--line);
+    border-radius: 4px;
+  }
+  table {
+    border-collapse: collapse;
+    width: 100%;
+    font-size: var(--step--1);
+  }
+  th, td {
+    text-align: left;
+    padding: 0.7rem 0.9rem;
+    border-bottom: 1px solid var(--line);
+    vertical-align: top;
+  }
+  thead th {
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    font-size: 0.74rem;
+    font-weight: 600;
+    color: var(--muted);
+    background: var(--surface-sunk);
+    white-space: nowrap;
+  }
+  tbody tr:last-child td { border-bottom: 0; }
+  td code { background: none; border: 0; padding: 0; font-size: 0.92em; }
+  .num { font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .yes { color: var(--accent); font-weight: 600; }
+  .no { color: var(--stop); font-weight: 600; }
+
+  /* ---- code blocks ---- */
+  .code {
+    overflow-x: auto;
+    background: var(--surface-sunk);
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    padding: 1rem 1.15rem;
+    margin: 1.3rem 0;
+    max-width: none;
+  }
+  .code pre {
+    margin: 0;
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: 0.82rem;
+    line-height: 1.65;
+    color: var(--ink);
+  }
+  .code .cap {
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: var(--step--1);
+    color: var(--muted);
+    display: block;
+    margin-bottom: 0.7rem;
+    letter-spacing: 0.02em;
+  }
+  .code .c { color: var(--muted); }
+
+  ul.tight, ol.tight { margin: 0.4rem 0 1.1rem; padding-left: 1.3rem; }
+  ul.tight li, ol.tight li { margin-bottom: 0.35rem; }
+  ul.tight li::marker { color: var(--muted); }
+
+  .kicker {
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: var(--step--1);
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin: 2.4rem 0 0.6rem;
+  }
+
+  hr.rule {
+    border: 0;
+    border-top: 1px solid var(--line);
+    margin: 3rem 0 0;
+  }
+
+  .foot {
+    margin-top: 4rem;
+    padding-top: 1.4rem;
+    border-top: 2px solid var(--ink);
+    font-size: var(--step--1);
+    color: var(--muted);
+  }
+
+  @media (max-width: 560px) {
+    .phase { grid-template-columns: 1fr; gap: 0.3rem; }
+    .phase-num { padding-top: 0; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    * { animation: none !important; transition: none !important; }
+  }
+</style>
+
+<div class="wrap">
+
+  <header class="masthead">
+    <p class="eyebrow">Implementation Plan &nbsp;/&nbsp; For Review &nbsp;/&nbsp; Rev 2 &mdash; free-tier only</p>
+    <h1>Hosting &amp; CI/CD for the Sleeper Analytics Dashboard</h1>
+    <p class="standfirst">Getting the FastAPI + HTMX webapp onto a host, wiring GitHub Actions to test
+      it, and scheduling the weekly Discord recap &mdash; laid out phase by phase so it can be
+      approved, trimmed, or redlined before any infra work starts.</p>
+    <div class="badge-row">
+      <span class="badge free">Recurring cost: $0</span>
+      <span class="badge">No platform that can silently bill</span>
+      <span class="badge">One paid item, opt-in only</span>
+    </div>
+    <div class="meta">
+      <span><b>Repo</b> DDBM-Fantasy-Football</span>
+      <span><b>Scope</b> Python webapp only</span>
+      <span><b>Status</b> Proposal &mdash; nothing built</span>
+      <span><b>Base</b> <code>main</code> @ 201976f</span>
+    </div>
+  </header>
+
+  <div class="note">
+    <span class="tag">The constraint this revision enforces</span>
+    <p>Everything here stays on a <strong>genuine free tier that will not silently convert to a
+      paid bill</strong>. A platform that auto-charges past a free allowance with no manual
+      upgrade step &mdash; <strong>Fly.io</strong> for new accounts, <strong>Google Cloud
+      Run</strong> &mdash; is excluded even where it fits technically. The one always-on paid item
+      (the slash-command bot) is explicitly opt-in and is <em>not</em> part of the recommended
+      build.</p>
+  </div>
+
+  <section id="what">
+    <h2>1 &nbsp; What is being deployed</h2>
+    <p class="lede">Four things live in this repo. In the recommended build only one runs as a
+      long-lived process; one is a scheduled job, one is opt-in and paid, one never leaves CI.</p>
+
+    <div class="tablewrap">
+      <table>
+        <thead>
+          <tr><th>Component</th><th>What it is</th><th>Deploy shape</th><th>In the free build?</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>webapp.app:app</code></td>
+            <td>FastAPI + HTMX dashboard; server-rendered matplotlib PNGs</td>
+            <td>Long-running web service, 1 container</td>
+            <td class="yes">Yes &mdash; Render free web service</td>
+          </tr>
+          <tr>
+            <td>Weekly recap<br><code>bot.py weekly</code></td>
+            <td>One-shot post of a weekly recap to a Discord webhook</td>
+            <td>Scheduled job (cron)</td>
+            <td class="yes">Yes &mdash; GitHub Actions schedule</td>
+          </tr>
+          <tr>
+            <td>Discord bot<br><code>bot.py serve</code></td>
+            <td>discord.py gateway bot for slash commands</td>
+            <td>Always-on worker, persistent connection</td>
+            <td class="no">No &mdash; no free always-on host; ~$7/mo opt-in</td>
+          </tr>
+          <tr>
+            <td><code>sleepermetrics</code> pkg<br>+ <code>verify.py</code></td>
+            <td>Metrics engine + R&harr;Python parity harness</td>
+            <td>CI only</td>
+            <td>Never deployed</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3>Runtime facts that drive every choice below</h3>
+    <ul class="tight">
+      <li><strong>No database.</strong> Data is fetched live from the public Sleeper API and cached
+        <em>in-process</em> (<code>_cache</code>, 15-min TTL) plus a few disk caches. Losing the
+        disk caches costs a slower first request, never data.</li>
+      <li><strong>Committed data ships in the image.</strong> <code>season/**/*.json</code> bracket
+        configs and <code>season/adp/*.json</code> are read from disk; the Dockerfile already
+        <code>COPY season ./season</code>.</li>
+      <li><strong>CPU-bound, single-threaded rendering.</strong> <code>plots._render_lock</code>
+        serialises every matplotlib render &mdash; peak memory is one figure, not many.</li>
+      <li><strong>The webapp needs zero secrets.</strong> The Sleeper API is public. Only the
+        Discord recap needs <code>DISCORD_WEBHOOK</code>.</li>
+      <li><strong>The <code>Dockerfile</code> already exists and is correct.</strong> Render deploys
+        it directly with no platform-specific config file.</li>
+    </ul>
+  </section>
+
+  <section id="host">
+    <h2>2 &nbsp; Hosting recommendation</h2>
+
+    <h3>The free-tier landscape, against the no-silent-billing bar</h3>
+    <div class="tablewrap">
+      <table>
+        <thead>
+          <tr><th>Platform</th><th>Free tier for a new account?</th><th>Can it bill with no manual upgrade?</th><th>Verdict</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>Render</strong> free "Hobby" web service</td>
+            <td>Yes, forever. 512&nbsp;MB RAM, 0.1&nbsp;CPU, 750&nbsp;instance-hrs/mo, 100&nbsp;GB
+              bandwidth/mo, 500&nbsp;build&nbsp;min/mo</td>
+            <td class="yes">No &mdash; over-limit sleeps / throttles. Card at signup for
+              verification, never charged on free tier, no auto-upgrade</td>
+            <td class="yes">Recommended</td>
+          </tr>
+          <tr>
+            <td><strong>Fly.io</strong></td>
+            <td class="no">No &mdash; removed for new accounts in 2024. 2-hr / 7-day trial, then
+              pay-as-you-go (~$5/mo floor)</td>
+            <td class="no">Yes &mdash; pay-as-you-go by design</td>
+            <td class="no">Excluded</td>
+          </tr>
+          <tr>
+            <td><strong>Google Cloud Run</strong></td>
+            <td>Always-free quota (2M req, 180k vCPU-sec/mo) that never expires</td>
+            <td class="no">Yes &mdash; past the quota it auto-converts to billable, no hard cap,
+              no upgrade step</td>
+            <td class="no">Excluded by the constraint</td>
+          </tr>
+          <tr>
+            <td><strong>Hugging Face Spaces</strong></td>
+            <td>Free CPU tier, no card</td>
+            <td class="yes">No</td>
+            <td>Viable fallback; public by default, shared 2-vCPU</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3>Recommended &mdash; Render free web service</h3>
+    <ul class="tight">
+      <li>Deploys the existing <code>Dockerfile</code> directly
+        (<code>Environment: Docker</code>) &mdash; no <code>render.yaml</code>, no CLI. Connect the
+        GitHub repo once in the dashboard; it redeploys on every push to <code>main</code>.</li>
+      <li><strong>Card required at signup</strong> (fraud check) but the free web service
+        <strong>never incurs a charge</strong> and <strong>does not auto-upgrade</strong> &mdash;
+        blow past 750&nbsp;hrs or 100&nbsp;GB and it sleeps, it does not invoice.</li>
+      <li><strong>Cold start:</strong> the free service <strong>spins down after 15&nbsp;min
+        idle</strong> and takes <strong>~1&nbsp;min to wake</strong>. For a private league
+        dashboard checked a few times a week, acceptable. This is the price of $0.</li>
+    </ul>
+
+    <div class="note decision">
+      <span class="tag">Decision &mdash; platform</span>
+      <p><strong>Render free "Hobby" web service.</strong> The only option that is free forever,
+        needs no manual step to stay free, and cannot silently start billing. The cold start is
+        the trade-off and is judged acceptable for this audience. <strong>Hugging Face
+        Spaces</strong> is the fallback if Render's free tier is ever cut further &mdash; same
+        Dockerfile, no card, but the Space is public.</p>
+    </div>
+
+    <div class="note gotcha">
+      <span class="tag">Gotcha &mdash; 512&nbsp;MB RAM ceiling</span>
+      <p>pandas + matplotlib + a loaded league can run close to 512&nbsp;MB. Mitigations, in order:
+        (1) the app already renders one chart at a time under <code>_render_lock</code>, so peak is
+        one figure; (2) set <code>SLEEPERMETRICS_NO_IMAGES=1</code> to drop player-headshot
+        fetching/compositing entirely if memory is tight; (3) the 15-min <code>_cache</code> TTL
+        bounds how many <code>Season</code> objects are resident. If it still OOMs, that is the
+        signal to move to a paid 1&nbsp;GB instance ($7/mo) &mdash; a deliberate decision, not an
+        automatic one.</p>
+    </div>
+
+    <div class="note gotcha">
+      <span class="tag">Gotcha &mdash; no persistent disk on the free tier</span>
+      <p>Free Render web services <strong>cannot attach a persistent disk</strong>, so
+        <code>sleeperPlayerData_py.pkl</code> and the headshot cache are rebuilt after every cold
+        start / redeploy. The player dump is one ~8&nbsp;MB Sleeper fetch on the first request
+        after a wake; <code>players()</code> already refetches daily anyway, so the only effect is
+        that first request being a few seconds slower. No code change needed. (The Fly-based
+        draft's <code>[mounts]</code> volume and <code>SLEEPERMETRICS_CACHE</code> env var are
+        dropped.)</p>
+    </div>
+
+    <p><strong>Secrets</strong> (Render dashboard &rarr; the service &rarr; Environment):
+      <code>DISCORD_WEBHOOK</code> only, and only if you run the recap from a Render cron instead
+      of GitHub Actions (you don't &mdash; see 3c). The webapp itself needs no secrets.</p>
+  </section>
+
+  <section id="cicd">
+    <h2>3 &nbsp; CI/CD with GitHub Actions</h2>
+    <p class="lede">Two workflows under <code>.github/workflows/</code>. Deploy is <strong>not</strong>
+      a workflow &mdash; Render auto-deploys from <code>main</code> on its own, so there is no
+      <code>deploy.yml</code>, no <code>FLY_API_TOKEN</code>, no third-party deploy action.</p>
+
+    <div class="note gotcha">
+      <span class="tag">Billing safety &mdash; GitHub Actions</span>
+      <p>Private-repo Actions include <strong>2,000 Linux minutes/month</strong> free. The default
+        <strong>spending limit for Actions/Packages on a personal account is $0</strong>, so once
+        the free minutes are gone, jobs are <strong>blocked, not billed</strong>. The Dec&nbsp;2025
+        "cloud platform charge" that would have changed this was <strong>postponed
+        indefinitely</strong> after backlash; the Jan&nbsp;2026 change that shipped was a price
+        <em>cut</em>. <strong>Action item: leave the Actions/Packages spending limit at $0</strong>
+        &mdash; raising it for Codespaces or Packages would also expose Actions overage. This
+        plan's usage is ~5&nbsp;min per PR + ~4&nbsp;min per weekly recap &mdash; well under
+        100&nbsp;min/month.</p>
+    </div>
+
+    <h3 id="ci">3a &nbsp; <code>ci.yml</code> &mdash; test on every push and PR</h3>
+    <p>The pytest suite is <strong>network-free</strong> (<code>conftest.py</code> fixtures +
+      <code>SLEEPERMETRICS_NO_IMAGES=1</code>): 114 tests, ~8&nbsp;s, no secrets, no flakiness.</p>
+    <div class="code">
+      <span class="cap">.github/workflows/ci.yml</span>
+<pre>name: CI
+on:
+  push: { branches: [main] }
+  pull_request:
+jobs:
+  python:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12", cache: pip }
+      - run: pip install -r python/requirements.txt
+      - name: pytest (network-free)
+        env: { SLEEPERMETRICS_NO_IMAGES: "1" }
+        working-directory: python
+        run: python -m pytest -q</pre>
+    </div>
+    <ul class="tight">
+      <li><strong>Optional lint</strong>: a <code>ruff check python/</code> step, introduced
+        <code>continue-on-error: true</code> first &mdash; don't wall off a green repo on day one.</li>
+      <li><strong>R parity (<code>verify.py</code>)</strong>: a <em>separate, optional</em> job
+        (<code>r-lib/actions/setup-r@v2</code>) gated with a <code>paths:</code> filter on
+        <code>R/**</code>, <code>parity/**</code>, plus <code>workflow_dispatch</code>. The R
+        toolchain install is ~5&ndash;10&nbsp;min &mdash; don't pay it in minutes on a Python-only
+        PR.</li>
+    </ul>
+
+    <h3 id="deploy">3b &nbsp; Deploy &mdash; Render auto-deploy, no workflow</h3>
+    <ul class="tight">
+      <li>Render dashboard: <strong>New &rarr; Web Service &rarr; connect the repo &rarr;
+        Environment: Docker &rarr; Instance Type: Free</strong>. Save.</li>
+      <li>Render builds the <code>Dockerfile</code> and redeploys on every push to <code>main</code>
+        automatically. No <code>deploy.yml</code>, no deploy token in GitHub.</li>
+      <li>Optional health gate: a one-line step at the end of <code>ci.yml</code> (only on
+        <code>push</code> to <code>main</code>, <code>if: github.ref == 'refs/heads/main'</code>)
+        that <code>curl -fsS https://&lt;service&gt;.onrender.com/health</code> a minute after the
+        push, so a broken deploy shows red in Actions. Informational &mdash; Render deploys
+        regardless.</li>
+    </ul>
+    <div class="note decision">
+      <span class="tag">Decision &mdash; no automated deploy pipeline</span>
+      <p>A private league dashboard with no DB and no migrations does not need blue-green or a
+        gated deploy. Render's built-in auto-deploy plus the optional <code>/health</code> curl is
+        enough, and it keeps the GitHub side free of deploy credentials.</p>
+    </div>
+
+    <h3 id="recap">3c &nbsp; <code>weekly-recap.yml</code> &mdash; scheduled Discord post</h3>
+    <div class="code">
+      <span class="cap">.github/workflows/weekly-recap.yml</span>
+<pre>name: Weekly recap
+on:
+  schedule:
+    - cron: "0 15 * * 2"        <span class="c"># Tue 15:00 UTC, after MNF settles</span>
+  workflow_dispatch:
+jobs:
+  post:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12", cache: pip }
+      - run: pip install -r python/requirements.txt
+      - working-directory: python
+        env:
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
+          SLEEPERMETRICS_LEAGUE: "1252770181306929152"
+        run: python bot.py weekly --webhook "$DISCORD_WEBHOOK"</pre>
+    </div>
+    <ul class="tight">
+      <li>The <strong>free way to run the recap</strong> &mdash; GitHub runs it, no always-on host,
+        no Render cron (Render cron jobs are <strong>paid-only</strong>, min $1/mo).</li>
+      <li><code>DISCORD_WEBHOOK</code> is a <strong>GitHub repo secret</strong>
+        (<code>gh secret set DISCORD_WEBHOOK</code>), never committed.</li>
+      <li>The <strong>slash-command bot cannot be a cron job</strong> &mdash; it is a persistent
+        gateway connection, and there is <strong>no free always-on host</strong> for it. If you
+        want slash commands, that is an explicit ~$7/mo decision for a Render background worker,
+        outside this plan. The scheduled webhook recap covers "post to Discord" without it.</li>
+      <li><strong>Timing caveat</strong>: Actions <code>cron</code> is best-effort and can lag
+        5&ndash;15&nbsp;min under load. Fine for a recap.</li>
+    </ul>
+
+    <div class="note stop">
+      <span class="tag">Do not build</span>
+      <ul class="tight" style="margin-bottom:0">
+        <li>A <strong><code>deploy.yml</code> / Fly / Cloud Run deploy job</strong> &mdash; Render
+          auto-deploys itself; adding one just puts a deploy credential in GitHub for no gain.</li>
+        <li>A <strong>container-registry push step</strong> &mdash; Render builds the Dockerfile on
+          its own infra.</li>
+        <li>A <strong>staging environment</strong> &mdash; no DB, no migrations, one reader.</li>
+        <li><strong>Secrets in the webapp CI or in the web service</strong> &mdash; both are
+          public-API-only.</li>
+        <li><strong>Raising the GitHub Actions/Packages spending limit above $0.</strong></li>
+      </ul>
+    </div>
+  </section>
+
+  <section id="rollout">
+    <h2>4 &nbsp; Rollout order</h2>
+    <p class="lede">Ordered because each step de-risks the next: prove the pieces in isolation
+      before automating them together.</p>
+
+    <ol class="phases">
+      <li class="phase">
+        <span class="phase-num">01</span>
+        <div class="phase-body">
+          <h3><code>.dockerignore</code> (new)</h3>
+          <p>Exclude <code>python/venv/</code> (259&nbsp;MB), <code>**/__pycache__</code>,
+            <code>.git</code>, <code>samples/</code>, <code>.claude*</code>, <code>R/</code>,
+            <code>*.rds</code>. The venv must never enter the build context &mdash; it would also
+            blow past Render's build limits.</p>
+          <span class="phase-risk">Zero risk &middot; no runtime change</span>
+        </div>
+      </li>
+      <li class="phase">
+        <span class="phase-num">02</span>
+        <div class="phase-body">
+          <h3><code>ci.yml</code></h3>
+          <p>Get the green check on pull requests first. It runs the existing suite unchanged and
+            adds no dependencies to the repo.</p>
+          <span class="phase-risk">Zero risk &middot; CI only</span>
+        </div>
+      </li>
+      <li class="phase">
+        <span class="phase-num">03</span>
+        <div class="phase-body">
+          <h3>Deploy manually once on Render</h3>
+          <p>Dashboard: New Web Service &rarr; connect repo &rarr; Docker &rarr; <strong>Free</strong>
+            instance. Eyeball the live site across phases &mdash; DDBM 2026 is genuinely pre-season
+            now, 2022&ndash;2025 are finished, so every phase branch is reachable with real data.
+            Watch the Render logs for an OOM on the first heavy chart render; if it appears, set
+            <code>SLEEPERMETRICS_NO_IMAGES=1</code> in the service's env and redeploy.</p>
+          <span class="phase-risk med">Low risk &middot; free tier, reversible</span>
+        </div>
+      </li>
+      <li class="phase">
+        <span class="phase-num">04</span>
+        <div class="phase-body">
+          <h3>Confirm auto-deploy + optional <code>/health</code> gate</h3>
+          <p>Push a trivial change to <code>main</code>, confirm Render redeploys. Optionally add
+            the <code>if: github.ref == 'refs/heads/main'</code> <code>/health</code> curl step to
+            <code>ci.yml</code>.</p>
+          <span class="phase-risk">Low risk &middot; no new credentials</span>
+        </div>
+      </li>
+      <li class="phase">
+        <span class="phase-num">05</span>
+        <div class="phase-body">
+          <h3><code>weekly-recap.yml</code></h3>
+          <p>Add the workflow, set the <code>DISCORD_WEBHOOK</code> repo secret, test immediately
+            with <code>workflow_dispatch</code> rather than waiting a week for the cron.</p>
+          <span class="phase-risk">Low risk &middot; posts to one channel</span>
+        </div>
+      </li>
+      <li class="phase">
+        <span class="phase-num">06</span>
+        <div class="phase-body">
+          <h3>Optional follow-ups</h3>
+          <ul class="tight" style="margin-bottom:0">
+            <li>The R-parity CI job, <code>paths:</code>-gated to <code>R/**</code> and <code>parity/**</code>.</li>
+            <li>A non-blocking <code>ruff</code> lint step.</li>
+            <li>The two cosmetic gaps from the last review (<code>plot_clutch</code> empty guard,
+              <code>_liveband.html</code> pre-season copy) &mdash; unrelated to hosting, tracked in CLAUDE.md.</li>
+            <li><strong>Only if cold starts prove too annoying:</strong> a manual upgrade to
+              Render's $7/mo Starter (always-on, 512&nbsp;MB) or $25/mo Standard (always-on,
+              2&nbsp;GB). A deliberate button-press, never automatic.</li>
+          </ul>
+          <span class="phase-risk">Deferred &middot; quality / comfort, not blocking</span>
+        </div>
+      </li>
+    </ol>
+  </section>
+
+  <section id="cost">
+    <h2>5 &nbsp; Cost</h2>
+    <div class="tablewrap">
+      <table>
+        <thead>
+          <tr><th>Line item</th><th>Configuration</th><th class="num">Monthly</th><th>Can it auto-bill?</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Render &mdash; webapp</td>
+            <td>Free "Hobby" web service, Docker, 512&nbsp;MB, spins down at 15&nbsp;min idle</td>
+            <td class="num yes">$0</td>
+            <td class="yes">No &mdash; over-limit sleeps, card never charged</td>
+          </tr>
+          <tr>
+            <td>GitHub Actions &mdash; CI</td>
+            <td>~5&nbsp;min/PR, ~4&nbsp;min/recap; 2,000 free min/mo</td>
+            <td class="num yes">$0</td>
+            <td class="yes">No &mdash; default $0 spending limit blocks over-quota jobs</td>
+          </tr>
+          <tr>
+            <td colspan="2"><strong>Recommended build total</strong></td>
+            <td class="num yes"><strong>$0</strong></td>
+            <td></td>
+          </tr>
+          <tr>
+            <td><em>Opt-in later:</em> always-on slash bot</td>
+            <td>Render background worker, 512&nbsp;MB</td>
+            <td class="num">~$7</td>
+            <td>Only after a manual instance-type change</td>
+          </tr>
+          <tr>
+            <td><em>Opt-in later:</em> always-on webapp (no cold start)</td>
+            <td>Render Starter web service</td>
+            <td class="num">~$7</td>
+            <td>Only after a manual instance-type change</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="lede" style="margin-top:1rem">Every paid line requires a <strong>manual instance-type
+      change in the Render dashboard</strong>. Nothing in the recommended build can move to a paid
+      state on its own.</p>
+  </section>
+
+  <hr class="rule">
+
+  <p class="kicker">Open questions for the reviewer</p>
+  <ul class="tight">
+    <li><strong>Is the ~1-minute cold start acceptable?</strong> It is the entire cost of running
+      this at $0. If not, the honest answer is Render Starter at $7/mo &mdash; there is no free
+      always-on option that can't also silently bill.</li>
+    <li><strong>Slash commands, or is the weekly webhook recap enough?</strong> Slash commands need
+      a paid always-on worker (~$7/mo). The recap does not.</li>
+    <li><strong>Custom domain?</strong> Not in this plan &mdash; Render gives a free
+      <code>*.onrender.com</code> URL; a domain is a 10-minute add later (free on Render, you pay
+      the registrar).</li>
+    <li><strong>Access control?</strong> The dashboard is currently open to anyone with the URL. If
+      that matters, a single basic-auth middleware in <code>webapp/app.py</code> is the lightest
+      fix &mdash; a new Phase&nbsp;3b, one secret (<code>DASHBOARD_PASSWORD</code>) in the Render
+      service env.</li>
+  </ul>
+
+  <p class="foot">
+    Prepared for review against <code>main</code> @ 201976f. No files created yet &mdash; this
+    document is the proposal. On approval, Phases&nbsp;1&ndash;2 land as one PR, Phase&nbsp;3 is a
+    manual Render setup, Phases&nbsp;4&ndash;5 as a second PR.
+  </p>
+
+</div>

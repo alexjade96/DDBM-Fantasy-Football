@@ -31,15 +31,15 @@ project to a paid state without a later, explicit manual choice.
 
 ## Phase 1 -- Build context hygiene
 
-`.dockerignore` **already exists and is correct** (it excludes `python/venv/`,
-`.git`, `.github`, `.claude/`, `R/`, `**/.env`).  Nothing to create.
+`.dockerignore` **already exists and is correct** (it excludes `fantasy-football-4-fun/venv/`,
+`.git`, `.github`, `.claude/`, `r-analysis/`, `**/.env`).  Nothing to create.
 
 - [ ] Sanity-check it once:
-      `git check-ignore -v --no-index python/venv/x` should print a match; if not,
-      open `.dockerignore` and confirm `python/venv/` is listed (it is).
-- [ ] Optional tidy: the header comment in `.dockerignore` and the `Dockerfile`
-      still say `playoffs/` where the real dir is `season/`.  Cosmetic; fix only
-      if you are touching those files anyway.
+      `git check-ignore -v --no-index fantasy-football-4-fun/venv/x` should print a match; if not,
+      open `.dockerignore` and confirm `fantasy-football-4-fun/venv/` is listed (it is).
+- [x] The header comment in `.dockerignore` and the `Dockerfile` used to say
+      `playoffs/` where the real dir was `season/`; both were corrected to
+      `data/seasons/` as part of the 2026-09 repo-root restructure (see CLAUDE.md).
 
 *Nothing to commit in this phase.*
 
@@ -69,13 +69,13 @@ jobs:
         with:
           python-version: "3.12"
           cache: pip
-          cache-dependency-path: python/requirements.txt
+          cache-dependency-path: fantasy-football-4-fun/requirements.txt
 
       - name: Install deps
-        run: pip install -r python/requirements.txt
+        run: pip install -r fantasy-football-4-fun/requirements.txt
 
       - name: pytest (network-free)
-        working-directory: python
+        working-directory: fantasy-football-4-fun
         env:
           SLEEPERMETRICS_NO_IMAGES: "1"
         run: python -m pytest -q
@@ -156,7 +156,7 @@ Render auto-deploys from `main` by default once the service is connected.  No
 ### 4.1  Prove auto-deploy
 
 - [ ] Make a trivial visible change on `main` (e.g. a comment in
-      `python/webapp/app.py`), commit, push.
+      `fantasy-football-4-fun/webapp/app.py`), commit, push.
 - [ ] Render **Events** tab shows a new deploy triggered by the push, goes live
       in a few minutes.
 
@@ -229,13 +229,13 @@ jobs:
         with:
           python-version: "3.12"
           cache: pip
-          cache-dependency-path: python/requirements.txt
+          cache-dependency-path: fantasy-football-4-fun/requirements.txt
 
       - name: Install deps
-        run: pip install -r python/requirements.txt
+        run: pip install -r fantasy-football-4-fun/requirements.txt
 
       - name: Post the weekly recap
-        working-directory: python
+        working-directory: fantasy-football-4-fun
         env:
           DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
           SLEEPERMETRICS_LEAGUE: "1252770181306929152"
@@ -353,7 +353,7 @@ Pick up any of these later; none is required for a working $0 deployment.
         continue-on-error: true
         run: |
           pip install ruff
-          ruff check python/
+          ruff check fantasy-football-4-fun/
 ```
 
 - [ ] **R-parity job**, `paths:`-gated so it only runs when R code changes.
@@ -363,7 +363,7 @@ Pick up any of these later; none is required for a working $0 deployment.
 name: R parity
 on:
   pull_request:
-    paths: ["R/**", "parity/**", "python/sleepermetrics/**"]
+    paths: ["r-analysis/**", "tools/parity/**", "fantasy-football-4-fun/sleepermetrics/**"]
   workflow_dispatch:
 jobs:
   verify:
@@ -374,8 +374,8 @@ jobs:
         with: { python-version: "3.12" }
       - uses: r-lib/actions/setup-r@v2
       - uses: r-lib/actions/setup-r-dependencies@v2
-        with: { working-directory: R/sleepermetrics }
-      - run: pip install -r python/requirements.txt
+        with: { working-directory: r-analysis/sleepermetrics }
+      - run: pip install -r fantasy-football-4-fun/requirements.txt
       - run: python verify.py
 ```
 
@@ -390,7 +390,7 @@ jobs:
       `python -m bot serve`, env `DISCORD_BOT_TOKEN` + `SLEEPERMETRICS_LEAGUE`.
       This is a paid instance type (~$7/mo); there is no free always-on option.
 - [ ] **Basic-auth on the dashboard** -- if "anyone with the URL" is a problem.
-      Add a tiny middleware to `python/webapp/app.py` reading
+      Add a tiny middleware to `fantasy-football-4-fun/webapp/app.py` reading
       `os.environ["DASHBOARD_PASSWORD"]`, set that var in the Render service env.
 - [ ] **Update `README.md`** "Free hosting" section: it currently lists Fly.io /
       Cloud Run as options.  Narrow it to "Render free web service" and link
@@ -422,5 +422,5 @@ jobs:
 
 *Every command assumes repo root as CWD unless a `working-directory` /
 `cd python` is shown.  Windows shell: the repo's venv Python is
-`python/venv/Scripts/python.exe`.  On approval this is roughly two PRs: Phase 2
+`fantasy-football-4-fun/venv/Scripts/python.exe`.  On approval this is roughly two PRs: Phase 2
 alone, then Phases 4-6 together, with Phases 1/3/5-dashboard done outside git.*

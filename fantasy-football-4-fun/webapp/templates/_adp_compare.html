@@ -1,0 +1,392 @@
+{# The "ADP Comparison" landing view: cross-platform pre-season average draft
+   position for REDRAFT leagues, side by side. No league context -- season /
+   scoring format / position are the only controls. The board streams in from
+   /adp/data so changing a control re-fetches just the table. Historical years
+   are read from committed snapshots; a manual "Refresh" (`&reload=1`) re-pull
+   is not exposed in the UI -- snapshots are refreshed by the automated data
+   pipeline, not a viewer's click. #}
+{# Data actions, ABOVE the card: download the current view. Plain <a> real
+   file downloads; the hrefs track #adp-controls (the selects live in the
+   card below). #}
+<div class="adp-toolbar">
+  <span class="adp-actions">
+    <span class="adp-actions-label">Data</span>
+    <a class="ghost" id="adp-csv"
+       href="/adp/export.csv?season={{ season }}&scoring={{ scoring }}&pos={{ pos }}"
+       download>CSV</a>
+    <a class="ghost" id="adp-xlsx"
+       href="/adp/export.xlsx?season={{ season }}&scoring={{ scoring }}&pos={{ pos }}"
+       download>Excel</a>
+  </span>
+</div>
+
+<section class="card">
+  <h2>ADP Comparison: platform vs platform</h2>
+  <p class="hint">Where each source&rsquo;s <strong>redraft</strong> draft rooms
+    are taking every player, lined up so you can see who they disagree on.  All
+    season-wide published data, no league required.  Columns are grouped by
+    source type: <strong>draft platforms</strong> (Sleeper, ESPN, Yahoo), then
+    <strong>analysis platforms</strong> (FFCalc, RotoWire) &mdash; only draft
+    platforms are shown by default; tick <strong>Analysis platforms</strong> to
+    add them.  Untick a <strong>Position</strong> box to hide those rows.
+    Click any column header to sort.  The <strong>Spread</strong> column is how
+    far apart the sources rank a player.
+    {%- if history %}
+      History runs back to
+      {%- for yr, name in history %}
+        {{ " " }}{{ yr }} ({{ name }}){{ "," if not loop.last }}
+      {%- endfor -%};
+      a source is skipped for years before it published ADP, and the analysis
+      platforms&rsquo; live feeds cover the current draft season only.
+    {%- endif %}</p>
+
+  {# hx-trigger is submit only -- the dropdowns just stage a selection; the
+     board reloads when Load is clicked (same as the NFL Stats tab). #}
+  <form class="controls adp-controls-row" id="adp-controls"
+        hx-get="/adp/data" hx-target="#adp-board" hx-swap="innerHTML"
+        hx-trigger="submit" hx-include="#adp-controls">
+    <label>
+      <span>Season</span>
+      <select name="season">
+        {% for y in seasons %}
+        <option value="{{ y }}" {% if y == season %}selected{% endif %}>{{ y }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>
+      <span>Scoring</span>
+      <select name="scoring">
+        {% for k, lbl in scorings %}
+        <option value="{{ k }}" {% if k == scoring %}selected{% endif %}>{{ lbl }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    {# Position is an Excel-style checkbox dropdown, not a single-pick <select>:
+       every position shows by default, unticking one hides just those rows
+       (client-side, like the Sources toggle). The hidden `pos` field keeps
+       the board request at ALL so the # / rank columns stay full-board. #}
+    <div class="adp-filter adp-pos-filter" data-adp-pos-filter>
+      <span class="adp-filter-label">Position</span>
+      <div class="adp-dd">
+        <button type="button" class="ghost adp-dd-toggle" data-adp-pos-toggle
+                aria-haspopup="true" aria-expanded="false">
+          <span data-adp-pos-summary>All positions</span>
+          <span class="adp-dd-caret" aria-hidden="true">&#9662;</span>
+        </button>
+        <div class="adp-dd-menu" data-adp-pos-menu hidden>
+          {% for p in positions if p != "ALL" %}
+          <label class="adp-check adp-dd-item">
+            <input type="checkbox" data-adp-pos="{{ p }}" checked>
+            <span>{{ p }}</span>
+          </label>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+    <input type="hidden" name="pos" value="ALL">
+    {# Source-group toggles, right-justified on the controls line: a checkbox
+       per group. Unchecking a group hides its columns AND drops it from the
+       Consensus / Spread recompute (both done client-side by the script
+       below). Analysis platforms start UNticked -- draft platforms only by
+       default. These are not form fields the board request cares about, and
+       the script stops their change event from bubbling to the form's
+       hx-trigger, so toggling never re-fetches the board. #}
+    <div class="adp-filter" data-adp-filter>
+      <span class="adp-filter-label">Sources</span>
+      <div class="adp-filter-boxes">
+        {% for g in adp_groups %}
+        <label class="adp-check">
+          <input type="checkbox" data-adp-group="{{ g.key }}"
+                 {% if g.key != "analyst" %}checked{% endif %}>
+          <span>{{ g.label }}</span>
+        </label>
+        {% endfor %}
+      </div>
+    </div>
+    {# Far right, after the Sources toggles. A real submit -- the form's
+       hx-trigger="submit" is what reloads #adp-board. #}
+    <button type="submit" class="nfl-apply adp-load">Load</button>
+  </form>
+
+  {# The board does NOT auto-load -- switching to this tab shows only the
+     controls. Every load (first included) comes from clicking Load on
+     #adp-controls. #}
+  <div id="adp-board">
+    <p class="hint">Choose a season, scoring format and position, then click
+      <strong>Load</strong>.</p>
+  </div>
+</section>
+
+<script>
+  // Keep the CSV / Excel download links pointing at whatever the controls
+  // currently show, so a download always matches the visible table.
+  (function () {
+    var form = document.getElementById('adp-controls');
+    if (!form) return;
+    var sync = function () {
+      var qs = new URLSearchParams(new FormData(form)).toString();
+      var csv = document.getElementById('adp-csv');
+      var xls = document.getElementById('adp-xlsx');
+      if (csv) csv.href = '/adp/export.csv?' + qs;
+      if (xls) xls.href = '/adp/export.xlsx?' + qs;
+    };
+    form.addEventListener('change', sync);
+    sync();
+  })();
+
+  // Position checkboxes, presented as an Excel-style dropdown (a toggle
+  // button opening a checkbox menu) in #adp-controls, outside #adp-board so
+  // they persist across table swaps: unticking one hides that position's
+  // rows. Display only -- the board request stays pos=ALL, so the # / rank
+  // columns keep the full-board numbering. Re-applied after every #adp-board
+  // swap.
+  (function () {
+    var bar = document.querySelector('[data-adp-pos-filter]');
+    if (!bar) return;
+    var boxes = bar.querySelectorAll('input[type="checkbox"][data-adp-pos]');
+    var toggle = bar.querySelector('[data-adp-pos-toggle]');
+    var menu = bar.querySelector('[data-adp-pos-menu]');
+    var summary = bar.querySelector('[data-adp-pos-summary]');
+
+    function table() { return document.querySelector('#adp-board table.adp-board'); }
+
+    function checkedPos() {
+      var on = {};
+      boxes.forEach(function (b) { on[b.dataset.adpPos.toUpperCase()] = b.checked; });
+      return on;
+    }
+
+    function apply() {
+      var t = table();
+      if (t && t.tBodies[0]) {
+        var on = checkedPos();
+        Array.prototype.forEach.call(t.tBodies[0].rows, function (row) {
+          var cell = row.cells[2];               // #, Player, Pos
+          var p = cell ? (cell.textContent || '').trim().toUpperCase() : '';
+          // a team defense with no position stays visible unless DEF is unticked
+          var key = p || 'DEF';
+          row.classList.toggle('adp-row-hidden', on[key] === false);
+        });
+      }
+      updateSummary();
+    }
+
+    function updateSummary() {
+      if (!summary) return;
+      var total = boxes.length;
+      var checked = Array.prototype.filter.call(boxes, function (b) { return b.checked; });
+      if (checked.length === total) {
+        summary.textContent = 'All positions';
+      } else if (checked.length === 0) {
+        summary.textContent = 'No positions';
+      } else if (checked.length <= 3) {
+        summary.textContent = checked.map(function (b) { return b.dataset.adpPos; }).join(', ');
+      } else {
+        summary.textContent = checked.length + ' of ' + total + ' positions';
+      }
+    }
+
+    function openMenu() {
+      if (!menu || !toggle) return;
+      menu.hidden = false;
+      toggle.setAttribute('aria-expanded', 'true');
+    }
+    function closeMenu() {
+      if (!menu || !toggle) return;
+      menu.hidden = true;
+      toggle.setAttribute('aria-expanded', 'false');
+    }
+
+    if (toggle && menu) {
+      toggle.addEventListener('click', function (e) {
+        e.stopPropagation();
+        if (menu.hidden) openMenu(); else closeMenu();
+      });
+      menu.addEventListener('click', function (e) { e.stopPropagation(); });
+      document.addEventListener('click', function (e) {
+        if (!menu.hidden && !bar.contains(e.target)) closeMenu();
+      });
+      document.addEventListener('keydown', function (e) {
+        if (e.key === 'Escape' && !menu.hidden) { closeMenu(); toggle.focus(); }
+      });
+    }
+
+    bar.addEventListener('change', function (e) {
+      if (!e.target.closest('input[type="checkbox"][data-adp-pos]')) return;
+      e.stopPropagation();                      // don't reach the form's hx-trigger
+      apply();
+    });
+
+    apply();
+    document.body.addEventListener('htmx:afterSwap', function (e) {
+      if (e.target && (e.target.id === 'adp-board' || e.target.closest('#adp-board'))) {
+        apply();
+      }
+    });
+  })();
+
+  // Sources checkboxes (in #adp-controls, outside #adp-board so they persist
+  // across table swaps): each unchecked group has its columns hidden AND is
+  // dropped from the Consensus / Spread values, which are recomputed here
+  // from the checked sources' own ranks. Analysis platforms start unticked.
+  // Re-applied after every #adp-board htmx swap. The CSV / Excel export is
+  // deliberately NOT re-scoped -- a download is always the full board.
+  (function () {
+    var bar = document.querySelector('[data-adp-filter]');
+    if (!bar) return;
+    var boxes = bar.querySelectorAll('input[type="checkbox"][data-adp-group]');
+
+    function table() { return document.querySelector('#adp-board table.adp-board'); }
+
+    function checkedGroups() {
+      var on = {};
+      boxes.forEach(function (b) { on[b.dataset.adpGroup] = b.checked; });
+      return on;
+    }
+
+    // Hide / show whole column groups, and keep the group-edge divider on the
+    // first visible column of each later group.
+    function applyColumns(t, on) {
+      t.querySelectorAll('[data-adp-group]').forEach(function (el) {
+        var g = el.dataset.adpGroup;
+        if (!(g in on)) return;
+        el.classList.toggle('adp-col-hidden', on[g] === false);
+      });
+      var seenGroup = null, firstOfGroup = true;
+      t.querySelectorAll('thead tr:not(.adp-grouprow) th[data-adp-col]').forEach(function (th) {
+        var g = th.dataset.adpGroup, hidden = th.classList.contains('adp-col-hidden');
+        if (g !== seenGroup) { seenGroup = g; firstOfGroup = true; }
+        var edge = firstOfGroup && !hidden && th.previousElementSibling &&
+                   th.previousElementSibling.dataset.adpCol;
+        markEdge(t, th.dataset.adpCol, edge);
+        if (!hidden) firstOfGroup = false;
+      });
+    }
+    function markEdge(t, col, edge) {
+      t.querySelectorAll('[data-adp-col="' + col + '"]').forEach(function (el) {
+        el.classList.toggle('adp-groupedge', !!edge);
+      });
+    }
+
+    // Round half-to-even at 1 dp, matching Python's round() (which
+    // ffadp.board.combine and the CSV export use) so a checked-all board
+    // reads identically to the server's own numbers.
+    function round1(x) {
+      var n = x * 10, r = Math.round(n);
+      if (Math.abs(n - Math.trunc(n) - 0.5) < 1e-9 && r % 2 !== 0) r -= 1;
+      return r / 10;
+    }
+    // data-sort formats that keep lexical order == numeric order, matching
+    // _adp_table.html's server-side padding for these cells.
+    function padConsensus(v) {         // match the template's "%09.1f"
+      var s = v.toFixed(1);
+      while (s.length < 9) s = '0' + s;         // -> "0000022.3"
+      return s;
+    }
+    function padSpread(v) {            // v is an int; offset like the template
+      var s = String(v + 1000);
+      while (s.length < 5) s = '0' + s;
+      return s;
+    }
+    function padDiff(v) {              // match the template's "%08.1f" of v+100000
+      var s = (v + 100000).toFixed(1);
+      while (s.length < 8) s = '0' + s;
+      return s;
+    }
+
+    // Recompute Consensus (mean of the checked sources' ranks for that row),
+    // Spread (max - min of those ranks; blank if fewer than two) and Diff
+    // (consensus - Final; Final itself is fixed and source-independent) from
+    // the per-cell data-rank, matching ffadp.board.combine's own arithmetic.
+    function recompute(t, on) {
+      var live = {};   // which data-adp-col headers belong to a checked group
+      t.querySelectorAll('thead th[data-adp-col]').forEach(function (th) {
+        live[th.dataset.adpCol] = on[th.dataset.adpGroup] !== false;
+      });
+      t.tBodies[0] && Array.prototype.forEach.call(t.tBodies[0].rows, function (row) {
+        var ranks = [];
+        row.querySelectorAll('td[data-adp-col]').forEach(function (td) {
+          if (!live[td.dataset.adpCol]) return;
+          var v = parseInt(td.dataset.rank, 10);
+          if (!isNaN(v)) ranks.push(v);
+        });
+        var cCell = row.querySelector('.adp-consensus');
+        var sCell = row.querySelector('.adp-spread');
+        var fCell = row.querySelector('.adp-final');
+        var dCell = row.querySelector('.adp-diff');
+        var mean = null;
+        if (cCell) {
+          if (ranks.length) {
+            mean = round1(ranks.reduce(function (a, b) { return a + b; }, 0)
+                          / ranks.length);
+            cCell.textContent = mean.toFixed(1);
+            cCell.dataset.sort = padConsensus(mean);
+          } else {
+            cCell.textContent = '–';
+            cCell.dataset.sort = '999999999';  // matches the template's no-data value; sorts last
+          }
+        }
+        if (sCell) {
+          if (ranks.length >= 2) {
+            var sp = Math.max.apply(null, ranks) - Math.min.apply(null, ranks);
+            sCell.textContent = String(sp);
+            sCell.dataset.sort = padSpread(sp);
+          } else {
+            sCell.textContent = '–';
+            sCell.dataset.sort = '00000';
+          }
+        }
+        if (dCell) {
+          // Final rank is parsed from the fixed .adp-final cell ("#12" -> 12).
+          var fin = fCell ? parseInt((fCell.textContent || '').replace(/[^0-9]/g, ''), 10) : NaN;
+          if (mean !== null && !isNaN(fin)) {
+            var diff = round1(mean - fin);
+            dCell.textContent = diff === 0 ? '0' : (diff > 0 ? '+' : '') + diff.toFixed(1);
+            dCell.dataset.sort = padDiff(diff);
+            dCell.classList.toggle('dv-pos', diff > 0);
+            dCell.classList.toggle('dv-neg', diff < 0);
+          } else {
+            dCell.textContent = '–';
+            dCell.dataset.sort = '99999999';
+            dCell.classList.remove('dv-pos', 'dv-neg');
+          }
+        }
+      });
+    }
+
+    // After a recompute, restore the board's natural order (Consensus asc) so
+    // the ranking reflects the current source set.
+    function resortByConsensus(t) {
+      var th = t.querySelector('thead tr:not(.adp-grouprow) th.adp-consensus');
+      if (!th) return;
+      th.dataset.dir = 'desc';         // so the click flips it to ascending
+      th.click();
+    }
+
+    function apply() {
+      var t = table();
+      if (!t) return;
+      var on = checkedGroups();
+      applyColumns(t, on);
+      recompute(t, on);
+      resortByConsensus(t);
+    }
+
+    bar.addEventListener('change', function (e) {
+      var box = e.target.closest('input[type="checkbox"][data-adp-group]');
+      if (!box) return;
+      e.stopPropagation();            // don't let it reach the form's hx-trigger
+      // Never leave every group off -- re-check the one just unchecked.
+      var anyOn = Array.prototype.some.call(boxes, function (b) { return b.checked; });
+      if (!anyOn) { box.checked = true; return; }
+      apply();
+    });
+
+    apply();
+    document.body.addEventListener('htmx:afterSwap', function (e) {
+      if (e.target && (e.target.id === 'adp-board' || e.target.closest('#adp-board'))) {
+        apply();
+      }
+    });
+  })();
+</script>
