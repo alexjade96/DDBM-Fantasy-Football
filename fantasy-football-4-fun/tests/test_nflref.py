@@ -367,7 +367,26 @@ def test_nflstats_data_route_players(monkeypatch):
     assert "Q Slinger" not in body                # RB filter
 
 
-def test_nflstats_players_row_has_portrait(monkeypatch):
+_FAKE_SLEEPER_DUMP = {
+    "4262921": {"full_name": "Ja'Marr Chase", "position": "WR", "team": "CIN"},
+}
+
+
+@pytest.fixture
+def _fake_identity(monkeypatch):
+    """identity._raw_players() falls through to a live sleeper_api() call
+    whenever no same-day sleeperPlayerData_py.pkl is on disk (true on a clean
+    CI checkout, not on a dev machine that happens to have a fresh one from
+    running the app locally) -- stub the call and clear the module cache so
+    that local/CI behavior can't silently diverge."""
+    from webapp.sources.ffadp import identity
+    monkeypatch.setattr(identity, "sleeper_api", lambda path: dict(_FAKE_SLEEPER_DUMP))
+    identity._idx = None
+    yield
+    identity._idx = None
+
+
+def test_nflstats_players_row_has_portrait(monkeypatch, _fake_identity):
     # a real player name so ffadp.identity resolves it to a Sleeper id
     df = pd.DataFrame([{
         "player_id": "00-0036900", "player_display_name": "Ja'Marr Chase",
@@ -384,7 +403,7 @@ def test_nflstats_players_row_has_portrait(monkeypatch):
     assert "Ja&#39;Marr Chase" in body or "Ja'Marr Chase" in body
 
 
-def test_attach_sleeper_ids_resolves_and_passes_through():
+def test_attach_sleeper_ids_resolves_and_passes_through(_fake_identity):
     from webapp.app import _attach_sleeper_ids
     rows = [
         {"player": "Ja'Marr Chase", "position": "WR", "player_id": "00-0036900"},
@@ -505,6 +524,18 @@ def test_compare_sources_join_and_delta(monkeypatch):
 
 
 def test_compare_sources_empty_when_a_source_missing(monkeypatch):
+    # nflverse is dead, but compare_sources still builds the Sleeper side of
+    # the join internally (via sleepermetrics.nflstats.player_leaderboard() ->
+    # players()), which falls through to a live sleeper_api() call with no
+    # same-day pkl on disk. nflstats.py binds `players` as a bare name
+    # (`from .players import players`), so patch that name directly rather
+    # than sleepermetrics.players -- the package's own `from .players import
+    # players` in __init__.py shadows the submodule with the function there.
+    from sleepermetrics import nflstats
+    import pandas as pd
+    nflstats._lb_cache.clear()  # a cache hit would skip players() entirely
+    empty_pool = pd.DataFrame(columns=["player_id", "position", "team", "player_name"])
+    monkeypatch.setattr(nflstats, "players", lambda *a, **k: empty_pool)
     monkeypatch.setattr(api, "read_release_parquet",
                         lambda asset: (_ for _ in ()).throw(RuntimeError("x")))
     cmp = nflref.compare_sources("2024", pos="WR")
