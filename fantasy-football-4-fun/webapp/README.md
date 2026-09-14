@@ -41,8 +41,8 @@ Tabs: `overview`, `weekly`, `coaching`, `roster`, `transactions`, `playoffs`,
 - **Champions** come from the stored brackets in `data/seasons/<league_id>/` (via
   `apply_playoffs`), not Sleeper's `winners_bracket`; see `data/seasons/README.md`.
 - **ADP cache.** The Draft tab's redraft-by-ADP simulation reads/writes
-  `data/seasons/adp/<season>.json`, a fallback snapshot of Sleeper's undocumented
-  ADP endpoint; see `data/seasons/README.md`.
+  `data/sources/adp/<season>.json`, a fallback snapshot of Sleeper's undocumented
+  ADP endpoint; see `data/sources/README.md`.
 
 ## Environment
 
@@ -50,6 +50,7 @@ Tabs: `overview`, `weekly`, `coaching`, `roster`, `transactions`, `playoffs`,
 |---|---|
 | `SLEEPERMETRICS_LEAGUE` | the DDBM league id |
 | `SLEEPERMETRICS_SEASON_DIR` | `<repo>/data/seasons` |
+| `SLEEPERMETRICS_SOURCES_DIR` | `<repo>/data/sources` |
 | `SLEEPERMETRICS_TTL` | `900` (seconds) |
 | `PORT` | `8000` (hosts inject this) |
 

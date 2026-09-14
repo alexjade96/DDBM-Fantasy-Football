@@ -11,7 +11,7 @@ import json
 
 import pandas as pd
 
-from repo_paths import SEASON_DIR
+from repo_paths import SOURCES_DIR
 
 from .api import sleeper_api
 
@@ -19,7 +19,7 @@ _stats_cache: dict = {}
 _chart_cache: dict = {}
 _default_rules_cache: dict = {}
 
-_DEFAULT_SCORING_FILE = SEASON_DIR / "scoring" / "default_scoring.json"
+_DEFAULT_SCORING_FILE = SOURCES_DIR / "default_scoring.json"
 
 #: the format ids `default_scoring.json` carries, and what a bad ask falls to.
 DEFAULT_SCORING_FORMATS = ("std", "half_ppr", "ppr", "2qb")
@@ -88,8 +88,8 @@ def default_rules(fmt: str = "ppr") -> dict:
     The file stores the chart once as `base` (every rule except
     points-per-reception -- the only thing that differs between the standard
     formats) plus `rec_by_format`; this merges the two: `base` + the format's
-    `rec` weight. Read from `data/seasons/scoring/default_scoring.json` (see
-    `data/seasons/README.md`). Cached in-process. Returns `{}` if the file is
+    `rec` weight. Read from `data/sources/default_scoring.json` (see
+    `data/sources/README.md`). Cached in-process. Returns `{}` if the file is
     missing or malformed.
     """
     key = (fmt or "").lower()

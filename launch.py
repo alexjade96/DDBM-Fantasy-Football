@@ -71,7 +71,8 @@ def _run_python(mode: str, extra: list[str]) -> int:
                  "fantasy-football-4-fun/venv/Scripts/pip install -r fantasy-football-4-fun/requirements.txt")
     if mode == "dashboard":
         port, rest = _parse_port(extra, 8000)
-        env = dict(os.environ, SLEEPERMETRICS_SEASON_DIR=str(BASE / "data" / "seasons"))
+        env = dict(os.environ, SLEEPERMETRICS_SEASON_DIR=str(BASE / "data" / "seasons"),
+                   SLEEPERMETRICS_SOURCES_DIR=str(BASE / "data" / "sources"))
         # Jinja reloads templates on its own, so WITHOUT --reload a long-running
         # server picks up template edits while still holding the old app.py --
         # the two drift apart and blow up on the mismatch. Reload both together.
@@ -83,7 +84,8 @@ def _run_python(mode: str, extra: list[str]) -> int:
              "--host", "127.0.0.1", "--port", str(port), *reload],
             cwd=str(PY_DIR), env=env).returncode
     if mode == "report":
-        env = dict(os.environ, SLEEPERMETRICS_SEASON_DIR=str(BASE / "data" / "seasons"))
+        env = dict(os.environ, SLEEPERMETRICS_SEASON_DIR=str(BASE / "data" / "seasons"),
+                   SLEEPERMETRICS_SOURCES_DIR=str(BASE / "data" / "sources"))
         # Reports land in the repo root, not fantasy-football-4-fun/, so run from
         # BASE with the package importable via the venv's site-packages editable install.
         return subprocess.run([str(venv_py), str(PY_DIR / "make_report.py"), *extra],

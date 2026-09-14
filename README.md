@@ -96,7 +96,8 @@ fantasy-football-4-fun/venv/Scripts/pip install -r fantasy-football-4-fun/requir
 | `r-analysis/FantasyFootball.Rproj` | the RStudio project for the R instance |
 | `fantasy-football-4-fun/sleepermetrics/` | the Python port: same modules, `pandas` + `matplotlib` |
 | `fantasy-football-4-fun/webapp/` | the Python web dashboard (FastAPI + HTMX) |
-| `data/seasons/` | custom playoff engine configs (one bracket per league+season) and the Python Draft tab's ADP cache |
+| `data/seasons/` | custom playoff engine configs, one folder per league, `<season>_season.json` per season |
+| `data/sources/` | source-organized caches: the Python Draft tab's ADP cache, weekly stat cache, nflverse snapshots, default scoring chart |
 | `tools/parity/` + `verify.py` | the cross-language harness that keeps R and Python identical |
 | `tools/dev/` | launchers and chart regeneration |
 | `Dockerfile` | builds the Python dashboard for free hosting |

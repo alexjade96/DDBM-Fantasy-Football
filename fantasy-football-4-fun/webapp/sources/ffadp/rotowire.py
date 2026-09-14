@@ -7,7 +7,7 @@ lines up several sites' current-season ADP side by side plus RotoWire's own
 `yahooppr` column too; it is now a first-party source -- see ffadp.yahoo.)
 
 `_feed(season, scoring, reload)` pulls + trims the table once, memoised per
-season+slug and snapshotted to data/seasons/adp/rotowire/<slug>/<year>.json.
+season+slug and snapshotted to data/sources/adp/rotowire/<slug>/<year>.json.
 
 CURRENT SEASON ONLY. The endpoint ignores a year parameter -- it always
 returns the live draft-season board -- so EARLIEST is the current NFL
@@ -94,11 +94,11 @@ def _feed(season: str, scoring: str, reload: bool) -> list[dict]:
     """The trimmed RotoWire table for a season+scoring, snapshot-first.
 
     Memoised for the process; on a miss it reads
-    data/seasons/adp/rotowire/<slug>/<year>.json and only calls the live endpoint
+    data/sources/adp/rotowire/<slug>/<year>.json and only calls the live endpoint
     when that is absent or `reload`. It is keyed on the "rotowire" source
     name + the RotoWire scoring slug -- NEVER on a derived column's own name
     -- so the Yahoo column is a pure view over the one upstream snapshot and
-    there is no data/seasons/adp/yahoo/ datastream that could later collide with a
+    there is no data/sources/adp/yahoo/ datastream that could later collide with a
     real first-party Yahoo provider.
     """
     slug = _SLUG.get(scoring, "PPR")

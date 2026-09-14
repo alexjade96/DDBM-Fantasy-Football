@@ -10,7 +10,7 @@ matchups (which `metrics.strength_of_schedule` currently proxies from league
 PPG). Data goes back to 1999.
 
 Because the upstream file is all-seasons, `fetch` slices it to the requested
-year BEFORE snapshotting, so `data/seasons/nflverse/schedules/<year>.parquet` holds
+year BEFORE snapshotting, so `data/sources/nflverse/schedules/<year>.parquet` holds
 just that year -- not a copy of the whole league's history per file.
 """
 from __future__ import annotations

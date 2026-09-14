@@ -34,6 +34,6 @@ tools/parity/out_*.json
 .scratch_charts/
 
 # Runtime-only stat caches (regenerated on demand; NOT curated fallbacks,
-# unlike data/seasons/adp/ which IS committed). Keep the dir markers.
-data/seasons/stats/*/
-data/seasons/nflverse/
+# unlike data/sources/adp/ which IS committed). Keep the dir markers.
+data/sources/sleeper_stats/*/
+data/sources/nflverse/

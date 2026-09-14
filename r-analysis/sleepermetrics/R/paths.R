@@ -2,13 +2,18 @@
 
 #' Resolve the season-data directory
 #'
-#' Every caller that needs the durable `data/seasons/` tree (playoff bracket
-#' configs, the ADP cache) used to hardcode its own `"season"` default,
-#' relative to the current working directory. That meant a repo restructure
-#' (or even just running from a different directory) could silently point at
-#' a directory that no longer exists. This function is the one place that
-#' default is computed; every other caller in this package should use it
-#' instead of hardcoding a literal.
+#' Every caller that needs the durable `data/seasons/` tree (custom playoff
+#' bracket configs, `<root_league_id>/<season>_season.json`) used to hardcode
+#' its own `"season"` default, relative to the current working directory.
+#' That meant a repo restructure (or even just running from a different
+#' directory) could silently point at a directory that no longer exists.
+#' This function is the one place that default is computed; every other
+#' caller in this package should use it instead of hardcoding a literal.
+#'
+#' `data/seasons/` holds ONLY league-scoped bracket configs. The Python side
+#' additionally has a sibling `data/sources/` tree (the ADP cache, weekly
+#' stat caches, nflverse snapshots, default scoring chart) which this R
+#' package has no equivalent of -- see `data/sources/README.md`.
 #'
 #' Resolution order: the `SLEEPERMETRICS_SEASON_DIR` environment variable if
 #' set (mirrors the Python side's own override, so both instances can be

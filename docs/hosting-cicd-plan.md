@@ -43,8 +43,8 @@ never leaves CI.
   (`sleeperPlayerData_py.pkl` ~8 MB daily; `~/.cache/sleepermetrics/headshots/`).
   Losing the disk caches costs a slower first request, never data.
 - **Committed data ships in the image.**  `data/seasons/**/*.json` bracket configs and
-  `data/seasons/adp/*.json` are read from disk; the existing Dockerfile already
-  `COPY data/seasons ./data/seasons`.
+  `data/sources/adp/*.json` are read from disk; the existing Dockerfile already
+  `COPY data/seasons ./data/seasons` and `COPY data/sources ./data/sources`.
 - **CPU-bound, single-threaded rendering.**  `plots._render_lock` serialises
   every matplotlib render.  Concurrency comes from more containers, not threads.
   One small instance serves a private league comfortably.

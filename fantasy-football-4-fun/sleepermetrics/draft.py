@@ -16,7 +16,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from repo_paths import SEASON_DIR
+from repo_paths import SOURCES_DIR
 
 from . import metrics
 from .api import sleeper_api, sleeper_adp
@@ -715,18 +715,17 @@ def redraft_board(s: Season) -> pd.DataFrame:
 
 
 _ADP_FIELDS = ("adp_std", "adp_half_ppr", "adp_ppr", "adp_2qb")
-# data/seasons/adp/ -- a sibling of data/seasons/<league_id>/ (the custom
-# playoff bracket configs -- see playoffs.py's config_paths()), under the
-# SAME repo-root SEASON_DIR (see repo_paths.py) and the SAME
-# SLEEPERMETRICS_SEASON_DIR override, so both kinds of durable season data
-# live in one place instead of two separate directories. ADP itself stays
-# season-scoped, not league-scoped (Sleeper publishes one ADP set per season
-# for the whole platform, unlike a playoff bracket, which genuinely differs
-# per league) -- hence its own subfolder rather than living inside any one
-# league's own files. Checked into the repo, not gitignored: its whole
-# purpose is to be the fallback a later offline run (or a future run after
-# Sleeper changes/removes the endpoint) can still read.
-_ADP_CACHE_DIR = SEASON_DIR / "adp"
+# data/sources/adp/ -- a sibling of data/seasons/ itself (NOT nested under
+# it), since ADP is organized by source/season rather than by league -- see
+# repo_paths.py's own docstring for why the two roots are split. Under the
+# repo-root SOURCES_DIR (see repo_paths.py) and the SLEEPERMETRICS_SOURCES_DIR
+# override. ADP stays season-scoped, not league-scoped (Sleeper publishes one
+# ADP set per season for the whole platform, unlike a playoff bracket, which
+# genuinely differs per league) -- hence its own subfolder rather than living
+# inside any one league's own files. Checked into the repo, not gitignored:
+# its whole purpose is to be the fallback a later offline run (or a future
+# run after Sleeper changes/removes the endpoint) can still read.
+_ADP_CACHE_DIR = SOURCES_DIR / "adp"
 _adp_cache: dict = {}   # {season: {player_id: {...}}} -- see _fetch_adp_raw
 
 
@@ -742,12 +741,12 @@ def _fetch_adp_raw(season) -> dict:
     publishes one ADP set per season across the whole platform).
 
     Live-fetched first; on success the trimmed result is written to a
-    per-season on-disk snapshot (`data/seasons/adp/<season>.json`) so a later
+    per-season on-disk snapshot (`data/sources/adp/<season>.json`) so a later
     run with no network -- or after Sleeper ever changes/removes this
     undocumented endpoint -- still has the latest successfully-captured
     data to fall back to, the same durable-JSON-file idea
-    `data/seasons/<league_id>/<season>.json` uses for hand-submitted brackets
-    (this snapshot is instead auto-refreshed, not hand-edited). Only players
+    `data/seasons/<league_id>/<season>_season.json` uses for hand-submitted
+    brackets (this snapshot is instead auto-refreshed, not hand-edited). Only players
     with a real ADP in AT LEAST ONE format are kept (Sleeper's sentinel for
     "no ADP here" is a literal 999.0, not a missing key) -- the rest are draft/mock-only depth
     that would just bloat the snapshot for no benefit.

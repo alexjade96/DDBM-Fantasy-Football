@@ -765,12 +765,13 @@ def test_consolation_bracket_po_fields_are_none_without_a_consolation_game():
 # --- brackets belong to a league, not to a season number --------------------
 def _write_cfg(tmp, league_id):
     """The standard test bracket (Dee wins), stored as league `league_id`'s
-    2025 -- under <tmp>/<league_id>/2025.json, the same league-id-subfolder
-    layout config_paths() reads for real (see data/seasons/<league_id>/*.json)."""
+    2025 -- under <tmp>/<league_id>/2025_season.json, the same
+    league-id-subfolder layout config_paths() reads for real (see
+    data/seasons/<league_id>/<season>_season.json)."""
     import json
     sub = tmp / str(league_id)
     sub.mkdir(parents=True, exist_ok=True)
-    p = sub / "2025.json"
+    p = sub / "2025_season.json"
     p.write_text(json.dumps(_cfg(league_id=league_id, roster_positions=["QB"])))
     return p
 
@@ -786,16 +787,36 @@ def test_config_paths_filters_by_league(tmp_path):
 
 
 def test_config_paths_skips_non_league_subfolders(tmp_path):
-    """adp/ and fixtures/ are siblings of the league subfolders under
-    data/seasons/, not league folders themselves -- a non-numeric-named
+    """data/sources/ (the ADP/stats/nflverse caches) is a sibling of
+    data/seasons/ entirely, not a subfolder under it -- a non-numeric-named
     subfolder (and anything malformed inside it) must never surface as a
-    bracket."""
+    bracket even if one somehow existed alongside the league folders."""
     _write_cfg(tmp_path, "111")
-    (tmp_path / "adp").mkdir()
-    (tmp_path / "adp" / "2025.json").write_text('{"not": "a bracket"}')
-    (tmp_path / "fixtures").mkdir()
-    (tmp_path / "fixtures" / "2025-sleeper-bracket.json").write_text("{}")
+    (tmp_path / "sources").mkdir()
+    (tmp_path / "sources" / "2025_season.json").write_text('{"not": "a bracket"}')
     assert list(playoffs.config_paths(str(tmp_path))) == ["2025"]
+
+
+def test_config_paths_ignores_reference_file_in_same_league_folder(tmp_path):
+    """A league folder can hold a second, non-canonical file for the SAME
+    season -- e.g. a Sleeper-bracket replay kept only as a ground-truth
+    reference (DDBM's real 870378308704141312/2025_bracket.json). Only the
+    exact <season>_season.json filename is the authoritative config; anything
+    else must be ignored rather than racing it for the same season key.
+    Before the filename filter existed, config_paths() accepted ANY .json in
+    a league folder and keyed it by the file's own internal `season` field,
+    so two same-season files would collide (whichever sorted last silently
+    won)."""
+    import json
+    p = _write_cfg(tmp_path, "111")          # 2025_season.json (real config)
+    sub = p.parent
+    # A reference file claiming the SAME season, sorted AFTER the real config
+    # alphabetically -- if the old any-.json behavior were still in effect,
+    # this would silently overwrite the real config in the returned dict.
+    (sub / "2025_zzz_reference.json").write_text(
+        json.dumps(_cfg(league_id="111", roster_positions=["QB"])))
+    out = playoffs.config_paths(str(tmp_path))
+    assert out == {"2025": str(p)}
 
 
 def test_apply_playoffs_does_not_stamp_another_leagues_champion(tmp_path):

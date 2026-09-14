@@ -1,4 +1,4 @@
-"""Per-(dataset, season) parquet snapshots under data/seasons/nflverse/<dataset>/.
+"""Per-(dataset, season) parquet snapshots under data/sources/nflverse/<dataset>/.
 
 Same durable-fallback contract as ffadp.cache / sleepermetrics.draft's ADP
 cache: a successful live fetch writes the tidy frame to disk; a later run
@@ -14,10 +14,11 @@ from pathlib import Path
 
 import pandas as pd
 
-from repo_paths import SEASON_DIR
+from repo_paths import SOURCES_DIR
 
-# Same root + override as the rest of the durable season data.
-_NFLVERSE_DIR = SEASON_DIR / "nflverse"
+# Same root + override as the rest of the durable source-scoped data
+# (data/sources/, a sibling of data/seasons/).
+_NFLVERSE_DIR = SOURCES_DIR / "nflverse"
 
 _mem: dict[str, pd.DataFrame] = {}   # f"{dataset}:{season}" -> frame
 

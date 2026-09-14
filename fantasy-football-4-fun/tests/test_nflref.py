@@ -1,7 +1,7 @@
 """nflref -- nflverse-derived data layer.
 
 Network-free: `nflref.api.read_release_parquet` is monkeypatched, and the
-snapshot dir is redirected to tmp so nothing touches data/seasons/nflverse/.
+snapshot dir is redirected to tmp so nothing touches data/sources/nflverse/.
 """
 import pandas as pd
 import pytest

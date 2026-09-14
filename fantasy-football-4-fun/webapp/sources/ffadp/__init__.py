@@ -10,13 +10,13 @@ into one comparison board.
 
 No auth, no cookies, no OAuth, no per-user data -- every source here is
 season-wide published draft data. Snapshots are written under
-`data/seasons/adp/<source>/<year>.json` (same durable-fallback pattern as
-`data/seasons/adp/<year>.json`) so the board still renders offline / on a cold host.
+`data/sources/adp/<source>/<year>.json` (same durable-fallback pattern as
+`data/sources/adp/<year>.json`) so the board still renders offline / on a cold host.
 
 `combine()` also attaches, per player, an end-of-season **Final** value rank
 (overall, all positions, priced with the canonical default scoring chart for
 the requested format -- see `ffadp.finish`) and **Diff** (`consensus -
-final`). Those ride committed snapshots under `data/seasons/adp/finish/`.
+final`). Those ride committed snapshots under `data/sources/adp/finish/`.
 
 Public entry point: `combine(season, sources=None, scoring="half_ppr", pos="ALL")`.
 """

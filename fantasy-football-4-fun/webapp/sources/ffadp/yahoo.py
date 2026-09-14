@@ -14,7 +14,7 @@ kept the drifted end-of-season `average_pick` for those years, not the
 pre-draft `preseason_average_pick` this provider wants (it comes back "-").
 Yahoo publishes ONE ADP; like the ESPN column it stands in for whatever
 scoring mode the board asks for. Snapshot-first: fetch() reads
-data/seasons/adp/yahoo/<year>.json and only pages the live endpoint when that is
+data/sources/adp/yahoo/<year>.json and only pages the live endpoint when that is
 missing or reload=True; degrades to [] when both are unavailable.
 """
 from __future__ import annotations

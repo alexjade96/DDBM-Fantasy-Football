@@ -39,9 +39,9 @@ from sleepermetrics import report as sm_report  # noqa: E402
 
 BASE = Path(__file__).resolve().parent
 ROOT = REPO_ROOT
-# The custom playoff bracket configs (data/seasons/<league_id>/<season>.json)
-# and the ADP cache (data/seasons/adp/<season>.json -- see draft.py) share
-# this one root (see repo_paths.py), both durable JSON checked into the repo.
+# The custom playoff bracket configs (data/seasons/<league_id>/<season>_
+# season.json) live under this root (see repo_paths.py); the ADP cache and
+# other source-scoped caches live under the separate SOURCES_DIR sibling.
 SEASON_DIR = str(_SEASON_DIR_PATH)
 DEFAULT_LEAGUE = os.environ.get("SLEEPERMETRICS_LEAGUE", "1252770181306929152")
 TTL = int(os.environ.get("SLEEPERMETRICS_TTL", "900"))   # cache seasons 15 min

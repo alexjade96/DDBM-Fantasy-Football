@@ -10,7 +10,7 @@ mode the board asks for. EARLIEST is the current NFL season at import.
 Rows carry a clean name + position + team but no CBS -> Sleeper id, so
 ffadp.identity.resolve() keys them by normalised name + position.
 
-Snapshot-first: fetch() reads data/seasons/adp/cbs/<year>.json and only pulls
+Snapshot-first: fetch() reads data/sources/adp/cbs/<year>.json and only pulls
 the live page when that is missing or reload=True; degrades to [].
 """
 from __future__ import annotations

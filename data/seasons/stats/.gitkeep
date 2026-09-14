@@ -1,5 +1,0 @@
-# data/seasons/stats/<season>/<week>.json -- trimmed Sleeper weekly usage
-# lines. Written by fantasy-football-4-fun/sleepermetrics/nflstats.py on every
-# successful live fetch; read back as the offline / cold-host fallback (same
-# durable-JSON idea as data/seasons/adp/). One file per (season, week). This
-# .gitkeep keeps the directory present before the first snapshot is committed.

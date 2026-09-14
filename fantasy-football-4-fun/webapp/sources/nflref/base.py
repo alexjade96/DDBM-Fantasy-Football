@@ -11,7 +11,7 @@ class NflDataset(abc.ABC):
 
     Contract for a new dataset:
       * `name`     -- short lowercase id ("player_stats", "schedules"). Also
-                      the snapshot subdir under data/seasons/nflverse/<name>/.
+                      the snapshot subdir under data/sources/nflverse/<name>/.
       * `label`    -- human label for a UI / log line.
       * `EARLIEST` -- oldest season nflverse publishes this dataset for (module
                       or class attribute). Older asks return an empty frame.

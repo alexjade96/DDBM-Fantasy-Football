@@ -1,37 +1,34 @@
-# data/seasons/: playoff brackets Sleeper can't run, plus cached stat data
+# data/seasons/: playoff brackets Sleeper can't run
 
-This directory is the one durable-data location for everything that isn't
-re-derivable straight from the Sleeper API: custom playoff bracket configs
-(one subfolder per league id), a cache of Sleeper's own ADP data (one shared
-file per year), a cache of Sleeper's weekly usage/stat lines, a cache of
-nflverse's public data releases, and a set of canonical default scoring
-charts. The brackets are plain checked-in JSON read by both the R and Python
-engines; the three stat caches and the scoring charts are Python-only for
-now (see below).
+This directory is the one durable-data location for the custom playoff
+engine's bracket configs, one subfolder per league (keyed by its chain's
+root id -- see below), every season it's ever played under. It holds ONLY
+league-scoped data. Everything else that used to live alongside it here
+(the Sleeper ADP cache, weekly stat caches, nflverse snapshots, the default
+scoring chart) is organized by SOURCE first, season only as a leaf -- see
+the sibling directory `data/sources/README.md`.
+
+The brackets are plain checked-in JSON read by both the R and Python
+engines.
 
 ```
 data/seasons/
-  <root_league_id>/<season>.json   # one subfolder per REAL league (its
-                                    # chain's oldest/root id, see below),
-                                    # every season it's ever played under
-  adp/<season>.json                # shared across every league (Sleeper
-                                    # publishes one ADP set per year, not
-                                    # per league)
-  adp/finish/<season>-<fmt>.json    # each player's overall end-of-season
-                                    # value rank, per scoring format; feeds
-                                    # the ADP Comparison tab's Final/Diff
-                                    # columns, Python-only, see below
-  stats/<season>/<week>.json        # trimmed Sleeper weekly usage lines
-                                    # (snap share, targets, air yards, RZ);
-                                    # Python-only, see below
-  nflverse/<dataset>/<season>.parquet  # snapshots of nflverse's own public
-                                    # data releases (player_stats, schedules);
-                                    # Python-only, see below
-  scoring/default_scoring.json     # canonical Sleeper DEFAULT point-calc
-                                    # chart: `base` + per-format `rec`
-                                    # (std/half_ppr/ppr/2qb); a stand-in
-                                    # when no league is loaded, Python-only
-  fixtures/                        # manually-referenced ground-truth fixtures
+  <root_league_id>/<season>_season.json   # one subfolder per REAL league
+                                    # (its chain's oldest/root id, see below),
+                                    # every season it's ever played under.
+                                    # The filename MUST be exactly
+                                    # <season>_season.json -- that's the only
+                                    # pattern config_paths()/sl_playoff_configs()
+                                    # treat as the authoritative bracket for
+                                    # a season (see "Config filename
+                                    # convention" below)
+  <root_league_id>/<season>_bracket.json  # OPTIONAL: a reference file for
+                                    # that same season -- e.g. a replay of
+                                    # Sleeper's own (possibly incoherent)
+                                    # stored bracket, kept only as a
+                                    # ground-truth comparison. Ignored by
+                                    # config_paths() -- never returned as
+                                    # "the" bracket for that season
   scaffold.py                      # generates a bracket config for the
                                     # workflow below; prints the root id
 ```
@@ -71,12 +68,34 @@ its whole history lives under `data/seasons/870378308704141312/`. Each file's ow
 `config_paths()`'s league-filtering, and for `sl_playoff()`/`sm.playoff()` to
 fetch that season's own data); only the surrounding folder is grouped by root.
 
-`config_paths()`/`sl_playoff_configs()` walk `data/seasons/<root_league_id>/*.json`,
-filtering to only numeric-named subfolders. `data/seasons/adp/` and
-`data/seasons/fixtures/` are siblings holding unrelated data and are skipped by that
-same rule, not by an explicit denylist. `data/seasons/scaffold.py` prints the
-resolved root id after writing a config, so a brand-new season lands in the
-right existing folder instead of a fresh one.
+`config_paths()`/`sl_playoff_configs()` walk `data/seasons/<root_league_id>/*_season.json`,
+filtering to only numeric-named subfolders (`data/sources/` is a sibling of
+`data/seasons/` entirely, not a subfolder under it, so it's never even a glob
+candidate). `data/seasons/scaffold.py` prints the resolved root id after
+writing a config, so a brand-new season lands in the right existing folder
+instead of a fresh one.
+
+### Config filename convention
+
+The filename must be **exactly `<season>_season.json`** to be treated as the
+authoritative bracket for that season -- `config_paths()`/`sl_playoff_configs()`
+match that pattern specifically, not just any `.json` in the folder.
+
+A league folder can also hold OTHER files for the same season -- most
+commonly a Sleeper-bracket replay kept only as a ground-truth check (DDBM's
+`870378308704141312/2025_bracket.json`, `league_id: 1252770181306929152`,
+the same real league, replayed through Sleeper's own stored bracket instead
+of the custom one). Any name that doesn't match `<season>_season.json` is
+simply ignored by the lookup, rather than racing the real config for the
+same season key.
+
+This matters because the two files can legitimately claim the SAME season
+(`"season": "2025"` in both) -- before this filename filter existed, ANY
+`.json` in a league folder was accepted and keyed by its own internal
+`season` field, so two same-season files would silently collide (whichever
+sorted last alphabetically won). Keep this convention when scaffolding a new
+config or adding a reference file: only ever name the real, authoritative
+bracket `<season>_season.json`.
 
 ### How points are computed
 
@@ -111,20 +130,21 @@ silently vanishing from the chart the season was decided by.
 # 1. scaffold a bracket (seeds from standings; pre-fills starters as a baseline)
 #    -- prints the root league id to use as the folder; DDBM's is
 #    870378308704141312, so its 2025 bracket goes under that folder, not
-#    under 2025's own (different) league_id.
-python data/seasons/scaffold.py custom <league_id> data/seasons/870378308704141312/2025.json \
+#    under 2025's own (different) league_id. The output filename must be
+#    <season>_season.json to be recognized as the authoritative config.
+python data/seasons/scaffold.py custom <league_id> data/seasons/870378308704141312/2025_season.json \
     --weeks 14 15 16 17 18 --teams 8
 
-# 2. edit data/seasons/870378308704141312/2025.json: replace each side's `starters`
-#    with the lineup actually submitted to the commissioner. Ids or player
-#    names both work.
+# 2. edit data/seasons/870378308704141312/2025_season.json: replace each side's
+#    `starters` with the lineup actually submitted to the commissioner. Ids or
+#    player names both work.
 
 # 3. score it
 ```
 
 ```r
 pkgload::load_all("r-analysis/sleepermetrics")
-p <- sl_playoff("data/seasons/870378308704141312/2025.json")
+p <- sl_playoff("data/seasons/870378308704141312/2025_season.json")
 p$champion
 sl_playoff_summary(p)
 sl_plot_playoff_bracket(p)
@@ -133,7 +153,7 @@ sl_plot_playoff_matchup(p, "R1M1")   # the receipts: both lineups, player by pla
 
 ```python
 import sleepermetrics as sm
-p = sm.playoff("data/seasons/870378308704141312/2025.json")
+p = sm.playoff("data/seasons/870378308704141312/2025_season.json")
 sm.playoff_summary(p)
 ```
 
@@ -208,11 +228,11 @@ over at the folder level.
 
 | File | Season's own league_id | Season | Bracket | Champion |
 |---|---|---|---|---|
-| `870378308704141312/2022.json` | 870378308704141312 | 2022 (6 teams) | standard Sleeper | sparky1335 |
-| `870378308704141312/2023.json` | 1003483425623355392 | 2023 (8 teams) | standard Sleeper | rezzu |
-| `870378308704141312/2024.json` | 1107490594215063552 | 2024 (6 teams) | standard Sleeper | SearingShadow |
-| `870378308704141312/2025.json` | 1252770181306929152 | 2025 (10 teams) | **custom** choose-your-opponent, wks 15–18 | LuckyHarm |
-| `fixtures/2025-sleeper-bracket.json` | - | - | Sleeper's own 2025 bracket, replayed; the engine's ground-truth fixture | - |
+| `870378308704141312/2022_season.json` | 870378308704141312 | 2022 (6 teams) | standard Sleeper | sparky1335 |
+| `870378308704141312/2023_season.json` | 1003483425623355392 | 2023 (8 teams) | standard Sleeper | rezzu |
+| `870378308704141312/2024_season.json` | 1107490594215063552 | 2024 (6 teams) | standard Sleeper | SearingShadow |
+| `870378308704141312/2025_season.json` | 1252770181306929152 | 2025 (10 teams) | **custom** choose-your-opponent, wks 15–18 | LuckyHarm |
+| `870378308704141312/2025_bracket.json` | 1252770181306929152 | 2025 | Sleeper's own 2025 bracket, replayed; the engine's ground-truth fixture (same real league, not "the" config -- see filename convention above) | - |
 | `scaffold.py` | - | - | generates any of the above from the league | - |
 
 For 2022–2024 the engine reproduces **Sleeper's own recorded champion** from the
@@ -235,139 +255,12 @@ Note Sleeper's *own* stored 2025 bracket disagrees (it crowns SimonSmith), but
 that bracket is incoherent: the team it records as losing rounds 1 **and** 2 is
 also its `p == 1` champion. The config is the accurate record.
 
-## ADP cache (`adp/`)
-
-The Python Draft tab's redraft-by-ADP simulation (`sleepermetrics.draft.redraft_board_adp`)
-draws its draft order from Sleeper's own **undocumented** per-season ADP/projections
-endpoint (`api.sleeper.com/projections/nfl/<season>`), reverse-engineered, not
-part of Sleeper's documented v1 API. `data/seasons/adp/<season>.json` is a trimmed,
-auto-refreshed snapshot of that response (player name/position + `adp_std`/
-`adp_half_ppr`/`adp_ppr`/`adp_2qb`), written on every successful live fetch so a
-later run with no network, or after Sleeper ever changes or removes the
-endpoint, still has the latest successfully-captured data to fall back to.
-
-Unlike the playoff configs, ADP is **season-scoped, not league-scoped**: Sleeper
-publishes one ADP set per year for the whole platform, so it lives in its own
-shared subfolder rather than duplicated into every league's own files.
-
-This is Python-only for now (same precedent as this codebase's other newer
-draft analytics; see `CLAUDE.md`); nothing here is hand-edited.
-
-### Finish ranks (`adp/finish/`)
-
-`data/seasons/adp/finish/<season>-<fmt>.json` is a `{sleeper_id: rank}` map giving
-each player's **overall end-of-season value rank** for that season (1 = the
-year's top scorer, all positions together), one file per scoring format
-(`std` / `half_ppr` / `ppr` / `2qb`). It backs the ADP Comparison tab's
-**Final** column, and **Diff** (`consensus - final`: positive = the field
-drafted the player later than he finished, i.e. a value; negative = a reach).
-
-Only standard fantasy positions are ranked (`QB`/`RB`/`WR`/`TE`/`K`/`DEF`,
-with `FB` folded in); IDP, punters and unpositioned rows are excluded, the
-same filter `ffadp.board.combine()` applies to the ADP rows themselves.
-
-Priced league-free from raw NFL stat lines (`/stats/nfl/regular/<season>/
-<week>`) times the canonical **default** scoring chart for the format
-(`data/seasons/scoring/default_scoring.json`, via
-`sleepermetrics.scoring.default_rules()`), since the ADP tab has no league
-context. Built by `ffadp.finish.season_value_ranks(season, fmt)` -- snapshot
-first, live compute only on a miss, and a completed season's compute is
-written back here (an in-progress season's is not: it would churn week to
-week, and the tab shows a "fills in once the season is complete" note
-instead). `ffadp.finish.rebuild_season(season)` regenerates every format for a
-season; it is a **backend maintenance function**, not wired to any UI control,
-for when the stat feed or the default chart changes. `2qb` is currently a
-duplicate of `ppr` (the default charts are identical -- superflex is a
-roster-slot difference, not a scoring one); it becomes distinct for free if a
-real 6-pt-passing-TD superflex chart is ever added.
-
-Committed as a durable fallback, same as the rest of `adp/`. Sleeper's stat
-feed only reaches back to ~2009, so earlier seasons in the picker simply show
-`-` for Final. Python-webapp-only.
-
-## Weekly usage cache (`stats/`)
-
-`sleepermetrics.nflstats` surfaces the volume/usage stats that Sleeper's
-weekly stat line already carries but nothing else in the app reads: snap
-share (`off_snp` / `tm_off_snp`), targets, air yards, red-zone touches,
-efficiency rates. It is the **same** `/stats/nfl/regular/<season>/<week>`
-feed `scoring.py` fetches to price lineups; this module just keeps the
-volume keys instead of only the scoring ones.
-
-`data/seasons/stats/<season>/<week>.json` is a trimmed per-week snapshot (one file
-per season+week), written on every successful live fetch so a later offline /
-cold-host run still resolves. The source is labelled `"sleeper"` on every row
-(`nflstats.SOURCE`), so a future multi-source usage board can tell where a
-figure came from. Python-webapp-only, not in the parity-diffed metric
-contract; nothing here is hand-edited.
-
-## nflverse data cache (`nflverse/`)
-
-`fantasy-football-4-fun/webapp/sources/nflref/` is a thin, dataset-oriented layer over **nflverse's own
-public data releases** -- the `.parquet` files nflverse publishes on GitHub
-(`nflverse/nflverse-data`), the same ones the R `nflreadr` and Python
-`nflreadpy` / `nfl_data_py` packages download. No auth, no API key, CC-BY-4.0
-data. It fetches the release assets directly (`nflref.api.read_release_parquet`)
-rather than take a library dependency.
-
-`data/seasons/nflverse/<dataset>/<season>.parquet` snapshots each tidied frame
-(same durable-fallback pattern as `adp/`). Datasets wired so far:
-`player_stats` (nflverse weekly player stats -- carries `target_share` /
-`air_yards_share` / `wopr`, which Sleeper's feed does not) and `schedules`
-(real game results + roof/surface/rest, for a true strength-of-schedule).
-It surfaces on the opening screen as the **NFL Stats** landing tab (next to
-ADP Comparison): a per-season player leaderboard (from EITHER nflverse's own
-weekly release OR Sleeper's own weekly feed -- a Source toggle), the game
-schedule/results, and a **Source comparison** that lines the two feeds up
-player-by-player and reports every season-total stat they disagree on
-(`nflref.compare_sources`). Season-only, CSV/Excel export. Still scaffolding
-for deeper analytics later. Python-webapp-only, outside `sleepermetrics`,
-`verify.py` unaffected. Needs `pyarrow` (in `requirements.txt`).
-
-## Default scoring charts (`scoring/`)
-
-`data/seasons/scoring/default_scoring.json` holds the canonical **Sleeper default**
-point-calculation chart in Sleeper's own `scoring_settings` vocabulary -- the
-same shape `sleepermetrics.scoring.rules_from(league_id)` returns -- so it can
-stand in for a league's live `scoring_settings` anywhere a scoring chart is
-needed but no league is loaded (e.g. pricing a season from raw stat lines for
-the ADP tab, or a league-free leaderboard).
-
-**Points-per-reception is the only thing that differs between the standard
-scoring formats**, so the file stores the chart once:
-
-- `base` -- every scoring rule except `rec` (41 keys).
-- `rec_by_format` -- the per-format reception weight: `std` 0, `half_ppr` 0.5,
-  `ppr` 1.0, `2qb` 1.0.
-
-`sleepermetrics.scoring.default_rules(fmt)` merges the two (`base` + that
-format's `rec`) and returns a plain `{stat: weight}` dict, in-process cached.
-Superflex / 2QB is a roster-slot difference, not a scoring one, so its chart
-equals PPR. A TE-premium variant would add a `bonus_rec_te` key (a
-per-position reception boost that stacks on `rec`); no ADP source this project
-reads publishes TEP, so it is not included.
-
-How it was built: the weights were reconciled from 39 real public Sleeper
-leagues (modal weight per stat key), with `pass_int` set to Sleeper's true
-default of -1, then cross-checked against ESPN's published standard scoring and
-the profootballnetwork / fantasypointcalculators / Sleeper-support references.
-**Verified**: `base` plus the `std` / `half_ppr` / `ppr` rec weight reproduces
-Sleeper's own `pts_std` / `pts_half_ppr` / `pts_ppr` **exactly** for every
-offensive player (5008/5008 player-format-weeks across 2023-2025) and every
-kicker. The DST keys
-are the documented Sleeper defaults but do **not** reproduce Sleeper's DST
-`pts_*` exactly -- Sleeper scores team defense from a richer vocabulary
-(yards-allowed tiers, forced punts, 3-and-outs, return TDs folded into `td`)
-that a linear chart over the basic keys can't express; this is the same reason
-`sleepermetrics.scoring` only scores offensive lineups.
-
-Not league-specific, not a parity artifact, hand-verified once and stable.
-Python-only for now.
-
 ## Location override
 
-Both engines resolve this whole directory from one environment variable,
-`SLEEPERMETRICS_SEASON_DIR` (default: `data/seasons/` under the repo root), set by
-`launch.py`, the `Dockerfile`, and `sl_dashboard(playoffs = ...)` alike, so the
-playoff configs, the ADP cache, the stat caches, and the default scoring
-charts always move together.
+Resolved from the environment variable `SLEEPERMETRICS_SEASON_DIR` (default:
+`data/seasons/` under the repo root), set by `launch.py`, the `Dockerfile`,
+and `repo_paths.py`'s own fallback alike (`sl_season_dir()` on the R side).
+This is a SEPARATE env var and constant from `SLEEPERMETRICS_SOURCES_DIR`/
+`SOURCES_DIR` (see `data/sources/README.md`), which governs the ADP/stats/
+nflverse/scoring caches -- the two roots are deliberately independent, since
+one is organized by league+season and the other by source+season.

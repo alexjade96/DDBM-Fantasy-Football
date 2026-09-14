@@ -8,7 +8,7 @@ scoring format the way Sleeper's four variants are, and there is no
 TE-premium and no dynasty ADP in this view. The board's scoring selector
 therefore does not change the ESPN column.
 
-Snapshot-first: fetch() reads data/seasons/adp/espn/<year>.json (trimmed to
+Snapshot-first: fetch() reads data/sources/adp/espn/<year>.json (trimmed to
 id/name/pos/adp) and only pulls the ~20 MB live payload when that snapshot is
 missing or `reload=True`. Degrades to [] when both are unavailable -- the
 board just drops the ESPN column.

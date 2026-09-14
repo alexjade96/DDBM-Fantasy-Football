@@ -1,6 +1,6 @@
-"""Per-(source, season) JSON snapshots under data/seasons/adp/<source>/<year>.json.
+"""Per-(source, season) JSON snapshots under data/sources/adp/<source>/<year>.json.
 
-Mirrors sleepermetrics.draft's own data/seasons/adp/<year>.json contract: a
+Mirrors sleepermetrics.draft's own data/sources/adp/<year>.json contract: a
 live fetch writes the trimmed result to disk on success; a later run with no
 network (or after an undocumented endpoint changes) falls back to that
 snapshot. Committed to the repo on purpose -- the snapshot IS the fallback.
@@ -10,18 +10,18 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from repo_paths import SEASON_DIR
+from repo_paths import SOURCES_DIR
 
-# Same root + override as sleepermetrics.draft, so all durable season data
-# lives in one tree.
-_ADP_DIR = SEASON_DIR / "adp"
+# Same root + override as sleepermetrics.draft, so all durable source-scoped
+# data lives in one tree (data/sources/, a sibling of data/seasons/).
+_ADP_DIR = SOURCES_DIR / "adp"
 
 _mem: dict[str, list] = {}   # f"{source}:{variant}:{season}" -> rows (list[dict])
 
 
 def _path(source: str, season: str, variant: str | None = None) -> Path:
-    """data/seasons/adp/<source>/<year>.json, or
-    data/seasons/adp/<source>/<variant>/<year>.json when a source keeps a
+    """data/sources/adp/<source>/<year>.json, or
+    data/sources/adp/<source>/<variant>/<year>.json when a source keeps a
     separate snapshot per scoring format (FFC does)."""
     base = _ADP_DIR / source
     if variant:

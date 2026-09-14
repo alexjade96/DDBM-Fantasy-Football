@@ -269,13 +269,23 @@ print.sleeper_playoff <- function(x, ...) {
 
 #' Stored season brackets
 #'
-#' Configs live one level down, under `<playoff_dir>/<league_id>/<season>.json`
-#' -- Sleeper gives each season its own league id (see `league_ids` below), so a
-#' bracket is keyed by BOTH, not by season number alone. Only numeric-named
-#' subfolders are treated as league folders (a Sleeper league_id is always a
-#' numeric string); `<playoff_dir>/adp/` and `<playoff_dir>/fixtures/` are
-#' siblings holding unrelated data (the Python ADP cache, a manually-referenced
-#' ground-truth bracket) and are skipped by that same rule.
+#' Configs live one level down, under
+#' `<playoff_dir>/<league_id>/<season>_season.json` -- Sleeper gives each
+#' season its own league id (see `league_ids` below), so a bracket is keyed
+#' by BOTH, not by season number alone. Only numeric-named subfolders are
+#' treated as league folders (a Sleeper league_id is always a numeric
+#' string); `data/sources/` (the Python ADP/stats/nflverse caches) is a
+#' sibling of `data/seasons/` entirely, not a subfolder under it, so it's
+#' never even a listing candidate here.
+#'
+#' The filename must match `<season>_season.json` EXACTLY to be treated as
+#' the authoritative bracket for that season. A league folder can also hold
+#' OTHER files for the same season -- e.g. a Sleeper-bracket replay kept only
+#' as a ground-truth check (DDBM's `870378308704141312/2025_bracket.json`) --
+#' and those are ignored rather than racing the real config for the same
+#' season key. Before this filter existed, ANY `.json` in a league folder was
+#' accepted and keyed by its own internal `season` field, so two files
+#' claiming the same season would collide silently.
 #'
 #' `league_ids` restricts the result to brackets belonging to those leagues. A
 #' bracket is keyed by season, but a season number is not unique across leagues
@@ -292,7 +302,7 @@ sl_playoff_configs <- function(playoff_dir = sl_season_dir(), league_ids = NULL)
   subs <- list.dirs(playoff_dir, full.names = FALSE, recursive = FALSE)
   subs <- subs[grepl("^[0-9]+$", subs)]
   fs <- unlist(lapply(subs, function(sub) {
-    list.files(file.path(playoff_dir, sub), "\\.json$", full.names = TRUE)
+    list.files(file.path(playoff_dir, sub), "^[0-9]{4}_season\\.json$", full.names = TRUE)
   }))
   ids <- if (is.null(league_ids)) NULL else as.character(league_ids)
   out <- character(0)

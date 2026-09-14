@@ -12,11 +12,20 @@ from Sleeper, so `out` should live under the chain's ROOT (oldest) id, not
 necessarily <league_id> itself. This script prints that root id after
 writing, so you don't have to work it out by hand.
 
-    # replicate Sleeper's own bracket (the "default" a user rolls back to)
-    python data/seasons/scaffold.py sleeper  <league_id> data/seasons/<root_league_id>/2025-sleeper.json
+The OUTPUT FILENAME matters too: `config_paths()` (the function every
+dashboard/report/parity-check uses to find "the" bracket for a season) only
+recognizes `<season>_season.json` as the authoritative config -- anything
+else (a Sleeper-replay reference file, a rollback copy) is silently ignored
+by that lookup, which is what lets one league folder hold more than one file
+for the same season without them colliding.
+
+    # replicate Sleeper's own bracket (a REFERENCE file, not "the" config --
+    # name it something other than <season>_season.json or it will collide)
+    python data/seasons/scaffold.py sleeper  <league_id> data/seasons/<root_league_id>/2025_bracket.json
 
     # scaffold a custom bracket over your own week range, seeded by standings
-    python data/seasons/scaffold.py custom <league_id> data/seasons/<root_league_id>/2025.json --weeks 14 15 16 17 18 --teams 8
+    # (the real, authoritative config: must be named <season>_season.json)
+    python data/seasons/scaffold.py custom <league_id> data/seasons/<root_league_id>/2025_season.json --weeks 14 15 16 17 18 --teams 8
 """
 from __future__ import annotations
 
@@ -26,7 +35,7 @@ import sys
 from pathlib import Path
 
 # data/seasons/scaffold.py -> parents[1] = data/ -> parents[2] = repo root.
-sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "webapp"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "fantasy-football-4-fun"))
 
 from sleepermetrics.league import root_league_id  # noqa: E402
 from sleepermetrics.playoffs import scaffold_bracket, sleeper_bracket  # noqa: E402

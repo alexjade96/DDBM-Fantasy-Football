@@ -11,7 +11,7 @@ cross-platform id is needed; ffadp.identity.resolve() keys it onto the
 canonical Sleeper player_id by a normalised name+position match.
 
 Snapshot-first, with a SEPARATE snapshot per scoring format under
-data/seasons/adp/ffc/<format>/<year>.json (the four formats are genuinely different
+data/sources/adp/ffc/<format>/<year>.json (the four formats are genuinely different
 data). A live pull happens only when that snapshot is missing or reload=True,
 and it rewrites the snapshot. Degrades to [] when both are unavailable.
 

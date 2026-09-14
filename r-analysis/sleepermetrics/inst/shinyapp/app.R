@@ -10,11 +10,14 @@ DEFAULT_LEAGUE <- Sys.getenv("SLEEPERMETRICS_LEAGUE", "1252770181306929152")
 
 # Playoff bracket configs (see sl_dashboard(playoffs = ...)). Configs live one
 # level down, under <PLAYOFF_DIR>/<league_id>/*.json (see sl_playoff_configs's
-# docs) -- only numeric-named subfolders are league folders, so this walks
-# those and skips siblings like <PLAYOFF_DIR>/adp/ or .../fixtures/. Kept as
-# its own flat basename-keyed list (not sl_playoff_configs(), which picks ONE
-# file per season) so a season can offer MULTIPLE candidate files in this
-# dropdown -- e.g. "2025.json" alongside a "2025-sleeper.json" rollback copy.
+# docs) -- only numeric-named subfolders are league folders. data/sources/
+# (the Python-only ADP/stats/nflverse caches) is a sibling of data/seasons/
+# entirely, not a subfolder under it, so it's never even a listing candidate.
+# Kept as its own flat basename-keyed list (not sl_playoff_configs(), which
+# picks only the ONE canonical *_season.json per season) so a season can
+# offer MULTIPLE candidate files in this dropdown -- e.g. "2025_season.json"
+# (the real, authoritative config) alongside "2025_bracket.json" (a
+# Sleeper-bracket replay kept only as a ground-truth reference).
 PLAYOFF_DIR <- Sys.getenv("SLEEPERMETRICS_SEASON_DIR", "")
 playoff_cfgs <- if (nzchar(PLAYOFF_DIR) && dir.exists(PLAYOFF_DIR)) {
   subs <- list.dirs(PLAYOFF_DIR, full.names = FALSE, recursive = FALSE)

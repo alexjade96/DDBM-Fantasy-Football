@@ -49,7 +49,7 @@ class AdpProvider(abc.ABC):
 
     Contract for a new source:
       * `name`   -- short lowercase id ("sleeper", "espn"). Also the snapshot
-                    subdir under data/seasons/adp/<name>/.
+                    subdir under data/sources/adp/<name>/.
       * `label`  -- column header text ("Sleeper", "ESPN").
       * `formats`-- the SCORING keys this source can actually distinguish; the
                     board falls back to `formats[0]` for an unsupported ask.

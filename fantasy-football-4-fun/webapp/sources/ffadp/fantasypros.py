@@ -15,7 +15,7 @@ path to its ADP data:
 RotoWire's `average` / consensus column (ffadp.rotowire.RotowireAdp) is the
 public substitute now wired in. If FantasyPros ever exposes a public feed,
 implement fetch() here: trim to AdpRow (clean name+position for
-identity.resolve), snapshot via ffadp.cache under data/seasons/adp/fantasypros/,
+identity.resolve), snapshot via ffadp.cache under data/sources/adp/fantasypros/,
 set EARLIEST.
 """
 from __future__ import annotations

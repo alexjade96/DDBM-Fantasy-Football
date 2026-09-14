@@ -34,6 +34,14 @@
 </head>
 <body hx-indicator="#bar">
   <div id="bar"></div>
+  <!-- Elapsed-time status for a long-running load (cold Render boot, or a
+       league/season switch that replays league_data()'s Sleeper chain walk).
+       Hidden by default; SMLoadStatus (below) shows it and fills the text for
+       requests it's told to watch. Lives outside #panel so it stays visible
+       through a league/season switch, which replaces #panel's whole innerHTML. -->
+  <div id="load-status" hidden role="status" aria-live="polite">
+    <span class="dot"></span><span id="load-status-text"></span>
+  </div>
 
   <!-- Charts are server-rendered PNGs, so the viewer's colour scheme has to ride
        along in the request. This hidden field carries it; hx-include pulls it
@@ -45,6 +53,54 @@
        localStorage (see window.SMBracket). hx-include rides it on every request. -->
   <input type="hidden" id="bracket" name="bracket" value="">
   <script>
+    // Elapsed-time status for a long-running request. #bar's 3px sliver is easy
+    // to miss on a cold Render boot (the container can take 30-60s+ to wake, on
+    // top of league_data()'s own Sleeper chain walk) -- a 60-120s wait with no
+    // running feedback reads as a hung page. This watches specific elements
+    // (opted in via data-load-watch, see #panel and #lookup below) rather than
+    // every htmx request site-wide, so a fast tab switch never flashes it.
+    // Past SLOW_MS it swaps in copy explaining WHY it's slow (the sleeping
+    // container), rather than just counting seconds with no explanation.
+    window.SMLoadStatus = (function () {
+      var SLOW_MS = 15000;
+      var wrap = document.getElementById('load-status');
+      var textEl = document.getElementById('load-status-text');
+      var timer = null, startedAt = 0, active = 0;
+      function tick() {
+        var secs = Math.round((Date.now() - startedAt) / 1000);
+        var slow = Date.now() - startedAt >= SLOW_MS;
+        wrap.classList.toggle('slow', slow);
+        textEl.textContent = slow
+          ? 'Still loading (' + secs + 's), the server sleeps when idle and can take a bit to wake up'
+          : 'Loading (' + secs + 's)';
+      }
+      function start() {
+        active++;
+        if (timer) return; // already running for an earlier overlapping request
+        startedAt = Date.now();
+        wrap.hidden = false;
+        tick();
+        timer = setInterval(tick, 1000);
+      }
+      function stop() {
+        active = Math.max(0, active - 1);
+        if (active > 0) return; // another watched request is still in flight
+        clearInterval(timer);
+        timer = null;
+        wrap.hidden = true;
+        wrap.classList.remove('slow');
+      }
+      // Delegate so it works for both #panel's initial load and the #lookup
+      // form's submit/season-change, without a separate listener per element.
+      document.body.addEventListener('htmx:beforeRequest', function (e) {
+        if (e.target.closest('[data-load-watch]')) start();
+      });
+      document.body.addEventListener('htmx:afterRequest', function (e) {
+        if (e.target.closest('[data-load-watch]')) stop();
+      });
+      return { start: start, stop: stop };
+    })();
+
     (function () {
       var mq = matchMedia('(prefers-color-scheme: dark)');
       var el = document.getElementById('theme');
@@ -483,6 +539,7 @@
            switch (League mode only; ignored in User mode). -->
       <form id="lookup" class="controls" hx-get="/load" hx-target="#panel" hx-swap="innerHTML"
             hx-include="#theme" hx-trigger="change from:#season, submit" hx-push-url="true"
+            data-load-watch
             hx-on="htmx:afterRequest: document.querySelectorAll('.tabs button').forEach((b,i)=>b.classList.toggle('active', i===0))">
         <div class="lookup-mode" role="radiogroup" aria-label="Look up by">
           <label><input type="radio" name="mode" value="league" checked> League</label>
@@ -564,12 +621,15 @@
     {% endfor %}
   </nav>
 
-  <main id="panel"
+  <main id="panel" data-load-watch
         hx-get="/tab/{{ initial_tab }}?boot=1" hx-trigger="load" hx-include="#league, #season, #theme, #bracket">
     {# First cold panel load runs league_data()'s full Sleeper chain walk (can
-       be 10-30s on a cold container). A bare "Loading..." for that long reads
-       as a hung page; a skeleton shaped like the real Overview (tile row + a
-       chart grid) plus the #bar top progress indicator reads as "working". #}
+       be 10-30s on a cold container, longer still if Render's free-tier
+       container was asleep). A bare "Loading..." for that long reads as a
+       hung page; a skeleton shaped like the real Overview (tile row + a chart
+       grid), the #bar top progress indicator, and #load-status's elapsed-time
+       readout (SMLoadStatus, wired via data-load-watch above) together read
+       as "working, and here's roughly how long it's taking". #}
     <div class="panel-boot" aria-busy="true" aria-label="Loading">
       <div class="skeleton pb-tiles"></div>
       <div class="pb-grid">

@@ -1,8 +1,8 @@
 # Keep the build context small: the image only needs
 # fantasy-football-4-fun/requirements.txt, fantasy-football-4-fun/repo_paths.py,
 # fantasy-football-4-fun/sleepermetrics, fantasy-football-4-fun/webapp, and
-# data/seasons/ (see Dockerfile). Anything not COPYed just slows the context
-# upload, and secrets must never enter it.
+# data/seasons/ + data/sources/ (see Dockerfile). Anything not COPYed just
+# slows the context upload, and secrets must never enter it.
 
 # VCS / CI / editor
 .git

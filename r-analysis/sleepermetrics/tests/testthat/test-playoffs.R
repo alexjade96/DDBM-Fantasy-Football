@@ -105,10 +105,19 @@ test_that("sl_check_lineup flags illegal submissions", {
 # --- brackets belong to a league, not to a season number --------------------
 
 write_cfg <- function(dir, league_id) {
+  # sl_playoff_configs() reads <dir>/<league_id>/<season>_season.json --
+  # a numeric-named SUBFOLDER, not a file directly under <dir> -- and the
+  # filename must be the exact <season>_season.json pattern (see playoffs.R's
+  # own docs on why: it lets a league folder hold a second, non-canonical
+  # file for the same season, e.g. a Sleeper-bracket replay reference,
+  # without colliding with the real config). Match that shape here or every
+  # assertion below silently exercises no real lookup at all.
   cfg <- test_cfg()
   cfg$league_id <- league_id
   cfg$roster_positions <- list("QB")   # stated, so nothing hits the network
-  jsonlite::write_json(cfg, file.path(dir, "2025.json"), auto_unbox = TRUE)
+  sub <- file.path(dir, league_id)
+  dir.create(sub, recursive = TRUE, showWarnings = FALSE)
+  jsonlite::write_json(cfg, file.path(sub, "2025_season.json"), auto_unbox = TRUE)
   dir
 }
 
@@ -137,4 +146,28 @@ test_that("sl_apply_playoffs does not stamp another league's champion", {
     other <- sl_apply_playoffs(mk("222"), d)   # different league, same season
     expect_equal(other[["2025"]]$standings$champion, c(FALSE, FALSE))
   })
+})
+
+test_that("sl_playoff_configs ignores a reference file for the same season", {
+  # A league folder can hold a second, non-canonical file for the SAME season
+  # -- e.g. a Sleeper-bracket replay kept only as a ground-truth reference
+  # (DDBM's real 870378308704141312/2025_bracket.json). Only the exact
+  # <season>_season.json filename is authoritative; anything else must be
+  # ignored rather than racing it for the same season key. Before this
+  # filename filter existed, ANY .json in a league folder was accepted and
+  # keyed by its own internal `season` field, so two same-season files would
+  # silently collide.
+  d <- withr::local_tempdir()
+  write_cfg(d, "111")                      # 111/2025_season.json (real config)
+  sub <- file.path(d, "111")
+  cfg <- test_cfg()
+  cfg$league_id <- "111"
+  cfg$roster_positions <- list("QB")
+  # Sorted AFTER the real config alphabetically -- if the old any-.json
+  # behavior were still in effect, this would silently overwrite it.
+  jsonlite::write_json(cfg, file.path(sub, "2025_zzz_reference.json"), auto_unbox = TRUE)
+
+  paths <- sl_playoff_configs(d)
+  expect_equal(names(paths), "2025")
+  expect_equal(basename(paths[["2025"]]), "2025_season.json")
 })

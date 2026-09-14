@@ -12,14 +12,14 @@ new descriptive read layered on data already fetched, with no R counterpart
 `record_book`). `verify.py` is unaffected.
 
 Storage. A trimmed per-(season, week) snapshot lives under
-`data/seasons/stats/<season>/<week>.json` -- a NEW sibling tree next to
-`data/seasons/adp/`, under the SAME SEASON_DIR (see repo_paths.py) and the
-SAME `SLEEPERMETRICS_SEASON_DIR` override, so all durable season data still
-lives in one place. It is the offline / cold-host fallback, same
-durable-JSON idea as the ADP cache: written on every successful live fetch,
-read back when the network is gone. The source is labelled `"sleeper"`
-throughout (`SOURCE`), so a later multi-source usage board can tell where a
-row came from.
+`data/sources/sleeper_stats/<season>/week_<week>.json` -- named for the
+source (Sleeper's own feed), a sibling tree next to `data/sources/adp/`, under the
+SAME SOURCES_DIR (see repo_paths.py) and the SAME `SLEEPERMETRICS_SOURCES_DIR`
+override, so all durable non-league-scoped data still lives in one place. It
+is the offline / cold-host fallback, same durable-JSON idea as the ADP cache:
+written on every successful live fetch, read back when the network is gone.
+The source is labelled `"sleeper"` throughout (`SOURCE`), so a later
+multi-source usage board can tell where a row came from.
 """
 from __future__ import annotations
 
@@ -28,7 +28,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from repo_paths import SEASON_DIR
+from repo_paths import SOURCES_DIR
 
 from . import scoring
 from .players import players
@@ -54,8 +54,11 @@ _USAGE_KEYS = (
     "pts_std", "pts_half_ppr", "pts_ppr",
 )
 
-# Same durable-data root the ADP cache and the playoff configs use.
-_STATS_DIR = SEASON_DIR / "stats"
+# Same durable-data root the ADP cache uses (data/sources/, not data/seasons/
+# -- this is a source-organized cache, not a league-scoped bracket config).
+# Named for the source (Sleeper's own weekly feed), distinct from nflverse's
+# own differently-shaped player_stats dataset under data/sources/nflverse/.
+_STATS_DIR = SOURCES_DIR / "sleeper_stats"
 
 # {(season, week): {player_id: {key: value}}} -- trimmed lines, for the life
 # of the process. Separate from scoring.py's own `_stats_cache` (that one
@@ -66,7 +69,7 @@ _usage_cache: dict = {}
 
 
 def _snapshot_path(season, week) -> Path:
-    return _STATS_DIR / str(season) / f"{int(week)}.json"
+    return _STATS_DIR / str(season) / f"week_{int(week)}.json"
 
 
 def _trim(lines: dict) -> dict:
@@ -97,7 +100,7 @@ def raw_week(season, week, reload: bool = False) -> dict:
     """Trimmed usage lines for one week: {player_id: {key: value}}.
 
     Snapshot-first: the in-process cache, then
-    `data/seasons/stats/<season>/<week>.json`, then a live pull via
+    `data/sources/sleeper_stats/<season>/week_<week>.json`, then a live pull via
     `scoring.nfl_stats` (which itself caches + hits the Sleeper API). A
     successful live pull rewrites the snapshot. Degrades to `{}` -- never
     raises -- when neither the network nor a snapshot is available.

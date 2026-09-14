@@ -1,7 +1,7 @@
 """Sleeper ADP provider.
 
 Snapshot-first: a committed / previously-fetched
-data/seasons/adp/<year>.json is used as-is unless it is missing or a
+data/sources/adp/<year>.json is used as-is unless it is missing or a
 `reload` is asked for, in which case it delegates to
 sleepermetrics.draft._fetch_adp_raw() (which does the live pull and rewrites
 that same file). So the tab does not re-hit Sleeper's endpoint on every
@@ -16,13 +16,13 @@ from __future__ import annotations
 
 import json
 
-from repo_paths import SEASON_DIR
+from repo_paths import SOURCES_DIR
 
 from sleepermetrics import draft as _draft
 
 from .base import AdpProvider, AdpRow
 
-# Board scoring key -> the REDRAFT field in a data/seasons/adp/<year>.json row.
+# Board scoring key -> the REDRAFT field in a data/sources/adp/<year>.json row.
 _FIELD = {
     "std": "adp_std",
     "half_ppr": "adp_half_ppr",
@@ -35,12 +35,12 @@ _FIELD = {
 EARLIEST = 2020
 
 # The committed Sleeper snapshot lives one level up from the per-source dirs
-# (data/seasons/adp/<year>.json, shared with sleepermetrics.draft).
-_SNAPSHOT_DIR = SEASON_DIR / "adp"
+# (data/sources/adp/<year>.json, shared with sleepermetrics.draft).
+_SNAPSHOT_DIR = SOURCES_DIR / "adp"
 
 
 def _snapshot(season: str) -> dict | None:
-    """The committed data/seasons/adp/<year>.json as {sleeper_id: {...}}, or None."""
+    """The committed data/sources/adp/<year>.json as {sleeper_id: {...}}, or None."""
     try:
         d = json.loads((_SNAPSHOT_DIR / f"{season}.json").read_text(encoding="utf-8"))
         return d if isinstance(d, dict) and d else None
@@ -65,7 +65,7 @@ class SleeperAdp(AdpProvider):
         raw = None if reload else _snapshot(str(season))
         if raw is None:
             # Missing snapshot, or an explicit reload: live pull, which
-            # rewrites data/seasons/adp/<year>.json. Degrades to {} offline.
+            # rewrites data/sources/adp/<year>.json. Degrades to {} offline.
             raw = _draft._fetch_adp_raw(season)
 
         field = _FIELD[self._format_or_fallback(scoring)]

@@ -3,7 +3,7 @@
 Each player's "Final" is their overall end-of-season rank (1 = the year's
 top scorer) among ALL players, priced from raw NFL stat lines times a
 canonical Sleeper DEFAULT scoring chart (`sleepermetrics.scoring.default_rules`,
-backed by `data/seasons/scoring/default_scoring.json`). This is league-free -- the
+backed by `data/sources/default_scoring.json`). This is league-free -- the
 ADP tab has no `Season` -- so it uses the default chart, one per scoring
 format, not any league's own `scoring_settings`.
 
@@ -12,7 +12,7 @@ adds `final` plus `diff` (`consensus - final`: positive = the field drafted
 the player later than they finished, i.e. a value; negative = a reach).
 
 Storage mirrors the rest of `ffadp`: one committed JSON snapshot per
-`(season, format)` under `data/seasons/adp/finish/<season>-<fmt>.json`, the
+`(season, format)` under `data/sources/adp/finish/<season>-<fmt>.json`, the
 durable offline fallback. A snapshot is only written for a season whose
 weeks are all in (`nfl_state` season past the requested one); an
 in-progress season is computed live and returned but not persisted.
@@ -22,7 +22,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from repo_paths import SEASON_DIR
+from repo_paths import SOURCES_DIR
 
 from sleepermetrics import scoring
 from sleepermetrics.league import nfl_state
@@ -38,7 +38,7 @@ _FANTASY_POS = {"QB", "RB", "WR", "TE", "K", "DEF", "FB"}
 # season this project sees; a week with no stat lines is simply skipped.
 _WEEKS = range(1, 19)
 
-_FINISH_DIR = SEASON_DIR / "adp" / "finish"
+_FINISH_DIR = SOURCES_DIR / "adp" / "finish"
 
 _mem: dict[str, dict] = {}     # f"{season}:{fmt}" -> {sleeper_id: final_rank}
 
@@ -97,7 +97,7 @@ def season_value_ranks(season: str, scoring_fmt: str = "ppr",
                        reload: bool = False) -> dict:
     """{sleeper_id: overall end-of-season rank} for `season` in `scoring_fmt`.
 
-    Snapshot-first: in-process cache -> `data/seasons/adp/finish/<season>-<fmt>.json`
+    Snapshot-first: in-process cache -> `data/sources/adp/finish/<season>-<fmt>.json`
     -> a live compute off `scoring.nfl_stats`. A completed season's live
     compute is written back to the snapshot; an in-progress season's is not
     (it would churn week to week). `reload=True` skips the caches and

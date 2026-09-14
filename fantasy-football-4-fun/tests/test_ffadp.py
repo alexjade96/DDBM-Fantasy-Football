@@ -298,7 +298,7 @@ def test_sleeper_provider_degrades_offline(monkeypatch):
 
 def test_sleeper_provider_skips_prehistoric_years(monkeypatch):
     # A year before Sleeper's ADP history must not even call the endpoint
-    # (a miss there writes an empty data/seasons/adp/<y>.json).
+    # (a miss there writes an empty data/sources/adp/<y>.json).
     from sleepermetrics import draft
     from webapp.sources.ffadp.sleeper import SleeperAdp
     called = []

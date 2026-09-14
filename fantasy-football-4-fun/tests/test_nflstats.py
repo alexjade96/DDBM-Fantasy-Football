@@ -2,7 +2,7 @@
 
 Network-free: `scoring.nfl_stats` and `players()` are both monkeypatched, and
 the snapshot dir is redirected to a tmp path so nothing touches the repo's
-data/seasons/stats/ tree.
+data/sources/sleeper_stats/ tree.
 """
 import json
 
