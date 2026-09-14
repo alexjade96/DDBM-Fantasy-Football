@@ -127,17 +127,57 @@ rather than take a library dependency.
 
 `data/sources/nflverse/<dataset>/<season>.parquet` snapshots each tidied frame
 (same durable-fallback pattern as `adp/`). Datasets wired so far:
-`player_stats` (nflverse weekly player stats -- carries `target_share` /
-`air_yards_share` / `wopr`, which Sleeper's feed does not) and `schedules`
-(real game results + roof/surface/rest, for a true strength-of-schedule).
+
+- **`player_stats`** -- nflverse weekly player stats: `target_share` /
+  `air_yards_share` / `wopr` / `racr` / `pacr`, which Sleeper's feed does not
+  carry. `EARLIEST = 2016`.
+- **`schedules`** -- real game results + roof/surface/rest, for a true
+  strength-of-schedule (one all-seasons file, sliced per season on fetch).
+  `EARLIEST = 1999`.
+- **`snap_counts`** -- per-player-per-week snap share split by
+  **offense/defense/special-teams** (`offense_pct`/`defense_pct`/`st_pct`),
+  from PFR's own snap-count tables. Genuinely new versus Sleeper's own feed
+  (`sleepermetrics.nflstats`), which only carries offensive snap share.
+  `EARLIEST = 2012` (the 2012 release asset itself is empty -- verified --
+  so real coverage starts 2013).
+- **`ngs_passing`** / **`ngs_receiving`** / **`ngs_rushing`** -- real NFL
+  Next Gen Stats tracking-derived metrics (three all-seasons files, sliced
+  per season on fetch): `avg_time_to_throw` / `completion_percentage_
+  above_expectation` (CPOE) for passing; `avg_cushion` / `avg_separation` /
+  `avg_yac_above_expectation` for receiving; `rush_yards_over_expected` /
+  `efficiency` for rushing. The closest free equivalent to PFF's tracking-
+  based grades -- real player-tracking-chip data, not box-score derivatives.
+  `EARLIEST = 2016`. `ngs_rushing` is missing 2023 entirely in the upstream
+  release (verified: every other season 2016-2026 has real rows).
+- **`pfr_pass`** / **`pfr_rec`** / **`pfr_rush`** / **`pfr_def`** -- Pro
+  Football Reference's advanced weekly stats (four separate role-specific
+  datasets, since each has a near-disjoint column set): pressure rate /
+  times blitzed/hurried/hit for passing; drop rate / broken tackles /
+  receiver rating for receiving; yards before/after contact / broken
+  tackles for rushing; missed tackles / pressures / passer rating allowed
+  for defense (IDP-relevant). Already player-level and per-game -- the best
+  value-to-effort PFF-comparable data available, no play-level explode/join
+  needed. `EARLIEST = 2018`.
+- **`injuries`** -- weekly official injury reports: the SPECIFIC injury
+  (`report_primary_injury`/`report_secondary_injury`, e.g. "Hamstring",
+  "Concussion", "Illness" -- 20+ categories, not just a flag), the final
+  game-status designation (`report_status`: Out/Doubtful/Questionable), and
+  daily practice-report detail. Context data (explains a bad week, tracks a
+  recurring injury) rather than a rankable stat. `gsis_id` join key verified
+  zero-null across this league's real seasons. `EARLIEST = 2009`.
+
 It surfaces on the opening screen as the **NFL Stats** landing tab (next to
 ADP Comparison): a per-season player leaderboard (from EITHER nflverse's own
 weekly release OR Sleeper's own weekly feed -- a Source toggle), the game
 schedule/results, and a **Source comparison** that lines the two feeds up
 player-by-player and reports every season-total stat they disagree on
-(`nflref.compare_sources`). Season-only, CSV/Excel export. Still scaffolding
-for deeper analytics later. Python-webapp-only, outside `sleepermetrics`,
-`verify.py` unaffected. Needs `pyarrow` (in `requirements.txt`).
+(`nflref.compare_sources`). Season-only, CSV/Excel export. `snap_counts`/
+`ngs_*`/`pfr_*`/`injuries` are wired at the data layer (`nflref.load(name,
+season)`, cached, backfilled to each dataset's own EARLIEST) but not yet
+surfaced in the NFL Stats tab UI -- a deliberate, smaller first step; adding
+them to the leaderboard/a new view is a follow-up. Python-webapp-only,
+outside `sleepermetrics`, `verify.py` unaffected. Needs `pyarrow` (in
+`requirements.txt`).
 
 ## Default scoring chart (`default_scoring.json`)
 

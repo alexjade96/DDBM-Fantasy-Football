@@ -60,7 +60,12 @@ def _fake_schedules():
 
 
 def test_registry_lists_the_datasets():
-    assert set(DATASETS) == {"player_stats", "schedules"}
+    assert set(DATASETS) == {
+        "player_stats", "schedules", "snap_counts",
+        "ngs_passing", "ngs_receiving", "ngs_rushing",
+        "pfr_pass", "pfr_rec", "pfr_rush", "pfr_def",
+        "injuries",
+    }
 
 
 def test_player_stats_tidies_and_filters_regular_season(monkeypatch):
@@ -118,6 +123,156 @@ def test_player_stats_before_earliest_is_empty(monkeypatch):
     monkeypatch.setattr(api, "read_release_parquet", _boom)
     assert nflref.load("player_stats", "2010").empty
     assert called["n"] == 0
+
+
+def _fake_snap_counts():
+    return pd.DataFrame({
+        "game_id": ["2024_01_A_B", "2024_01_A_B"],
+        "season": [2024, 2024], "game_type": ["REG", "REG"], "week": [1, 1],
+        "player": ["Off Guy", "ST Guy"], "pfr_player_id": ["p1", "p2"],
+        "position": ["WR", "LB"], "team": ["AAA", "AAA"], "opponent": ["BBB", "BBB"],
+        "offense_snaps": [60, 0], "offense_pct": [0.9, 0.0],
+        "defense_snaps": [0, 55], "defense_pct": [0.0, 0.85],
+        "st_snaps": [5, 20], "st_pct": [0.2, 0.7],
+        "junk": [1, 2],
+    })
+
+
+def test_snap_counts_tidies_and_keeps_all_three_sides(monkeypatch):
+    monkeypatch.setattr(api, "read_release_parquet", lambda asset: _fake_snap_counts())
+    df = nflref.load("snap_counts", "2024")
+    assert "junk" not in df.columns
+    assert {"offense_pct", "defense_pct", "st_pct"}.issubset(df.columns)
+    off, st = df.iloc[0], df.iloc[1]
+    assert off["offense_pct"] == 0.9 and off["defense_pct"] == 0.0
+    assert st["defense_pct"] == 0.85 and st["st_pct"] == 0.7
+
+
+def test_snap_counts_before_earliest_is_empty(monkeypatch):
+    def _boom(asset):
+        raise AssertionError("should not fetch before EARLIEST")
+    monkeypatch.setattr(api, "read_release_parquet", _boom)
+    assert nflref.load("snap_counts", "2011").empty
+
+
+def _fake_ngs_receiving():
+    return pd.DataFrame({
+        "season": [2023, 2024, 2024],
+        "season_type": ["REG", "REG", "REG"], "week": [0, 0, 1],
+        "player_display_name": ["Old Guy", "New Guy", "New Guy"],
+        "player_position": ["WR", "WR", "WR"], "team_abbr": ["AAA", "BBB", "BBB"],
+        "player_gsis_id": ["g1", "g2", "g2"],
+        "receptions": [50, 60, 6], "targets": [80, 90, 9],
+        "catch_percentage": [62.5, 66.7, 66.7], "yards": [600, 700, 70],
+        "rec_touchdowns": [4, 5, 1],
+        "avg_cushion": [6.5, 5.9, 5.9], "avg_separation": [3.1, 2.8, 2.8],
+        "avg_intended_air_yards": [9.0, 8.5, 8.5],
+        "percent_share_of_intended_air_yards": [0.2, 0.22, 0.22],
+        "avg_yac": [4.5, 5.0, 5.0], "avg_expected_yac": [4.0, 4.6, 4.6],
+        "avg_yac_above_expectation": [0.5, 0.4, 0.4],
+        "junk": [1, 2, 3],
+    })
+
+
+def test_ngs_receiving_slices_the_all_seasons_file_before_snapshotting(monkeypatch):
+    monkeypatch.setattr(api, "read_release_parquet", lambda asset: _fake_ngs_receiving())
+    df = nflref.load("ngs_receiving", "2024")
+    assert set(df["season"]) == {2024}
+    assert list(df["player_display_name"]) == ["New Guy", "New Guy"]
+    assert "junk" not in df.columns
+    assert "avg_separation" in df.columns and "avg_cushion" in df.columns
+    # snapshot on disk is the sliced 2024 frame, not the all-seasons file
+    snap = cache.load("ngs_receiving", "2024")
+    assert set(snap["season"]) == {2024} and len(snap) == 2
+
+
+def test_ngs_receiving_asset_is_one_flat_file_not_per_season():
+    from webapp.sources.nflref.nextgen_stats import NgsReceiving
+    assert NgsReceiving()._asset("2016") == NgsReceiving()._asset("2024")
+    assert NgsReceiving()._asset("2024") == "nextgen_stats/ngs_receiving.parquet"
+
+
+def test_ngs_before_earliest_is_empty(monkeypatch):
+    def _boom(asset):
+        raise AssertionError("should not fetch before EARLIEST")
+    monkeypatch.setattr(api, "read_release_parquet", _boom)
+    assert nflref.load("ngs_passing", "2015").empty
+    assert nflref.load("ngs_receiving", "2015").empty
+    assert nflref.load("ngs_rushing", "2015").empty
+
+
+def _fake_pfr_rush():
+    return pd.DataFrame({
+        "season": [2024], "week": [1], "game_type": ["REG"],
+        "team": ["AAA"], "opponent": ["BBB"],
+        "pfr_player_name": ["Runner Guy"], "pfr_player_id": ["r1"],
+        "carries": [18],
+        "rushing_yards_before_contact": [40], "rushing_yards_before_contact_avg": [2.2],
+        "rushing_yards_after_contact": [60], "rushing_yards_after_contact_avg": [3.3],
+        "rushing_broken_tackles": [3], "receiving_broken_tackles": [0],
+        "junk": [1],
+    })
+
+
+def test_pfr_rush_tidies_role_specific_columns(monkeypatch):
+    monkeypatch.setattr(api, "read_release_parquet", lambda asset: _fake_pfr_rush())
+    df = nflref.load("pfr_rush", "2024")
+    assert "junk" not in df.columns
+    assert df.iloc[0]["rushing_yards_after_contact"] == 60
+    assert df.iloc[0]["rushing_broken_tackles"] == 3
+    from webapp.sources.nflref.pfr_advstats import PfrRush
+    assert PfrRush()._asset("2024") == "pfr_advstats/advstats_week_rush_2024.parquet"
+
+
+def test_pfr_roles_have_distinct_asset_paths():
+    from webapp.sources.nflref.pfr_advstats import PfrPass, PfrRec, PfrRush, PfrDef
+    assets = {cls()._asset("2024") for cls in (PfrPass, PfrRec, PfrRush, PfrDef)}
+    assert len(assets) == 4   # pass/rec/rush/def each hit a different file
+
+
+def test_pfr_before_earliest_is_empty(monkeypatch):
+    def _boom(asset):
+        raise AssertionError("should not fetch before EARLIEST")
+    monkeypatch.setattr(api, "read_release_parquet", _boom)
+    assert nflref.load("pfr_pass", "2017").empty
+    assert nflref.load("pfr_rec", "2017").empty
+    assert nflref.load("pfr_rush", "2017").empty
+    assert nflref.load("pfr_def", "2017").empty
+
+
+def _fake_injuries():
+    return pd.DataFrame({
+        "season": [2024, 2024], "game_type": ["REG", "REG"], "week": [1, 1],
+        "team": ["AAA", "AAA"], "gsis_id": ["p1", "p2"],
+        "position": ["WR", "RB"], "full_name": ["Hurt Guy", "Fine Guy"],
+        "report_primary_injury": ["Hamstring", None],
+        "report_secondary_injury": [None, None],
+        "report_status": ["Questionable", None],
+        "practice_primary_injury": ["Hamstring", None],
+        "practice_secondary_injury": [None, None],
+        "practice_status": ["Limited Participation in Practice", "Full Participation in Practice"],
+        "date_modified": pd.to_datetime(["2024-09-06", "2024-09-06"]),
+        "junk": [1, 2],
+    })
+
+
+def test_injuries_tidies_and_keeps_injury_type_detail(monkeypatch):
+    monkeypatch.setattr(api, "read_release_parquet", lambda asset: _fake_injuries())
+    df = nflref.load("injuries", "2024")
+    assert "junk" not in df.columns
+    assert "report_primary_injury" in df.columns
+    hurt = df[df["full_name"] == "Hurt Guy"].iloc[0]
+    assert hurt["report_primary_injury"] == "Hamstring"
+    assert hurt["report_status"] == "Questionable"
+    fine = df[df["full_name"] == "Fine Guy"].iloc[0]
+    assert pd.isna(fine["report_status"])   # listed on practice report only
+
+
+def test_injuries_before_earliest_is_empty(monkeypatch):
+    def _boom(asset):
+        raise AssertionError("should not fetch before EARLIEST")
+    monkeypatch.setattr(api, "read_release_parquet", _boom)
+    assert nflref.load("injuries", "2008").empty
 
 
 def test_schedules_slices_to_the_season_before_snapshotting(monkeypatch):

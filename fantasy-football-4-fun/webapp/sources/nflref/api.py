@@ -10,6 +10,10 @@ Verified directly fetchable (HEAD 200, application/octet-stream):
   player_stats/player_stats_<year>.parquet   ~330 KB
   snap_counts/snap_counts_<year>.parquet     ~240 KB
   schedules/games.parquet                    ~520 KB (all seasons in one file)
+  nextgen_stats/ngs_{passing,receiving,rushing}.parquet   ~350 KB-1.1 MB
+                                              (all seasons in one file each)
+  pfr_advstats/advstats_week_{pass,rec,rush,def}_<year>.parquet   ~20-160 KB
+  injuries/injuries_<year>.parquet           ~85 KB
   pbp/play_by_play_<year>.parquet            ~20 MB
 """
 from __future__ import annotations

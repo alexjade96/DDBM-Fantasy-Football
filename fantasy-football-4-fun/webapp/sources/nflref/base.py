@@ -99,7 +99,16 @@ class NflDataset(abc.ABC):
 def _registry() -> dict[str, NflDataset]:
     from .player_stats import PlayerStats
     from .schedules import Schedules
-    return {d.name: d for d in (PlayerStats(), Schedules())}
+    from .snap_counts import SnapCounts
+    from .nextgen_stats import NgsPassing, NgsReceiving, NgsRushing
+    from .pfr_advstats import PfrPass, PfrRec, PfrRush, PfrDef
+    from .injuries import Injuries
+    return {d.name: d for d in (
+        PlayerStats(), Schedules(), SnapCounts(),
+        NgsPassing(), NgsReceiving(), NgsRushing(),
+        PfrPass(), PfrRec(), PfrRush(), PfrDef(),
+        Injuries(),
+    )}
 
 
 DATASETS = _registry()
