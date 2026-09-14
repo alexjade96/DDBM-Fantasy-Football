@@ -9,9 +9,9 @@ from webapp.sources.ffadp.base import AdpProvider, AdpRow
 def _fake_dump():
     return {
         "100": {"full_name": "Ja'Marr Chase", "position": "WR", "team": "CIN",
-                "espn_id": "4262921", "yahoo_id": "33379"},
+                "espn_id": "4262921", "yahoo_id": "33379", "gsis_id": "00-0036900"},
         "200": {"full_name": "Bijan Robinson", "position": "RB", "team": "ATL",
-                "espn_id": "4430807", "yahoo_id": "40120"},
+                "espn_id": "4430807", "yahoo_id": "40120", "gsis_id": "00-0039337"},
         "DEF_SF": {"position": "DEF", "team": "SF"},
     }
 
@@ -21,6 +21,23 @@ def test_identity_resolves_by_cross_id(monkeypatch):
     monkeypatch.setattr(identity, "_raw_players", _fake_dump)
     assert identity.resolve("espn", espn_id="4262921") == "100"
     assert identity.resolve("yahoo", yahoo_id="40120") == "200"
+    assert identity.resolve("nflref", gsis_id="00-0036900") == "100"
+    assert identity.resolve("nflref", gsis_id="00-0000000") is None
+    identity.reset()
+
+
+def test_identity_gsis_collision_prefers_real_team(monkeypatch):
+    # Sleeper's dump has a handful of gsis_id collisions (its own "Duplicate
+    # Player" stubs, and at least one real mix-up) -- the resolver should
+    # prefer whichever candidate has a real team over a team-less one.
+    identity.reset()
+    monkeypatch.setattr(identity, "_raw_players", lambda: {
+        "6618": {"full_name": "Stub Player", "position": "TE", "team": None,
+                 "gsis_id": "00-0035718"},
+        "6118": {"full_name": "Real Player", "position": "DT", "team": "DAL",
+                 "gsis_id": "00-0035718"},
+    })
+    assert identity.resolve("nflref", gsis_id="00-0035718") == "6118"
     identity.reset()
 
 

@@ -523,19 +523,21 @@ def test_nflstats_data_route_players(monkeypatch):
 
 
 _FAKE_SLEEPER_DUMP = {
-    "4262921": {"full_name": "Ja'Marr Chase", "position": "WR", "team": "CIN"},
+    "4262921": {"full_name": "Ja'Marr Chase", "position": "WR", "team": "CIN",
+                "gsis_id": "00-0036900"},
 }
 
 
 @pytest.fixture
 def _fake_identity(monkeypatch):
-    """identity._raw_players() falls through to a live sleeper_api() call
-    whenever no same-day sleeperPlayerData_py.pkl is on disk (true on a clean
-    CI checkout, not on a dev machine that happens to have a fresh one from
-    running the app locally) -- stub the call and clear the module cache so
-    that local/CI behavior can't silently diverge."""
+    """identity._raw_players() reads straight off disk whenever a same-day
+    sleeperPlayerData_py.pkl already exists, which is true on a dev machine
+    that has run the app locally (not on a clean CI checkout). Stubbing only
+    `sleeper_api` therefore silently no-ops on such a machine -- the disk
+    branch never calls it at all. Patch `_raw_players` itself instead, so
+    the fake dump is used unconditionally regardless of what's on disk."""
     from webapp.sources.ffadp import identity
-    monkeypatch.setattr(identity, "sleeper_api", lambda path: dict(_FAKE_SLEEPER_DUMP))
+    monkeypatch.setattr(identity, "_raw_players", lambda: dict(_FAKE_SLEEPER_DUMP))
     identity._idx = None
     yield
     identity._idx = None
@@ -564,11 +566,15 @@ def test_attach_sleeper_ids_resolves_and_passes_through(_fake_identity):
         {"player": "Ja'Marr Chase", "position": "WR", "player_id": "00-0036900"},
         {"player": "Nobody At All", "position": "WR", "player_id": None},
         {"player": "Sleeper Native", "position": "RB", "player_id": "1234"},
+        # a name that would NOT resolve by name+position alone (only the
+        # real gsis_id match should find this row)
+        {"player": "Some Other Name", "position": "WR", "player_id": "00-0036900"},
     ]
     _attach_sleeper_ids(rows)
-    assert rows[0]["sleeper_id"] and rows[0]["sleeper_id"].isdigit()   # name-resolved
+    assert rows[0]["sleeper_id"] == "4262921"                         # gsis-resolved
     assert rows[1]["sleeper_id"] is None                              # unknown
     assert rows[2]["sleeper_id"] == "1234"                            # digit id passes through
+    assert rows[3]["sleeper_id"] == "4262921"                         # gsis wins over name mismatch
 
 
 def test_nflstats_data_route_schedule(monkeypatch):

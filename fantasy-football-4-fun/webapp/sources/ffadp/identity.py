@@ -126,6 +126,7 @@ def _build() -> dict:
     raw = _raw_players()
     by_espn: dict[str, str] = {}
     by_yahoo: dict[str, str] = {}
+    by_gsis: dict[str, str] = {}
     by_name: dict[str, str] = {}
     meta: dict[str, dict] = {}
     for pid, p in raw.items():
@@ -135,14 +136,23 @@ def _build() -> dict:
         name = pid if pos == "DEF" else (p.get("full_name") or "")
         team = pid if pos == "DEF" else p.get("team")
         meta[str(pid)] = {"name": name, "position": pos, "team": team}
-        e, y = p.get("espn_id"), p.get("yahoo_id")
+        e, y, g = p.get("espn_id"), p.get("yahoo_id"), p.get("gsis_id")
         if e:
             by_espn[str(e)] = str(pid)
         if y:
             by_yahoo[str(y)] = str(pid)
+        if g:
+            # A handful of gsis_id values collide across Sleeper's dump (its
+            # own "Duplicate Player" stubs, and at least one genuine mix-up).
+            # Prefer whichever row has a real team over a team-less stub, so
+            # an active, currently-rostered player wins the slot.
+            existing = by_gsis.get(str(g))
+            if existing is None or (not meta.get(existing, {}).get("team") and team):
+                by_gsis[str(g)] = str(pid)
         if name:
             by_name.setdefault(f"{_norm(name)}|{(pos or '').upper()}", str(pid))
-    return {"espn": by_espn, "yahoo": by_yahoo, "name": by_name, "meta": meta}
+    return {"espn": by_espn, "yahoo": by_yahoo, "gsis": by_gsis, "name": by_name,
+            "meta": meta}
 
 
 def _index() -> dict:
@@ -152,18 +162,22 @@ def _index() -> dict:
     return _idx
 
 
-def resolve(source: str, *, espn_id=None, yahoo_id=None,
+def resolve(source: str, *, espn_id=None, yahoo_id=None, gsis_id=None,
             name=None, position=None) -> str | None:
     """Best canonical Sleeper player_id for a source row, or None.
 
-    Order: exact cross-id (espn/yahoo) first, then a normalised name+position
-    match, then None (the board still merges such a row on its own name key).
+    Order: exact cross-id (espn/yahoo/gsis) first, then a normalised
+    name+position match, then None (the board still merges such a row on
+    its own name key). `gsis_id` bridges nflverse-derived data (nflref's
+    `player_stats`/`nextgen_stats`/`injuries`, all keyed on GSIS ids).
     """
     ix = _index()
     if espn_id and str(espn_id) in ix["espn"]:
         return ix["espn"][str(espn_id)]
     if yahoo_id and str(yahoo_id) in ix["yahoo"]:
         return ix["yahoo"][str(yahoo_id)]
+    if gsis_id and str(gsis_id) in ix["gsis"]:
+        return ix["gsis"][str(gsis_id)]
     if name:
         return ix["name"].get(f"{_norm(name)}|{(position or '').upper()}")
     return None

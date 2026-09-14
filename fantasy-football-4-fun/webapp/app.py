@@ -1300,11 +1300,14 @@ def _attach_sleeper_ids(rows, id_field="player_id"):
     macro can render a portrait.
 
     The Sleeper-fed leaderboard's own `player_id` IS a Sleeper id -- copy it.
-    For an nflverse row (or a compare row, which is name-keyed) there is no
-    Sleeper id, so resolve one from `ffadp.identity` by normalised
-    name + position -- the same name-match the ADP board falls back to.
-    Best-effort: a miss leaves `sleeper_id` None and the portrait just
-    doesn't render.
+    For an nflverse row `id_field` holds a GSIS id ("00-00xxxxx"), which
+    `ffadp.identity` can resolve to the canonical Sleeper id directly (a
+    real id match, not a guess) since `sleepermetrics.players()` already
+    carries `gsis_id` for most players. A compare row (name-keyed, no id at
+    all) falls back to normalised name + position -- the same fallback the
+    ADP board uses, and the one this used exclusively before the gsis_id
+    bridge existed. Best-effort throughout: a miss leaves `sleeper_id` None
+    and the portrait just doesn't render.
     """
     try:
         from webapp.sources.ffadp import identity
@@ -1317,12 +1320,17 @@ def _attach_sleeper_ids(rows, id_field="player_id"):
             r["sleeper_id"] = sid
             continue
         r["sleeper_id"] = None
-        if identity is not None and r.get("player"):
-            try:
+        if identity is None:
+            continue
+        gsis_id = sid if isinstance(sid, str) and "-" in sid else None
+        try:
+            if gsis_id:
+                r["sleeper_id"] = identity.resolve("nflref", gsis_id=gsis_id)
+            if not r["sleeper_id"] and r.get("player"):
                 r["sleeper_id"] = identity.resolve(
                     "nflref", name=r["player"], position=r.get("position"))
-            except Exception:
-                pass
+        except Exception:
+            pass
     return rows
 
 
