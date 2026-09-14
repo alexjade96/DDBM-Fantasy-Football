@@ -25,11 +25,19 @@ class Example:
     source: str  # which dataset this came from, for per-source reporting
 
 
-def load_football_news(split: str = "test") -> list[Example]:
+def load_football_news(split: str = "original") -> list[Example]:
     """james-kramer/football_news from Hugging Face -- binary pos/neg football
     news sentiment. Requires network on first call (datasets library caches
     it locally after that). Returns [] if the dataset can't be reached, so a
     benchmark run degrades to hand_labeled.csv alone rather than crashing.
+
+    The dataset has two splits, not the "train/test" shape its own name
+    suggests: "original" (100 real news rows) and "augmented" (1000 rows,
+    paraphrase/back-translation noise added to the same base examples --
+    verified by inspection, e.g. "questionable for return" becomes
+    "confutable for render" in the augmented text). Default to "original"
+    since scoring against synthetically garbled text would not answer
+    "does this model read real football news correctly."
     """
     try:
         from datasets import load_dataset
