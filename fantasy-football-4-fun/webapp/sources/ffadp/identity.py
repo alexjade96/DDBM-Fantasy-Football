@@ -141,14 +141,19 @@ def _build() -> dict:
             by_espn[str(e)] = str(pid)
         if y:
             by_yahoo[str(y)] = str(pid)
+        # ~22% of Sleeper's own gsis_id values carry a stray leading space
+        # (verified: 866/3893 non-null values in a live dump) -- strip
+        # before indexing, or a clean id from nflverse (which has none)
+        # never matches the majority of Sleeper's own rows.
+        g = str(g).strip() if g else None
         if g:
             # A handful of gsis_id values collide across Sleeper's dump (its
             # own "Duplicate Player" stubs, and at least one genuine mix-up).
             # Prefer whichever row has a real team over a team-less stub, so
             # an active, currently-rostered player wins the slot.
-            existing = by_gsis.get(str(g))
+            existing = by_gsis.get(g)
             if existing is None or (not meta.get(existing, {}).get("team") and team):
-                by_gsis[str(g)] = str(pid)
+                by_gsis[g] = str(pid)
         if name:
             by_name.setdefault(f"{_norm(name)}|{(pos or '').upper()}", str(pid))
     return {"espn": by_espn, "yahoo": by_yahoo, "gsis": by_gsis, "name": by_name,
@@ -176,8 +181,8 @@ def resolve(source: str, *, espn_id=None, yahoo_id=None, gsis_id=None,
         return ix["espn"][str(espn_id)]
     if yahoo_id and str(yahoo_id) in ix["yahoo"]:
         return ix["yahoo"][str(yahoo_id)]
-    if gsis_id and str(gsis_id) in ix["gsis"]:
-        return ix["gsis"][str(gsis_id)]
+    if gsis_id and str(gsis_id).strip() in ix["gsis"]:
+        return ix["gsis"][str(gsis_id).strip()]
     if name:
         return ix["name"].get(f"{_norm(name)}|{(position or '').upper()}")
     return None

@@ -26,6 +26,19 @@ def test_identity_resolves_by_cross_id(monkeypatch):
     identity.reset()
 
 
+def test_identity_gsis_id_strips_stray_leading_space(monkeypatch):
+    # ~22% of Sleeper's own gsis_id values carry a stray leading space
+    # (verified live, 866/3893 non-null values) -- a clean gsis_id from
+    # nflverse (which has none) must still match Sleeper's padded ones.
+    identity.reset()
+    monkeypatch.setattr(identity, "_raw_players", lambda: {
+        "100": {"full_name": "Justice Hill", "position": "RB", "team": "BAL",
+                "gsis_id": " 00-0034975"},
+    })
+    assert identity.resolve("nflref", gsis_id="00-0034975") == "100"
+    identity.reset()
+
+
 def test_identity_gsis_collision_prefers_real_team(monkeypatch):
     # Sleeper's dump has a handful of gsis_id collisions (its own "Duplicate
     # Player" stubs, and at least one real mix-up) -- the resolver should
