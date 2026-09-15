@@ -68,7 +68,7 @@
             {% for p in m.picks %}
             <tr>
               <td class="n">{{ p.pick }}</td>
-              <td>{{ idm.headshot(p.player_id) }}{{ p.player_name }}
+              <td>{{ idm.headshot(p.player_id, link=True) }}{{ idm.player_link(p.player_id, p.player_name) }}
                   {%- if p.position %} <span class="q">{{ p.position }}</span>{% endif -%}</td>
               <td class="n">{% if p.consensus is not none %}#{{ "%.1f"|format(p.consensus) }}{% else %}&ndash;{% endif %}</td>
               <td class="n">

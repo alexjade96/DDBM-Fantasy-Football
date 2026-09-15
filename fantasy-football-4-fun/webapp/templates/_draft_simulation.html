@@ -170,7 +170,7 @@
           <tbody>
           {% for p in roster %}
             <tr{% if p.kept %} class="cmp-up"{% endif %}>
-              <td data-sort="{{ p.player_name }}">{{ idm.headshot(p.player_id) }}<strong>{{ p.player_name }}</strong>
+              <td data-sort="{{ p.player_name }}">{{ idm.headshot(p.player_id, link=True) }}<strong>{{ idm.player_link(p.player_id, p.player_name) }}</strong>
                   <span class="q posrank">{{ p.position }}{% if p.pos_rank %} #{{ p.pos_rank }}{% endif %}</span></td>
               <td class="n">{{ "%.0f"|format(p.total) }}</td>
               <td class="q">{{ p.orig_pick if p.orig_pick else "undrafted" }}</td>

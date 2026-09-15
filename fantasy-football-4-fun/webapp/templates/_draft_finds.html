@@ -109,7 +109,7 @@
         {% for r in all_players %}
           <tr data-pos="{{ r.position }}">
             <td data-sort="{{ '%07d'|format(r.pick_no) }}">{{ r.pick }}</td>
-            <td data-sort="{{ r.player_name }}">{{ idm.headshot(r.player_id) }}{{ r.player_name }}
+            <td data-sort="{{ r.player_name }}">{{ idm.headshot(r.player_id, link=True) }}{{ idm.player_link(r.player_id, r.player_name) }}
                 {% if r.pos_rank %}<span class="q">{{ r.position }} #{{ r.pos_rank }}</span>{% else %}<span class="q">{{ r.position or "N/A" }}</span>{% endif %}</td>
             <td class="n" data-sort="{{ posrank_sort(r.position, r.pos_pick_rank) }}">{{ r.position }} #{{ r.pos_pick_rank }}</td>
             <td class="n" data-sort="{{ posrank_sort(r.position, r.pos_rank) }}">{% if r.pos_rank %}{{ r.position }} #{{ r.pos_rank }}{% else %}N/A{% endif %}</td>
@@ -153,7 +153,7 @@
         {% for r in drafted %}
           <tr data-pos="{{ r.position }}">
             <td>{{ r.pick }}</td>
-            <td data-sort="{{ r.player_name }}">{{ idm.headshot(r.player_id) }}{{ r.player_name }}
+            <td data-sort="{{ r.player_name }}">{{ idm.headshot(r.player_id, link=True) }}{{ idm.player_link(r.player_id, r.player_name) }}
                 {% if r.pos_rank %}<span class="q">{{ r.position }} #{{ r.pos_rank }}</span>{% else %}<span class="q">{{ r.position }}</span>{% endif %}</td>
             <td class="n" data-sort="{{ posrank_sort(r.position, r.pos_pick_rank) }}">{{ r.position }} #{{ r.pos_pick_rank }}</td>
             <td class="n" data-sort="{{ posrank_sort(r.position, r.pos_rank) }}">{% if r.pos_rank %}{{ r.position }} #{{ r.pos_rank }}{% else %}N/A{% endif %}</td>
@@ -197,7 +197,7 @@
         {% for r in undrafted %}
           <tr data-pos="{{ r.position }}">
             <td>UDFA</td>
-            <td data-sort="{{ r.player_name }}">{{ idm.headshot(r.player_id) }}{{ r.player_name }}
+            <td data-sort="{{ r.player_name }}">{{ idm.headshot(r.player_id, link=True) }}{{ idm.player_link(r.player_id, r.player_name) }}
                 {% if r.pos_rank %}<span class="q">{{ r.position }} #{{ r.pos_rank }}</span>{% else %}<span class="q">{{ r.position or "N/A" }}</span>{% endif %}</td>
             <td class="n" data-sort="{{ posrank_sort(r.position, r.pos_pick_rank) }}">{{ r.position }} #{{ r.pos_pick_rank }}</td>
             <td class="n" data-sort="{{ posrank_sort(r.position, r.pos_rank) }}">{% if r.pos_rank %}{{ r.position }} #{{ r.pos_rank }}{% else %}N/A{% endif %}</td>
@@ -241,7 +241,7 @@
       {% for r in gems %}
         <tr data-pos="{{ r.position }}">
           <td data-sort="{{ '%07d'|format(r.pick_no) }}">{{ r.pick }}</td>
-          <td data-sort="{{ r.player_name }}">{{ idm.headshot(r.player_id) }}{{ r.player_name }}
+          <td data-sort="{{ r.player_name }}">{{ idm.headshot(r.player_id, link=True) }}{{ idm.player_link(r.player_id, r.player_name) }}
               {% if r.pos_rank %}<span class="q">{{ r.position }} #{{ r.pos_rank }}</span>{% else %}<span class="q">{{ r.position }}</span>{% endif %}</td>
           <td class="n" data-sort="{{ posrank_sort(r.position, r.pos_pick_rank) }}">{{ r.position }} #{{ r.pos_pick_rank }}</td>
           <td class="n" data-sort="{{ posrank_sort(r.position, r.pos_rank) }}">{% if r.pos_rank %}{{ r.position }} #{{ r.pos_rank }}{% else %}N/A{% endif %}</td>
@@ -285,7 +285,7 @@
       {% for r in busts %}
         <tr data-pos="{{ r.position }}">
           <td data-sort="{{ '%07d'|format(r.pick_no) }}">{{ r.pick }}</td>
-          <td data-sort="{{ r.player_name }}">{{ idm.headshot(r.player_id) }}{{ r.player_name }}
+          <td data-sort="{{ r.player_name }}">{{ idm.headshot(r.player_id, link=True) }}{{ idm.player_link(r.player_id, r.player_name) }}
               {% if r.pos_rank %}<span class="q">{{ r.position }} #{{ r.pos_rank }}</span>{% else %}<span class="q">{{ r.position }}</span>{% endif %}</td>
           <td class="n" data-sort="{{ posrank_sort(r.position, r.pos_pick_rank) }}">{{ r.position }} #{{ r.pos_pick_rank }}</td>
           <td class="n" data-sort="{{ posrank_sort(r.position, r.pos_rank) }}">{% if r.pos_rank %}{{ r.position }} #{{ r.pos_rank }}{% else %}N/A{% endif %}</td>
