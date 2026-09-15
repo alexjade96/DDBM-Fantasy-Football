@@ -702,6 +702,15 @@ td.mono { font-size: 12px; color: var(--muted); word-break: break-all; }
 .reportpanel > h2 + * { margin-top: 10px; }
 .reportpanel .eyebrow { text-transform: uppercase; letter-spacing: .12em; font-size: 11px;
   font-weight: 700; color: var(--turf); margin: 0; }
+/* A player-profile-only nav link back to wherever linked here (see
+   player_profile.html); sits above .eyebrow, so the generic
+   ".reportpanel > * + *" child-spacing rule would otherwise push .eyebrow
+   down by its full 22px -- tightened here since "Back" and the eyebrow
+   label read as one header block, not two separate sections. */
+.reportpanel .back-link { display: inline-block; font-size: 13px; font-weight: 600;
+  color: var(--turf); text-decoration: none; }
+.reportpanel .back-link:hover { text-decoration: underline; }
+.reportpanel .back-link + .eyebrow { margin-top: 8px; }
 /* The report's own title keeps natural case (the site's h2 is an uppercase
    section label; a manager's name shouldn't be shouted). */
 .reportpanel .rtitle { font-size: clamp(22px, 3vw, 30px); margin: 2px 0 0;

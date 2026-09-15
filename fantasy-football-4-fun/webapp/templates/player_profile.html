@@ -19,6 +19,14 @@
 <body>
 {% import "_ident.html" as idm with context %}
 <main class="reportpanel">
+  {# history.back() returns to whatever page/tab actually linked here (the
+     NFL Stats tab today, others later) without this page needing to know
+     or track where that was. The href is a same-effect fallback for a
+     no-JS agent or a directly-opened link (no history to go back to) --
+     the dashboard, scoped to this league/season if either is known. #}
+  <a class="back-link"
+     href="/dashboard{% if league %}?league={{ league }}{% if season %}&season={{ season }}{% endif %}{% endif %}"
+     onclick="if (document.referrer) { history.back(); return false; }">&larr; Back</a>
   <p class="eyebrow">Player profile</p>
   <h2 class="rtitle">
     {{ idm.headshot(player_id) }}
