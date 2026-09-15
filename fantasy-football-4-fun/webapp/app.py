@@ -1593,9 +1593,84 @@ def _real_scored_leg(s) -> int:
     """
     try:
         raw = sm.league(s.league_id) or {}
-        return int(raw.get("last_scored_leg") or 0)
+        # `last_scored_leg` lives under `settings`, not at the top level of
+        # the raw `/league/{id}` object (same shape `league_chain()` already
+        # reads correctly) -- reading it bare here always returned 0/None,
+        # which made every phase check below fall back to "preseason" the
+        # moment week 1 finished, before it ever reached the review-buffer
+        # check that reads this value.
+        return int((raw.get("settings") or {}).get("last_scored_leg") or 0)
     except Exception:
         return s.last_week
+
+
+def _format_review_cutoff(cutoff: "datetime.datetime | None") -> str:
+    """Human-readable form of a `_week_review_cutoff` result for the Overview
+    template, e.g. "Wednesday, Sep 16 at 12:00 AM ET" -- built here rather
+    than via `strftime`'s `%-d`/`%-I` (no leading-zero) flags directly in the
+    template, since those are glibc-only and raise on Windows. Empty string
+    (falsy in Jinja) when there's no cutoff to describe."""
+    if cutoff is None:
+        return ""
+    weekday = cutoff.strftime("%A")
+    month = cutoff.strftime("%b")
+    hour12 = cutoff.hour % 12 or 12
+    ampm = "AM" if cutoff.hour < 12 else "PM"
+    return f"{weekday}, {month} {cutoff.day} at {hour12}:{cutoff.minute:02d} {ampm} ET"
+
+
+_review_cutoff_cache: dict[str, "datetime.datetime | None"] = {}
+
+
+def _week_review_cutoff(s, week: int) -> "datetime.datetime | None":
+    """The real-world moment (US Eastern, tz-aware) before which the Overview
+    should keep showing `week` as "last completed" even though Sleeper's
+    `last_scored_leg` has already advanced past it -- gives users a couple of
+    days to look over the week's games instead of flipping the instant the
+    last stat correction lands (typically late Tue night / early Wed for a
+    Monday-night close). Returns `None` when no real game date resolves (no
+    schedule data for this week yet, offline, etc.) -- callers treat that as
+    "no buffer, flip immediately" rather than blocking forever.
+
+    Built from nflverse's own game schedule (`webapp.sources.nflref`,
+    already vendored for the NFL Stats tab) rather than a fixed weekday/time,
+    since a short week (Thursday finale, e.g.) should clear its buffer
+    sooner than a normal Monday-night week. `+2 days` past the week's LAST
+    game date, at local midnight ET, e.g. a Monday game clears Wednesday
+    00:00 ET -- "Wednesday morning at the earliest," never later than that
+    for a normal week, later still for a week with a Tuesday/Wednesday game.
+
+    Memoised per `(league_id, season, week)` (`_review_cutoff_cache`) since
+    the schedule only needs to be checked once per week, not once per
+    request; cleared implicitly by the process restarting (this is a small,
+    bounded dict -- one entry per week ever viewed live, not per request).
+    """
+    key = f"{s.league_id}:{s.season}:{week}"
+    if key in _review_cutoff_cache:
+        return _review_cutoff_cache[key]
+    cutoff = None
+    try:
+        import datetime
+        from zoneinfo import ZoneInfo
+
+        import pandas as pd
+        from webapp.sources import nflref
+
+        # `reload=True`: this only runs once per (league, season, week) so
+        # the extra live fetch is cheap, and a just-finished week's schedule
+        # row (final gameday) may not be in an older cached snapshot yet.
+        grid = nflref.schedule_grid(s.season, week=week, reload=True)
+        if not grid.empty and "gameday" in grid.columns:
+            days = pd.to_datetime(grid["gameday"], errors="coerce").dropna()
+            if len(days):
+                last_game = days.max().date()
+                cutoff = datetime.datetime.combine(
+                    last_game, datetime.time(0, 0), tzinfo=ZoneInfo("America/New_York"),
+                ) + datetime.timedelta(days=2)
+    except Exception:
+        cutoff = None
+    _review_cutoff_cache[key] = cutoff
+    return cutoff
 
 
 def _live_week_view(s, scored_leg: int | None = None) -> tuple[int, "sm.Season", int] | tuple[None, None, int]:
@@ -1802,28 +1877,26 @@ def _week_context(s, week: str | int | None = None,
     numbered range is empty, leaving only "Live"; the moment the week
     finishes scoring and `last_scored_leg` advances to 1, `numbered_max`
     follows and week 1's ordinary numbered slot appears with real, final
-    data. A bare request (`week=None`) in that same situation -- nothing
-    complete, only a live week -- opens on "live" rather than defaulting to a
-    now-nonexistent numbered slot.
+    data. A bare request (`week=None`) always opens on "live" whenever one
+    exists -- the tab's initial landing should be whatever's in progress
+    right now, not the last completed week (a viewer who wants that instead
+    just clicks its numbered rail button) -- and otherwise falls through to
+    the last completed week exactly as before.
     """
     live_wk, live_s, scored_leg = (_live_week_view(s) if allow_live else (None, None, s.last_week))
     numbered_max = scored_leg if allow_live else s.last_week
     lo = 0 if allow_zero else 1
     # An explicit "live", or one naming a week that isn't in the numbered
     # range at all (out of range, or the exact number a nonexistent floored
-    # slot would have been), lands on "live" -- but a BLANK request only does
-    # when there's no completed WEEK to default to either. Deliberately
-    # `numbered_max >= 1`, NOT `numbered_max >= lo`: `lo` is 0 whenever the
-    # Pre-season/draft slot is offered (allow_zero=True), and that slot is
-    # NOT a completed week -- checking against `lo` let a bare request with a
-    # draft board present but nothing yet scored fall through to
-    # `_resolve_week`, which defaults to `s.last_week` (floored to >= 1 even
-    # with nothing complete, season.py) and rendered week 1 as if it were
-    # done. A blank request WITH a real completed week on the board must
-    # still default to the last completed one (numbered_max), same as
-    # always -- not jump to "live" just because a live week also exists.
+    # slot would have been), lands on "live". A BLANK request now ALSO lands
+    # on "live" whenever one exists -- the tab's own initial landing should
+    # be whatever's happening RIGHT NOW, same as the Overview's live section
+    # already leads with it; a viewer who wants the last completed week
+    # instead just clicks its own numbered rail button. This only matters
+    # when `allow_live` even produced a `live_wk` below -- with no live week,
+    # `wants_numbered` still governs a bare request the same as before.
     if week in (None, ""):
-        wants_numbered = numbered_max >= 1
+        wants_numbered = False
     elif week == "live":
         wants_numbered = False
     else:
@@ -2494,6 +2567,34 @@ def _season_phase(s, d: dict, key: str) -> dict:
             has_draft = False
         return {"phase": "preseason" if has_draft else "regular", "last_week": 0,
                 "scored_leg": scored_leg}
+    # Give users a couple of days to look over a week before the Overview's
+    # "last completed week" section flips to it: Sleeper marks a week fully
+    # scored (`last_scored_leg` advances) as soon as the final stat
+    # correction lands, often late Monday night/Tuesday -- flipping the
+    # instant that happens leaves no window to actually read the week that
+    # just ended. `_week_review_cutoff` resolves the real NFL schedule's
+    # last game date for `scored_leg` and adds a buffer (see its docstring);
+    # while still short of that moment, show the PRIOR week instead (its own
+    # cutoff, if any, has necessarily already passed). A cutoff that fails
+    # to resolve (no schedule data, offline) means "no buffer" -- flip
+    # immediately, same as before this change, rather than blocking forever.
+    import datetime
+
+    cutoff = _week_review_cutoff(s, scored_leg)
+    if cutoff is not None and datetime.datetime.now(cutoff.tzinfo) < cutoff:
+        display_leg = max(scored_leg - 1, 0)
+        if display_leg == 0:
+            # Week 1 itself is still inside its own review buffer -- there is
+            # no PRIOR completed week to fall back to. This is NOT preseason
+            # (the draft-rosters copy explicitly claims "no week has been
+            # played yet", which would be false here) -- it stays "regular"
+            # with `last_week: 0` but carries `reviewing_week`/`review_cutoff`
+            # so the template can say what's actually true: the week finished,
+            # the full review opens at the cutoff.
+            return {"phase": "regular", "last_week": 0, "scored_leg": scored_leg,
+                    "reviewing_week": scored_leg, "review_cutoff": cutoff}
+        return {"phase": "regular", "last_week": display_leg, "scored_leg": scored_leg,
+                "reviewing_week": scored_leg, "review_cutoff": cutoff}
     return {"phase": "regular", "last_week": scored_leg, "scored_leg": scored_leg}
 
 
@@ -3065,11 +3166,34 @@ def tab(name: str, request: Request, league: str = DEFAULT_LEAGUE,
             ctx["charts"] = []
             return _pushed(
                 tpl.TemplateResponse(request, "tab_overview.html", ctx), ctx, name)
+        # `phase["last_week"] == 0` only happens when EITHER nothing has
+        # scored yet (handled above, "preseason") OR week 1 itself is still
+        # inside its own review buffer with no PRIOR completed week to fall
+        # back to (see _week_review_cutoff) -- in that second case there is
+        # still a real, finished week to show: `reviewing_week` names it, so
+        # lead with IT instead of an empty week 0. `reviewing_only` marks
+        # that this section IS the reviewing week itself (no separate prior
+        # week exists), which the template uses to swap "Latest week"/"What
+        # happened last week" for "Week N is in the books" -- the buffer only
+        # holds back that FRAMING, not the tiles/charts themselves.
+        lead_week = phase.get("last_week") or 0
+        ctx["reviewing_only"] = False
+        if lead_week == 0 and phase.get("reviewing_week"):
+            lead_week = phase["reviewing_week"]
+            ctx["reviewing_only"] = True
         # Lead with the last COMPLETED week (phase["last_week"], not
         # Season.last_week which is forced to >= 1 and lags a live week) -- its
         # metrics, scoreboard and the two week-analytics charts -- then restate
         # the season-to-date metrics below. Same computation the Weekly tab uses.
-        ctx.update(_week_context(s, phase.get("last_week")))
+        ctx.update(_week_context(s, lead_week))
+        # A newer week has already finished on Sleeper's side but is still
+        # inside its own review buffer -- surface it as a small note under the
+        # section heading rather than silently holding the page back with no
+        # explanation. When `reviewing_only` is set, `reviewing_week` IS the
+        # week just shown above (not a later, still-pending one), so the
+        # template's "Week N has since finished too" note must not also fire.
+        ctx["reviewing_week"] = None if ctx["reviewing_only"] else phase.get("reviewing_week")
+        ctx["review_cutoff"] = _format_review_cutoff(phase.get("review_cutoff"))
         # The section built above is always a FINISHED week (phase["last_week"]
         # has a real score on the board), so `live` (which _week_context sets
         # from `s.in_progress`) would badge an already-scored week as "Live" --
@@ -3161,12 +3285,16 @@ def tab(name: str, request: Request, league: str = DEFAULT_LEAGUE,
                 games, champ_tile, tail=_cons_tail, include_margins=False,
                 game_round=_rounds_of(phase["title_rounds"]))
         else:
-            ctx["overview_tiles"] = [
-                ("Highest score", ctx["kpi_top"], "gold"),
-                ("Biggest blowout", ctx["kpi_blow"], ""),
-                ("Closest game", ctx["kpi_close"], ""),
-                ("Most points benched", ctx["kpi_bench"], ""),
-            ]
+            # No tiles here for a plain completed week -- the "Regular
+            # season: through week N" section right below already carries
+            # its own insight tiles (the record, coaching, luck, points
+            # allowed, consistency, schedule) covering the same ground; a
+            # second, narrower set of week-only superlatives right above it
+            # was redundant. `kpi_top`/`kpi_blow`/`kpi_close`/`kpi_bench`
+            # (still computed by `_week_context` above) are untouched -- the
+            # standalone weekly report (weekly_report.html) still uses them
+            # directly.
+            ctx["overview_tiles"] = []
             if ctx["phase"] == "complete":
                 ctx["champion"] = phase.get("champion")
         return _pushed(tpl.TemplateResponse(request, "tab_overview.html", ctx), ctx, name)
@@ -3186,19 +3314,21 @@ def tab(name: str, request: Request, league: str = DEFAULT_LEAGUE,
         # the draft instead of a scored-week scoreboard.
         board = draft.draft_board(s)
         has_draft = not board.empty
-        # With no week yet scored, "the latest week" IS the draft: default the
-        # Weekly tab to week 0 (the pre-season view) rather than an all-zero
-        # week 1 scoreboard, the same way the Overview leads with the draft in
-        # that phase. An explicit ?week=N is still honoured.
+        # With no week yet scored AND nothing currently live either, "the
+        # latest week" IS the draft: default the Weekly tab to week 0 (the
+        # pre-season view) rather than an all-zero week 1 scoreboard, the
+        # same way the Overview leads with the draft in that phase. If week 1
+        # HAS kicked off (a live week exists), leave `week` alone so the bare
+        # request below lands on "live" instead -- "the latest/in-progress
+        # week" is the actual games happening right now, not the draft, once
+        # they've started. An explicit ?week=N is still honoured either way.
         if week in (None, "") and has_draft and not _has_scored_data(s):
-            week = 0
-        # A bare open of this tab still defaults to the last COMPLETED week
-        # whenever one exists -- a viewer who wants the in-progress week
-        # clicks its "Live" rail entry (?week=live), same as picking any
-        # other week. It's ONLY the default when there is no completed week
-        # at all yet (see _week_context's `numbered_max`/`wants_numbered`):
-        # otherwise a blank request would land on week 1 while it's still
-        # being played and show it as final, which is the bug this guards.
+            live_wk, _live_s, _scored_leg = _live_week_view(s)
+            if live_wk is None:
+                week = 0
+        # A bare open of this tab defaults to the live/in-progress week
+        # whenever one exists -- see _week_context's own docstring -- and
+        # otherwise to the last COMPLETED week, same as always.
         ctx.update(_week_context(s, week, allow_zero=has_draft, allow_live=True))
         ctx["preseason"] = ctx["week"] == 0
         ctx["is_live_week"] = ctx["week"] == "live"
@@ -4442,6 +4572,51 @@ def report(league: str = DEFAULT_LEAGUE, season: str | None = None,
         f'<a class="mdl" href="{dl}">&#8595; Download</a></nav>')
     # Inject at the top of the flow so `position:sticky` anchors to the viewport.
     return HTMLResponse(doc.replace('<div class="wrap">', bar + '<div class="wrap">', 1))
+
+
+# --- player profile ---------------------------------------------------------
+@app.get("/player/{player_id}", response_class=HTMLResponse)
+def player_page(request: Request, player_id: str, league: str | None = None,
+                season: str | None = None, refresh: int = 0, theme: str = "light"):
+    """A single player's profile: real-NFL history + (when a league is
+    given) this league's own draft/roster/trade/waiver history for them.
+
+    `league` is genuinely OPTIONAL, unlike every other page route in this
+    app -- the first link target (the NFL Stats tab) is itself
+    league-agnostic, so a click from there has no league to carry. When
+    `league` IS given, `player_profile.player_profile()` adds the
+    league-scoped section on top of the same real-NFL data.
+
+    `player_profile()` caches its own result (a cold call is expensive --
+    see that module's docstring), so `refresh=1` is threaded through as
+    `fresh=True` to force a rebuild, same convention `pick(..., fresh=)`
+    already uses for league_data().
+    """
+    from webapp import player_profile as pp
+
+    resolved_league = None
+    league_name = None
+    if league:
+        try:
+            d, s, season = pick(league, season)
+            resolved_league = d.get("resolved_league_id", league)
+            league_name = s.name
+        except Exception:
+            resolved_league = None
+
+    profile = pp.player_profile(player_id, league_id=resolved_league,
+                                fresh=bool(refresh))
+    ident = profile["identity"]
+    ctx = {
+        "league": resolved_league, "season": season, "theme": theme,
+        "asset_v": asset_v(), "player_id": player_id,
+        "identity": ident, "league_name": league_name,
+        "seasons_covered": profile["seasons_covered"],
+        "real_nfl": profile["real_nfl"], "adp_history": profile["adp_history"],
+        "league_history": profile["league"],
+        "avatars": {},   # _ident.html reads it; no manager avatars on this page
+    }
+    return tpl.TemplateResponse(request, "player_profile.html", ctx)
 
 
 # --- custom playoff brackets ----------------------------------------------

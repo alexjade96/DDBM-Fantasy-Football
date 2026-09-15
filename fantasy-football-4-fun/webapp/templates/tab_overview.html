@@ -122,22 +122,45 @@
 {% endif %}
 <div class="rowhead">
   <h2>
-    {% if live_week %}What happened last week{% else %}Latest week{% endif %}: Week {{ week }}
+    {% if reviewing_only %}Week {{ week }} is in the books
+    {% elif live_week %}What happened last week: Week {{ week }}
+    {% else %}Latest week: Week {{ week }}{% endif %}
   </h2>
   <div class="rowhead-actions">
     {# Activate the Weekly nav button so the full drill-down opens and the tab
        strip tracks it -- a bare panel swap would leave Overview highlighted. #}
     <button type="button" class="ghost"
             onclick="[...document.querySelectorAll('.tabs button')].find(b=>b.getAttribute('hx-get')==='/tab/weekly').click()">
-      Latest week &rarr;</button>
+      {{ "See it on Weekly" if reviewing_only else "Latest week" }} &rarr;</button>
   </div>
 </div>
+{% if reviewing_only %}
+{# This IS the reviewing week itself (no prior completed week exists to lead
+   with instead) -- the graphics/tiles below are real, already-final numbers
+   for week {{ week }}; only the "Latest week" FRAMING is held back (see
+   _week_review_cutoff in app.py), not the content. #}
+<p class="hint">Week {{ week }}&rsquo;s games are final -- headline numbers and
+  charts below. It joins the normal "Latest week" framing
+  {{ "at " ~ review_cutoff if review_cutoff else "shortly" }}, once everyone&rsquo;s
+  had a chance to look it over; the full breakdown is already up on the
+  <em>Weekly</em> tab.</p>
+{% else %}
 <p class="hint">The most recent week played. Headline numbers, then the games as a
   picture and how the result compares to what the numbers alone would say.
   Full week analysis -- both lineups, the bench, and the single legal
-  same-position swap that cost the most -- is on the <em>Weekly</em> tab.</p>
+  same-position swap that cost the most -- is on the <em>Weekly</em> tab.
+  {%- if reviewing_week %} Week {{ reviewing_week }} has since finished too;
+  it joins this section {{ "at " ~ review_cutoff if review_cutoff else "shortly" }}.
+  {%- endif %}</p>
+{% endif %}
 {% endif %}
 
+{% if overview_tiles %}
+{# A plain completed regular-season week carries no tiles here -- see
+   app.py's `overview_tiles` build: the "Regular season" section below
+   already has its own insight tiles covering this same ground. Playoffs and
+   season-complete tiles (champion, consolation bracket, etc.) still render;
+   only the empty-list case (a bare completed week) skips this section. #}
 <section class="stats">
   {% for label, kpi, cls in overview_tiles %}
   <div class="stat {{ cls }}">
@@ -146,6 +169,7 @@
   </div>
   {% endfor %}
 </section>
+{% endif %}
 
 {% if phase == "playoffs" %}
 {{ ch.chart("bracket", bracket=bracket, alt="Playoff bracket") }}
@@ -162,11 +186,21 @@
 {% endif %}
 {% else %}
 {# The completed week's own verdict: the matchups picture and the luck read
-   (was the result deserved?). No scoreboard drilldown here any more -- that
-   per-game lineup/bench/swap detail lives on the Weekly tab (linked above);
-   this section is headline numbers + charts only, not the games in full. #}
-{{ ch.chart("week_matchups", week=week, alt="Week " ~ week ~ " matchups") }}
-{{ ch.chart("week_luck", week=week, alt="Week " ~ week ~ " luck") }}
+   (was the result deserved?), side by side -- `wide=false` on week_matchups
+   overrides its own CHART_META default (wide when shown alone elsewhere) so
+   it fits a two-up `.grid` row here instead of spanning the full width. No
+   scoreboard drilldown here any more -- that per-game lineup/bench/swap
+   detail lives on the Weekly tab (linked above); this section is headline
+   numbers + charts only, not the games in full. #}
+<div class="grid two">
+  {{ ch.chart("week_matchups", week=week, alt="Week " ~ week ~ " matchups", wide=false) }}
+  {{ ch.chart("week_luck", week=week, alt="Week " ~ week ~ " luck") }}
+</div>
+{# Best of the Week (Team of the Week vs. the best free-agent lineup) for
+   this same completed week -- same lazy part the Weekly tab uses
+   (@tab_part("weekly", "best")), reused as-is rather than duplicated: it
+   only needs `week`, which this section already resolved above. #}
+{{ lz.lazy("/tab/weekly/part/best?league=" ~ league|urlencode ~ "&season=" ~ season|urlencode ~ "&theme=" ~ theme ~ "&week=" ~ week, height="260px") }}
 {% endif %}
 
 {# ---- Season to date --------------------------------------------------------

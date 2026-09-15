@@ -638,7 +638,7 @@ def test_season_phase_preseason_when_drafted_but_nothing_scored(monkeypatch):
     s = make_season()
     monkeypatch.setattr(s, "status", "in_season", raising=False)
     monkeypatch.setattr(app.sm, "consolation_bracket", lambda *a, **k: {})
-    monkeypatch.setattr(app.sm, "league", lambda lid: {"last_scored_leg": 0})
+    monkeypatch.setattr(app.sm, "league", lambda lid: {"settings": {"last_scored_leg": 0}})
     monkeypatch.setattr(app.draft, "draft_board",
                         lambda *a, **k: pd.DataFrame({"player_id": ["1"]}))
     ph = app._season_phase(s, {"playoffs": {}}, "2025")
@@ -664,7 +664,7 @@ def test_season_phase_preseason_stays_preseason_with_a_live_week_in_progress(mon
     monkeypatch.setattr(app.sm, "consolation_bracket", lambda *a, **k: {})
     # last_scored_leg is still 0 -- Sleeper hasn't marked anything finished,
     # regardless of what team_wk's own points look like.
-    monkeypatch.setattr(app.sm, "league", lambda lid: {"last_scored_leg": 0})
+    monkeypatch.setattr(app.sm, "league", lambda lid: {"settings": {"last_scored_leg": 0}})
     monkeypatch.setattr(app.draft, "draft_board",
                         lambda *a, **k: pd.DataFrame({"player_id": ["1"]}))
     ph = app._season_phase(s, {"playoffs": {}}, "2025")
@@ -680,10 +680,261 @@ def test_season_phase_regular_leads_with_last_completed_week(monkeypatch):
     s = make_season()  # last_week = 2
     monkeypatch.setattr(s, "status", "in_season", raising=False)
     monkeypatch.setattr(app.sm, "consolation_bracket", lambda *a, **k: {})
-    monkeypatch.setattr(app.sm, "league", lambda lid: {"last_scored_leg": 1})
+    monkeypatch.setattr(app.sm, "league", lambda lid: {"settings": {"last_scored_leg": 1}})
+    # Past the review buffer -- the plain "flip immediately" behavior.
+    monkeypatch.setattr(app, "_week_review_cutoff", lambda s_, wk: None)
     ph = app._season_phase(s, {"playoffs": {}}, "2025")
     assert ph["phase"] == "regular" and ph["last_week"] == 1
     assert ph["scored_leg"] == 1
+
+
+def test_season_phase_holds_prior_week_inside_the_review_buffer(monkeypatch):
+    """The Overview must not flip to a newly-scored week the instant Sleeper's
+    `last_scored_leg` advances -- see `_week_review_cutoff`. While still short
+    of that week's cutoff, `last_week` stays clamped to the PRIOR week even
+    though `scored_leg` (used for live-week detection) reports the real,
+    advanced value."""
+    import datetime
+    from webapp import app
+
+    s = make_season()  # last_week = 2
+    monkeypatch.setattr(s, "status", "in_season", raising=False)
+    monkeypatch.setattr(app.sm, "consolation_bracket", lambda *a, **k: {})
+    monkeypatch.setattr(app.sm, "league", lambda lid: {"settings": {"last_scored_leg": 2}})
+    future = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(days=1)
+    monkeypatch.setattr(app, "_week_review_cutoff", lambda s_, wk: future)
+    ph = app._season_phase(s, {"playoffs": {}}, "2025")
+    assert ph["phase"] == "regular" and ph["last_week"] == 1
+    assert ph["scored_leg"] == 2       # unclamped -- live-week detection unaffected
+    # The still-buffered week is surfaced too, not silently dropped, so the
+    # Overview can note "week 2 joins this section on <cutoff>".
+    assert ph["reviewing_week"] == 2 and ph["review_cutoff"] == future
+
+    # Once past the cutoff, it flips to the real scored_leg.
+    past = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=1)
+    monkeypatch.setattr(app, "_week_review_cutoff", lambda s_, wk: past)
+    ph = app._season_phase(s, {"playoffs": {}}, "2025")
+    assert ph["phase"] == "regular" and ph["last_week"] == 2
+    assert ph["scored_leg"] == 2
+    assert "reviewing_week" not in ph
+
+
+def test_season_phase_review_buffer_holds_week_one_without_faking_preseason(monkeypatch):
+    """If week 1 itself is still inside its review buffer, there is no PRIOR
+    completed week to fall back to -- `last_week` clamps to 0, but the phase
+    stays "regular" (NOT "preseason": that copy claims "no week has been
+    played yet", which would be false here -- week 1 is genuinely done, it's
+    just being held back). `reviewing_week`/`review_cutoff` carry what the
+    template needs to say that plainly instead."""
+    import datetime
+    from webapp import app
+
+    s = make_season()
+    monkeypatch.setattr(s, "status", "in_season", raising=False)
+    monkeypatch.setattr(app.sm, "consolation_bracket", lambda *a, **k: {})
+    monkeypatch.setattr(app.sm, "league", lambda lid: {"settings": {"last_scored_leg": 1}})
+    future = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(days=1)
+    monkeypatch.setattr(app, "_week_review_cutoff", lambda s_, wk: future)
+    # A draft board existing must NOT flip this to "preseason" either -- the
+    # buffer clamp is unconditional on phase, not gated by has_draft.
+    monkeypatch.setattr(app.draft, "draft_board",
+                        lambda *a, **k: pd.DataFrame({"player_id": ["1"]}))
+    ph = app._season_phase(s, {"playoffs": {}}, "2025")
+    assert ph["phase"] == "regular" and ph["last_week"] == 0
+    assert ph["scored_leg"] == 1
+    assert ph["reviewing_week"] == 1
+    assert ph["review_cutoff"] == future
+
+
+def test_week_review_cutoff_two_days_after_last_game_et(monkeypatch):
+    """`_week_review_cutoff` reads the real NFL schedule's last game date for
+    the week and adds a 2-day buffer at ET midnight -- e.g. a Monday-night
+    close (game date 2026-09-14) clears Wednesday 2026-09-16 00:00 ET."""
+    import datetime
+    from webapp import app
+
+    import webapp.sources.nflref as nflref
+
+    s = make_season()
+    grid = pd.DataFrame({"gameday": ["2026-09-10", "2026-09-13", "2026-09-14"]})
+    monkeypatch.setattr(nflref, "schedule_grid", lambda *a, **k: grid)
+
+    cutoff = app._week_review_cutoff(s, 1)
+    assert cutoff is not None
+    assert cutoff.tzinfo is not None
+    # 2026-09-14 (Monday) + 2 days = 2026-09-16 00:00 ET.
+    assert cutoff.date() == datetime.date(2026, 9, 16)
+    assert (cutoff.hour, cutoff.minute) == (0, 0)
+
+    # Memoised -- a second call for the same (league, season, week) must not
+    # hit `schedule_grid` again.
+    monkeypatch.setattr(nflref, "schedule_grid",
+                        lambda *a, **k: (_ for _ in ()).throw(AssertionError()))
+    assert app._week_review_cutoff(s, 1) == cutoff
+
+
+def test_week_review_cutoff_none_when_schedule_unresolved(monkeypatch):
+    """No schedule data (offline, unbackfilled season) degrades to `None` --
+    callers treat that as "no buffer, flip immediately" rather than blocking."""
+    from webapp import app
+    import webapp.sources.nflref as nflref
+
+    s = make_season(season="2099")  # distinct key so the memo cache is fresh
+    monkeypatch.setattr(nflref, "schedule_grid", lambda *a, **k: pd.DataFrame())
+    assert app._week_review_cutoff(s, 1) is None
+
+
+class _Req:
+    """Minimal stand-in for starlette's Request -- TemplateResponse only
+    needs `.scope` / attribute access (same helper test_player_page.py uses)."""
+    scope = {"type": "http"}
+    headers = {}
+
+    def __getattr__(self, _):
+        return None
+
+
+def _mock_pick(monkeypatch, s, key="2025"):
+    """`tab()` resolves the league/season via `pick()`, which hits real
+    Sleeper endpoints -- stub it to hand back a fixture `Season` directly, the
+    same `app.pick` mock `test_player_page.py` uses for the analogous route."""
+    from webapp import app
+
+    d = {"playoffs": {}, "names": [key], "seasons": {key: s}}
+    monkeypatch.setattr(app, "pick", lambda league, season, fresh=False: (d, s, key))
+
+
+def test_overview_reviewing_only_week_shows_real_tiles_and_charts(monkeypatch):
+    """The bug this fixes: when week 1 is still inside its own review buffer
+    and there's no PRIOR completed week to fall back to, the Overview used to
+    render a bare note ("review opens soon") with no data -- just a redirect
+    button to the Weekly tab. It must instead show the SAME week charts a
+    normal completed week gets, just with the "Week N is in the books"
+    framing instead of "Latest week" (see the route's `reviewing_only` branch
+    in app.py). No headline tiles either way -- see
+    test_overview_completed_week_has_no_standalone_tiles for why."""
+    from webapp import app
+
+    s = make_season()
+    monkeypatch.setattr(s, "status", "in_season", raising=False)
+    _mock_pick(monkeypatch, s)
+    monkeypatch.setattr(app, "_season_phase", lambda s_, d, key: {
+        "phase": "regular", "last_week": 0, "scored_leg": 1,
+        "reviewing_week": 1, "review_cutoff": None,
+    })
+    monkeypatch.setattr(app, "_live_week_ctx", lambda s_, scored_leg=None: None)
+    monkeypatch.setattr(app, "_format_review_cutoff", lambda c: "Wednesday, Sep 16 at 12:00 AM ET")
+
+    resp = app.tab("overview", _Req(), league="123", season="2025", boot=1)
+    body = resp.body.decode()
+
+    assert "Week 1 is in the books" in body
+    # The two week-analytics chart images, same as a normal completed week.
+    assert "week_matchups" in body
+    assert "week_luck" in body
+    assert "Wednesday, Sep 16 at 12:00 AM ET" in body
+    # Wrong-week framing must NOT appear.
+    assert "Pre-season: the draft" not in body
+    assert "Latest week: Week 1" not in body
+
+
+def test_overview_completed_week_has_no_standalone_tiles(monkeypatch):
+    """A plain completed regular-season week shows no `overview_tiles` (no
+    Highest score / Biggest blowout / Closest game / Most points benched
+    tiles, and no empty `.stats` section) -- the "Regular season: through
+    week N" section right below already covers the same ground with its own
+    insight tiles, so a second set right above it was redundant."""
+    from webapp import app
+
+    s = make_season()  # last_week = 2
+    monkeypatch.setattr(s, "status", "in_season", raising=False)
+    _mock_pick(monkeypatch, s)
+    monkeypatch.setattr(app, "_season_phase", lambda s_, d, key: {
+        "phase": "regular", "last_week": 2, "scored_leg": 2,
+    })
+    monkeypatch.setattr(app, "_live_week_ctx", lambda s_, scored_leg=None: None)
+
+    resp = app.tab("overview", _Req(), league="123", season="2025", boot=1)
+    body = resp.body.decode()
+
+    # Only ONE `.stats` section: the "Regular season" insight-rows section
+    # further down -- not a second, redundant one above it for the week.
+    assert body.count('<section class="stats">') == 1
+    assert "Highest score" not in body
+    assert "Biggest blowout" not in body
+    assert "Most points benched" not in body
+
+
+def test_overview_completed_week_charts_paired_with_best_of_week(monkeypatch):
+    """The completed week's two charts (week_matchups/week_luck) sit side by
+    side in a `.grid.two` row instead of each spanning the full width --
+    `week_matchups` needs `wide=false` here since its CHART_META default is
+    wide (for when it's shown alone elsewhere). Best of the Week (Team of the
+    Week vs. best free-agent lineup) follows underneath, as a lazy part
+    reusing the Weekly tab's own @tab_part("weekly", "best") section rather
+    than a duplicate."""
+    from webapp import app
+
+    s = make_season()  # last_week = 2
+    monkeypatch.setattr(s, "status", "in_season", raising=False)
+    _mock_pick(monkeypatch, s)
+    monkeypatch.setattr(app, "_season_phase", lambda s_, d, key: {
+        "phase": "regular", "last_week": 2, "scored_leg": 2,
+    })
+    monkeypatch.setattr(app, "_live_week_ctx", lambda s_, scored_leg=None: None)
+
+    resp = app.tab("overview", _Req(), league="123", season="2025", boot=1)
+    body = resp.body.decode()
+
+    assert '<div class="grid two">' in body
+    # Both chart images inside that grid, week_matchups explicitly non-wide.
+    grid_start = body.index('<div class="grid two">')
+    grid_end = body.index("</div>", grid_start)
+    grid_block = body[grid_start:grid_end]
+    assert "/chart/week_matchups" in grid_block and "/chart/week_luck" in grid_block
+    assert 'class="card chart wide"' not in grid_block
+    # Best of the Week loads underneath, scoped to this same week (2).
+    assert "/tab/weekly/part/best" in body
+    assert "week=2" in body
+
+
+def test_overview_normal_week_keeps_latest_week_framing(monkeypatch):
+    """Regression guard: a normal completed week (no buffer in play) must
+    still say "Latest week", not "is in the books" -- the reviewing_only flag
+    must only fire for the specific no-prior-week buffered case."""
+    from webapp import app
+
+    s = make_season()  # last_week = 2
+    monkeypatch.setattr(s, "status", "in_season", raising=False)
+    _mock_pick(monkeypatch, s)
+    monkeypatch.setattr(app, "_season_phase", lambda s_, d, key: {
+        "phase": "regular", "last_week": 2, "scored_leg": 2,
+    })
+    monkeypatch.setattr(app, "_live_week_ctx", lambda s_, scored_leg=None: None)
+
+    resp = app.tab("overview", _Req(), league="123", season="2025", boot=1)
+    body = resp.body.decode()
+
+    assert "Latest week: Week 2" in body
+    assert "is in the books" not in body
+
+
+def test_format_review_cutoff_is_portable_and_readable():
+    """`_format_review_cutoff` builds the human string by hand (weekday/month/
+    12-hour clock) rather than via `strftime`'s `%-d`/`%-I` flags, which are
+    glibc-only and raise `ValueError` on Windows -- this must not depend on
+    the host platform's strftime dialect."""
+    import datetime
+    from zoneinfo import ZoneInfo
+    from webapp import app
+
+    cutoff = datetime.datetime(2026, 9, 16, 0, 0, tzinfo=ZoneInfo("America/New_York"))
+    assert app._format_review_cutoff(cutoff) == "Wednesday, Sep 16 at 12:00 AM ET"
+
+    afternoon = datetime.datetime(2026, 9, 3, 14, 5, tzinfo=ZoneInfo("America/New_York"))
+    assert app._format_review_cutoff(afternoon) == "Thursday, Sep 3 at 2:05 PM ET"
+
+    assert app._format_review_cutoff(None) == ""
 
 
 def test_season_phase_complete_recaps_every_round(monkeypatch):
@@ -727,7 +978,8 @@ def test_live_week_ctx_none_when_nfl_week_not_past_last_scored(monkeypatch):
     s = make_season()
     monkeypatch.setattr(s, "status", "in_season", raising=False)
     monkeypatch.setattr(app.sm, "nfl_state", lambda: {"week": s.last_week})
-    monkeypatch.setattr(app.sm, "league", lambda lid: {"last_scored_leg": s.last_week})
+    monkeypatch.setattr(app.sm, "league",
+                        lambda lid: {"settings": {"last_scored_leg": s.last_week}})
     assert app._live_week_ctx(s) is None
 
 
@@ -741,7 +993,7 @@ def test_live_week_ctx_returns_week_number_only(monkeypatch):
     s = make_season()  # last_week = 2
     monkeypatch.setattr(s, "status", "in_season", raising=False)
     monkeypatch.setattr(app.sm, "nfl_state", lambda: {"week": 3})
-    monkeypatch.setattr(app.sm, "league", lambda lid: {"last_scored_leg": 2})
+    monkeypatch.setattr(app.sm, "league", lambda lid: {"settings": {"last_scored_leg": 2}})
 
     live_tw = pd.DataFrame({
         "week": [3, 3], "roster_id": [1, 2], "user_id": ["1", "2"],
@@ -805,7 +1057,7 @@ def test_live_week_ctx_none_on_fetch_failure(monkeypatch):
     s = make_season()
     monkeypatch.setattr(s, "status", "in_season", raising=False)
     monkeypatch.setattr(app.sm, "nfl_state", lambda: {"week": 3})
-    monkeypatch.setattr(app.sm, "league", lambda lid: {"last_scored_leg": 2})
+    monkeypatch.setattr(app.sm, "league", lambda lid: {"settings": {"last_scored_leg": 2}})
 
     def _boom(*a, **k):
         raise RuntimeError("offline")
@@ -827,7 +1079,7 @@ def test_live_week_view_week1_in_progress_reads_live_despite_floored_last_week(m
     monkeypatch.setattr(s, "last_week", 1, raising=False)
     monkeypatch.setattr(s, "status", "in_season", raising=False)
     monkeypatch.setattr(app.sm, "nfl_state", lambda: {"week": 1})
-    monkeypatch.setattr(app.sm, "league", lambda lid: {"last_scored_leg": 0})
+    monkeypatch.setattr(app.sm, "league", lambda lid: {"settings": {"last_scored_leg": 0}})
 
     live_tw = pd.DataFrame({
         "week": [1, 1], "roster_id": [1, 2], "user_id": ["1", "2"],
@@ -915,7 +1167,8 @@ def _patch_live_week(monkeypatch, app, week=3, last_scored_leg=2):
         "left_on_bench": [5.0, 5.0],
     })
     monkeypatch.setattr(app.sm, "nfl_state", lambda: {"week": week})
-    monkeypatch.setattr(app.sm, "league", lambda lid: {"last_scored_leg": last_scored_leg})
+    monkeypatch.setattr(app.sm, "league",
+                        lambda lid: {"settings": {"last_scored_leg": last_scored_leg}})
     monkeypatch.setattr(app.sm, "fetch_live_week",
                         lambda s_, wk: (live_tw, live_pl, live_lineup))
 
@@ -935,14 +1188,12 @@ def test_week_context_allow_live_adds_live_slot_to_rail(monkeypatch):
     assert ctx["week"] == 1  # unaffected -- explicit week 1 still selected
 
 
-def test_week_context_bare_request_defaults_to_completed_week_not_live(monkeypatch):
-    """Regression: a bare/default Weekly-tab open (week=None) must default to
-    the last COMPLETED week whenever one exists, even though a live week also
-    exists -- it should NOT jump to "live" just because one is available.
-    The earlier bug routed every bare request to "live" the moment ANY live
-    week existed, showing the live section's simpler 4-tile layout instead of
-    a completed week's 6-tile insights, even with finished weeks on the
-    board."""
+def test_week_context_bare_request_defaults_to_live_when_one_exists(monkeypatch):
+    """A bare/default Weekly-tab open (week=None) now lands on the live week
+    whenever one exists, even with a completed week also on the board -- the
+    tab's initial landing should be whatever's happening right now, not the
+    last finished week (a viewer who wants that instead clicks its own
+    numbered rail button)."""
     from webapp import app
 
     s = make_season()  # last_week = 2, both weeks fully scored
@@ -950,9 +1201,23 @@ def test_week_context_bare_request_defaults_to_completed_week_not_live(monkeypat
     _patch_live_week(monkeypatch, app, week=3, last_scored_leg=2)
 
     ctx = app._week_context(s, None, allow_live=True)
-    assert ctx["week"] == 2          # the last COMPLETED week, not "live"
-    assert ctx.get("is_live_week") is not True
+    assert ctx["week"] == "live"
+    assert ctx["is_live_week"] is True
     assert ctx["weeks"] == [1, 2, "live"]
+
+
+def test_week_context_bare_request_defaults_to_completed_week_without_live(monkeypatch):
+    """Without a live week in progress, a bare request still defaults to the
+    last completed week exactly as before -- only the "a live week exists"
+    case changed."""
+    from webapp import app
+
+    s = make_season()  # last_week = 2, status=None -> not in_progress
+
+    ctx = app._week_context(s, None, allow_live=True)
+    assert ctx["week"] == 2
+    assert ctx.get("is_live_week") is not True
+    assert ctx["weeks"] == [1, 2]
 
 
 def test_week_context_bare_request_with_draft_and_nothing_complete_defaults_to_live(monkeypatch):
@@ -975,6 +1240,41 @@ def test_week_context_bare_request_with_draft_and_nothing_complete_defaults_to_l
     assert ctx["week"] == "live"
     assert ctx["is_live_week"] is True
     assert ctx["weeks"] == [0, "live"]     # week 1's numbered slot doesn't exist yet
+
+
+def test_weekly_route_bare_request_prefers_live_over_draft_view(monkeypatch):
+    """Route-level regression: with a draft board present and week 1 actively
+    LIVE (nothing finished scoring yet -- team_wk's points are all zero, the
+    same fixture shape a live-but-unfinished week has), a bare Weekly-tab
+    open must land on "live", not get force-set to week 0 (the pre-season/
+    draft view) by the route's own pre-check. Before this fix, `tab()`
+    unconditionally forced `week = 0` whenever nothing was scored and a draft
+    existed, pre-empting `_week_context`'s own "prefer live" resolution
+    before it ever ran."""
+    import dataclasses
+    from webapp import app
+
+    s = make_season()
+    monkeypatch.setattr(s, "status", "in_season", raising=False)
+    tw = s.team_wk.copy()
+    tw.loc[:, "points"] = 0.0     # nothing actually scored yet
+    s = dataclasses.replace(s, team_wk=tw)
+    assert app._has_scored_data(s) is False    # sanity: the pre-check's own gate
+
+    _mock_pick(monkeypatch, s)
+    monkeypatch.setattr(app.draft, "draft_board",
+                        lambda *a, **k: pd.DataFrame({"player_id": ["1"]}))
+    _patch_live_week(monkeypatch, app, week=1, last_scored_leg=0)
+
+    resp = app.tab("weekly", _Req(), league="123", season="2025", boot=1)
+    body = resp.body.decode()
+
+    # The rail's "Pre" button always carries a "Pre-season: the draft" TITLE
+    # tooltip once a draft board exists, regardless of the selected week --
+    # the real assertion is the HEADING, which only reads that when the
+    # draft view is actually selected.
+    assert "Week 1 in progress" in body
+    assert '<span class="live-badge">Live</span>' in body
 
 
 def test_week_context_no_live_slot_when_nothing_in_progress(monkeypatch):
