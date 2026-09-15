@@ -27,9 +27,9 @@
             <span class="q">{{ "%.0f"|format(w.best.started) }}</span>{% endif %}</span>
       <span>{% if w.worst %}{{ idm.who(w.worst.user_name) }}
             <span class="q">{{ "%.0f"|format(w.worst.started) }}</span>{% endif %}</span>
-      <span>{% if w.player_of_week %}{{ idm.headshot(w.player_of_week.player_id) }}{{ w.player_of_week.player_name }}
+      <span>{% if w.player_of_week %}{{ idm.headshot(w.player_of_week.player_id, link=True) }}{{ idm.player_link(w.player_of_week.player_id, w.player_of_week.player_name) }}
             <span class="q">{{ "%.0f"|format(w.player_of_week.points) }}</span>{% endif %}</span>
-      <span>{% if w.worst_player %}{{ idm.headshot(w.worst_player.player_id) }}{{ w.worst_player.player_name }}
+      <span>{% if w.worst_player %}{{ idm.headshot(w.worst_player.player_id, link=True) }}{{ idm.player_link(w.worst_player.player_id, w.worst_player.player_name) }}
             <span class="q">{{ "%.0f"|format(w.worst_player.points) }}</span>{% endif %}</span>
     </summary>
     <div class="dt-detail">

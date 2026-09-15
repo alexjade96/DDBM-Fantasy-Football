@@ -41,7 +41,7 @@
             {% for g in h.summary %}
               <tr>
                 <td>{{ g.honor }}</td>
-                <td>{% if g.player_name %}{{ idm.headshot(g.player_id) }}{{ g.player_name }}
+                <td>{% if g.player_name %}{{ idm.headshot(g.player_id, link=True) }}{{ idm.player_link(g.player_id, g.player_name) }}
                     {% if g.position %}<span class="q">{{ g.position }}{% if g.pos_rank %} #{{ g.pos_rank }}{% endif %}</span>{% endif %}
                     {% else %}<span class="q">N/A</span>{% endif %}</td>
                 <td class="n">{{ g.times }}</td>
@@ -82,7 +82,7 @@
             <tbody>
             {% for p in g.players %}
               <tr>
-                <td>{{ idm.headshot(p.player_id) }}<strong>{{ p.player_name }}</strong>
+                <td>{{ idm.headshot(p.player_id, link=True) }}<strong>{{ idm.player_link(p.player_id, p.player_name) }}</strong>
                     <span class="q">{{ p.position }}{% if p.pos_rank %} #{{ p.pos_rank }}{% endif %}</span></td>
                 <td class="n">{{ p.totw_weeks }}</td>
                 <td class="n">{{ p.player_of_week_weeks }}</td>

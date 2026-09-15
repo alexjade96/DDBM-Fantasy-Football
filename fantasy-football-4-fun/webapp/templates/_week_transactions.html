@@ -37,7 +37,7 @@
         <div class="got">
           {% for p in sd.players %}
           <div class="plr">
-            <div class="plr-name">{{ idm.headshot(p.player_id) }}<strong>{{ p.player_name }}</strong> {{ idm.posrank(p.player_id) }}</div>
+            <div class="plr-name">{{ idm.headshot(p.player_id, link=True) }}<strong>{{ idm.player_link(p.player_id, p.player_name) }}</strong> {{ idm.posrank(p.player_id) }}</div>
             {% if d.n_teams > 2 and p.from_team %}
             <div class="plr-from"><span class="q">from {{ idm.who(p.from_team) }}</span></div>
             {% endif %}
@@ -78,7 +78,7 @@
     <tbody>
     {% for r in week_tx.waivers %}
       <tr>
-        <td data-sort="{{ r.player_name }}">{{ idm.headshot(r.player_id) }}{{ r.player_name }}{% if r.times > 1 %}
+        <td data-sort="{{ r.player_name }}">{{ idm.headshot(r.player_id, link=True) }}{{ idm.player_link(r.player_id, r.player_name) }}{% if r.times > 1 %}
             <span class="q">&times;{{ r.times }}</span>{% endif %} {{ idm.posrank(r.player_id) }}</td>
         <td>{{ r.position }}</td>
         <td class="trend-col">

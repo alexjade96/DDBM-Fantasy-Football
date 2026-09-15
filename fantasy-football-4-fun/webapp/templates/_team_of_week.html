@@ -24,7 +24,7 @@
   {% for p in totw.lineup %}
     <tr {% if p.cmp == 'up' %}class="cmp-up"{% elif p.cmp == 'down' %}class="cmp-down"{% endif %}>
       <td><span class="q">{{ p.slot }}</span></td>
-      <td>{{ idm.headshot(p.player_id) }}<strong>{{ p.player_name }}</strong>
+      <td>{{ idm.headshot(p.player_id, link=True) }}<strong>{{ idm.player_link(p.player_id, p.player_name) }}</strong>
           {% if not p.was_starter %} <span class="q star" title="Was benched on their actual roster this week">*</span>{% endif %}
           {% if p.pos_rank %}<span class="q">{{ p.position }} #{{ p.pos_rank }}</span>{% else %}<span class="q">{{ p.position }}</span>{% endif %}</td>
       <td>{% if p.user_name %}{{ idm.who(p.user_name) }}{% endif %}</td>

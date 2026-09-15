@@ -65,7 +65,7 @@
   <tbody>
   {% for p in r.players %}
     <tr data-pos="{{ p.position }}">
-      <td data-sort="{{ p.player_name }}">{{ idm.headshot(p.player_id) }}<strong>{{ p.player_name }}</strong>
+      <td data-sort="{{ p.player_name }}">{{ idm.headshot(p.player_id, link=True) }}<strong>{{ idm.player_link(p.player_id, p.player_name) }}</strong>
           {% if p.pos_rank %}<span class="q">{{ p.position }} #{{ p.pos_rank }}</span>{% endif %}</td>
       <td>{{ p.position }}</td>
       <td class="n">{{ p.weeks }}</td>

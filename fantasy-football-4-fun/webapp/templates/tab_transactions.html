@@ -64,7 +64,7 @@
             {% if sd.received_players %}
             {% for p in sd.received_players %}
             <div class="plr">
-              <div class="plr-name">{{ idm.headshot(p.player_id) }}<strong>{{ p.player_name }}</strong>{% if p.position %} <span class="q">{{ p.position }}</span>{% endif %}</div>
+              <div class="plr-name">{{ idm.headshot(p.player_id, link=True) }}<strong>{{ idm.player_link(p.player_id, p.player_name) }}</strong>{% if p.position %} <span class="q">{{ p.position }}</span>{% endif %}</div>
               {% if d.n_teams > 2 and p.from_team %}
               <div class="plr-from"><span class="q">from {{ idm.who(p.from_team) }}</span></div>
               {% endif %}
