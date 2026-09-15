@@ -114,7 +114,7 @@
         <tbody>
         {% for r in rows %}
           <tr data-position="{{ r.position or '' }}" data-team="{{ r.team or '' }}">
-            <td data-sort="{{ r.player }}">{{ idm.headshot(r.sleeper_id) }}<strong>{{ r.player }}</strong></td>
+            <td data-sort="{{ r.player }}">{{ idm.headshot(r.sleeper_id, link=True) }}<strong>{{ idm.player_link(r.sleeper_id, r.player) }}</strong></td>
             <td data-sort="{{ r.position or '' }}">
               {%- if r.position %}<span class="q">{{ r.position }}</span>{% endif -%}</td>
             <td><span class="q">{{ r.team or "" }}</span></td>
@@ -161,7 +161,7 @@
       {% for r in rows %}
         <tr>
           <td class="n">{{ r.rank }}</td>
-          <td data-sort="{{ r.player }}">{{ idm.headshot(r.sleeper_id) }}<strong>{{ r.player }}</strong></td>
+          <td data-sort="{{ r.player }}">{{ idm.headshot(r.sleeper_id, link=True) }}<strong>{{ idm.player_link(r.sleeper_id, r.player) }}</strong></td>
           <td data-sort="{{ r.position or '' }}">
             {%- if r.position %}<span class="q">{{ r.position }}</span>{% endif -%}
           </td>

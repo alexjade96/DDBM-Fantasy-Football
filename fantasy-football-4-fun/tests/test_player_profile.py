@@ -12,6 +12,17 @@ import pytest
 from webapp import player_profile as pp
 
 
+@pytest.fixture(autouse=True)
+def _clear_profile_cache():
+    """player_profile() caches its whole result per (player_id, league_id)
+    (see _PROFILE_CACHE) -- without this, a later test reusing the same ids
+    (e.g. "5995" + "fake_league") would silently see a prior test's cached,
+    differently-mocked result instead of exercising its own mocks."""
+    pp.clear_profile_cache()
+    yield
+    pp.clear_profile_cache()
+
+
 # --- _norm_name --------------------------------------------------------
 
 def test_norm_name_strips_punctuation_and_suffix():
@@ -244,3 +255,67 @@ def test_player_profile_league_section_degrades_on_league_data_failure(monkeypat
         "draft_picks": [], "honors": [], "trade_stints": [],
         "waiver_rows": [], "roster_splits": {},
     }
+
+
+# --- caching ---------------------------------------------------------------
+
+def test_player_profile_caches_repeat_calls(monkeypatch):
+    monkeypatch.setattr(pp, "sleeper_players", _fake_players_df)
+    monkeypatch.setattr(pp, "_adp_history", lambda *a, **k: [])
+    calls = []
+
+    def _tracked_real_nfl(*a, **k):
+        calls.append(1)
+        return {}
+    monkeypatch.setattr(pp, "_real_nfl_history", _tracked_real_nfl)
+
+    first = pp.player_profile("5995")
+    second = pp.player_profile("5995")
+    assert len(calls) == 1  # the second call hit the cache, never rebuilt
+    assert first is second  # same cached dict object, not just equal
+
+
+def test_player_profile_fresh_bypasses_cache(monkeypatch):
+    monkeypatch.setattr(pp, "sleeper_players", _fake_players_df)
+    monkeypatch.setattr(pp, "_adp_history", lambda *a, **k: [])
+    calls = []
+
+    def _tracked_real_nfl(*a, **k):
+        calls.append(1)
+        return {}
+    monkeypatch.setattr(pp, "_real_nfl_history", _tracked_real_nfl)
+
+    pp.player_profile("5995")
+    pp.player_profile("5995", fresh=True)
+    assert len(calls) == 2  # fresh=True forced a rebuild
+
+
+def test_player_profile_cache_keys_by_league_id_too(monkeypatch):
+    monkeypatch.setattr(pp, "sleeper_players", _fake_players_df)
+    monkeypatch.setattr(pp, "_real_nfl_history", lambda *a, **k: {})
+    monkeypatch.setattr(pp, "_adp_history", lambda *a, **k: [])
+    monkeypatch.setattr(
+        "webapp.app.league_data", lambda league_id: {"seasons": {}})
+
+    no_league = pp.player_profile("5995")
+    with_league = pp.player_profile("5995", league_id="fake_league")
+    assert no_league["league"] is None
+    assert with_league["league"] is not None  # distinct cache entries
+
+
+def test_player_profile_cache_expires_after_ttl(monkeypatch):
+    monkeypatch.setattr(pp, "sleeper_players", _fake_players_df)
+    monkeypatch.setattr(pp, "_adp_history", lambda *a, **k: [])
+    calls = []
+
+    def _tracked_real_nfl(*a, **k):
+        calls.append(1)
+        return {}
+    monkeypatch.setattr(pp, "_real_nfl_history", _tracked_real_nfl)
+
+    pp.player_profile("5995")
+    # simulate the cache entry having aged past the TTL
+    key = ("5995", None)
+    pp._PROFILE_CACHE[key]["at"] -= pp._PROFILE_TTL + 1
+    pp.player_profile("5995")
+    assert len(calls) == 2  # expired entry triggered a rebuild

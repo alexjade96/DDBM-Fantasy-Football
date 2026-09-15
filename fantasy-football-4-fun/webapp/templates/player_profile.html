@@ -1,0 +1,210 @@
+{# Player profile: a shareable, stand-alone page (no dashboard shell), the
+   first route in this app keyed on a player rather than a league/season/tab.
+   `league`/`season` are OPTIONAL context -- a click from the (league-
+   agnostic) NFL Stats tab carries neither, so every section here degrades
+   independently to "no data" rather than assuming a league is loaded.
+   Real-NFL tables (player_stats/ngs_*/injuries/snap_counts/pfr_*) are
+   dataset-name-keyed dicts from webapp.player_profile._real_nfl_history;
+   a PFR-bridged dataset's rows are name+position matched, never a real id,
+   so its section is labelled best-effort rather than presented as fact. #}
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ identity.player_name or "Player " ~ player_id }}{% if identity.position %} ({{ identity.position }}){% endif %}</title>
+  <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+  <link rel="stylesheet" href="/static/style.css?v={{ asset_v }}">
+</head>
+<body>
+{% import "_ident.html" as idm with context %}
+<main class="reportpanel">
+  <p class="eyebrow">Player profile</p>
+  <h2 class="rtitle">
+    {{ idm.headshot(player_id) }}
+    {{ identity.player_name or "Unknown player (id " ~ player_id ~ ")" }}
+  </h2>
+  <p class="hint">
+    {%- if identity.position %}{{ identity.position }}{% endif -%}
+    {%- if identity.team %} &middot; {{ identity.team }}{% endif -%}
+    {%- if league_name %} &middot; {{ league_name }}{% endif -%}
+    {%- if not identity.position and not identity.team and not league_name %}No Sleeper record found for this player id.{% endif -%}
+  </p>
+
+  {% if not league %}
+  <p class="hint">Opened without a league -- showing real-NFL history only.
+     League-specific draft/roster/trade/waiver history appears when this
+     page is reached from within a loaded league.</p>
+  {% endif %}
+
+  {% if league_history %}
+  <h2>{{ league_name }} history</h2>
+  {% if league_history.draft_picks %}
+  <div class="tablewrap">
+    <table class="dt-games">
+      <thead><tr><th>Season</th><th>Round</th><th>Pick</th><th>Drafted by</th>
+        <th class="n">Total pts</th><th class="n">PPG</th><th class="n">draft +/-</th></tr></thead>
+      <tbody>
+      {% for p in league_history.draft_picks %}
+        <tr>
+          <td>{{ p.season }}</td>
+          <td class="n">{{ p.round }}</td>
+          <td class="n">{{ p.pick_in_round }}</td>
+          <td>{{ idm.who(p.user_name) }}</td>
+          <td class="n">{{ "%.1f"|format(p.total) if p.total is not none else "&ndash;" }}</td>
+          <td class="n">{{ "%.1f"|format(p.ppg) if p.ppg is not none else "&ndash;" }}</td>
+          <td class="n {% if p.pos_steal is not none and p.pos_steal > 0 %}dv-pos{% elif p.pos_steal is not none and p.pos_steal < 0 %}dv-neg{% endif %}">
+            {{- "%+d"|format(p.pos_steal) if p.pos_steal is not none else "&ndash;" -}}
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+
+  {% if league_history.roster_splits %}
+  <h2>Roster history by season</h2>
+  {% for season, rows in league_history.roster_splits.items() %}
+  <p class="hint"><strong>{{ season }}</strong></p>
+  <div class="tablewrap">
+    <table class="dt-games">
+      <thead><tr><th>Manager</th><th class="n">Weeks</th><th class="n">Points</th><th class="n">PPG</th></tr></thead>
+      <tbody>
+      {% for r in rows %}
+        <tr>
+          <td>{{ idm.who(r.user_name) if r.user_name != "FA" else "Free agent (unrostered)" }}</td>
+          <td class="n">{{ r.weeks }}</td>
+          <td class="n">{{ "%.1f"|format(r.points) }}</td>
+          <td class="n">{{ "%.1f"|format(r.ppg) }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endfor %}
+  {% endif %}
+
+  {% if league_history.honors %}
+  <h2>Honors</h2>
+  <div class="tablewrap">
+    <table class="dt-games">
+      <thead><tr><th>Season</th><th class="n">Team of the Week</th><th class="n">Player of the Week</th><th>Managers</th></tr></thead>
+      <tbody>
+      {% for h in league_history.honors %}
+        <tr>
+          <td>{{ h.season }}</td>
+          <td class="n">{{ h.totw_weeks or 0 }}</td>
+          <td class="n">{{ h.player_of_week_weeks or 0 }}</td>
+          <td>{{ h.managers|join(", ") }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+
+  {% if league_history.trade_stints %}
+  <h2>Trade history</h2>
+  <div class="tablewrap">
+    <table class="dt-games">
+      <thead><tr><th>Season</th><th>Roster stints (in order moved)</th></tr></thead>
+      <tbody>
+      {% for t in league_history.trade_stints %}
+        <tr>
+          <td>{{ t.season }}</td>
+          <td>{% for st in t.stints %}{{ idm.who(st.user_name) }} ({{ "%.1f"|format(st.ppg) }} ppg over {{ st.weeks }} wk){% if not loop.last %} &rarr; {% endif %}{% endfor %}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+
+  {% if league_history.waiver_rows %}
+  <h2>Waiver / free-agent activity</h2>
+  <div class="tablewrap">
+    <table class="dt-games">
+      <thead><tr><th>Season</th><th class="n">Week</th><th>Manager</th><th>Via</th><th class="n">Points</th></tr></thead>
+      <tbody>
+      {% for w in league_history.waiver_rows %}
+        <tr>
+          <td>{{ w.season }}</td>
+          <td class="n">{{ w.week }}</td>
+          <td>{{ idm.who(w.user_name) }}</td>
+          <td>{{ w.via }}</td>
+          <td class="n">{{ "%.1f"|format(w.points) if w.points is not none else "&ndash;" }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+
+  {% if not league_history.draft_picks and not league_history.roster_splits
+        and not league_history.honors and not league_history.trade_stints
+        and not league_history.waiver_rows %}
+  <p class="empty">No {{ league_name }} history found for this player.</p>
+  {% endif %}
+  {% endif %}
+
+  <h2>Real-NFL history{% if seasons_covered %} <span class="hint">({{ seasons_covered|last }}&ndash;{{ seasons_covered|first }})</span>{% endif %}</h2>
+  {% set any_real_nfl = false %}
+  {% for ds, label in [("player_stats", "Weekly stats"), ("ngs_passing", "Next Gen Stats: Passing"),
+                        ("ngs_receiving", "Next Gen Stats: Receiving"), ("ngs_rushing", "Next Gen Stats: Rushing"),
+                        ("injuries", "Injury reports"), ("snap_counts", "Snap counts"),
+                        ("pfr_pass", "PFR advanced: Passing"), ("pfr_rec", "PFR advanced: Receiving"),
+                        ("pfr_rush", "PFR advanced: Rushing"), ("pfr_def", "PFR advanced: Defense")] %}
+  {% set d = real_nfl.get(ds) %}
+  {% if d and d.rows %}
+  {% set any_real_nfl = true %}
+  <details class="dt-row">
+    <summary>{{ label }} ({{ d.rows|length }} rows){% if d.best_effort %} <span class="q">best-effort name match, not a verified id</span>{% endif %}</summary>
+    <div class="tablewrap">
+      <table class="dt-games">
+        <thead><tr>
+          {% for k in d.rows[0].keys() if k not in ("player_id", "pfr_player_id", "gsis_id", "player_gsis_id", "player_display_name", "pfr_player_name", "full_name", "player") %}
+          <th>{{ k.replace("_", " ") }}</th>
+          {% endfor %}
+        </tr></thead>
+        <tbody>
+        {% for row in d.rows %}
+          <tr>
+            {% for k, v in row.items() if k not in ("player_id", "pfr_player_id", "gsis_id", "player_gsis_id", "player_display_name", "pfr_player_name", "full_name", "player") %}
+            <td>{{ v if v is not none else "&ndash;" }}</td>
+            {% endfor %}
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </details>
+  {% endif %}
+  {% endfor %}
+  {% if not any_real_nfl %}
+  <p class="empty">No real-NFL data found for this player over {{ seasons_covered|join(", ") }}.</p>
+  {% endif %}
+
+  {% if adp_history %}
+  <h2>Draft ADP history</h2>
+  <div class="tablewrap">
+    <table class="dt-games">
+      <thead><tr><th>Season</th><th class="n">Consensus rank</th><th class="n">Final finish</th><th class="n">Diff</th></tr></thead>
+      <tbody>
+      {% for r in adp_history %}
+        <tr>
+          <td>{{ r.season }}</td>
+          <td class="n">{{ r.consensus if r.consensus is not none else "&ndash;" }}</td>
+          <td class="n">{{ r.final if r.final is not none else "&ndash;" }}</td>
+          <td class="n {% if r.diff is not none and r.diff > 0 %}dv-pos{% elif r.diff is not none and r.diff < 0 %}dv-neg{% endif %}">
+            {{- r.diff if r.diff is not none else "&ndash;" -}}
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+</main>
+</body>
+</html>

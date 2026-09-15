@@ -30,11 +30,24 @@ already follow.
 from __future__ import annotations
 
 import re
+import time
 
 import pandas as pd
 
 from sleepermetrics import draft, metrics
 from sleepermetrics.players import players as sleeper_players
+
+# player_profile() calls into 10+ nflref datasets and loops
+# ffadp.board.combine() per season, none of which cache a single-player
+# result themselves (only the whole-board/whole-dataset fetch underneath is
+# snapshot-cached) -- a cold call took 17-30s in practice, measured against
+# a real league. Same {key: {"data", "at"}} + TTL shape webapp.app's own
+# `_bracket_cache` uses (simpler than league_data()'s stale-while-revalidate
+# machinery, appropriate here since this isn't an always-hit-first path the
+# whole dashboard depends on). Keyed on (player_id, league_id) since the
+# league-scoped section changes the result.
+_PROFILE_CACHE: dict[tuple[str, str | None], dict] = {}
+_PROFILE_TTL = 900  # 15 min, matches webapp.app.TTL's season-cache window
 
 # How many recent seasons of real-NFL data to pull when there is no league
 # history to scope the search from (a bare NFL-Stats-tab lookup, or a
@@ -269,22 +282,9 @@ def _league_history(player_id: str, seasons_map: dict) -> dict:
     }
 
 
-def player_profile(player_id: str, league_id: str | None = None) -> dict:
-    """Everything known about one player.
-
-    Always includes identity + real-NFL history (recent seasons, or every
-    season this league has rostered him in if `league_id` is given -- see
-    below) + multi-year ADP consensus. Adds a `league` section (this
-    league's draft slot, roster history, honors, trades, waiver activity)
-    only when `league_id` is given, since that's the only section that
-    needs a Sleeper Season object at all.
-
-    Real-NFL data is scoped to `_DEFAULT_WINDOW` recent seasons by default;
-    when `league_id` is given and this player has league-scoped seasons on
-    record, the union of those seasons (deduplicated with the recent
-    window) is used instead, so a player's real-NFL stats line up with the
-    seasons this league actually saw him play.
-    """
+def _build_profile(player_id: str, league_id: str | None = None) -> dict:
+    """The real aggregation logic -- see `player_profile()` (the cached
+    public entry point) for the full contract."""
     identity = _player_identity(player_id)
     real_nfl_seasons = _recent_seasons()
 
@@ -316,3 +316,40 @@ def player_profile(player_id: str, league_id: str | None = None) -> dict:
         "adp_history": adp,
         "league": league_section,
     }
+
+
+def player_profile(player_id: str, league_id: str | None = None,
+                    fresh: bool = False) -> dict:
+    """Everything known about one player, cached for `_PROFILE_TTL` seconds.
+
+    Always includes identity + real-NFL history (recent seasons, or every
+    season this league has rostered him in if `league_id` is given -- see
+    `_build_profile`) + multi-year ADP consensus. Adds a `league` section
+    (this league's draft slot, roster history, honors, trades, waiver
+    activity) only when `league_id` is given, since that's the only section
+    that needs a Sleeper Season object at all.
+
+    A cold call is expensive (10+ nflref dataset loads and a
+    ffadp.board.combine() call per season, plus, with a league_id, a
+    draft_board/player_honors/etc. loop per league season -- measured
+    17-30s against a real league). This is the first genuinely single-
+    player page in the app (a real navigation, not an htmx panel swap), so
+    there is no elapsed-time loading indicator available to it the way
+    tab switches get one -- caching the whole result, not just the
+    league-scoped half `league_data()` already caches, is what keeps a
+    repeat view of the same player fast. `fresh=True` bypasses the cache
+    (the route's own refresh path).
+    """
+    key = (str(player_id), str(league_id) if league_id else None)
+    if not fresh:
+        hit = _PROFILE_CACHE.get(key)
+        if hit and time.time() - hit["at"] < _PROFILE_TTL:
+            return hit["data"]
+    data = _build_profile(player_id, league_id)
+    _PROFILE_CACHE[key] = {"data": data, "at": time.time()}
+    return data
+
+
+def clear_profile_cache() -> None:
+    """Drop every cached profile (the webapp's refresh=1 path)."""
+    _PROFILE_CACHE.clear()

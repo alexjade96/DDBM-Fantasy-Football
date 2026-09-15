@@ -2,15 +2,23 @@
    `avatars` map without threading it through every call:
 
      import "_ident.html" as idm with context   (in {%% %%} tags)
-     idm.who(name)          -- manager team portrait + name
-     idm.headshot(pid)      -- a player's Sleeper headshot (bare img)
-     idm.posrank(pid)       -- that player's position rank THIS WEEK
+     idm.who(name)                    -- manager team portrait + name
+     idm.headshot(pid, link=False)    -- a player's Sleeper headshot (bare img)
+     idm.posrank(pid)                 -- that player's position rank THIS WEEK
+     idm.player_link(pid, name)       -- a player's name, linked to /player/<pid>
 
    All best-effort and degrade cleanly: `who` shows the portrait only when a
    manager avatar exists for that name (else just the name); a headshot that 404s
    removes itself via onerror; `posrank` renders nothing if `week_pos_ranks` isn't
    in context (only the weekly report supplies it) or has no entry for this
-   player. No nested Jinja comments here -- they don't nest. #}
+   player. `headshot`/`player_link` link to the player-profile page only when a
+   Sleeper `pid` is known -- a caller without one (a name-only row, or a compare
+   row that never resolved a sleeper_id) falls back to plain unlinked text/image,
+   never a link to a page that would 404. `league`/`season`, when present in the
+   calling template's own context, ride along as query params for continuity
+   (which league/season the click came from); a page with neither (the
+   league-agnostic NFL Stats tab) still links, just without that context.
+   No nested Jinja comments here -- they don't nest. #}
 {# `is string` guards are deliberate: pandas NaN is truthy in Jinja, so a raw
    record (not run through records()) would otherwise render "nan" / a dead img. #}
 {% macro who(name) -%}
@@ -19,8 +27,20 @@
 <span class="ident">{% if url %}<img class="face" src="{{ url }}" alt="" loading="lazy" onerror="this.remove()">{% endif %}<span class="idn">{{ nm or "N/A" }}</span></span>
 {%- endmacro %}
 
-{% macro headshot(pid) -%}
-{%- if pid is string and pid %}<img class="pface" src="https://sleepercdn.com/content/nfl/players/{{ pid }}.jpg" alt="" loading="lazy" onerror="this.remove()">{% endif -%}
+{% macro _player_url(pid) -%}
+/player/{{ pid }}{% if league %}?league={{ league }}{% if season %}&season={{ season }}{% endif %}{% elif season %}?season={{ season }}{% endif %}
+{%- endmacro %}
+
+{% macro headshot(pid, link=False) -%}
+{%- if pid is string and pid %}
+{%- if link %}<a href="{{ _player_url(pid) }}">{% endif -%}
+<img class="pface" src="https://sleepercdn.com/content/nfl/players/{{ pid }}.jpg" alt="" loading="lazy" onerror="this.remove()">
+{%- if link %}</a>{% endif -%}
+{% endif -%}
+{%- endmacro %}
+
+{% macro player_link(pid, name) -%}
+{%- if pid is string and pid %}<a href="{{ _player_url(pid) }}">{{ name }}</a>{% else %}{{ name }}{% endif -%}
 {%- endmacro %}
 
 {% macro posrank(pid) -%}
