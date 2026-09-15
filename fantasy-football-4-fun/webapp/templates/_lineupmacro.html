@@ -73,7 +73,7 @@
     {% set flagged = pl[bench_flag] if bench_flag else false %}
     <tr {% if flagged %}class="bench-impact" title="{{ bench_flag_title }}"{% endif %}>
       <td><span class="q">{{ pl.position }}</span></td>
-      <td>{% if show_id %}{{ idm.headshot(pl.player_id) }}{% endif %}{{ pl.player_name }}{% if show_id %} {{ idm.posrank(pl.player_id) }}{% endif %}
+      <td>{% if show_id %}{{ idm.headshot(pl.player_id, link=True) }}{{ idm.player_link(pl.player_id, pl.player_name) }}{% else %}{{ pl.player_name }}{% endif %}{% if show_id %} {{ idm.posrank(pl.player_id) }}{% endif %}
         {%- if pl.pos_rank %} <span class="q posrank">{{ pl.position }} #{{ pl.pos_rank }}</span>{% endif %}</td>
       <td class="n">{% if pl.points is not none %}{{ "%.2f"|format(pl.points) }}{% else %}N/A{% endif %}</td>
     </tr>
@@ -84,7 +84,7 @@
   {% for pl in rows %}
     <tr {% if pl.swapped %}class="bench-impact"{% elif pl.cmp == 'up' %}class="cmp-up"{% elif pl.cmp == 'down' %}class="cmp-down"{% endif %}>
       <td><span class="q">{{ pl.slot }}</span></td>
-      <td>{% if show_id %}{{ idm.headshot(pl.player_id) }}{% endif %}<strong>{{ pl.player_name }}</strong>{% if show_id %} {{ idm.posrank(pl.player_id) }}{% endif %}{% if pl.pos_rank %} <span class="q posrank">{{ pl.position }} #{{ pl.pos_rank }}</span>{% endif %}</td>
+      <td>{% if show_id %}{{ idm.headshot(pl.player_id, link=True) }}<strong>{{ idm.player_link(pl.player_id, pl.player_name) }}</strong>{% else %}<strong>{{ pl.player_name }}</strong>{% endif %}{% if show_id %} {{ idm.posrank(pl.player_id) }}{% endif %}{% if pl.pos_rank %} <span class="q posrank">{{ pl.position }} #{{ pl.pos_rank }}</span>{% endif %}</td>
       <td class="n">{% if pl.points is not none %}{{ "%.2f"|format(pl.points) }}{% else %}N/A{% endif %}</td>
     </tr>
   {% else %}
@@ -96,7 +96,7 @@
     {% set flagged = pl[bench_flag] if bench_flag else false %}
     <tr {% if flagged %}class="bench-impact" title="{{ bench_flag_title }}"{% endif %}>
       <td><span class="q">{{ pl.position }}</span></td>
-      <td>{% if show_id %}{{ idm.headshot(pl.player_id) }}{% endif %}{{ pl.player_name }}{% if show_id %} {{ idm.posrank(pl.player_id) }}{% endif %}
+      <td>{% if show_id %}{{ idm.headshot(pl.player_id, link=True) }}{{ idm.player_link(pl.player_id, pl.player_name) }}{% else %}{{ pl.player_name }}{% endif %}{% if show_id %} {{ idm.posrank(pl.player_id) }}{% endif %}
         {%- if pl.pos_rank %} <span class="q posrank">{{ pl.position }} #{{ pl.pos_rank }}</span>{% endif %}</td>
       <td class="n"><span class="q">{{ "%.2f"|format(pl.points) }}</span></td>
     </tr>
