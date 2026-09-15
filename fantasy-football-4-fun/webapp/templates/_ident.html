@@ -22,7 +22,11 @@
    than navigating away -- the profile page is meant to be a side reference
    glanced at without losing the caller's own scroll position/filters, and
    the aggregator's own cold-load cost (see webapp/player_profile.py) makes
-   "leave and come back" a worse default than "open alongside."
+   "leave and come back" a worse default than "open alongside." Both carry
+   a `plink` class (style.css) so a player name/headshot reads as ordinary
+   text -- no default browser blue/underline -- rather than looking like a
+   generic web link; it's still clickable, just visually quiet the way the
+   rest of this app's own row text is.
    No nested Jinja comments here -- they don't nest. #}
 {# `is string` guards are deliberate: pandas NaN is truthy in Jinja, so a raw
    record (not run through records()) would otherwise render "nan" / a dead img. #}
@@ -38,14 +42,14 @@
 
 {% macro headshot(pid, link=False) -%}
 {%- if pid is string and pid %}
-{%- if link %}<a href="{{ _player_url(pid) }}" target="_blank" rel="noopener">{% endif -%}
+{%- if link %}<a class="plink" href="{{ _player_url(pid) }}" target="_blank" rel="noopener">{% endif -%}
 <img class="pface" src="https://sleepercdn.com/content/nfl/players/{{ pid }}.jpg" alt="" loading="lazy" onerror="this.remove()">
 {%- if link %}</a>{% endif -%}
 {% endif -%}
 {%- endmacro %}
 
 {% macro player_link(pid, name) -%}
-{%- if pid is string and pid %}<a href="{{ _player_url(pid) }}" target="_blank" rel="noopener">{{ name }}</a>{% else %}{{ name }}{% endif -%}
+{%- if pid is string and pid %}<a class="plink" href="{{ _player_url(pid) }}" target="_blank" rel="noopener">{{ name }}</a>{% else %}{{ name }}{% endif -%}
 {%- endmacro %}
 
 {% macro posrank(pid) -%}

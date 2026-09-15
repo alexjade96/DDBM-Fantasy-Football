@@ -602,6 +602,15 @@ details summary { cursor: pointer; font-weight: 600; }
   background: var(--bg); border: 1px solid var(--line); vertical-align: middle;
   margin-right: 7px; display: inline-block; }
 
+/* A player-profile link (_ident.html's headshot(link=True)/player_link()) --
+   there is no site-wide `a{}` reset, so without this it would inherit the
+   browser default blue/underline and stand out as an ordinary web link
+   among plain row text. Inherits the surrounding color instead and only
+   underlines on hover, so it still reads as clickable without looking
+   different from the rest of the row at rest. */
+.plink { color: inherit; text-decoration: none; }
+.plink:hover { text-decoration: underline; }
+
 /* The Season Report tab renders report.py's HTML, which dedupes portraits: each
    .pface/.face there is a <span> whose background-image is one rule in the
    report's own injected <style> block (keyed on data-k), not an <img src>. */
