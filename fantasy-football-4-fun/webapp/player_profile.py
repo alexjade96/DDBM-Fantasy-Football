@@ -353,3 +353,15 @@ def player_profile(player_id: str, league_id: str | None = None,
 def clear_profile_cache() -> None:
     """Drop every cached profile (the webapp's refresh=1 path)."""
     _PROFILE_CACHE.clear()
+
+
+def is_cached(player_id: str, league_id: str | None = None) -> bool:
+    """True if a fresh (within `_PROFILE_TTL`) result already exists for
+    this player, without building or refreshing anything. Lets a caller
+    (the /player route) decide whether a request will be fast or will pay
+    the full cold-aggregation cost, so it can only show a loading page for
+    the latter -- a warm hit costs nothing extra, unlike always routing
+    through a loader-then-redirect page."""
+    key = (str(player_id), str(league_id) if league_id else None)
+    hit = _PROFILE_CACHE.get(key)
+    return bool(hit and time.time() - hit["at"] < _PROFILE_TTL)

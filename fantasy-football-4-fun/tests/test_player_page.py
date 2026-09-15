@@ -74,7 +74,7 @@ def _fake_profile(monkeypatch):
 
 
 def test_player_page_without_league(_fake_profile):
-    resp = app.player_page(_Req(), player_id="5995")
+    resp = app.player_page(_Req(), player_id="5995", render=1)
     assert resp.status_code == 200
     body = resp.body.decode()
     assert "Justice Hill" in body
@@ -95,7 +95,7 @@ def test_player_page_back_link_carries_league_and_season(monkeypatch, _fake_prof
             type("S", (), {"name": "Test League"})(),
             season or "2025",
         ))
-    resp = app.player_page(_Req(), player_id="5995", league="123", season="2025")
+    resp = app.player_page(_Req(), player_id="5995", league="123", season="2025", render=1)
     body = resp.body.decode()
     assert 'href="/dashboard?league=999&season=2025"' in body
 
@@ -108,7 +108,7 @@ def test_player_page_with_league(monkeypatch, _fake_profile):
             type("S", (), {"name": "Test League"})(),
             season or "2025",
         ))
-    resp = app.player_page(_Req(), player_id="5995", league="123", season="2025")
+    resp = app.player_page(_Req(), player_id="5995", league="123", season="2025", render=1)
     assert resp.status_code == 200
     body = resp.body.decode()
     assert "Test League" in body
@@ -121,7 +121,7 @@ def test_player_page_league_pick_failure_degrades_to_no_league(monkeypatch, _fak
     def _boom(league, season):
         raise RuntimeError("simulated failure")
     monkeypatch.setattr(app, "pick", _boom)
-    resp = app.player_page(_Req(), player_id="5995", league="bad_league")
+    resp = app.player_page(_Req(), player_id="5995", league="bad_league", render=1)
     assert resp.status_code == 200
     body = resp.body.decode()
     # a failed pick() must not crash the page -- falls back to no-league view
@@ -137,7 +137,7 @@ def test_player_page_unknown_player_renders_short_page(monkeypatch):
             "seasons_covered": [], "real_nfl": {}, "adp_history": [],
             "league": None,
         })
-    resp = app.player_page(_Req(), player_id="999999999")
+    resp = app.player_page(_Req(), player_id="999999999", render=1)
     assert resp.status_code == 200
     body = resp.body.decode()
     assert "Unknown player" in body
@@ -156,8 +156,55 @@ def test_player_page_refresh_param_forces_fresh_rebuild(monkeypatch):
             "league": None,
         }
     monkeypatch.setattr(pp, "player_profile", _fake)
-    app.player_page(_Req(), player_id="5995", refresh=1)
+    app.player_page(_Req(), player_id="5995", refresh=1, render=1)
     assert calls == [True]
+
+
+# --- loading page (cold vs. warm) ------------------------------------------
+
+def test_player_page_cold_shows_loader_not_the_real_page(_fake_profile):
+    """A cold request (nothing cached yet) must return the instant loading
+    page, not pay the full aggregation cost inline -- a real page
+    navigation has no elapsed-time indicator the way an htmx tab switch
+    does, so a slow inline render would look like a hung/blank page."""
+    resp = app.player_page(_Req(), player_id="5995")
+    assert resp.status_code == 200
+    body = resp.body.decode()
+    assert "Loading player profile" in body
+    assert "location.replace" in body
+    assert "/player/5995?render=1" in body
+
+
+def test_player_page_loader_carries_league_season_refresh(_fake_profile):
+    resp = app.player_page(_Req(), player_id="5995", league="123",
+                           season="2025", refresh=1)
+    body = resp.body.decode()
+    assert "Loading player profile" in body
+    assert "league=123" in body
+    assert "season=2025" in body
+    assert "refresh=1" in body
+
+
+def test_player_page_warm_cache_skips_loader(monkeypatch, _fake_profile):
+    """Once a profile is cached, a plain (non-render=1) request should
+    render straight through -- the loader-then-redirect round trip is only
+    for the cold case, so a warm hit shouldn't pay it."""
+    monkeypatch.setattr(pp, "is_cached", lambda player_id, league_id=None: True)
+    resp = app.player_page(_Req(), player_id="5995")
+    body = resp.body.decode()
+    assert "Loading player profile" not in body
+    assert "Justice Hill" in body
+
+
+def test_player_page_refresh_shows_loader_even_when_warm(monkeypatch, _fake_profile):
+    """refresh=1 must force the loader (and the eventual fresh=True
+    rebuild) even when a cached copy already exists -- it's an explicit
+    request to discard the cache, not just a normal warm view."""
+    monkeypatch.setattr(pp, "is_cached", lambda player_id, league_id=None: True)
+    resp = app.player_page(_Req(), player_id="5995", refresh=1)
+    body = resp.body.decode()
+    assert "Loading player profile" in body
+    assert "refresh=1" in body
 
 
 def test_nflstats_table_links_only_rows_with_a_resolved_sleeper_id(monkeypatch):

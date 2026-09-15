@@ -319,3 +319,25 @@ def test_player_profile_cache_expires_after_ttl(monkeypatch):
     pp._PROFILE_CACHE[key]["at"] -= pp._PROFILE_TTL + 1
     pp.player_profile("5995")
     assert len(calls) == 2  # expired entry triggered a rebuild
+
+
+def test_is_cached_false_before_any_call(monkeypatch):
+    monkeypatch.setattr(pp, "sleeper_players", _fake_players_df)
+    assert pp.is_cached("5995") is False
+    assert pp.is_cached("5995", league_id="123") is False
+
+
+def test_is_cached_true_after_a_real_call(monkeypatch):
+    monkeypatch.setattr(pp, "sleeper_players", _fake_players_df)
+    monkeypatch.setattr(pp, "_real_nfl_history", lambda *a, **k: {})
+    monkeypatch.setattr(pp, "_adp_history", lambda *a, **k: [])
+    pp.player_profile("5995")
+    assert pp.is_cached("5995") is True
+    # a different league_id key must not be reported cached just because
+    # the no-league entry is
+    assert pp.is_cached("5995", league_id="123") is False
+
+
+def test_is_cached_false_after_ttl_expiry():
+    pp._PROFILE_CACHE[("5995", None)] = {"data": {}, "at": 0}  # ancient
+    assert pp.is_cached("5995") is False

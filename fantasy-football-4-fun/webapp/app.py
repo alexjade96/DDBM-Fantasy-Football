@@ -4575,9 +4575,56 @@ def report(league: str = DEFAULT_LEAGUE, season: str | None = None,
 
 
 # --- player profile ---------------------------------------------------------
+def _player_loader(player_id: str, league: str | None, season: str | None,
+                   refresh: int) -> HTMLResponse:
+    """A fast, styled 'loading…' page that then navigates to the real
+    render, same pattern as `_report_loader`. Only ever shown for a COLD
+    request (see player_page's `pp.is_cached` check) -- a warm cache hit
+    skips this entirely and renders straight through, since a
+    loader-then-redirect round trip would otherwise slow down the common
+    case for no reason.
+    """
+    from urllib.parse import quote
+    q = "render=1"
+    if league:
+        q += f"&league={quote(league)}"
+    if season:
+        q += f"&season={quote(season)}"
+    if refresh:
+        q += f"&refresh={refresh}"
+    return HTMLResponse(f"""<!doctype html><html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Loading player profile…</title>
+<style>
+  :root {{ --bg:#f6f7f5; --ink:#1d2321; --faint:#8b938f; --turf:#2f7d4f; --line:#e2e6e3; }}
+  @media (prefers-color-scheme: dark) {{
+    :root {{ --bg:#121614; --ink:#e6ebe8; --faint:#6b7570; --turf:#5fbf85; --line:#28302c; }} }}
+  html,body {{ height:100%; margin:0; }}
+  body {{ display:grid; place-items:center; background:var(--bg); color:var(--ink);
+    font-family:ui-sans-serif,-apple-system,"Segoe UI",Roboto,sans-serif; }}
+  .box {{ text-align:center; }}
+  .ring {{ width:42px; height:42px; margin:0 auto 18px; border-radius:50%;
+    border:3px solid var(--line); border-top-color:var(--turf);
+    animation:spin .8s linear infinite; }}
+  @keyframes spin {{ to {{ transform:rotate(360deg); }} }}
+  @media (prefers-reduced-motion:reduce) {{ .ring {{ animation-duration:2s; }} }}
+  h1 {{ font-size:16px; font-weight:600; margin:0 0 4px; }}
+  p {{ color:var(--faint); font-size:13px; margin:0; }}
+</style></head><body>
+  <div class="box">
+    <div class="ring" role="status" aria-label="Loading player profile"></div>
+    <h1>Loading player profile…</h1>
+    <p>Pulling real-NFL history and league data, this can take a moment
+       the first time.</p>
+  </div>
+  <script>location.replace("/player/{player_id}?{q}");</script>
+</body></html>""")
+
+
 @app.get("/player/{player_id}", response_class=HTMLResponse)
 def player_page(request: Request, player_id: str, league: str | None = None,
-                season: str | None = None, refresh: int = 0, theme: str = "light"):
+                season: str | None = None, refresh: int = 0, render: int = 0,
+                theme: str = "light"):
     """A single player's profile: real-NFL history + (when a league is
     given) this league's own draft/roster/trade/waiver history for them.
 
@@ -4590,7 +4637,13 @@ def player_page(request: Request, player_id: str, league: str | None = None,
     `player_profile()` caches its own result (a cold call is expensive --
     see that module's docstring), so `refresh=1` is threaded through as
     `fresh=True` to force a rebuild, same convention `pick(..., fresh=)`
-    already uses for league_data().
+    already uses for league_data(). A COLD request (`pp.is_cached` false,
+    or `refresh=1` forcing a rebuild) returns `_player_loader` instead of
+    rendering inline -- same "instant spinner page that redirects to the
+    real render" pattern `/report`'s own `_report_loader` uses, since a
+    real page navigation has no elapsed-time indicator available to it the
+    way an htmx tab switch does (see player_profile.py's own docstring).
+    A warm hit skips the loader and renders straight through.
     """
     from webapp import player_profile as pp
 
@@ -4603,6 +4656,9 @@ def player_page(request: Request, player_id: str, league: str | None = None,
             league_name = s.name
         except Exception:
             resolved_league = None
+
+    if not render and (refresh or not pp.is_cached(player_id, resolved_league)):
+        return _player_loader(player_id, league, season, refresh)
 
     profile = pp.player_profile(player_id, league_id=resolved_league,
                                 fresh=bool(refresh))
