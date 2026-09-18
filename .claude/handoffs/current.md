@@ -1,6 +1,6 @@
 # Context Handoff
 
-Generated: 2026-09-12T13:33:32-07:00
+Generated: 2026-09-18T10:48:00-07:00
 
 Purpose:
 This document is the authoritative project state for resuming work in a new
@@ -10,513 +10,466 @@ Claude Code session.
 
 ## Goal
 
-Two pieces of work this session, both complete:
+Built a new **Player Comparison** feature (renamed from "Position
+Comparison" this session -- see below): a league-free landing-page tab
+(alongside ADP Comparison / NFL Stats) that compares same-position real-NFL
+players against the field and against each other, week by week -- built for
+in-season lineup decisions. Shipped, tested against real data end to end,
+and iterated through several rounds of user-reported bugs, each fixed and
+re-verified with a real browser (Playwright), not just unit tests.
 
-1. **`sentiment-analysis/`**: a new standalone subproject (repo root) for a
-   planned NFL news-sentiment-analysis feature. Currently in a pre-decision
-   benchmarking phase -- no model, source, or hosting venue chosen yet.
-2. **Full repo-root restructure**: renamed/relocated every top-level
-   directory to reflect actual purpose (`python/` -> `webapp/`, `R/` ->
-   `r-analysis/`, `season/` -> `data/seasons/`, `results/` ->
-   `r-analysis/data/results/`), centralized previously-duplicated
-   path-resolution logic, fixed bugs the restructure surfaced (both
-   pre-existing and self-introduced), and verified end-to-end.
-
-**Everything described below is implemented and verified.** No pending
-uncommitted-but-incomplete work. Nothing has been committed to git yet in
-this session -- all changes are staged/working-tree only (commits were not
-requested).
+**This session's follow-up work (still uncommitted, same working tree):**
+renamed the whole feature from "Position Comparison" to "Player Comparison"
+per explicit user request ("this function is meant to be a player
+comparison tool... rb1 on team a vs rb2 on team b is essentially a player
+comparison in the same position"), and changed the dashboard header's
+league/user lookup button from "Load" to "Search" to match the landing
+page's already-"Search" equivalent. Verified via `git diff` before starting
+that every renamed line was newly added this feature's own build (zero
+matching removed lines in the modified files, and the 6 renamed files were
+untracked with no prior git history) -- nothing pre-existing was touched.
 
 ---
 
 ## Current State
 
-- Branch: `main`. Working tree has extensive staged/unstaged changes from
-  the restructure (`git mv` operations show as paired A/D in `git status
-  --short`, which is normal -- git's own commit-time diff will detect them
-  as renames). Nothing committed yet.
-- `sentiment-analysis/` is fully built, tested, and git-tracked as new
-  untracked files (never committed either).
-- All validation re-run and passing as of the end of this session:
-  - Python: 216/216 pytest (`cd webapp && venv/Scripts/python.exe -m
-    pytest -q`)
-  - `verify.py` (from repo root, with R on PATH): `pytest` PASS, `testthat`
-    FAIL (pre-existing, see below), `check_playoffs.py` PASS (4/4 stored
-    champions reproduce), `export_py`/`export_r` PASS, parity diff PASS
-    (873 metric records + 3 summaries identical R<->Python)
-  - Both dashboards (`python launch.py dashboard`, `python launch.py --r
-    dashboard`) boot live and load real league data
-  - Both origin R scripts (`r-analysis/ddbmFF.R`, `r-analysis/
-    leagueAnalytics.R`) run to completion headless from repo root and write
-    real output to their new locations
-- **Not run**: Docker build validation. Docker Desktop was not running
-  during this session and was not started (per standing instruction not to
-  manage services/processes myself). Run `docker build -t sleepermetrics .`
-  manually before next deploy to confirm the Dockerfile changes are sound.
-
-### New top-level layout
-
-```
-DDBM-Fantasy-Football/
-  webapp/                    (was python/)
-    sleepermetrics/, ffadp/, nflref/, webapp/ (FastAPI app), tests/, venv/
-    repo_paths.py             (NEW -- centralized path resolution, see below)
-  r-analysis/                (was R/)
-    sleepermetrics/ (R package)
-    ddbmFF.R, app.R, leagueAnalytics.R, FantasyFootball.Rproj  (moved in)
-    data/results/             (was /results at repo root)
-    sleeperPlayerData.rds, sleeperPlayers.json, sleeperPlayersSorted.json
-    .RData*, .Rhistory*, Rplots.pdf  (moved in; .Rproj.user/ deliberately
-      NOT moved, left at repo root to regenerate fresh)
-  data/
-    seasons/                 (was /season at repo root)
-  sentiment-analysis/         (NEW this session, see below)
-  parity/                     (unchanged location; gained parity/paths.py)
-  tools/                      (unchanged location; getSleeperPlayers.ps1
-                                moved in from repo root)
-  docs/                       (unchanged location; references.txt moved in
-                                from repo root)
-  Dockerfile, launch.py, verify.py, README.md, CLAUDE.md,
-    .dockerignore, .github/workflows/ci.yml   (repo root, all edited)
-```
-
-### Deleted
-
-- `test.json` (repo root) -- confirmed stray, unreferenced anywhere, a raw
-  one-off `/rosters` API dump from an unrelated league committed at the
-  very first commit. Deleted with explicit user confirmation (destructive
-  action, called out beforehand per CLAUDE.md policy).
-
-### Left alone, explicitly out of scope
-
-- `webapp/.refactor-backup-2026-08-27/` -- untracked, pre-existing, has its
-  own `RESTORE.md` saying "delete after manual review." Not touched.
-- `.Rproj.user/` at repo root -- left at the OLD location rather than moved
-  alongside the relocated `.Rproj`; it holds session/cursor state tied to
-  the old project path and regenerates cleanly next to
-  `r-analysis/FantasyFootball.Rproj` on first open there.
-- `.claude/`, `.claude-logs/` -- session-management artifacts, never in
-  scope for the restructure.
+- Branch: `main`. **Nothing from this session (or the prior session) is
+  committed** -- all work is uncommitted in the working tree on top of
+  `99c8376`.
+- **Files (new, this feature -- renamed a second time this session, see
+  below)**:
+  - `fantasy-football-4-fun/webapp/player_compare.py` (was
+    `position_compare.py`) -- league-free data layer:
+    `player_field_compare()` (was `position_field_compare`), `player_trend()`
+    (was `position_trend`).
+  - `fantasy-football-4-fun/webapp/templates/_playercompare_compare.html`
+    (was `_poscompare_compare.html`) -- tab shell (controls + leaderboard
+    container + chart container + JS).
+  - `fantasy-football-4-fun/webapp/templates/_playercompare_table.html`
+    (was `_poscompare_table.html`) -- leaderboard fragment with per-row
+    checkboxes (`data-playercompare-pick`, was `data-poscompare-pick`).
+  - `fantasy-football-4-fun/webapp/templates/_playercompare_charts.html`
+    (was `_poscompare_charts.html`) -- the two comparison-chart `<img>`
+    panels fragment.
+  - `fantasy-football-4-fun/tests/test_player_compare.py` (was
+    `test_position_compare.py`) -- data-layer + chart-function tests (31
+    tests, all renamed, all passing).
+  - `fantasy-football-4-fun/tests/test_playercompare_landing.py` (was
+    `test_poscompare_landing.py`) -- route tests (13 tests, all renamed, all
+    passing).
+- **Files (modified, this feature)**:
+  - `fantasy-football-4-fun/webapp/app.py` -- `/playercompare` (was
+    `/poscompare`), `/playercompare/data`, `/playercompare/compare` routes;
+    `player_overlay` (was `position_overlay`) branch in the league-free part
+    of `/chart/{name}` (before `pick()`). Three comments describing the
+    historical route-collision bug still literally say `/chart/poscompare`
+    on purpose -- that's the name the bug actually had; left as accurate
+    history, same convention as the ddbmFF.R row-index comments.
+  - `fantasy-football-4-fun/sleepermetrics/plots.py` -- `plot_player_
+    overlay()` (was `plot_position_overlay`; shared snapshot/trend chart),
+    `_place_radar_labels()`, `_format_stat_value()`,
+    `_radar_label_radius`-related constants (docstrings/comments updated to
+    the new function name, logic untouched).
+  - `fantasy-football-4-fun/webapp/static/style.css` -- `#playercompare-
+    picks`/`#playercompare-count`/`#playercompare-compare-btn` selectors
+    (were `#poscompare-*`).
+  - `fantasy-football-4-fun/webapp/templates/home.html` -- nav button
+    "Player Comparison" (was "Position Comparison"), `hx-get="/playercompare"`
+    (was `/poscompare`); also carries this session's unrelated prior-session
+    "Look up a league" label removal and "Find" -> "Search" (already done
+    before this session started).
+  - `fantasy-football-4-fun/webapp/templates/index.html` -- header lookup
+    button `#lookup-go` changed **"Load" -> "Search"** (this session, user
+    request) to match the landing page's already-"Search" equivalent; brand
+    tooltip text updated to say "Player Comparison".
+- **Scope of the rename, verified before starting**: grepped the whole
+  `fantasy-football-4-fun/` tree for `poscompare`/`position_compare`/
+  `position_overlay`/"Position Comparison" (11 files matched) and confirmed
+  via `git diff` that every match was a newly-ADDED line in this feature's
+  own uncommitted build (zero matching REMOVED lines in any modified file;
+  the 6 renamed files were untracked with no prior commit history). Nothing
+  pre-existing was touched. Explicitly left alone as genuinely generic /
+  not-this-feature: `nflref/summary.py`'s `percentile_profile()` (shared
+  with the existing player-profile radar chart) and `plots.py`'s
+  `plot_player_radar()`/`_radar_axes()`/`_place_radar_labels()`/
+  `_format_stat_value()` (generic radar-drawing helpers used by more than
+  just this feature) and `player_compare.py`'s own `_DEFAULT_TREND_KEYS`
+  (genuinely per-position defaults, not the feature name).
+- **NOT this session's work -- pre-existing/concurrent, still present,
+  untouched by this session** (see Risks/Unknowns -- flag before any commit):
+  modified: `_shell_sync.html`, `_user_leagues.html`, `_landing_start.html`,
+  `tab_testing.html`; untracked: `test_lookup.py`, `test_season_history.py`,
+  `test_user_leagues.py`, `webapp/templates/tab_season_history.html`.
+  `data/sources/adp/2026.json` modified -- benign live-ADP-refetch drift,
+  same as prior sessions; `git checkout` it before a commit unless wanted.
+- Full pytest (`fantasy-football-4-fun/`), re-run AFTER this session's
+  rename: **377 passed**, same 2 pre-existing failures as before the rename
+  (`test_ffadp.py::test_export_xlsx_route` -- missing `openpyxl`;
+  `test_nflref.py::test_snapshot_serves_when_network_gone` -- pre-existing
+  `KeyError`). Identical pass count to the prior session's own run,
+  confirming the rename introduced no regressions.
+- `verify.py` (R<->Python parity) NOT re-run -- nothing touched is in the
+  parity-diffed contract (`player_compare.py`/`app.py`/webapp templates are
+  all outside `sleepermetrics`' diffed surface; `plots.py` additions are
+  webapp-only chart functions, same precedent as `plot_player_radar`).
 
 ---
 
 ## Architecture
 
-### sentiment-analysis/ (new subproject)
+**Naming note:** this feature was called "Position Comparison" through its
+entire build (dashboard-tab pivot, landing-tab rebuild, radar-label solver)
+and was renamed to **"Player Comparison"** only in this session's own
+follow-up work, per explicit user request. Every name below (routes,
+functions, files, CSS ids) is given in its CURRENT (post-rename) form;
+where the history below refers to a bug or decision by the name it had AT
+THE TIME (e.g. "`/chart/poscompare` registered after `/chart/{name}`"),
+that historical name is preserved on purpose -- see Important Discoveries.
 
-Standalone, pre-decision benchmarking harness for a planned news-sentiment
-feature (news tab split by team/player, ranking source material by
-positive/negative fantasy impact, building a historical source-reliability
-record). Deliberately isolated from `webapp/sleepermetrics` -- no wiring
-into the live site yet.
+### 1. Player Comparison is genuinely league-free (major pivot mid-build)
 
-```
-sentiment-analysis/
-  README.md               -- full architecture notes, model/source research summary
-  requirements.txt         -- transformers, torch, vaderSentiment, datasets, scikit-learn
-  benchmark/                -- code only, owns no data
-    models.py               -- common interface: VADER, cardiffnlp RoBERTa, ProsusAI/finbert
-    loader.py                -- loads james-kramer/football_news (HF) + Data/hand-labeled/
-    run.py                    -- CLI: scores every dataset x every model, prints accuracy/confusion matrix
-  Data/                    -- ALL data lives here (benchmark/ reads from it, owns none itself)
-    hand-labeled/hand_labeled.csv   -- 16 real NFL injury/beat-writer examples, tracked in git
-    beat-writers/, news-feeds/       -- empty placeholders for future scraped sources (gitkeep only)
-  Models/                  -- empty placeholder for downloaded model weights (gitkeep only;
-                               models currently download fresh from HF Hub each run)
-```
+- Originally built as a **dashboard tab** (within-team depth chart +
+  fantasy-roster comparison, needing a loaded league's `roster_detail()`).
+  **Fully reverted** after the user clarified a league only ever added a
+  scoring-format distinction, and that's a separate future feature -- see
+  Rejected Approaches.
+- Rebuilt as a **landing-page tab**, same family as ADP Comparison / NFL
+  Stats: `GET /playercompare` (shell), `GET /playercompare/data`
+  (leaderboard fragment), `GET /playercompare/compare` (the two-chart HTML
+  fragment), `GET /chart/player_overlay` (the actual PNG, dispatched in
+  `app.py`'s `chart()` BEFORE `pick()`, exactly like the existing
+  `PLAYER_CHARTS` branch -- see Important Discoveries for why this route
+  naming matters).
+- `webapp/player_compare.py`'s functions are already league-free
+  (`player_field_compare`/`player_trend` never took a `Season`); the
+  removed `roster_position_group()` was the only league-scoped piece.
+- No Scoring (std/half/ppr) control yet -- deliberately deferred (see
+  Rejected Approaches). `player_leaderboard()`/`percentile_profile()` are
+  PPR-only today; the control would be decorative until a per-format
+  leaderboard aggregation exists.
 
-Verified working: ran `python -m benchmark.run --models vader --dataset
-hand_labeled` end-to-end (VADER scored 43.8% accuracy on the 16-example
-starter set; the two transformer models correctly degrade with a clear
-"missing dependency" message when `transformers`/`torch` aren't installed,
-rather than crashing).
+### 2. Leaderboard -> checkbox -> "Compare selected" -> two charts
 
-**No model/source/hosting decision made yet** -- this is intentionally the
-next phase of work, not something to resolve automatically. See the
-README's "Architecture notes" section for full research summary (GitHub
-Actions cron vs other hosting options, source candidates researched: RSS
-feeds, ESPN undocumented API, nflverse structured data; Reddit and
-Twitter/X ruled out).
+- `_playercompare_table.html`: Sleeper-sourced leaderboard (`source="sleeper"`
+  forced, not a toggle -- the checked `player_id`s feed straight into
+  `player_field_compare`/`player_trend`, both keyed on the real Sleeper
+  id), one checkbox per row (`data-playercompare-pick`, `value=player_id`,
+  `data-label=player name`).
+- `_playercompare_compare.html`'s inline JS: `wireCheckboxes()` re-binds on
+  every htmx leaderboard swap; "Compare selected" button (bare `<button>`,
+  NOT `.nfl-apply` -- see Important Discoveries) collects checked ids/labels
+  comma-joined and fires `window.htmx.ajax('GET', '/playercompare/compare', ...)`.
+- `/playercompare/compare` (HTML fragment, in `app.py`) renders
+  `_playercompare_charts.html`: two `<img src="/chart/player_overlay?...">`
+  tags (snapshot radar + trend line), each with `mode=`/`player_ids=`/
+  `player_labels=` query params.
+- `/chart/player_overlay` (PNG route) calls `plots.plot_player_overlay`.
 
-### Repo-root restructure: centralized path resolution
+### 3. `plots.plot_player_overlay(players, stat_keys, mode, title, position)`
 
-**The core fragility this fixed**: 8+ independent places computed "find
-`data/seasons/` (formerly `season/`) relative to this file" via hardcoded
-`Path(__file__).resolve().parents[N]` hop-counts or bare relative-path
-literals. A directory rename/renest broke ALL of them independently unless
-each was found and fixed by hand -- exactly the failure mode that bit twice
-during this session (see Important Discoveries).
-
-**New centralizing modules**:
-- **`webapp/repo_paths.py`** -- Python. `REPO_ROOT = Path(__file__).resolve
-  ().parent.parent` (one level up from `webapp/`, since this file sits at
-  `webapp/repo_paths.py` and the repo root is one level above `webapp/`).
-  `SEASON_DIR` = `SLEEPERMETRICS_SEASON_DIR` env var if set, else
-  `REPO_ROOT / "data" / "seasons"`. Every one of `webapp/{sleepermetrics,
-  ffadp,nflref}/*.py` and `webapp/webapp/app.py` now imports `SEASON_DIR`
-  from here instead of recomputing it. Docstring explains why the
-  Dockerfile's flattened `/app/` layout does NOT reuse this same
-  computation (env var override always wins there instead -- see below).
-- **`r-analysis/sleepermetrics/R/paths.R`** -- new file, exports
-  `sl_season_dir()`. Resolution order: `SLEEPERMETRICS_SEASON_DIR` env var,
-  else the bare literal `"data/seasons"` (correct when cwd = repo root,
-  which is how `launch.py`/`verify.py`/`testthat`/`parity/export_r.R`/
-  `tools/run_dashboard.R` all invoke R). **Deliberately does NOT get a
-  `this.path`-style self-locating fix** the way the origin scripts did --
-  see Important Decisions for why (the package is meant to be
-  `library()`-loaded after install, with no fixed source location).
-  `playoffs.R`'s three function defaults (`sl_playoff_configs`,
-  `sl_apply_playoffs`, `sl_load_playoffs`) all now default to
-  `sl_season_dir()` instead of the literal `"season"`.
-- **`parity/paths.py`** -- new file. `PY_PACKAGE_DIR = "webapp"`,
-  `SEASON_DIR = "data/seasons"` (plain strings, repo-root-relative).
-  `parity/export_py.py` and `parity/check_playoffs.py` both import from
-  here instead of hardcoding `sys.path.insert(0, "python")` +
-  `"season"`/`"playoffs"` literals. `parity/export_r.R` has NO R
-  equivalent import mechanism (R has no `Path(__file__)` primitive to
-  centralize this the same way) -- it calls `sl_season_dir()` directly and
-  a comment cross-references `parity/paths.py` for whoever touches either
-  side, telling them to keep the two in sync by hand.
-
-**Docker is a genuinely different case, not just a deeper nesting**: the
-Dockerfile's `COPY` steps flatten `webapp/{sleepermetrics,ffadp,nflref,
-webapp}` into `/app/{sleepermetrics,ffadp,nflref,webapp}` as direct
-siblings, while `data/seasons/` is copied to `/app/data/seasons` -- a
-different relative shape than the real repo, not a uniformly-deeper
-version of it. Rather than trying to make one formula cover both, the
-Dockerfile just sets `SLEEPERMETRICS_SEASON_DIR=/app/data/seasons`
-explicitly, so `repo_paths.py`'s env-var-override path always wins there
-and the REPO_ROOT-relative fallback (correct only for the real repo layout)
-never actually executes in Docker.
-
-### Origin-script self-location (`this.path`)
-
-`r-analysis/ddbmFF.R` and `r-analysis/leagueAnalytics.R` gained:
-```r
-SCRIPT_DIR <- dirname(this.path::this.path())
-```
-placed after the `library()` calls. Every bare-filename I/O call
-(`sleeperPlayerData.rds`, the `out()` helper building `data/results/
-<season>/` or `data/results/league/`) now builds off `SCRIPT_DIR` instead
-of a literal relative path. This makes both scripts genuinely
-cwd-independent: they produce identical output whether run as `Rscript
-r-analysis/ddbmFF.R` from repo root, `Rscript ddbmFF.R` from inside
-`r-analysis/`, or sourced in RStudio via `r-analysis/FantasyFootball.Rproj`
-(which sets cwd to `r-analysis/`). New dependency: `this.path` (CRAN),
-documented in CLAUDE.md's and README.md's install-package lists.
-
-`app.R` also got its stale `source("R/ddbmMetrics.R")` fixed to
-`source("ddbmMetrics.R")` (now a sibling file, not needing the old `R/`
-prefix) and its header comment's `shiny::runApp(".")` usage note expanded
-to cover both invocation directories.
+- `players` = `{label: data}`. `mode="snapshot"`: `data` is a
+  `percentile_profile()`-shaped dict, drawn as a radar (`_radar_axes`,
+  shared with `plot_player_radar`). `mode="trend"`: `data` is a
+  `player_trend()`-shaped list, drawn as a Cartesian line (one stat,
+  `stat_keys[0]`, per player).
+- Colors via the existing `palette()` (stable per label).
+- **Radar shows actual numbers per spoke**: `"{value} ({percentile})"` per
+  player per stat, via `_place_radar_labels()` -- a real polar-coordinate
+  collision solver, the polar counterpart to the existing Cartesian
+  `_place_labels`. See Important Discoveries for why a naive radial-push
+  formula was structurally insufficient and had to be replaced.
 
 ---
 
 ## Important Decisions
 
-- **Decision**: Rename-in-place is the default-safe restructure move
-  (same nesting depth under repo root); allowing deeper nesting (e.g.
-  `data/seasons/` instead of `season/` at repo root) is explicitly
-  user-approved and requires fixing every hop-count reference as part of
-  the same change. **Reasoning**: `parents[N]`-style hop counts are
-  correct only for a specific, fixed nesting depth; changing depth without
-  updating every computation silently breaks path resolution (found and
-  fixed this exact bug live in `data/seasons/scaffold.py` -- see
-  Important Discoveries).
-- **Decision**: Centralize path-resolution logic into one module per
-  language (`repo_paths.py`, `paths.R`, `parity/paths.py`) rather than
-  just fixing each of the 8+ existing hardcoded occurrences in place.
-  **Reasoning**: explicit user request ("verify as few as possible/0
-  hard-coded items as possible") -- fixes the root cause (duplicated
-  computation) so a FUTURE rename only touches one file per language, not
-  8+.
-- **Decision**: `r-analysis/sleepermetrics/` (the R *package*) does NOT
-  get a `this.path`-based self-locating fix, unlike the origin scripts.
-  **Reasoning**: `this.path` finds where a SOURCE FILE lives on disk,
-  which is meaningless once a package is `library()`-loaded after
-  installation (no fixed source location at all). The package's
-  `sl_season_dir()` instead relies on cwd = repo root, which is correct
-  for every actual invocation path in this repo (`launch.py`, `verify.py`,
-  `testthat`, `parity/export_r.R`, `tools/run_dashboard.R`) but NOT if you
-  open `r-analysis/FantasyFootball.Rproj` directly in RStudio and then
-  call a package function needing `data/seasons/` -- documented as a
-  known asymmetry in CLAUDE.md's "Working directory" bullet, with the
-  explicit-path workaround spelled out (`sl_dashboard(playoffs =
-  "../data/seasons")`).
-- **Decision**: `this.path` added as a real new R dependency (not a
-  narrower `commandArgs()`-based fix). **Reasoning**: presented both
-  options with full tradeoffs (this.path = works in all 3 invocation
-  styles including RStudio, small new dependency; commandArgs = no new
-  dependency but does NOT cover the RStudio-sourced case, so doesn't
-  actually solve the problem fully) -- user explicitly chose this.path
-  after seeing neither option cleanly dominated.
-- **Decision**: `data/seasons/scaffold.py`'s bugged `sys.path.insert`
-  (see Important Discoveries) was fixed to `parents[2] / "webapp"` rather
-  than importing from a shared helper. **Reasoning**: this file lives
-  OUTSIDE both `webapp/` and any package tree (it's a standalone CLI at
-  `data/seasons/scaffold.py`), so there's no existing shared-helper
-  location it could cleanly import from without adding a new cross-tree
-  dependency; a corrected inline hop-count was the smallest fix.
-- **Decision**: Two genuinely pre-existing bugs (parity exporters calling
-  `apply_playoffs(ss, "playoffs")` -- a directory that never existed;
-  `check_playoffs.py`'s stale `sys.path.insert(0, "python")`) were FIXED
-  as part of this restructure rather than left alone. **Reasoning**: both
-  were sitting on the exact lines already being edited for the rename, and
-  the user explicitly approved fixing them in that same pass rather than
-  treating the restructure as strictly rename-only.
-- **Decision**: `sentiment-analysis/Data/` and `sentiment-analysis/
-  benchmark/` are a strict data/code split -- `benchmark/` owns no data of
-  its own, `loader.py` reads from `../Data/`. **Reasoning**: explicit user
-  request when reviewing the initial structure ("benchmark should be
-  standalone/able to link to the data at a later time").
+- **Scope pivot: dropped the fantasy-roster/within-team dashboard-tab
+  design entirely, rebuilt as league-free.** User's own words: "the only
+  league-type purpose is more of a scoring distinguishment... but players
+  themselves can be compared already at the baseline." This was a full
+  revert-and-rebuild mid-session, not an incremental adjustment -- see
+  Rejected Approaches for exactly what was removed.
+- **No Scoring control shipped, despite being partially built once.**
+  Removed after confirming `player_leaderboard()`/`percentile_profile()`
+  have no per-format variant -- a control that changes nothing is worse
+  than no control. The user confirmed the INTENT (compare a player's value
+  across std/half/ppr) is real future work, just not built yet. The seam is
+  commented in `app.py` above the `/playercompare` routes.
+- **Renamed "Position Comparison" -> "Player Comparison" (this session,
+  after the feature was otherwise complete).** User's own words: "this
+  function is meant to be a player comparison tool; any downstream
+  functions or files that supplement it are meant to follow it, the
+  exceptions being position comparison functions (e.g. rb vs wr) / rb1 on
+  team a vs rb2 on team b is essentially a player comparison in the same
+  position." Scope was verified via `git diff` before starting (see Current
+  State) then executed as a full rename across the module, its two
+  functions, all three routes, the chart function + its dispatch key, all
+  three templates, CSS ids, the nav label, and both test files -- 11 files
+  total. Deliberately left alone: `nflref.summary.percentile_profile`
+  (generic, shared with `plot_player_radar`), `plot_player_radar`/
+  `_radar_axes`/`_place_radar_labels`/`_format_stat_value` (generic
+  radar-drawing helpers, not named after this feature), and
+  `player_compare.py`'s own `_DEFAULT_TREND_KEYS` (genuinely per-position
+  stat defaults). Three comments in `app.py` describing the historical
+  route-collision bug still literally read `/chart/poscompare` -- that is
+  the name the bug actually had, kept as accurate history rather than
+  rewritten, same convention as the ddbmFF.R row-index comments.
+- **Radar labels show BOTH raw value and percentile** (user's explicit
+  choice among value-only / percentile-only / both), and **all 14 stats
+  stay labeled** rather than trimming to a smaller set (user's explicit
+  choice: "label all and pad/distinguish labels to make readable") --
+  this is what forced building the real polar collision solver rather than
+  a simpler fixed-offset or a reduced stat set.
+- **"Compare selected" sits beside "Load", not below the leaderboard** --
+  moved per user request, required removing `.nfl-apply` from the new
+  button (that class's `margin-left:auto` would have split the two buttons
+  apart with a gap instead of sitting flush).
 
 ---
 
 ## Important Discoveries
 
-- **`Path(__file__).resolve().parents[N]` hop-counts are fragile to ANY
-  nesting-depth change, and this bit twice during THIS session, not just
-  as a theoretical risk**:
-  1. `data/seasons/scaffold.py` hardcoded `parent.parent / "python"` to
-     find the sibling `sleepermetrics` package. Before the restructure,
-     `season/scaffold.py`'s `parent.parent` was the repo root (correct).
-     After nesting `season/` one level deeper under `data/`, the SAME
-     `parent.parent` computation from `data/seasons/scaffold.py` resolves
-     to `data/`'s parent context wrong -- it needed `parents[2]`, not
-     `parent.parent` (=`parents[1]`). Found via a broad final `grep`
-     sweep across ALL file types repo-wide (not just the `webapp/*.py`
-     files the initial "8 occurrences" audit covered) -- confirms a
-     narrow initial audit scope can miss real breakage. Fixed and
-     verified live (`python data/seasons/scaffold.py --help` now
-     imports and runs correctly).
-  2. The Docker image's COPY-flattened layout (`/app/{sleepermetrics,
-     ffadp,...}` as direct siblings, NOT preserving the `webapp/` prefix)
-     is NOT simply "one level shallower" than the real repo in a way one
-     shared formula could cover -- it's a genuinely different relative
-     shape (`data/seasons/` lands as a CHILD of `/app`, not a sibling of
-     the package dirs the way it is in the real repo). Solved by having
-     Docker set `SLEEPERMETRICS_SEASON_DIR` explicitly rather than trying
-     to unify the two computations.
-- **A broad, repo-wide, all-file-type sweep is necessary after a
-  restructure like this -- a narrower sweep scoped to "the obvious code
-  directories" WILL miss things.** The initial audit (8 `parents[2]`
-  occurrences in `webapp/*.py`) was thorough for that scope but missed:
-  `data/seasons/scaffold.py` (outside `webapp/`), and ~15 stale prose
-  comment/docstring references scattered across R package files
-  (`headshots.R`, `report.R`, `season.R`, `statnames.R`, `league.R`,
-  `playoffs.R`), Python package files (`ffadp/base.py`, `ffadp/cbs.py`,
-  `ffadp/espn.py`, `ffadp/fantasypros.py`, `ffadp/rotowire.py`,
-  `ffadp/sleeper.py`, `ffadp/yahoo.py`, `ffadp/ffc.py`, `ffadp/__init__.py`,
-  `ffadp/finish.py`, `nflref/base.py`, `nflref/schedules.py`,
-  `nflref/__init__.py`, `sleepermetrics/{scoring,nflstats,draft,league,
-  plots,playoffs}.py`), `webapp/webapp/app.py`, `parity/README.md`,
-  `sentiment-analysis/README.md`, `docs/hosting-cicd-{plan,actions}.md`,
-  and `README.md`/`CLAUDE.md` themselves. None of these were
-  functionally broken (comments don't execute), but they'd mislead anyone
-  reading them post-restructure. The check that actually found these:
-  `grep -rn "\bpython/|\bseason/|R/sleepermetrics" --include={py,R,md,yml}
-  .` repo-wide, filtering out `.claude*`/`.refactor-backup` as
-  out-of-scope, then manually reviewing each hit for false positives
-  (prose like "Pre-season/draft slot", "--python/--r flag", "per
-  season/league" are NOT paths).
-- **`docs/hosting-cicd-actions.md` had its own STALE self-referential
-  note** claiming ".dockerignore and Dockerfile still say `playoffs/`
-  where the real dir is `season/`" -- but neither file actually contained
-  `playoffs/` by the time this session touched them (already-resolved
-  drift, predating this session). Rewritten to state the actual current
-  fixed state rather than leave a misleading unchecked action item.
-- **`git status --short` after `git mv` + follow-up edits shows paired
-  A/D lines, not `R` (rename) lines, when files were ALSO edited after
-  the move** (37 files showed as `AM`). This is normal git behavior, not
-  a sign anything is broken -- `git diff -M`/`git log --follow` at
-  commit time will still detect the underlying renames via content
-  similarity. Don't be alarmed by `git status --short` not showing `R`
-  lines directly after `git mv` + edits.
-- **`treemapify` 2.5.6 is broken against `ggplot2` 4.0.1`** (a `geom_
-  treemap()` internal API mismatch, `argument of length 0` in
-  `tile_f()`). This crashed `ddbmFF.R`'s `DDBMPositionPointsTree.png`
-  chart during live verification -- confirmed as a pre-existing
-  dependency-version-drift issue, NOT caused by this session's changes
-  (13+ other charts rendered successfully before this one failed,
-  including charts written to the new `r-analysis/data/results/2025/`
-  location, proving the path-resolution fix itself works). Not fixed;
-  flagged for whoever next touches `ddbmFF.R`'s R environment.
-- **dplyr `left_join` many-to-many warnings in `leagueAnalytics.R`** --
-  pre-existing dplyr-version-drift noise, script still completed
-  successfully and wrote all 6 expected output files. Not a path/
-  restructure issue.
+- **A route registered under `/chart/{name}` (a path-param catch-all) will
+  silently swallow ANY later route registered as a more specific literal
+  path under the same prefix**, e.g. `/chart/poscompare` (the route's name
+  AT THE TIME this bug shipped, before this session's rename) registered
+  AFTER `/chart/{name}` never received a request -- FastAPI/Starlette
+  matches in REGISTRATION ORDER, and the catch-all matched first every
+  time, returning a 404 from inside `chart()`'s own fallback logic. This was
+  a real, shipped bug (user reported "no response" when clicking Compare
+  selected). Fixed by renaming the HTML-fragment route to
+  `/playercompare/compare` (outside the `/chart/` prefix entirely, itself
+  since renamed from `/poscompare/compare`) rather than relying on
+  registration order staying correct forever. The PNG route (now
+  `/chart/player_overlay`, was `/chart/position_overlay`) is fine because
+  it's a literal `if name == "player_overlay"` branch INSIDE the existing
+  `/chart/{name}` function, not a second route registration.
+- **`.card.chart img` starts at `opacity: 0` (style.css) and is only made
+  visible by `prepCharts()`, JS that lives in `index.html` (the dashboard
+  shell).** Any standalone page rendering chart PNGs (no dashboard shell)
+  needs its OWN copy of that fade-in logic or images load correctly but
+  stay permanently invisible forever. This bit twice in this project now:
+  `player_profile.html` needed it first (documented in CLAUDE.md), and this
+  feature's `_playercompare_compare.html` (was `_poscompare_compare.html`)
+  needed the identical fix (`fadeInCharts()`, mirrored from
+  `player_profile.html`, wired to `htmx:afterSwap` on the charts
+  container). **Check for this class of bug on any FUTURE standalone page
+  that renders `.card.chart` images.**
+- **A bare `input { width: 210px; ... }` rule in style.css (meant for the
+  header's league-ID text field) silently styles EVERY `<input>` on the
+  page, including a plain checkbox**, unless overridden. `.adp-check input`
+  already guarded against this for the ADP tab's own checkboxes; this
+  feature's leaderboard checkboxes needed the identical guard
+  (`#playercompare-picks input[type="checkbox"] { width: 14px; ... }`, was
+  `#poscompare-picks`). A `width: 1%`/`width: 1px` hint on the surrounding
+  `<td>` does NOT fix this -- the checkbox's OWN inflated width is what was
+  dragging the column wide, not the cell's table-layout sizing.
+- **A polar radar spoke pointing straight at its own tick label (e.g. 12
+  o'clock) cannot escape a collision by pushing the value label further out
+  along that spoke alone** -- the tick label and any purely-radial-pushed
+  point stay on the exact same angular ray however far out it goes.
+  Verified with an isolated single-spoke debug render before believing it.
+  Fix: `_place_radar_labels` tries a 2D grid (radius x small angular
+  nudge), not radius alone.
+- **`.controls span` (11px, uppercase -- styled for field-label captions
+  like "Position"/"Season") bleeds into ANY `<span>` nested inside a
+  `.controls` form**, including a button's own inner count span. Fixed by
+  removing an unnecessary wrapper `<span>` and targeting the count span by
+  id (`#playercompare-count`, was `#poscompare-count`, specificity (1,0,0))
+  since a bare class selector (0,1,0) loses to `.controls span`'s (0,1,1).
+- **`window.htmx` is only `window.htmx` if `home.html`/`index.html` actually
+  loaded it via `<script src="/static/htmx-...js">`** -- navigating
+  directly to a fragment-only route (e.g. `/playercompare`) in a test
+  bypasses that entirely and produces a native (non-htmx) form submit with
+  no error, which looks deceptively like "nothing happened" rather than a
+  clear failure. Any future browser-driven verification of an htmx page
+  MUST start from the real entry point (`/` or `/dashboard`), not the
+  fragment route directly.
+- **Screenshot timing is not proof of a bug** -- an early full-page
+  `page.screenshot()` showed blank chart panels even though `img.
+  naturalWidth`/`img.complete` both reported success; that particular case
+  WAS just Playwright screenshot timing (confirmed by re-screenshotting
+  after a longer wait). But the SAME "blank panel" symptom reappeared later
+  and was a REAL bug (the opacity:0 issue above) -- the two look identical
+  from a screenshot alone. Always check `getComputedStyle(img).opacity`
+  directly, not just `naturalWidth`/`complete`, when a chart "looks" blank.
 
 ---
 
 ## Constraints
 
-- User's writing-style rules (global CLAUDE.md): no em dashes, two spaces
-  after periods -- but this project's OWN established convention (per
-  "preserve existing project conventions") is `--` for the em-dash
-  equivalent and single spaces after periods; this handoff and all
-  restructure edits followed the PROJECT convention, not the raw global
-  default, consistent with prior sessions' documented practice.
-- CLAUDE.md's "Code Modifications" protocol (list every file, wait for
-  confirmation before editing) was followed for the restructure: the
-  full file list was presented and explicitly confirmed before any
-  `git mv` or edit began.
-- CLAUDE.md's "Destructive Operations" protocol: `test.json`'s deletion
-  was explicitly flagged as destructive and confirmed separately before
-  being carried out; the dev-server-stop blocker (see Rejected
-  Approaches / discoveries) was handed back to the user rather than
-  self-resolved by killing processes.
-- Never manage the dev server myself (existing standing feedback memory,
-  `feedback_reuse_dev_server.md`) -- when `git mv python webapp` failed
-  with a Windows file-lock (the dev server was running from
-  `python/venv`), the correct response was to ask the user to stop it
-  manually, NOT kill the process myself. User did stop it; work resumed
-  cleanly.
-- `sentiment-analysis/` must not import from or modify
-  `webapp/sleepermetrics`/`webapp/webapp` -- confirmed clean via a
-  dedicated verification pass (grep for cross-references, live import
-  test) at the user's explicit request in the final turn of this session.
+- Never manage/start dev servers directly (standing preference, carried
+  forward). Real-server verification in this session used a scoped,
+  throwaway `uvicorn.Server` + `threading.Thread` inside a disposable
+  Python script in the scratchpad dir, torn down at the end of each run --
+  not a persistent dev server left running. This was necessary because
+  static template inspection alone MISSED two real, user-reported bugs
+  (the route collision, the opacity:0 issue) that only manifest via an
+  actual HTTP request/response cycle.
+- **Verify against real rendered output, not just "the code ran without
+  error" or "tests pass."** This session's own pattern, established the
+  hard way: built a scratchpad Playwright harness
+  (`click_flow_real.py` and siblings, in the session's scratchpad dir --
+  see Reference Documents) that drives a REAL browser through the REAL
+  click flow against a REAL throwaway server with REAL (unmocked) Sleeper
+  data. Re-run this same harness pattern for any future verification of
+  this feature.
+- Before modifying files, present the complete list and wait for
+  confirmation (user's global CLAUDE.md rule) -- followed throughout.
+- When the user corrects scope mid-task, revert cleanly rather than
+  layering on top -- done for the dashboard-tab -> landing-tab pivot (full
+  removal of `roster_position_group()`, the 4 old dashboard templates, the
+  `tab()`/`@tab_part` wiring, before rebuilding fresh).
 
 ---
 
 ## Rejected Approaches
 
-- **Rejected**: Manually fixing each of the 8 `parents[2]` occurrences
-  in place without a shared helper module. **Why**: user explicitly
-  wanted "0 hard-coded items as possible" -- centralizing was chosen
-  over item-by-item patching specifically to remove the duplicated-
-  computation root cause, not just its current symptom.
-- **Rejected**: Giving the R *package* (`sleepermetrics`) the same
-  `this.path`-based self-location fix as the origin scripts. **Why**:
-  doesn't make sense for an installable package with no fixed source
-  location; see Important Decisions above for the full reasoning. This
-  asymmetry between origin-scripts and package is intentional, not an
-  oversight -- don't "fix" it by adding this.path to the package later
-  without re-deriving why it was excluded here.
-- **Rejected**: A `commandArgs()`-based self-location fix for the origin
-  scripts (no new R dependency). **Why**: doesn't work when a script is
-  sourced interactively inside RStudio (no `--file=` arg present in that
-  case), so it doesn't actually solve the cwd-ambiguity problem in the
-  one case (RStudio, "the author's way" per CLAUDE.md) that matters
-  most. Presented to the user as a real option with this caveat; they
-  chose `this.path` instead once it was clear commandArgs was not a full
-  fix.
-- **Rejected**: Trying to make ONE path-resolution formula cover both the
-  real repo layout AND the Dockerfile's flattened `/app/` layout.
-  **Why**: they are genuinely different relative shapes (see Important
-  Discoveries), not the same computation at different depths -- forcing
-  one formula to cover both would have made the (already correct, already
-  working) Docker `ENV SLEEPERMETRICS_SEASON_DIR=` override redundant or
-  wrong. Kept them as two intentionally separate mechanisms instead.
-  Documented explicitly in `repo_paths.py`'s own docstring so a future
-  editor doesn't try to "simplify" this into one formula.
-- **Rejected**: Deleting `sleeperPlayers.json`/`sleeperPlayersSorted.json`
-  (confirmed orphaned -- nothing in the repo reads them, gitignored).
-  **Why**: user chose to move them into `r-analysis/` for consistency
-  with the R-scoped grouping instead of deleting, even though nothing
-  currently reads them there either. A deliberate, low-risk organizational
-  choice, not an oversight -- don't "clean these up" by deleting them
-  without asking again.
-- **Rejected**: Moving `.Rproj.user/` alongside the relocated `.Rproj`
-  file. **Why**: it holds session/cursor-position state keyed to the OLD
-  project path; carrying it forward risked stale/mismatched project
-  metadata. Left at the old (repo root) location to regenerate cleanly
-  next to `r-analysis/FantasyFootball.Rproj` on first RStudio open there.
+- **Dashboard-tab design (within-team depth chart via `roster_position_
+  group()`, fantasy-roster-vs-roster comparison)** -- fully built (4
+  templates, `TABS` entry, `tab()` branch, 3 `@tab_part` handlers,
+  `roster_position_group()` + its tests), then FULLY REVERTED same session
+  once the user clarified the feature should be league-free. Do not rebuild
+  this without an explicit new request -- if a within-league roster
+  comparison is wanted again, it should probably be a SEPARATE feature from
+  Player Comparison, not a re-merge, per the user's own framing ("players
+  themselves can be compared already at the baseline").
+- **A Scoring (std/half/ppr) control on the landing tab** -- built once,
+  found to be decorative (no per-format leaderboard/percentile exists to
+  select between), removed. Don't re-add without first building the
+  underlying per-format aggregation.
+- **Fixed-offset / naive-stacking radar label placement** (`_radar_label_
+  radius`, a simple formula: base + player_index * step) -- built, rendered
+  against real 14-stat data, found genuinely unreadable (labels overlapping
+  tick text and each other), replaced with the real collision solver
+  (`_place_radar_labels`). The formula-only function name/constant
+  (`_radar_label_radius`) may still appear in old diffs/history but is
+  GONE from the current code -- don't resurrect it.
+- **Pure radial-push-only collision avoidance for radar labels** (tried as
+  the first version of the REAL solver, before adding angular nudges) --
+  structurally cannot fix a spoke-pointing-at-its-own-tick-label collision;
+  see Important Discoveries. Superseded by the 2D (radius x angle) search.
+- **Wrapping the "Compare selected" button's count in a `<span>`, and
+  giving the button the `.nfl-apply` class** -- both tried first, both
+  reverted for the specificity/auto-margin reasons in Important
+  Discoveries.
 
 ---
 
 ## Remaining Work
 
-Nothing blocking. Optional follow-ups, none requested/required:
-
-1. **(Recommended before next deploy)** Run `docker build -t
-   sleepermetrics .` manually to validate the Dockerfile changes --
-   Docker Desktop was not running during this session and was
-   deliberately not started. This is the one validation step from the
-   original plan that could not be completed.
-2. **(Optional)** The pre-existing `testthat` failure in `test-playoffs.R`
-   (`write_cfg()`'s test helper writes `<dir>/2025.json` directly instead
-   of the `<dir>/<league_id>/2025.json` shape `sl_playoff_configs()`
-   requires) was confirmed identical against the pre-restructure code via
-   `git stash` and left as out of scope. Fix only if asked.
-2b. **(Optional)** `treemapify` 2.5.6 vs `ggplot2` 4.0.1 incompatibility
-   breaks `ddbmFF.R`'s treemap chart. Pre-existing environment issue, not
-   caused by this session. Fix (upgrade/downgrade one of the two
-   packages) only if `ddbmFF.R`'s full chart set is needed again.
-3. **(Optional)** `sentiment-analysis/` has no model/source/hosting
-   decision yet -- next step per its own README is either growing
-   `Data/hand-labeled/hand_labeled.csv` with more real examples, or
-   installing the full `requirements.txt` and running the full
-   VADER/cardiffnlp/FinBERT comparison. Not started; genuinely the next
-   phase, not a forgotten task.
-4. **(Not yet committed)** Nothing in this session's work has been
-   committed to git. If/when the user asks for a commit, note the scale
-   (300+ file moves via `git mv`, plus edits) -- consider whether they
-   want one large restructure commit or split by concern
-   (sentiment-analysis addition vs. the repo-root restructure are
-   logically separate and could be two commits).
+1. [ ] **Not yet committed.** Propose a commit split (data layer + chart
+   function; landing route/templates; the Player Comparison rename; the
+   Load->Search button fix; maybe the radar-label-solver fix as its own
+   commit given its size) rather than one combined commit, per this
+   project's own established precedent. `git checkout --
+   data/sources/adp/2026.json` first unless the drift is wanted.
+2. [ ] **Flag the non-this-session files to the user before any commit** --
+   `_shell_sync.html`, `_user_leagues.html`, `_landing_start.html`,
+   `tab_testing.html` (modified) and `test_lookup.py`,
+   `test_season_history.py`, `test_user_leagues.py`,
+   `tab_season_history.html` (untracked) are NOT this session's work and
+   should not be swept into a commit for this feature without the user's
+   explicit say-so.
+3. [ ] CLAUDE.md has NOT been updated with a bullet documenting Player
+   Comparison yet -- this codebase's own established convention (dense
+   bullet per shipped feature). Worth doing before/alongside a commit. Use
+   the FINAL (post-rename) names throughout: `player_compare.py`,
+   `player_field_compare`/`player_trend`, `/playercompare*` routes,
+   `plot_player_overlay`.
+4. [ ] Consider whether the Scoring (std/half/ppr) control is wanted as a
+   follow-up now that the seam is documented -- would need a new per-format
+   leaderboard aggregation in `nflstats.py`/`nflref/summary.py` first.
+5. [ ] The trend chart's `weeks=` narrowing (a range picker scoping the
+   snapshot views to recent weeks) was part of the ORIGINAL plan
+   (documented in an earlier planning-phase conversation) but never built
+   -- `player_field_compare`'s `weeks=` param is still a documented no-op.
+   Not requested again; only pick up if asked.
 
 ---
 
 ## Risks / Unknowns
 
-- **Docker build unverified** (see Remaining Work #1). The Dockerfile
-  edits were carefully reasoned through (COPY paths, ENV var, the
-  flattened-layout path-resolution mismatch) but never build-tested this
-  session. Low risk given the reasoning was thorough and cross-checked
-  against `repo_paths.py`'s own documented Docker-case handling, but
-  it's the one unverified piece.
-- **If a FOURTH hardcoded path-hop-count or stale-literal turns up later**
-  (beyond the two already found and fixed:
-  `data/seasons/scaffold.py`, and the original 8 in `webapp/*.py`), the
-  fastest way to find it is the same broad repo-wide grep already proven
-  to work this session: `grep -rn "\bpython/|\bseason/|R/sleepermetrics"
-  --include={py,R,md,yml} .` (excluding `.claude*`/`.refactor-backup`),
-  then manually filter false positives (prose uses of these words are
-  common and NOT paths -- "Pre-season/draft", "--python/--r flag",
-  "season/league" as an "or", "field1/field2/season/field4" lists).
+- **The concurrent/other-session files flagged throughout this document are
+  still sitting in the working tree, unexamined by this session beyond
+  noting they exist and are not this session's work.** Do not assume they
+  are safe to discard or safe to commit -- ask the user or investigate
+  their origin before touching them.
+- **The radar label solver's collision-avoidance was verified against
+  exactly one real case (2 players x 14 RB stats)** -- not stress-tested
+  with 3-4+ overlapping players, which the chart's own design nominally
+  supports (colors come from a palette with more than 2 entries). The
+  `_RADAR_LABEL_PUSHES`/`_RADAR_LABEL_NUDGES` search space may need wider
+  bounds if a future real render with more players still shows collisions.
+- **No Scoring/format control means every part of this feature (leaderboard
+  ranking, percentile field comparison, trend fantasy-points line) is
+  implicitly PPR-only.** This is documented in code comments but not
+  surfaced to the end user anywhere on the page itself (no "PPR" label
+  visible in the UI) -- worth a small UI note if this becomes confusing in
+  practice.
 
 ---
 
 ## Reference Documents
 
-- `CLAUDE.md` (repo root) -- read the "2026-09 repo-root restructure"
-  bullet (search for that exact phrase) and the rewritten "Working
-  directory" bullet immediately before it, before touching path
-  resolution, `ddbmFF.R`/`leagueAnalytics.R`, or the R package's
-  `sl_season_dir()` again.
-- `README.md` (repo root) -- "What's in here" table and Setup section
-  reflect the new layout.
-- `sentiment-analysis/README.md` -- full architecture/research notes for
-  the sentiment feature; read before resuming that work.
-- `data/seasons/README.md` -- updated for the new path; describes the
-  playoff-bracket-config directory contract in detail.
-- `webapp/webapp/README.md` -- updated for the new path.
-- `parity/README.md` -- updated for the new paths.
-- No other design docs specific to either piece of work exist.
+- `CLAUDE.md` (repo root) -- has NOT been updated yet (see Remaining Work
+  #3). Read its existing dense-bullet entries (especially the
+  player-profile and dark-mode-chart ones) as the convention to follow.
+- `fantasy-football-4-fun/webapp/player_compare.py` (was
+  `position_compare.py`) -- read the module docstring first; explains
+  exactly why this stays league-free.
+- `fantasy-football-4-fun/webapp/templates/_playercompare_compare.html`
+  (was `_poscompare_compare.html`) -- read the inline JS comments before
+  touching the button/checkbox wiring again; several non-obvious
+  CSS-specificity traps are documented inline.
+- `fantasy-football-4-fun/sleepermetrics/plots.py` -- read
+  `_place_radar_labels`'s docstring (and the module comments right above
+  `_RADAR_LABEL_PUSHES`/`_RADAR_LABEL_NUDGES`) before touching radar label
+  placement again; it documents the exact collision case that broke the
+  simpler version.
+- `fantasy-football-4-fun/tests/test_player_compare.py` (was
+  `test_position_compare.py`) and `test_playercompare_landing.py` (was
+  `test_poscompare_landing.py`) -- read before extending; several tests are
+  regression tests for specific bugs (the tick-collision fix, the fade-in
+  fix, the route-naming fix) with detailed docstrings explaining what real
+  failure they guard against.
+- Scratchpad Playwright harness scripts (session-specific temp dir, may not
+  survive to a new session -- see the Constraints section for the pattern
+  to rebuild if needed): `click_flow_real.py` was the most useful one
+  (real server + real browser + real data, full click-through). These
+  predate the rename and reference the OLD route/id names
+  (`/poscompare`, `data-poscompare-pick`) -- update them to the new names
+  before reusing.
 
 ---
 
 ## Resume Prompt
 
-Review this handoff completely before making changes.
+Review this handoff completely before doing any work. Review all files
+listed under Reference Documents, especially `CLAUDE.md` and
+`player_compare.py`'s module docstring.
 
-Review CLAUDE.md's "2026-09 repo-root restructure" bullet and the
-"Working directory" bullet before touching path resolution
-(`webapp/repo_paths.py`, `r-analysis/sleepermetrics/R/paths.R`,
-`parity/paths.py`, `ddbmFF.R`/`leagueAnalytics.R`'s `SCRIPT_DIR`, or
-`sl_season_dir()`) again.
+Player Comparison (the league-free landing-page tab, renamed from "Position
+Comparison" late in its own build -- see Important Decisions) is
+functionally complete and verified against real data via a real browser,
+through multiple rounds of user-reported bugs, PLUS a full rename pass
+verified via `git diff` (every touched line was newly added by this
+feature's own build; nothing pre-existing was touched) and confirmed with a
+full pytest run (377 passed, same 2 pre-existing unrelated failures as
+before) -- do not assume "tests pass" means "the feature works end-to-end"
+for any future change here; re-verify with a real browser click-through
+(rebuild the Playwright scratchpad harness pattern described in
+Constraints if the original scripts are gone, updating route/id names to
+the current `/playercompare`/`data-playercompare-pick` forms).
 
-All work described above is implemented and verified -- there is nothing
-to continue unless the user gives a new task. If the user reports a
-"file not found" / "wrong directory" style bug anywhere in `webapp/`,
-`r-analysis/`, `data/seasons/`, `parity/`, or `tools/`, suspect a missed
-hardcoded path reference first and use the repo-wide grep sweep documented
-under Risks / Unknowns before writing new code.
+If the user wants to commit, propose splitting into logical commits and
+explicitly flag the non-this-session files (see Current State and Risks)
+before staging anything -- do not assume those files are safe to include.
 
-If asked to continue the sentiment-analysis work, start from
-`sentiment-analysis/README.md`'s "Architecture notes" and "Datasets used"
-sections -- the next real step is either growing the hand-labeled dataset
-or running the full model benchmark comparison.
+Do not rebuild the dashboard-tab (within-league roster) version of Player
+Comparison, and do not re-add a Scoring control, without an explicit new
+request -- both were deliberately built once and reverted/removed; see
+Rejected Approaches for why.
 
-Preserve documented decisions and do not revisit rejected approaches
+Preserve all documented decisions and do not revisit rejected approaches
 unless new information requires it.
