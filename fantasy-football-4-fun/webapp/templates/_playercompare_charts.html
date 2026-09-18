@@ -1,0 +1,24 @@
+{# The comparison charts for the checked leaderboard rows (HTMX fragment
+   from /playercompare/compare) -- a percentile-vs-field radar and a week-by-week
+   trend line, both from the shared plots.plot_player_overlay chart via
+   the league-free /chart/player_overlay PNG route. #}
+{% if n_selected < 2 %}
+<p class="empty">Check at least 2 players above, then click
+   <strong>Compare selected</strong>.</p>
+{% else %}
+<h3>{{ position }} comparison: {{ n_selected }} players</h3>
+<div class="grid two">
+  <figure class="card chart" style="aspect-ratio: 1 / 1">
+    <img src="/chart/player_overlay?position={{ position }}&season={{ season }}&mode=snapshot&player_ids={{ player_ids|urlencode }}&player_labels={{ player_labels|urlencode }}"
+         alt="{{ position }} percentile comparison against the real-NFL field" loading="lazy">
+    <figcaption>Percentile at each stat against every real NFL
+      {{ position }} this season.</figcaption>
+  </figure>
+  <figure class="card chart wide" style="aspect-ratio: 16 / 9">
+    <img src="/chart/player_overlay?position={{ position }}&season={{ season }}&mode=trend&player_ids={{ player_ids|urlencode }}&player_labels={{ player_labels|urlencode }}"
+         alt="{{ position }} weekly trend" loading="lazy">
+    <figcaption>Fantasy points per week across the season &mdash; a gap
+      means no game that week (bye or unscored), not a zero.</figcaption>
+  </figure>
+</div>
+{% endif %}

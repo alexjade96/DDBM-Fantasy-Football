@@ -1546,6 +1546,39 @@ footer code { font-family: ui-monospace, Consolas, monospace; }
 .scrolltable table thead th::before { content: ""; position: absolute;
   left: 0; right: 0; bottom: 0; height: 1px; background: var(--line); }
 
+/* Player Comparison leaderboard (_playercompare_table.html): the leading
+   checkbox column looked enormous (measured 235px in a real render, second
+   widest column on the table) -- NOT a table auto-layout column-width issue
+   (a `width: 1%`/`width: 1px` hint on the td/th changed nothing, verified
+   with Playwright), because the actual culprit is the bare `input { width:
+   210px; ... }` rule (line ~76, meant for the league-id text field) that
+   styles EVERY <input> on the page, including this plain checkbox, to
+   210px wide by default. `.adp-check input` below already guards its own
+   checkbox against this exact rule -- same fix here, sized down from the
+   ADP tab's 15px to 14px only to match this table's tighter row height. */
+#playercompare-picks input[type="checkbox"] { width: 14px; height: 14px;
+  margin: 0; padding: 0; border: 0; border-radius: 0; background: none;
+  appearance: auto; accent-color: var(--turf); cursor: pointer; }
+#playercompare-picks th:first-child, #playercompare-picks td:first-child {
+  width: 1%; padding-right: 8px; text-align: center; }
+
+/* "Compare selected (N)" button sits inside .controls (_playercompare_compare.
+   html), so its count span would otherwise inherit `.controls span`'s
+   11px/uppercase label styling (meant for the Position/Season field
+   captions above it) -- reset explicitly to match the surrounding button
+   text instead of reading as a tiny separate label. `.controls span` is
+   (0,1,1) specificity; a bare `.playercompare-count` class (0,1,0) loses to it
+   (verified with Playwright -- the class alone had no visible effect), so
+   this targets the id (1,0,0), which unambiguously outranks it. */
+#playercompare-count { font-size: inherit; text-transform: none;
+  letter-spacing: normal; color: inherit; }
+/* Bottom-align with Load/the dropdowns in the flex row (same reason
+   .nfl-apply carries align-self:flex-end), WITHOUT that class's
+   margin-left:auto -- see the template's own comment on why a second
+   auto-margined button splits away from Load instead of sitting flush
+   beside it. A small fixed gap instead of the auto-push. */
+#playercompare-compare-btn { align-self: flex-end; margin-left: 10px; }
+
 /* Free-agent best team vs one real team: team selection (fat-0, fat-1, ...)
    and the Actual/Optimized mode (fam-actual/fam-opt) are TWO INDEPENDENT
    radio groups sharing one .fa-vs-mode container, so either can change

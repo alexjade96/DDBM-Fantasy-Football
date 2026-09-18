@@ -4262,3 +4262,137 @@ def plot_player_radar(season_profiles: dict | None, focus_season: str | None,
     fig.patch.set_facecolor(T["bg"])
     fig.tight_layout(rect=(0, 0, 1, 0.90))
     return fig
+
+
+def plot_player_overlay(players: dict, stat_keys: list[str], mode: str = "snapshot",
+                        title: str | None = None, position: str | None = None):
+    """One shared chart for the Player Comparison view (webapp-only, see
+    `webapp.player_compare`), covering both the within-team depth chart
+    and the across-teams field comparison -- same function, same `players`
+    dict shape, so the color/legend convention stays identical between a
+    manager's own depth chart and a cross-team snapshot; only the CONTENT of
+    `players` differs per caller (one manager's roster group vs several
+    managers'/the field's picks).
+
+    `players` is `{player_label: data}`, keyed by whatever label the caller
+    wants on the legend (a player name, "Alice - RB1", etc. -- this
+    function has no id-resolution of its own):
+      - `mode="snapshot"`: `data` is a `nflref.summary.percentile_profile()`
+        result (`{"columns": [{"key","label","value","percentile"}, ...]}`,
+        the SAME shape `plot_player_radar` already consumes per season) --
+        drawn as a radar, one polygon per player, reusing `_radar_axes`.
+      - `mode="trend"`: `data` is a `webapp.player_compare.player_trend()`
+        result for that one player (`[{"week": int, stat_key: value, ...}]`)
+        -- drawn as a week-by-week line, ONE stat (`stat_keys[0]`) per
+        player, since overlaying several differently-scaled stats on one
+        Cartesian axis (points vs. yards vs. attempts) would not read
+        honestly the way percentile-normalized radar spokes do. A player
+        with no rows for a stat key at all draws no line rather than a
+        flat zero.
+
+    `stat_keys` selects which columns/stat to plot: in `"snapshot"` mode,
+    restricts the radar to these keys (in this order) rather than every
+    column a profile happens to carry, so a caller comparing e.g. only
+    receiving stats doesn't also plot each player's full stat set; in
+    `"trend"` mode, only `stat_keys[0]` is used (see above) -- a caller
+    wanting a different trend stat calls again with a different
+    `stat_keys[0]`, rather than this function guessing which of several
+    requested stats to plot.
+
+    Colors come from the shared `palette()` (stable per player-label, same
+    hue set the manager-facing charts already use) rather than a new
+    palette, so a chart mixing real managers' names in its labels stays
+    visually consistent with the rest of the dashboard.
+
+    Returns `_no_data(...)` for an empty `players` dict or an unrecognized
+    `mode`, never raises.
+    """
+    if not players:
+        return _no_data("No players selected to compare.")
+    colors = palette(players.keys())
+
+    if mode == "snapshot":
+        keys = list(stat_keys) if stat_keys else []
+        if not keys:
+            for prof in players.values():
+                if prof and prof.get("columns"):
+                    keys = [c["key"] for c in prof["columns"]]
+                    break
+        if not keys:
+            return _no_data("No stat data available for this position.")
+        label_by_key = {}
+        for prof in players.values():
+            if not prof:
+                continue
+            for c in prof.get("columns", []):
+                label_by_key.setdefault(c["key"], c["label"])
+        labels = [label_by_key.get(k, k) for k in keys]
+
+        fig = plt.figure(figsize=(9.5, 9.5))
+        ax, angles = _radar_axes(fig, labels)
+        drawn_names = []
+        for name, prof in players.items():
+            if not prof:
+                continue
+            by_key = {c["key"]: c["percentile"] for c in prof.get("columns", [])}
+            values = [by_key.get(k, 0) for k in keys]
+            vals = values + values[:1]
+            ax.plot(angles, vals, color=colors[name], linewidth=2, label=name)
+            ax.fill(angles, vals, color=colors[name], alpha=0.08)
+            drawn_names.append(name)
+        if not drawn_names:
+            plt.close(fig)
+            return _no_data("No stat data available for this position.")
+
+        # Both the raw stat value AND its percentile at every spoke, for
+        # every player -- deliberately not trimmed to a smaller stat set or
+        # moved to a separate table; the raw numbers stay ON the radar
+        # itself, with real collision avoidance (see _place_radar_labels)
+        # rather than a fixed offset, which collided constantly with up to
+        # 2+ overlapping polygons across 14 spokes on the first real render.
+        _place_radar_labels(fig, ax, angles, keys, drawn_names, players, colors)
+
+        ax.legend(loc="upper right", bbox_to_anchor=(1.32, 1.12), fontsize=8.5,
+                  frameon=False, labelcolor=T["ink2"])
+        fig.suptitle(title or "Player comparison", fontsize=15, fontweight="bold",
+                    color=T["ink"], x=0.06, ha="left", y=0.985)
+        subtitle = "Percentile among real NFL players at this position"
+        if position:
+            subtitle = f"Percentile among real NFL {position}s"
+        subtitle += " · each label: stat value (percentile)"
+        fig.text(0.06, 0.925, subtitle, fontsize=9, color=T["muted"])
+        fig.patch.set_facecolor(T["bg"])
+        fig.tight_layout(rect=(0, 0, 1, 0.90))
+        return fig
+
+    if mode == "trend":
+        if not stat_keys:
+            return _no_data("No stat selected for the trend chart.")
+        stat_key = stat_keys[0]
+        fig, ax = plt.subplots(figsize=(9, 5.5))
+        any_drawn = False
+        stat_label = stat_key
+        for name, rows in players.items():
+            pts = [(r["week"], r[stat_key]) for r in (rows or [])
+                   if stat_key in r and r[stat_key] is not None]
+            if not pts:
+                continue
+            pts.sort()
+            xs = [p[0] for p in pts]
+            ys = [p[1] for p in pts]
+            ax.plot(xs, ys, color=colors[name], linewidth=2, marker="o",
+                    markersize=4, label=name)
+            any_drawn = True
+        if not any_drawn:
+            plt.close(fig)
+            return _no_data("No week-by-week data available for this stat.")
+        ax.set_facecolor(T["bg"])
+        ax.legend(loc="best", fontsize=8.5, frameon=False, labelcolor=T["ink2"])
+        _finish(fig, ax, title or "Player trend", xlabel="Week",
+               ylabel=stat_label, grid_axis="both")
+        fig.patch.set_facecolor(T["bg"])
+        return fig
+
+    return _no_data(f"Unrecognized chart mode: {mode!r}.")
+
+

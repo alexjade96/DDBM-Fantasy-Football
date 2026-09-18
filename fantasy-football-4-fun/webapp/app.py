@@ -1090,6 +1090,37 @@ def chart(name: str, league: str = DEFAULT_LEAGUE, season: str | None = None,
             pname = (profile.get("identity") or {}).get("player_name") or f"Player {player_id}"
             focus = season or profile.get("focus_season")
             return png(plots.plot_player_radar(profile.get("season_profiles"), focus, pname))
+    if name == "player_overlay":
+        # Player Comparison landing tab's shared snapshot/trend chart (see
+        # sleepermetrics.plots.plot_player_overlay + webapp.player_compare).
+        # League-free like PLAYER_CHARTS above -- dispatched before pick(),
+        # since this tab has no league at all (see _playercompare_compare.html's
+        # own player-picker: checkboxes on the real-NFL leaderboard, not a
+        # roster). `player_ids`/`player_labels` are comma-joined, same order,
+        # built client-side from the checked leaderboard rows.
+        from webapp import player_compare as pc
+
+        pos = (position or "RB").upper()
+        ids = [i for i in (player_ids or "").split(",") if i]
+        labels = [l for l in (player_labels or "").split(",") if l]
+        with _render_lock:
+            plots.set_chart_theme(theme)
+            if not ids or len(ids) != len(labels):
+                # plot_player_overlay({}, ...) already degrades to its own
+                # titled blank panel -- no need for a separate 404/empty path.
+                return png(plots.plot_player_overlay({}, [], mode=mode))
+            sea = season or _current_nfl_season()
+            if mode == "trend":
+                by_id = pc.player_trend(ids, sea, position=pos)
+                players = {lab: by_id.get(pid, []) for pid, lab in zip(ids, labels)}
+                stat_keys = pc._DEFAULT_TREND_KEYS.get(pos, ("pts_ppr",))[:1]
+                return png(plots.plot_player_overlay(
+                    players, list(stat_keys), mode="trend", title=f"{pos} trend"))
+            profiles = pc.player_field_compare(sea, pos, ids)
+            players = {lab: profiles.get(pid) for pid, lab in zip(ids, labels)}
+            return png(plots.plot_player_overlay(
+                players, [], mode="snapshot",
+                title=f"{pos} comparison", position=pos))
     d, s, key = pick(league, season)
     # A custom / rolled-back bracket (token) overrides this season's committed
     # one for every playoff chart, so the whole tab reflects it consistently.
@@ -1627,6 +1658,119 @@ def nflstats_export_xlsx(view: str = _NFLSTATS_VIEW_DEFAULT, season: str | None 
         buf.getvalue(),
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={"Content-Disposition": f'attachment; filename="{stem}.xlsx"'})
+
+
+# --- Player Comparison landing tab (league-free) ----------------------------
+# Same family as ADP Comparison / NFL Stats above: no league loaded, public
+# real-NFL data only. Built for in-season lineup decisions ("who should I
+# start"), not a season-end leaderboard -- see webapp/player_compare.py's
+# own module docstring for why this stays league-free.
+#
+# Flow: load the position's Sleeper-sourced leaderboard (same board/columns
+# the NFL Stats tab's own Sleeper source already renders -- reused rather
+# than duplicated), check players in it, click "Compare selected" to render
+# the snapshot radar (percentile vs. the real-NFL field) and the week-by-week
+# trend line for just those players. `source="sleeper"` is forced (not a
+# toggle like NFL Stats) since the checked player_ids feed straight into
+# `player_compare.player_field_compare`/`player_trend`, which key on
+# the real Sleeper player_id -- an nflverse-sourced board would mean
+# resolving a second id space for no benefit on this tab.
+#
+# NO Scoring (std/half/ppr) control yet, deliberately: the eventual intent is
+# "how does this player rank under different scoring systems" (Sleeper's own
+# raw weekly stats DO carry pts_std/pts_half_ppr/pts_ppr per player-week --
+# see nflstats._USAGE_KEYS), but `player_leaderboard()`/`percentile_profile()`
+# both only ever aggregate/rank by PPR (`fpts_ppr`) today; there is no
+# per-format SEASON leaderboard or percentile to select between yet. A
+# control that changed nothing would be worse than no control -- add it once
+# a per-format leaderboard aggregation actually exists.
+_PLAYERCOMPARE_POS = ["QB", "RB", "WR", "TE", "K", "DEF"]
+_PLAYERCOMPARE_POS_DEFAULT = "RB"
+
+
+def _playercompare_params(position, season):
+    pos = (position or _PLAYERCOMPARE_POS_DEFAULT).upper()
+    if pos not in _PLAYERCOMPARE_POS:
+        pos = _PLAYERCOMPARE_POS_DEFAULT
+    cur = int(_current_nfl_season())
+    try:
+        sea = str(int(str(season).strip()))
+    except (TypeError, ValueError):
+        sea = str(cur)
+    if not (2016 <= int(sea) <= cur):        # nflstats' own real coverage floor
+        sea = str(cur)
+    return pos, sea
+
+
+@app.get("/playercompare", response_class=HTMLResponse)
+def playercompare(request: Request, position: str = _PLAYERCOMPARE_POS_DEFAULT,
+                  season: str | None = None):
+    """Player Comparison landing tab: section shell + controls. The
+    leaderboard streams in from /playercompare/data so switching a control
+    re-fetches just the table (same Load-button pattern as ADP/NFL Stats --
+    no auto-fetch on change, no auto-load on tab open)."""
+    pos, sea = _playercompare_params(position, season)
+    cur = int(_current_nfl_season())
+    seasons = [str(y) for y in range(cur, 2016 - 1, -1)]
+    return tpl.TemplateResponse(request, "_playercompare_compare.html", {
+        "asset_v": asset_v(), "position": pos, "season": sea,
+        "positions": _PLAYERCOMPARE_POS, "seasons": seasons, "avatars": {},
+    })
+
+
+@app.get("/playercompare/data", response_class=HTMLResponse)
+def playercompare_data(request: Request, position: str = _PLAYERCOMPARE_POS_DEFAULT,
+                       season: str | None = None, reload: bool = False):
+    """The position's leaderboard, one checkbox per row (HTMX fragment).
+    Degrades to an empty table rather than 500ing when the feed doesn't
+    resolve."""
+    from webapp.sources import nflref
+
+    pos, sea = _playercompare_params(position, season)
+    ctx = {"position": pos, "season": sea, "avatars": {}}
+    try:
+        lb = nflref.player_leaderboard(sea, pos=pos, source="sleeper", limit=200,
+                                       reload=reload)
+        ctx["cols"] = nflref.leaderboard_columns(pos, "sleeper")
+        ctx["rows"] = _attach_sleeper_ids(records(lb))
+    except Exception:
+        ctx["cols"] = []
+        ctx["rows"] = []
+    return tpl.TemplateResponse(request, "_playercompare_table.html", ctx)
+
+
+@app.get("/playercompare/compare", response_class=HTMLResponse)
+def playercompare_chart_section(request: Request, position: str = _PLAYERCOMPARE_POS_DEFAULT,
+                                season: str | None = None, player_ids: str = "",
+                                player_labels: str = ""):
+    """The snapshot radar + trend-line section for the checked leaderboard
+    rows (HTMX fragment, replaces the "check players above" placeholder).
+    `player_ids`/`player_labels` arrive comma-joined from the client-side
+    "Compare selected" button (see _playercompare_compare.html's script) --
+    same convention the /chart/player_overlay PNG route itself uses, kept
+    separate here since this route renders the surrounding HTML (heading,
+    hint text, the two <img> chart tags), not a PNG.
+
+    Deliberately NOT under /chart/ (this was /chart/poscompare originally):
+    the generic PNG dispatcher `@app.get("/chart/{name}")` is registered
+    BEFORE this route, and FastAPI/Starlette matches path routes in
+    REGISTRATION ORDER -- a literal `/chart/poscompare` route registered
+    after a `/chart/{name}` catch-all never actually receives a request,
+    since the earlier route's `{name}` parameter always matches first. This
+    was a real, shipped 404 (`name="poscompare"` fell through `chart()`'s
+    own branches to a 404) caught by actually clicking through the flow in
+    a browser, not by template/route unit tests alone. Living under
+    /playercompare/ instead of /chart/ sidesteps the collision structurally,
+    rather than depending on registration order staying correct forever.
+    """
+    pos, sea = _playercompare_params(position, season)
+    ids = [i for i in (player_ids or "").split(",") if i]
+    labels = [l for l in (player_labels or "").split(",") if l]
+    return tpl.TemplateResponse(request, "_playercompare_charts.html", {
+        "position": pos, "season": sea,
+        "player_ids": ",".join(ids), "player_labels": ",".join(labels),
+        "n_selected": len(ids),
+    })
 
 
 # The analytics link reads `/league=<id>` (no `/dashboard?` query) -- a literal

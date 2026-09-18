@@ -1,0 +1,151 @@
+{# The "Player Comparison" landing view: league-free, real-NFL-only --
+   see webapp/player_compare.py's module docstring for why this stays
+   off any loaded league. Season / Position are the controls (Load-button
+   pattern, matches ADP Comparison / NFL Stats -- no auto-fetch on change,
+   no auto-load on tab open). No Scoring control yet -- see app.py's own
+   comment above the /playercompare routes: everything here is PPR-based until
+   a per-format leaderboard/percentile aggregation exists to select between.
+   The leaderboard (/playercompare/data) streams in on Load; checking 2+
+   players there and clicking "Compare selected" streams in the comparison
+   charts (/playercompare/compare) below it. #}
+<section class="card">
+  <h2>Player Comparison</h2>
+  <p class="hint">Compare same-position players against the real-NFL field,
+     and against each other week by week &mdash; built for lineup
+     decisions, not a season-end leaderboard. No league required.</p>
+
+  <form class="controls adp-controls-row" id="playercompare-controls"
+        hx-get="/playercompare/data" hx-target="#playercompare-board"
+        hx-swap="innerHTML" hx-trigger="submit" hx-include="#playercompare-controls">
+    <label>
+      <span>Position</span>
+      <select name="position">
+        {% for p in positions %}
+        <option value="{{ p }}" {% if p == position %}selected{% endif %}>{{ p }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>
+      <span>Season</span>
+      <select name="season">
+        {% for y in seasons %}
+        <option value="{{ y }}" {% if y == season %}selected{% endif %}>{{ y }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <button type="submit" class="nfl-apply">Load</button>
+    {# Sits right beside Load rather than below the board -- both controls
+       for "get me a comparison" live in one place. Hidden until the
+       leaderboard has rows to pick from (see wireCheckboxes() below). A
+       bare <button>, not wrapped in a <span>: `.controls span` (styled for
+       the field-label captions above) was bleeding its 11px/uppercase
+       styling into a wrapper span here, shrinking the "(N)" count.
+       Deliberately NOT `.nfl-apply` -- that class's `margin-left: auto`
+       is what pushes Load to the row's right edge; a SECOND button with
+       the same class claims its own leftover space too, splitting the two
+       apart with a gap instead of sitting flush together (verified with a
+       real render). `playercompare-compare-btn` alone carries just the
+       button's visual styling, no auto-margin. #}
+    <button type="button" id="playercompare-compare-btn" hidden disabled>
+      Compare selected (<span id="playercompare-count">0</span>)
+    </button>
+  </form>
+
+  {# The board does NOT auto-load -- opening this tab shows only the
+     controls. Every load (first included) comes from clicking Load. #}
+  <div id="playercompare-board">
+    <p class="hint">Choose a position and season, then click <strong>Load</strong>.</p>
+  </div>
+
+  <div id="playercompare-charts"></div>
+</section>
+
+<script>
+  (function () {
+    var board = document.getElementById('playercompare-board');
+    var btn = document.getElementById('playercompare-compare-btn');
+    var count = document.getElementById('playercompare-count');
+    var charts = document.getElementById('playercompare-charts');
+    var controls = document.getElementById('playercompare-controls');
+    if (!board || !btn) return;
+
+    // Checkboxes render fresh every time the leaderboard reloads (htmx swap),
+    // so re-wire on every swap rather than once at page load.
+    var wireCheckboxes = function () {
+      var boxes = board.querySelectorAll('input[data-playercompare-pick]');
+      var sync = function () {
+        var n = board.querySelectorAll('input[data-playercompare-pick]:checked').length;
+        count.textContent = n;
+        btn.disabled = n < 2;
+        btn.hidden = !boxes.length;
+      };
+      boxes.forEach(function (b) {
+        b.addEventListener('change', function (e) {
+          e.stopPropagation();   // never reach the leaderboard form's own submit
+          sync();
+        });
+      });
+      sync();
+    };
+    // .card.chart img starts at opacity:0 (style.css) and normally fades in
+    // via the dashboard shell's (index.html) prepCharts() -- this landing
+    // page never loads that shell, so the comparison charts loaded fine but
+    // stayed permanently invisible until this ran (same fix
+    // player_profile.html already needed for the same reason -- see its own
+    // fadeInCharts, mirrored here minus the dark-mode theme swap, since this
+    // page has no theme toggle and never builds a themed chart URL).
+    var fadeInCharts = function (root) {
+      root.querySelectorAll('.card.chart img:not([data-sk])').forEach(function (img) {
+        img.setAttribute('data-sk', '1');
+        var fig = img.closest('.card.chart');
+        var ok = function () {
+          fig.classList.remove('skeleton', 'chart-failed'); img.classList.add('loaded');
+        };
+        var fail = function () {
+          fig.classList.remove('skeleton');
+          fig.classList.add('chart-failed');
+          if (fig.querySelector('.chart-retry')) return;
+          var b = document.createElement('button');
+          b.className = 'chart-retry';
+          b.textContent = 'Chart didn’t load. Retry';
+          b.onclick = function () {
+            b.remove();
+            fig.classList.remove('chart-failed');
+            fig.classList.add('skeleton');
+            img.classList.remove('loaded');
+            img.src = /([?&])_=\d+/.test(img.src)
+              ? img.src.replace(/([?&])_=\d+/, '$1_=' + Date.now())
+              : img.src + '&_=' + Date.now();
+          };
+          fig.appendChild(b);
+        };
+        if (img.complete && img.naturalWidth) { ok(); return; }
+        fig.classList.add('skeleton');
+        img.addEventListener('load', ok);
+        img.addEventListener('error', fail);
+      });
+    };
+
+    wireCheckboxes();
+    document.body.addEventListener('htmx:afterSwap', function (e) {
+      if (e.target === board) { wireCheckboxes(); charts.innerHTML = ''; }
+      if (e.target === charts) { fadeInCharts(charts); }
+    });
+
+    btn.addEventListener('click', function () {
+      var boxes = Array.prototype.slice.call(
+        board.querySelectorAll('input[data-playercompare-pick]:checked'));
+      if (boxes.length < 2) return;
+      var ids = boxes.map(function (b) { return b.value; }).join(',');
+      var labels = boxes.map(function (b) { return b.dataset.label; }).join(',');
+      var form = new FormData(controls);
+      window.htmx.ajax('GET', '/playercompare/compare', {
+        target: '#playercompare-charts', swap: 'innerHTML',
+        values: {
+          position: form.get('position'), season: form.get('season'),
+          player_ids: ids, player_labels: labels,
+        },
+      });
+    });
+  })();
+</script>
