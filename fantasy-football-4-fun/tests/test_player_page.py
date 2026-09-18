@@ -32,9 +32,15 @@ def _clear_profile_cache():
 def _fake_profile(monkeypatch):
     """Stub webapp.player_profile.player_profile itself, so this test file
     exercises only the route + template, not the aggregator (that's
-    test_player_profile.py's job)."""
+    test_player_profile.py's job). Everything here is dated "2025" and
+    `current_season` is set to match, so the template's current-vs-past
+    split (see _build_profile's `_split_current`) puts it all in the
+    always-visible "current season" area, matching this fixture's
+    historical pre-split shape."""
     def _fake(player_id, league_id=None, fresh=False):
         league_section = None
+        league_current = None
+        league_past = None
         if league_id:
             league_section = {
                 "draft_picks": [{"season": "2025", "round": 4, "pick_in_round": 2,
@@ -48,26 +54,41 @@ def _fake_profile(monkeypatch):
                 "roster_splits": {"2025": [{"user_name": "rezzu", "weeks": 9,
                                              "points": 24.1, "ppg": 2.7}]},
             }
+            league_current = {
+                "draft_picks": league_section["draft_picks"],
+                "roster": league_section["roster_splits"]["2025"],
+                "trade_stints": [], "waiver_rows": league_section["waiver_rows"],
+            }
+            league_past = {"draft_picks": [], "roster_splits": {},
+                           "trade_stints": [], "waiver_rows": []}
+        real_nfl = {
+            "player_stats": {
+                "rows": [{"player_id": "00-0034975", "player_display_name": "Justice Hill",
+                         "position": "RB", "recent_team": "BAL", "season": "2025",
+                         "week": 1, "targets": 2}],
+                "current_rows": [{"player_id": "00-0034975", "player_display_name": "Justice Hill",
+                                  "position": "RB", "recent_team": "BAL", "season": "2025",
+                                  "week": 1, "targets": 2}],
+                "past_rows": [], "best_effort": False},
+            "snap_counts": {
+                "rows": [{"pfr_player_id": "X", "player": "Justice Hill",
+                         "position": "RB", "season": "2025"}],
+                "current_rows": [{"pfr_player_id": "X", "player": "Justice Hill",
+                                  "position": "RB", "season": "2025"}],
+                "past_rows": [], "best_effort": True},
+        }
+        adp_history = [{"season": "2025", "sleeper_id": player_id, "consensus": 40.0,
+                        "final": 55, "diff": -15.0}]
         return {
             "identity": {"player_id": player_id, "player_name": "Justice Hill",
                          "position": "RB", "team": "BAL", "gsis_id": "00-0034975"},
             "seasons_covered": ["2025", "2024"],
-            "real_nfl": {
-                "player_stats": {"rows": [
-                    {"player_id": "00-0034975", "player_display_name": "Justice Hill",
-                     "position": "RB", "recent_team": "BAL", "season": "2025",
-                     "week": 1, "targets": 2},
-                ], "best_effort": False},
-                "snap_counts": {"rows": [
-                    {"pfr_player_id": "X", "player": "Justice Hill",
-                     "position": "RB", "season": "2025"},
-                ], "best_effort": True},
-            },
-            "adp_history": [
-                {"season": "2025", "sleeper_id": player_id, "consensus": 40.0,
-                 "final": 55, "diff": -15.0},
-            ],
+            "real_nfl": real_nfl,
+            "adp_history": adp_history,
+            "adp_current": adp_history, "adp_past": [],
+            "current_season": "2025",
             "league": league_section,
+            "league_current": league_current, "league_past": league_past,
         }
     monkeypatch.setattr(pp, "player_profile", _fake)
     return _fake
@@ -85,6 +106,37 @@ def test_player_page_without_league(_fake_profile):
     assert "best-effort name match" in body  # snap_counts is flagged
     # no league -> the back link's href fallback has no league/season to carry
     assert 'href="/dashboard"' in body
+
+
+def test_player_page_shows_no_current_season_message_when_only_past_data_exists(monkeypatch):
+    """Regression test: `{% set flags.any_real_nfl = true %}` inside the
+    Real-NFL history {% for %} loop must actually reach the check AFTER the
+    loop (a bare {% set %} there would be scoped to the loop iteration and
+    silently reset, always reporting "no data at all" even when past-season
+    rows exist -- see player_profile.html's `namespace(...)` comment). A
+    player with real data, none of it dated the current season, must show
+    the "no data THIS season" message, never the "no data AT ALL" one."""
+    monkeypatch.setattr(
+        pp, "player_profile",
+        lambda player_id, league_id=None, fresh=False: {
+            "identity": {"player_id": player_id, "player_name": "Old Timer",
+                         "position": "RB", "team": "BAL", "gsis_id": "00-1"},
+            "seasons_covered": ["2026", "2025", "2024"],
+            "real_nfl": {
+                "player_stats": {
+                    "rows": [{"season": "2024", "week": 1}],
+                    "current_rows": [], "past_rows": [{"season": "2024", "week": 1}],
+                    "best_effort": False},
+            },
+            "adp_history": [], "adp_current": [], "adp_past": [],
+            "current_season": "2026",
+            "league": None, "league_current": None, "league_past": None,
+        })
+    resp = app.player_page(_Req(), player_id="5995", render=1)
+    body = resp.body.decode()
+    assert "No real-NFL data found for this player in 2026 -- see past seasons below." in body
+    assert "No real-NFL data found for this player over" not in body
+    assert "past seasons (1 rows)" in body
 
 
 def test_player_page_back_link_carries_league_and_season(monkeypatch, _fake_profile):
@@ -112,9 +164,13 @@ def test_player_page_with_league(monkeypatch, _fake_profile):
     assert resp.status_code == 200
     body = resp.body.decode()
     assert "Test League" in body
-    assert "Roster history by season" in body
+    # This season's (2025) roster/waiver activity is shown directly, no
+    # expansion needed -- "Roster history by season" is the PAST-seasons
+    # heading (see _split_current), which doesn't apply here since this
+    # fixture's data is all dated the current season.
     assert "rezzu" in body
     assert "Waiver / free-agent activity" in body
+    assert "Roster history by season" not in body
 
 
 def test_player_page_league_pick_failure_degrades_to_no_league(monkeypatch, _fake_profile):
@@ -205,6 +261,68 @@ def test_player_page_refresh_shows_loader_even_when_warm(monkeypatch, _fake_prof
     body = resp.body.decode()
     assert "Loading player profile" in body
     assert "refresh=1" in body
+
+
+# --- season pills / htmx percentile swap ------------------------------------
+
+@pytest.fixture
+def _fake_profile_with_seasons(monkeypatch):
+    """Two seasons of percentile data, keyed for the season-overlay radar --
+    the shape player_percentile_part() reads (season_profiles/
+    available_seasons/focus_season), distinct from _fake_profile's league-
+    history-focused fixture above."""
+    def _profile(season, pct):
+        return {"season": season, "position": "RB", "player_id": "5995",
+               "n_population": 40,
+               "columns": [{"key": "fpts_ppr", "label": "PPR pts",
+                           "value": 180.0, "percentile": pct}]}
+
+    def _fake(player_id, league_id=None, fresh=False):
+        season_profiles = {"2024": _profile("2024", 40.0), "2025": _profile("2025", 72.0)}
+        return {
+            "identity": {"player_id": player_id, "player_name": "Justice Hill",
+                         "position": "RB", "team": "BAL", "gsis_id": "00-0034975"},
+            "seasons_covered": ["2025", "2024"],
+            "real_nfl": {}, "adp_history": [], "league": None,
+            "percentile_profile": season_profiles["2025"],
+            "season_profiles": season_profiles,
+            "available_seasons": ["2025", "2024"],
+            "focus_season": "2025",
+        }
+    monkeypatch.setattr(pp, "player_profile", _fake)
+    return _fake
+
+
+def test_player_page_renders_season_pills_as_htmx_buttons(_fake_profile_with_seasons):
+    resp = app.player_page(_Req(), player_id="5995", render=1)
+    body = resp.body.decode()
+    assert '<button type="button" class="year on"' in body
+    assert 'hx-get="/player/5995/percentile?focus=2025' in body
+    assert 'hx-get="/player/5995/percentile?focus=2024' in body
+    assert 'hx-target="#percentile-section"' in body
+    # the pills, chart and table all live inside one swappable container
+    assert '<div id="percentile-section">' in body
+
+
+def test_player_percentile_part_switches_focus_season(_fake_profile_with_seasons):
+    resp = app.player_percentile_part(_Req(), player_id="5995", focus="2024")
+    assert resp.status_code == 200
+    body = resp.body.decode()
+    assert "Percentile profile" in body and "(2024)" in body
+    # the newly-focused pill is marked .on, the other is not
+    assert '<button type="button" class="year on"\n     hx-get="/player/5995/percentile?focus=2024' in body
+    assert '<button type="button" class="year"\n     hx-get="/player/5995/percentile?focus=2025' in body
+
+
+def test_player_percentile_part_falls_back_to_default_focus_on_unknown_season(
+        _fake_profile_with_seasons):
+    """An unresolvable `focus` (stale bookmark, tampered query string) must
+    not 500 or silently show blank data -- it degrades to the profile's own
+    default focus season, same contract player_page() already has."""
+    resp = app.player_percentile_part(_Req(), player_id="5995", focus="1999")
+    assert resp.status_code == 200
+    body = resp.body.decode()
+    assert "(2025)" in body
 
 
 def test_nflstats_table_links_only_rows_with_a_resolved_sleeper_id(monkeypatch):

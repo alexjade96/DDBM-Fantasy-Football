@@ -507,51 +507,84 @@
   </script>
 
   <header class="top">
-    {# Back to the landing page (ADP Comparison / NFL Stats live there, not
-       inside any loaded league) -- a plain link, no JS/htmx, since it's
-       leaving the loaded-league app entirely. #}
-    <a class="brand" href="/" title="Back to home (ADP Comparison, NFL Stats)">
-      <span class="mark"></span>
-      <div>
+    {# Back to the landing page (ADP Comparison / NFL Stats / Position
+       Comparison live there, not inside any loaded league) -- a plain link,
+       no JS/htmx, since it's leaving the loaded-league app entirely. #}
+    <div class="brand-block">
+      <a class="brand" href="/" title="Back to home (ADP Comparison, NFL Stats)">
+        <span class="mark"></span>
         <h1 id="league-name">{{ league_name }}</h1>
-        <p class="sub" id="league-sub">League Analytics | {{ league }}</p>
-      </div>
-    </a>
+      </a>
+      <!-- The subtitle used to be plain text (or, briefly, a separate
+           "Seasons" button next to the lookup box); it's now the one entry
+           point to a loaded league's season history (GET /seasons -- see
+           #lookup-season's comment below for why a visible season <select>
+           was removed). A <button>, not an <a>, since it swaps #panel via
+           htmx rather than navigating -- and it's a SIBLING of .brand, not
+           nested inside it: an interactive element nested inside another
+           (the "back to home" link) is invalid HTML and makes the click
+           target ambiguous. Styled (.brand-sub) to still read as part of
+           the same title block. "| View History" spells out that it's
+           clickable -- a plain "League ID <id>" line reads as inert text,
+           no different from the (non-clickable) league_id shown elsewhere
+           on the page. -->
+      <button type="button" id="league-sub" class="brand-sub" data-load-watch>
+        League ID {{ league }} | View History
+      </button>
+    </div>
 
     <!-- Persistent utility bar: league-agnostic controls that stay put on every
          loaded page, independent of which league/season/tab is showing. Today
-         it holds the League / User lookup; it's the home for further
+         it holds the league/user lookup; it's the home for further
          cross-league tools (see the Testing tab's "persistent league bar"
          mockup). -->
     <div class="utilbar" role="group" aria-label="League tools">
-      <span class="utilbar-label">Look up a league</span>
+      <!-- One box, auto-detected server-side (see app.py's /lookup): paste a
+           league ID, a username, or a user ID and it resolves as whichever
+           one it actually is -- no League/User mode to pick.
 
-      <!-- One lookup control with a League / User mode toggle.
-           League mode -> GET /load (swaps #panel, and /load also re-syncs the
-           title + season list out-of-band). User mode -> GET /user-leagues,
-           rendering the "which of this account's leagues?" list into #panel;
-           picking one there navigates to /league=<id> (a full load), which
-           corrects #league/#season for the tab nav's hx-include. #league and
-           #season stay the canonical state fields either way -- the tabs
-           nav includes them by id, so their names/ids must not change.
-           Endpoint + submit target are switched per-mode in htmx:configRequest
-           below. `change from:#season` reloads the current league on a season
-           switch (League mode only; ignored in User mode). -->
-      <form id="lookup" class="controls" hx-get="/load" hx-target="#panel" hx-swap="innerHTML"
-            hx-include="#theme" hx-trigger="change from:#season, submit" hx-push-url="true"
-            data-load-watch
-            hx-on="htmx:afterRequest: document.querySelectorAll('.tabs button').forEach((b,i)=>b.classList.toggle('active', i===0))">
-        <div class="lookup-mode" role="radiogroup" aria-label="Look up by">
-          <label><input type="radio" name="mode" value="league" checked> League</label>
-          <label><input type="radio" name="mode" value="user"> User</label>
-        </div>
+           #league keeps name="league" -- NOT "q" -- because #panel's boot
+           fetch and the .tabs nav below both hx-include #league by id and
+           depend on it serializing as `league=`; a value it every other
+           /tab/* request reads. (This was a real, shipped bug: renaming it
+           to "q" fixed this form's own submit but silently broke EVERY
+           OTHER request on the page, which then always fell back to
+           DEFAULT_LEAGUE -- clicking any league link landed on whatever
+           league happens to be the server's default, not the one clicked.)
+           So this form's own submit is handled by explicit JS (below),
+           NOT hx-get on the <form> -- it builds the /lookup request by hand
+           with the box's value as `q`, leaving the DOM attribute alone for
+           every other consumer.
+
+           There is no visible season control here anymore -- see
+           #lookup-season's comment for why; the header subtitle
+           (#league-sub, above) is the entry point to switch seasons now. -->
+      <form id="lookup" class="controls" data-load-watch>
         <label>
-          <span id="lookup-label">League ID</span>
+          <span>League ID, username, or user ID</span>
           <input type="text" name="league" id="league" value="{{ league }}"
                  autocomplete="off" spellcheck="false"
-                 data-ph-league="Sleeper league ID" data-ph-user="Sleeper username or user ID">
+                 placeholder="Sleeper league ID, username, or user ID">
         </label>
-        <label>
+        <!-- #season is a required STATE field (the tabs nav and #panel's
+             boot fetch both hx-include it, reading whatever year is
+             currently loaded), not just a picker UI, so it can't simply be
+             deleted -- only hidden. A visible <select> here USED to be how a
+             loaded league's season was switched; it was removed because it
+             could only show a bare year with no status/league_id/"latest"
+             context, one row at a time, and gave no way to browse OR switch
+             seasons for a league you hadn't already loaded. The header
+             subtitle button (#league-sub, above) replaces it: GET /seasons
+             reopens the same season-history list a fresh multi-season league
+             load already shows (tab_season_history.html), now also usable
+             on demand from inside an already-loaded dashboard, with real
+             per-season status, that season's own league_id, and a "you are
+             here" marker on the current row -- one season-picker UI shared
+             by both entry points instead of a duplicate, thinner one living
+             only in the header. (A separate "Seasons" button briefly stood
+             in for this before the subtitle itself took the job, so there is
+             one fewer control competing for space in the utility bar.) -->
+        <label id="lookup-season" hidden>
           <span>Season</span>
           {% include "_seasons.html" %}
         </label>
@@ -562,43 +595,70 @@
   </header>
 
   <script>
-    // League / User lookup toggle for the header form (#lookup).
-    // - swaps the submit endpoint + the field's label/placeholder/name
-    // - in User mode the id box carries name="user" (League mode: name="league")
-    //   so one box serves both; the request path is rewritten just-in-time.
-    (function () {
-      var form = document.getElementById('lookup');
-      if (!form) return;
-      var lbl = document.getElementById('lookup-label');
-      var go = document.getElementById('lookup-go');
-      var modeOf = function () {
-        var r = form.querySelector('input[name="mode"]:checked');
-        return r ? r.value : 'league';
-      };
-      var syncUI = function () {
-        // Re-query every call: /load's out-of-band shell sync can REPLACE the
-        // #league <input> (when a pasted older-season id was resolved forward
-        // to the current-season one), so a reference captured once would be
-        // left pointing at a detached node and User mode would stop switching.
-        var box = document.getElementById('league');
-        if (!box) return;
-        var user = modeOf() === 'user';
-        lbl.textContent = user ? 'Username / user ID' : 'League ID';
-        box.name = user ? 'user' : 'league';
-        box.placeholder = box.dataset[user ? 'phUser' : 'phLeague'] || '';
-        go.textContent = user ? 'Find' : 'Load';
-      };
-      form.querySelectorAll('input[name="mode"]').forEach(function (r) {
-        r.addEventListener('change', syncUI);
+    document.getElementById('lookup').addEventListener('submit', function (e) {
+      e.preventDefault();
+      var box = document.getElementById('league');
+      var theme = document.getElementById('theme');
+      window.htmx.ajax('GET', '/lookup', {
+        target: '#panel', swap: 'innerHTML', source: this, pushUrl: true,
+        values: {
+          q: box ? box.value.trim() : '',
+          theme: theme ? theme.value : 'light',
+        },
+      }).then(function () {
+        document.querySelectorAll('.tabs button').forEach(function (b, i) {
+          b.classList.toggle('active', i === 0);
+        });
       });
-      // Point the request at the right endpoint for the current mode. htmx
-      // reads path from the triggering element's hx-get by default; overriding
-      // it here keeps a single form instead of two.
-      form.addEventListener('htmx:configRequest', function (e) {
-        e.detail.path = modeOf() === 'user' ? '/user-leagues' : '/load';
+    });
+
+    // Every listener below is delegated on document.body, NOT attached
+    // directly to #league/#season/#league-sub -- _shell_sync.html's
+    // out-of-band swap (fired on every boot=1 load AND every /load response)
+    // REPLACES all three elements wholesale with fresh nodes carrying the
+    // same ids. A listener bound once to the original element is silently
+    // left on a detached node the moment that first swap happens, so it
+    // fires zero times on every real page after the first (this was a real,
+    // shipped bug: the season select stopped re-loading anything, and the
+    // league/user box's own "clear season on edit" stopped firing, on
+    // literally every page view because the very first boot fetch always
+    // triggers this swap). Delegation survives the swap since document.body
+    // itself is never replaced -- same pattern data-load-watch above already
+    // uses for exactly this reason.
+    document.body.addEventListener('click', function (e) {
+      if (e.target.id !== 'league-sub') return;
+      // The header subtitle opens the season-history list (GET /seasons)
+      // for whatever league is currently loaded -- see #lookup-season's
+      // comment above for why this replaced the header's old season
+      // <select> (and, briefly, a separate "Seasons" button).
+      var box = document.getElementById('league');
+      var sel = document.getElementById('season');
+      window.htmx.ajax('GET', '/seasons', {
+        target: '#panel', swap: 'innerHTML', source: e.target,
+        values: {
+          league: box ? box.value.trim() : '',
+          season: sel ? sel.value : '',
+        },
       });
-      syncUI();
-    })();
+    });
+
+    document.body.addEventListener('input', function (e) {
+      if (e.target.id !== 'league') return;
+      // Editing the League/user box clears the (hidden) season field.
+      // Without this, the form still carries whatever season was loaded for
+      // the PREVIOUS league (a real form field, not just hx-include'd) --
+      // typing a different league's id and submitting would silently reuse
+      // that old season value instead of triggering the season-history
+      // interstitial a fresh, season-less league open is supposed to show
+      // (app.py's tab() boot branch treats a blank season as "let the user
+      // pick"), and would send a stale season to /lookup's user-search
+      // branch, which ignores it anyway but shouldn't need to.
+      var sel = document.getElementById('season');
+      // A plain `.value = ''` is a no-op here: none of the <option>s has
+      // value="", so the browser leaves the previous selection in place.
+      // selectedIndex = -1 actually clears it, so the field submits blank.
+      if (sel) sel.selectedIndex = -1;
+    });
   </script>
 
   {# hx-ext="preload": each tab button below carries preload="mousedown", so

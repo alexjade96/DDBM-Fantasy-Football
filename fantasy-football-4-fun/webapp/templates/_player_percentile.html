@@ -1,0 +1,45 @@
+{# The player-profile page's "Percentile profile" section: season pills +
+   the radar overlay chart + the focus season's stat table. Factored out of
+   player_profile.html so a season-pill click can htmx-swap just this block
+   (`hx-get` to app.py's player_percentile_part(), `hx-target="#percentile-
+   section"`) instead of reloading the whole page -- see the container div
+   in player_profile.html and the click wiring at the bottom of this file.
+
+   Needs in context: player_id, league, season, theme, bust, percentile_profile,
+   available_seasons, focus_season. Imports `ch` ("_chartmacro.html" as ch)
+   itself (rather than assuming the caller already did) so this partial also
+   renders standalone from the htmx fragment route, which has no other
+   template around it. #}
+{% import "_chartmacro.html" as ch with context %}
+{% if percentile_profile %}
+<h2 id="percentile-profile">Percentile profile <span class="hint">({{ percentile_profile.season }})</span></h2>
+{% if available_seasons|length > 1 %}
+<nav class="rail">
+  <span class="k">Focus season</span>
+  {% for s in available_seasons %}
+  <button type="button" class="year{% if s == focus_season %} on{% endif %}"
+     hx-get="/player/{{ player_id }}/percentile?focus={{ s }}{% if league %}&league={{ league }}&season={{ season }}{% endif %}&theme={{ theme }}"
+     hx-target="#percentile-section" hx-swap="innerHTML">{{ s }}</button>
+  {% endfor %}
+</nav>
+<p class="hint">Every other season is ghosted behind {{ focus_season }} on the same chart.</p>
+{% endif %}
+{{ ch.chart("player_radar", player_id=player_id, season_override=focus_season) }}
+<div class="tablewrap">
+  <table class="dt-games">
+    <thead><tr><th>Stat</th><th class="n">Value</th><th class="n">Percentile</th></tr></thead>
+    <tbody>
+    {% for c in percentile_profile.columns %}
+      {% set p = c.percentile|round|int %}
+      {% set suffix = "th" if (p % 100) in [11,12,13] else {1:"st",2:"nd",3:"rd"}.get(p % 10, "th") %}
+      <tr>
+        <td>{{ c.label }}</td>
+        <td class="n">{{ c.value }}</td>
+        <td class="n">{{ p }}{{ suffix }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+<p class="hint">Against {{ percentile_profile.n_population }} real NFL {{ percentile_profile.position }}s that season.</p>
+{% endif %}

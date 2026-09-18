@@ -44,6 +44,8 @@ _POSITIONS = ("QB", "RB", "WR", "TE", "K", "DEF")
 # here is a raw count or a rate Sleeper already computed; nothing derived.
 # `pts_*` are kept only so a caller can tie a trimmed snapshot back to
 # `scoring.score_player` (the same self-check the playoff engine uses).
+# Offense/kicker only -- see `_DEF_USAGE_KEYS` for team defense's own,
+# structurally different vocabulary.
 _USAGE_KEYS = (
     "gp", "gms_active",
     "off_snp", "tm_off_snp",
@@ -51,6 +53,28 @@ _USAGE_KEYS = (
     "rush_att", "rush_yd", "rush_rz_att", "rush_yac", "rush_td",
     "pass_att", "pass_cmp", "pass_yd", "pass_air_yd", "pass_rz_att",
     "pass_td", "pass_int", "pass_rtg",
+    "pts_std", "pts_half_ppr", "pts_ppr",
+)
+
+# Team defense (DEF) has NO overlap with `_USAGE_KEYS` -- a DEF `player_id` is
+# a team abbreviation (see players.py), and Sleeper's line for it carries a
+# wholly different vocabulary: takeaways, sacks/tackles, points/yards allowed
+# (tiered, matching data/sources/default_scoring.json's DST weights exactly),
+# special-teams/return production, and its own `pts_*`. Confirmed live off a
+# real Sleeper week (2024 wk1-5, all 32 teams) before adding this -- every key
+# below was actually observed on a real DEF line, not guessed from the
+# scoring chart alone. No snap_share/tgt_share/adot equivalent exists for a
+# team unit, so DEF rows are aggregated on a separate path throughout this
+# module rather than forced through the offense shape.
+_DEF_USAGE_KEYS = (
+    "gp", "gms_active",
+    "sack", "sack_yd", "int", "ff", "fum_rec", "fum_rec_td", "blk_kick",
+    "safe", "def_td", "qb_hit", "tkl", "tkl_solo", "tkl_ast", "tkl_loss",
+    "def_3_and_out", "def_4_and_stop", "def_forced_punts", "def_pass_def",
+    "def_st_ff", "def_st_fum_rec", "def_st_td",
+    "pts_allow", "pts_allow_0", "pts_allow_1_6", "pts_allow_7_13",
+    "pts_allow_14_20", "pts_allow_21_27", "pts_allow_28_34", "pts_allow_35p",
+    "yds_allow",
     "pts_std", "pts_half_ppr", "pts_ppr",
 )
 
@@ -80,19 +104,30 @@ def _trim(lines: dict) -> dict:
     -- `gms_active` / `pos_rank_*` and nothing else -- for a player who was on
     an NFL roster but never took a snap; the same shape `metrics._position_
     totals` guards against). `gp` / `gms_active` alone do not count as usage.
+
+    A DEF `pid` (a team abbreviation, never an offensive player) is trimmed
+    against `_DEF_USAGE_KEYS` instead -- Sleeper's own vocabulary for a team
+    defense's line shares no keys with the offense/kicker one.
     """
     pool = players().dropna(subset=["player_id"]).drop_duplicates("player_id")
     pos_map = pool.set_index(pool["player_id"].astype(str))["position"]
     real = set(_USAGE_KEYS) - {"gp", "gms_active"}
+    def_real = set(_DEF_USAGE_KEYS) - {"gp", "gms_active"}
     out: dict = {}
     for pid, line in (lines or {}).items():
         if not isinstance(line, dict):
             continue
-        if pos_map.get(str(pid)) not in _POSITIONS:
+        pos = pos_map.get(str(pid))
+        if pos not in _POSITIONS:
             continue
-        if not any(k in line for k in real):
-            continue
-        out[str(pid)] = {k: float(line[k]) for k in _USAGE_KEYS if k in line}
+        if pos == "DEF":
+            if not any(k in line for k in def_real):
+                continue
+            out[str(pid)] = {k: float(line[k]) for k in _DEF_USAGE_KEYS if k in line}
+        else:
+            if not any(k in line for k in real):
+                continue
+            out[str(pid)] = {k: float(line[k]) for k in _USAGE_KEYS if k in line}
     return out
 
 
@@ -185,12 +220,19 @@ def player_usage(s: Season, weeks=None, reload: bool = False) -> pd.DataFrame:
     pos_map = pool.set_index(pool["player_id"].astype(str))["position"]
     team_map = pool.set_index(pool["player_id"].astype(str))["team"]
 
-    # accumulate per player, and per (nfl_team, ) so tgt_share has a denominator
+    # accumulate per player, and per (nfl_team, ) so tgt_share has a denominator.
+    # DEF is skipped here: every column this function computes (snap_share,
+    # tgt_share, adot) is an offense-usage concept with no team-defense
+    # equivalent -- accumulating a DEF's `_DEF_USAGE_KEYS` line against these
+    # offense keys would silently produce an all-zero, meaningless row rather
+    # than erroring. `player_leaderboard` is the DEF-aware entry point.
     acc: dict = {}
     team_tgt: dict = {}
     for w in wl:
         lines = raw_week(s.season, w, reload=reload)
         for pid, ln in lines.items():
+            if pos_map.get(pid) == "DEF":
+                continue
             a = acc.setdefault(pid, {k: 0.0 for k in (
                 "games", "off_snp", "tm_off_snp", "rec_tgt", "rush_att",
                 "pass_att", "rec_air_yd", "pass_air_yd", "rec_rz_tgt",
@@ -248,6 +290,7 @@ _lb_cache: dict = {}
 # The (df_key, sum-or-mean, raw stat key(s)) the leaderboard aggregates.
 # "sum" keys add across weeks; "rate" keys are recomputed from their own
 # summed numerator/denominator (never a mean of weekly rates).
+# Offense/kicker only -- see `_LB_DEF_SUMS` for team defense's own leaderboard.
 _LB_SUMS = {
     "targets": "rec_tgt", "receptions": "rec", "rec_yards": "rec_yd",
     "rec_td": "rec_td", "carries": "rush_att", "rush_yards": "rush_yd",
@@ -255,6 +298,83 @@ _LB_SUMS = {
     "pass_yards": "pass_yd", "pass_td": "pass_td", "pass_int": "pass_int",
     "fpts_ppr": "pts_ppr",
 }
+
+# Team defense's own leaderboard sums -- no overlap with `_LB_SUMS` (see
+# `_DEF_USAGE_KEYS`). `pts_allow`/`yds_allow` are season TOTALS (points/yards
+# a defense actually gave up), distinct from the tiered `pts_allow_*` keys
+# (how many WEEKS landed in each Sleeper scoring bracket, used for reference
+# only -- not summed into a leaderboard column since a tier count isn't a
+# stat a reader compares across teams the way a raw total is).
+_LB_DEF_SUMS = {
+    "sacks": "sack", "ints": "int", "forced_fumbles": "ff",
+    "fumble_rec": "fum_rec", "def_td": "def_td", "safeties": "safe",
+    "blk_kick": "blk_kick", "tackles": "tkl", "qb_hits": "qb_hit",
+    "pts_allow": "pts_allow", "yds_allow": "yds_allow",
+    "fpts_ppr": "pts_ppr",
+}
+
+
+def _leaderboard_pool():
+    """The player pool + lookup maps every `player_leaderboard` branch needs,
+    factored out since both the offense and DEF paths build it identically."""
+    pool = players().dropna(subset=["player_id"]).drop_duplicates("player_id")
+    pool = pool.set_index(pool["player_id"].astype(str))
+    gsis_map = pool["gsis_id"] if "gsis_id" in pool.columns else None
+    return pool, pool["position"], pool["team"], pool["player_name"], gsis_map
+
+
+def _clean_team(tm):
+    return None if isinstance(tm, float) and pd.isna(tm) else tm   # NaN -> None (Jinja)
+
+
+def _clean_gsis(gsis_map, pid):
+    if gsis_map is None:
+        return None
+    gsis = gsis_map.get(pid)
+    return None if isinstance(gsis, float) and pd.isna(gsis) else gsis
+
+
+def _def_leaderboard(season, weeks_list, reload: bool) -> pd.DataFrame:
+    """Team-defense season totals, the DEF counterpart to the offense
+    aggregation below -- entirely separate columns (sacks/INTs/tackles/points
+    & yards allowed) since a defense has no snap_share/tgt_share/adot
+    equivalent. Ranked by PPR fantasy points, same convention as offense.
+    """
+    _, pos_map, team_map, name_map, gsis_map = _leaderboard_pool()
+
+    acc: dict = {}
+    for w in weeks_list:
+        lines = raw_week(season, w, reload=reload)
+        for pid, ln in lines.items():
+            if pos_map.get(pid) != "DEF":
+                continue
+            a = acc.setdefault(pid, {k: 0.0 for k in list(_LB_DEF_SUMS) + ["games"]})
+            a["games"] += 1
+            for out, src in _LB_DEF_SUMS.items():
+                a[out] += ln.get(src, 0.0)
+
+    rows = []
+    for pid, a in acc.items():
+        row = {
+            "source": SOURCE, "player_id": pid, "gsis_id": _clean_gsis(gsis_map, pid),
+            "player": name_map.get(pid, pid), "position": "DEF",
+            "team": _clean_team(team_map.get(pid)), "games": int(a["games"]),
+        }
+        for out in _LB_DEF_SUMS:
+            row[out] = int(round(a[out])) if out != "fpts_ppr" else round(a[out], 1)
+        row["ppg_ppr"] = round(a["fpts_ppr"] / a["games"], 2) if a["games"] else 0.0
+        rows.append(row)
+
+    cols = ["source", "rank", "player_id", "gsis_id", "player", "position", "team",
+            "games", "sacks", "ints", "forced_fumbles", "fumble_rec", "def_td",
+            "safeties", "blk_kick", "tackles", "qb_hits", "pts_allow", "yds_allow",
+            "fpts_ppr", "ppg_ppr"]
+    df = pd.DataFrame(rows)
+    if not df.empty:
+        df = df.sort_values("fpts_ppr", ascending=False).reset_index(drop=True)
+        df.insert(1, "rank", range(1, len(df) + 1))
+        df = df[[c for c in cols if c in df.columns]]
+    return df
 
 
 def player_leaderboard(season, pos: str = "ALL", weeks=None, limit: int = 200,
@@ -267,26 +387,33 @@ def player_leaderboard(season, pos: str = "ALL", weeks=None, limit: int = 200,
     the nflverse cross-reference id, so `nflref.compare_sources` can line the
     two sources up). Ranked by PPR fantasy points.
 
-    Columns: rank, player_id, gsis_id, player, position, team, games,
-    targets, receptions, rec_yards, rec_td, carries, rush_yards, rush_td,
-    pass_att, pass_cmp, pass_yards, pass_td, pass_int, snap_share, tgt_share,
-    rz_touches, air_yards, adot, fpts_ppr, ppg_ppr. `source` == "sleeper" on
-    every row. Empty frame when no week resolves.
+    `pos="DEF"` returns a STRUCTURALLY DIFFERENT column set (sacks, INTs,
+    tackles, points/yards allowed -- see `_def_leaderboard`) since a team
+    defense has no snap_share/tgt_share/adot equivalent; `pos="ALL"` stays
+    offense/kicker-only, same as before DEF support existed, so a mixed
+    leaderboard never has to paper over two incompatible row shapes.
+
+    Offense/kicker columns: rank, player_id, gsis_id, player, position, team,
+    games, targets, receptions, rec_yards, rec_td, carries, rush_yards,
+    rush_td, pass_att, pass_cmp, pass_yards, pass_td, pass_int, snap_share,
+    tgt_share, rz_touches, air_yards, adot, fpts_ppr, ppg_ppr. `source` ==
+    "sleeper" on every row. Empty frame when no week resolves.
     """
     wl = ([int(weeks)] if isinstance(weeks, int)
           else [int(w) for w in weeks] if weeks is not None
           else list(range(1, 19)))
-    ck = (str(season), (pos or "ALL").upper(), tuple(wl))
+    p = (pos or "ALL").upper()
+    ck = (str(season), p, tuple(wl))
     if not reload and ck in _lb_cache:
         cached = _lb_cache[ck]
         return cached.head(int(limit)).copy() if not cached.empty else cached.copy()
 
-    pool = players().dropna(subset=["player_id"]).drop_duplicates("player_id")
-    pool = pool.set_index(pool["player_id"].astype(str))
-    pos_map = pool["position"]
-    team_map = pool["team"]
-    name_map = pool["player_name"]
-    gsis_map = pool["gsis_id"] if "gsis_id" in pool.columns else None
+    if p == "DEF":
+        df = _def_leaderboard(season, wl, reload)
+        _lb_cache[ck] = df
+        return df.head(int(limit)).copy() if not df.empty else df.copy()
+
+    pool, pos_map, team_map, name_map, gsis_map = _leaderboard_pool()
 
     acc: dict = {}
     team_tgt: dict = {}
@@ -295,6 +422,8 @@ def player_leaderboard(season, pos: str = "ALL", weeks=None, limit: int = 200,
     for w in wl:
         lines = raw_week(season, w, reload=reload)
         for pid, ln in lines.items():
+            if pos_map.get(pid) == "DEF":
+                continue
             a = acc.setdefault(pid, {k: 0.0 for k in
                                     list(_LB_SUMS) + list(extra)})
             a["games"] += 1
@@ -307,18 +436,13 @@ def player_leaderboard(season, pos: str = "ALL", weeks=None, limit: int = 200,
             if tm and ln.get("rec_tgt"):
                 team_tgt[tm] = team_tgt.get(tm, 0.0) + ln["rec_tgt"]
 
-    p = (pos or "ALL").upper()
     rows = []
     for pid, a in acc.items():
         position = pos_map.get(pid)
         if p != "ALL" and position != p:
             continue
-        tm = team_map.get(pid)
-        if isinstance(tm, float) and pd.isna(tm):      # NaN team -> None (Jinja)
-            tm = None
-        gsis = gsis_map.get(pid) if gsis_map is not None else None
-        if isinstance(gsis, float) and pd.isna(gsis):
-            gsis = None
+        tm = _clean_team(team_map.get(pid))
+        gsis = _clean_gsis(gsis_map, pid)
         tm_snp = a["tm_off_snp"]
         tgts = a["targets"]
         team_t = team_tgt.get(tm, 0.0)

@@ -400,6 +400,72 @@ def test_player_leaderboard_team_filter(monkeypatch):
     assert len(nflref.player_leaderboard("2024", pos="ALL", team="")) == 3
 
 
+def _fake_sleeper_wr_board():
+    """Three WRs, ranked by fpts_ppr, for percentile_profile's sleeper-source
+    path (bypasses nflref.player_leaderboard's nflverse aggregation)."""
+    return pd.DataFrame([
+        {"source": "sleeper", "rank": 1, "player_id": "1", "gsis_id": None,
+         "player": "Top WR", "position": "WR", "team": "AAA", "games": 10,
+         "targets": 120, "receptions": 90, "rec_yards": 1200, "rec_td": 10,
+         "carries": 0, "rush_yards": 0, "rush_td": 0, "pass_att": 0,
+         "pass_cmp": 0, "pass_yards": 0, "pass_td": 0, "pass_int": 0,
+         "snap_share": 0.9, "tgt_share": 0.3, "rz_touches": 15, "air_yards": 900,
+         "adot": 9.5, "fpts_ppr": 220.0, "ppg_ppr": 22.0},
+        {"source": "sleeper", "rank": 2, "player_id": "2", "gsis_id": None,
+         "player": "Mid WR", "position": "WR", "team": "BBB", "games": 10,
+         "targets": 80, "receptions": 55, "rec_yards": 700, "rec_td": 4,
+         "carries": 0, "rush_yards": 0, "rush_td": 0, "pass_att": 0,
+         "pass_cmp": 0, "pass_yards": 0, "pass_td": 0, "pass_int": 0,
+         "snap_share": 0.6, "tgt_share": 0.18, "rz_touches": 6, "air_yards": 500,
+         "adot": 6.8, "fpts_ppr": 130.0, "ppg_ppr": 13.0},
+        {"source": "sleeper", "rank": 3, "player_id": "3", "gsis_id": None,
+         "player": "Low WR", "position": "WR", "team": "CCC", "games": 10,
+         "targets": 30, "receptions": 18, "rec_yards": 200, "rec_td": 1,
+         "carries": 0, "rush_yards": 0, "rush_td": 0, "pass_att": 0,
+         "pass_cmp": 0, "pass_yards": 0, "pass_td": 0, "pass_int": 0,
+         "snap_share": 0.3, "tgt_share": 0.07, "rz_touches": 1, "air_yards": 120,
+         "adot": 4.0, "fpts_ppr": 40.0, "ppg_ppr": 4.0},
+    ])
+
+
+def test_percentile_profile_top_player_reads_100th(monkeypatch):
+    from sleepermetrics import nflstats
+    monkeypatch.setattr(nflstats, "player_leaderboard",
+                        lambda *a, **k: _fake_sleeper_wr_board())
+    prof = nflref.percentile_profile("2024", "WR", "1", source="sleeper")
+    assert prof is not None
+    assert prof["season"] == "2024" and prof["position"] == "WR"
+    assert prof["n_population"] == 3
+    pts = next(c for c in prof["columns"] if c["key"] == "fpts_ppr")
+    assert pts["value"] == pytest.approx(220.0)
+    assert pts["percentile"] == 100.0                  # best of 3
+
+
+def test_percentile_profile_mid_and_worst_player(monkeypatch):
+    from sleepermetrics import nflstats
+    monkeypatch.setattr(nflstats, "player_leaderboard",
+                        lambda *a, **k: _fake_sleeper_wr_board())
+    mid = nflref.percentile_profile("2024", "WR", "2", source="sleeper")
+    worst = nflref.percentile_profile("2024", "WR", "3", source="sleeper")
+    mid_pts = next(c for c in mid["columns"] if c["key"] == "fpts_ppr")
+    worst_pts = next(c for c in worst["columns"] if c["key"] == "fpts_ppr")
+    assert 0 < worst_pts["percentile"] < mid_pts["percentile"] < 100  # never a hard 0
+
+
+def test_percentile_profile_unknown_player_returns_none(monkeypatch):
+    from sleepermetrics import nflstats
+    monkeypatch.setattr(nflstats, "player_leaderboard",
+                        lambda *a, **k: _fake_sleeper_wr_board())
+    assert nflref.percentile_profile("2024", "WR", "does-not-exist", source="sleeper") is None
+
+
+def test_percentile_profile_empty_board_returns_none(monkeypatch):
+    from sleepermetrics import nflstats
+    monkeypatch.setattr(nflstats, "player_leaderboard",
+                        lambda *a, **k: pd.DataFrame())
+    assert nflref.percentile_profile("2024", "WR", "1", source="sleeper") is None
+
+
 def test_schedule_grid_team_filter(monkeypatch):
     monkeypatch.setattr(api, "read_release_parquet", lambda asset: _fake_games())
     # _fake_games: AAA@BBB (wk1), CCC@DDD (wk1), AAA@CCC (wk2)
@@ -473,6 +539,63 @@ def test_leaderboard_columns_switches_on_qb():
     assert "tgt_share" in skill and "wopr" in skill
     assert "pass_yards" in qb and "pass_td" in qb
     assert "tgt_share" not in qb
+
+
+def test_leaderboard_columns_def_is_its_own_set():
+    d = [k for k, _ in nflref.leaderboard_columns("DEF")]
+    assert "sacks" in d and "pts_allow" in d and "yds_allow" in d
+    # no offense-usage concept has a DEF equivalent
+    assert "snap_share" not in d and "tgt_share" not in d and "adot" not in d
+    # a DEF request against the nflverse source still gets the DEF (sleeper)
+    # column set -- nflverse has no DEF rows to render at all, so the offense
+    # skill-position default would be equally moot, and misleading besides.
+    assert nflref.leaderboard_columns("DEF", source="nflverse") == \
+        nflref.leaderboard_columns("DEF", source="sleeper")
+
+
+def test_player_leaderboard_def_source_nflverse_is_empty():
+    """nflverse's player_stats release has no team-defense row shape at all
+    (see CLAUDE.md / the DEF-stats investigation) -- pos="DEF" against that
+    source must degrade to empty, not error, same as any other no-match
+    filter on this leaderboard."""
+    assert nflref.player_leaderboard("2024", pos="DEF", source="nflverse").empty
+
+
+def _fake_sleeper_def_board():
+    return pd.DataFrame([
+        {"source": "sleeper", "rank": 1, "player_id": "AAA", "gsis_id": None,
+         "player": "AAA", "position": "DEF", "team": "AAA", "games": 10,
+         "sacks": 40, "ints": 20, "forced_fumbles": 10, "fumble_rec": 8,
+         "def_td": 3, "safeties": 1, "blk_kick": 2, "tackles": 900,
+         "qb_hits": 100, "pts_allow": 280, "yds_allow": 5200,
+         "fpts_ppr": 160.0, "ppg_ppr": 16.0},
+        {"source": "sleeper", "rank": 2, "player_id": "BBB", "gsis_id": None,
+         "player": "BBB", "position": "DEF", "team": "BBB", "games": 10,
+         "sacks": 20, "ints": 8, "forced_fumbles": 4, "fumble_rec": 3,
+         "def_td": 0, "safeties": 0, "blk_kick": 0, "tackles": 950,
+         "qb_hits": 60, "pts_allow": 450, "yds_allow": 5900,
+         "fpts_ppr": 60.0, "ppg_ppr": 6.0},
+    ])
+
+
+def test_percentile_profile_def_pts_allow_direction_is_lower_is_better(monkeypatch):
+    """pts_allow/yds_allow must rank the OPPOSITE direction from every other
+    column: fewer points/yards allowed is the better outcome, so the best
+    defense (AAA, 280 pts allowed) must read a HIGH percentile there, not a
+    low one -- the bug this test guards regressed once already before
+    _LOWER_IS_BETTER was added."""
+    from sleepermetrics import nflstats
+    monkeypatch.setattr(nflstats, "player_leaderboard",
+                        lambda *a, **k: _fake_sleeper_def_board())
+    best = nflref.percentile_profile("2024", "DEF", "AAA", source="sleeper")
+    worst = nflref.percentile_profile("2024", "DEF", "BBB", source="sleeper")
+    best_pa = next(c for c in best["columns"] if c["key"] == "pts_allow")
+    worst_pa = next(c for c in worst["columns"] if c["key"] == "pts_allow")
+    assert best_pa["percentile"] == 100.0
+    assert worst_pa["percentile"] < best_pa["percentile"]
+    # an ordinary "higher is better" column keeps the normal direction
+    best_sacks = next(c for c in best["columns"] if c["key"] == "sacks")
+    assert best_sacks["percentile"] == 100.0
 
 
 def _fake_games():

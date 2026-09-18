@@ -4044,3 +4044,221 @@ def plot_week_power(s: Season, week: int):
                    "Power Score (standardised)", caption=_cap(s))
 
 
+# --- player profile (webapp-only, league-free) ------------------------------
+# One radar chart takes a plain dict-of-dicts, not a Season -- the
+# player-profile page is league-free (see webapp/player_profile.py), same
+# precedent as plot_clutch taking a `seasons: dict` rather than one Season.
+# It does not go through `_finish()`: that helper assumes a rectangular axes
+# (spines, an x/y grid), which doesn't apply to a polar radar -- title/theme
+# colouring is applied inline instead, deliberately mirroring _finish's
+# token usage (T["ink"]/T["muted"]/T["grid"]) without its spine/grid-axis
+# logic.
+
+_RADAR_FILL = "#2c7fb8"  # the focused season's accent colour.
+_RADAR_GHOST = "#9aa5ad"  # every other season, dimmed behind the focus.
+
+# Stat keys formatted as a share (0-1, three decimals) or a one-decimal
+# rate -- the same split `_playercompare_table.html`/`_nflstats_table.html`
+# already use for their own table cells, mirrored here so a value reads
+# identically whether seen in the leaderboard table or on the radar.
+_SHARE_STAT_KEYS = {"tgt_share", "air_yards_share", "wopr", "racr", "pacr", "snap_share"}
+_RATE_STAT_KEYS = {"ppg_ppr", "fpts_ppr", "adot"}
+
+
+def _format_stat_value(key: str, value) -> str:
+    """One stat value, formatted the same way the leaderboard tables already
+    format that same key -- see the module comment above `_SHARE_STAT_KEYS`.
+    `None`/non-numeric degrades to an en dash rather than raising, since a
+    percentile-profile column can legitimately have no value for a stat the
+    player's position doesn't carry."""
+    if value is None:
+        return "–"
+    try:
+        v = float(value)
+    except (TypeError, ValueError):
+        return "–"
+    if key in _SHARE_STAT_KEYS:
+        return f"{v:.3f}"
+    if key in _RATE_STAT_KEYS:
+        return f"{v:.1f}"
+    return f"{v:.0f}"
+
+
+# Candidate radial pushes (added to a player's own percentile) tried in
+# order for each label -- close-in first, further out as a fallback.
+_RADAR_LABEL_PUSHES = (7, 13, 19, 25, 31, 38, 45)
+# Angular nudges (radians) away from the spoke's own centerline, tried at
+# EVERY push distance -- a spoke pointing straight at its own tick label
+# (verified: a spoke at 12 o'clock puts the tick label directly above the
+# ring on the SAME angular line the label would be pushed along) can never
+# clear that collision by pushing further out alone, since the label and
+# the tick text stay on the identical ray however far out it goes. A small
+# sideways nudge is required for that case; small radii first (least visual
+# drift from the spoke each label actually belongs to).
+_RADAR_LABEL_NUDGES = (0.0, 0.05, -0.05, 0.10, -0.10, 0.16, -0.16)
+
+
+def _place_radar_labels(fig, ax, angles, keys, drawn_names, players, colors):
+    """Value-label placement for `plot_player_overlay`'s snapshot radar --
+    the polar counterpart to `_place_labels` (Cartesian scatter labels).
+
+    The first labeled render (2 players x 14 spokes) showed real collisions:
+    outer labels overlapping the rim's own spoke-name text (`ax.set_
+    xticklabels`, e.g. "Tgt"/"Rec yds"), and same-spoke players' labels
+    overlapping each other. A fixed radial-push formula alone wasn't
+    enough, and turned out to be structurally UNABLE to fix the tick-label
+    case: a spoke pointing at its own tick label puts that label on the
+    exact same ray a purely radial push travels along, so no distance ever
+    clears it (verified with an isolated single-spoke render). This tries a
+    2D grid -- `_RADAR_LABEL_PUSHES` (radius) x `_RADAR_LABEL_NUDGES` (a
+    small angular offset off the spoke's centerline), radius-major so the
+    closest/most-centered candidates are tried first -- measuring each
+    candidate's REAL rendered pixel bbox (same technique `_place_labels`
+    uses) and keeping the first that clashes with nothing already placed
+    and nothing in the rim's own tick-label boxes; falls back to the first-
+    tried (closest-in, centered) candidate if every combination collides.
+
+    Must run after the polygons are already drawn (so their fill patches
+    aren't candidates to dodge -- text over a translucent fill is legible;
+    text over another label or the rim text is not) and, like
+    `_place_labels`, benefits from a `fig.canvas.draw()` first so extents
+    reflect final layout.
+    """
+    fig.canvas.draw()
+    rend = fig.canvas.get_renderer()
+    # The rim's own spoke-name labels ("Tgt", "Rec yds", ...) are fixed --
+    # every value label must dodge them, but they never move themselves.
+    boxes: list = [t.get_window_extent(rend) for t in ax.get_xticklabels()]
+
+    def clashes(bb):
+        return any(bb.overlaps(o) for o in boxes)
+
+    for k_idx, key in enumerate(keys):
+        ang = angles[k_idx]
+        for p_idx, name in enumerate(drawn_names):
+            prof = players[name]
+            col = next((c for c in prof.get("columns", []) if c["key"] == key), None)
+            if not col:
+                continue
+            pct = float(col["percentile"])
+            text = f"{_format_stat_value(key, col['value'])} ({pct:.0f})"
+            style = dict(ha="center", va="center", fontsize=6.6, fontweight="bold",
+                        color=T["ink"], zorder=6,
+                        bbox=dict(facecolor=colors[name], edgecolor="none",
+                                  alpha=0.85, pad=1.1, boxstyle="round,pad=0.25"))
+            best = None          # first CLEAN candidate found, if any
+            fallback = None      # closest-in/most-centered candidate, kept only if none are clean
+            found = False
+            for push in _RADAR_LABEL_PUSHES:
+                r = min(pct + push, 148)
+                for nudge in _RADAR_LABEL_NUDGES:
+                    ann = ax.text(ang + nudge, r, text, **style)
+                    bb = ann.get_window_extent(rend)
+                    if not clashes(bb):
+                        best = (ann, bb)
+                        found = True
+                        break
+                    if fallback is None:
+                        fallback = (ann, bb)   # closest-in/centered try, last resort
+                    else:
+                        ann.remove()
+                if found:
+                    break
+            chosen = best or fallback
+            if best is not None and fallback is not None:
+                fallback[0].remove()       # a clean spot was found -- drop the fallback draft
+            boxes.append(chosen[1])
+
+
+def _radar_axes(fig, labels: list[str]):
+    """A polar axes set up as a radar frame: one spoke per label, gridlines
+    at 25/50/75/100, spoke labels around the rim."""
+    n = len(labels)
+    angles = [i / n * 2 * 3.141592653589793 for i in range(n)]
+    angles += angles[:1]
+    ax = fig.add_subplot(111, polar=True)
+    ax.set_theta_offset(3.141592653589793 / 2)
+    ax.set_theta_direction(-1)
+    ax.set_xticks(angles[:-1])
+    ax.set_xticklabels(labels, fontsize=9, color=T["ink2"])
+    ax.set_rlabel_position(0)
+    ax.set_yticks([25, 50, 75, 100])
+    ax.set_yticklabels(["25", "50", "75", "100"], fontsize=7.5, color=T["faint"])
+    ax.set_ylim(0, 100)
+    ax.tick_params(colors=T["tick"])
+    ax.spines["polar"].set_color(T["spine"])
+    ax.grid(color=T["grid"], linewidth=0.7)
+    ax.set_facecolor(T["bg"])
+    return ax, angles
+
+
+def plot_player_radar(season_profiles: dict | None, focus_season: str | None,
+                      player_name: str):
+    """Every available season's percentile profile overlaid on one radar,
+    the focused season bold and filled, every other season a thin dimmed
+    outline behind it -- so a season's shape reads against its own history
+    on one chart rather than a separate career-trend chart. `season_profiles`
+    is `{season: profile}` (the shape `nflref.summary.percentile_profile`
+    returns per season, from `webapp.player_profile._all_season_profiles`).
+
+    Percentiles are 0-100 against every real NFL player at that position
+    THAT season, so wildly different-scale stats (yards vs. a 0-1 share)
+    plot on the same axis honestly, and a season is comparable to itself
+    across years even as the league-wide population size changes.
+
+    Axis spokes come from the FOCUSED season's own columns -- position's
+    stat set is fixed by `nflref.summary.leaderboard_columns`, so every
+    season for the same position shares the same columns in practice; a
+    ghost season simply missing one of those keys draws that one spoke at 0
+    rather than erroring (see the per-season lookup below).
+    """
+    if not season_profiles:
+        return _no_data(f"No percentile data available for {player_name}.")
+
+    seasons = sorted(season_profiles, reverse=True)
+    focus = focus_season if focus_season in season_profiles else seasons[0]
+    focus_profile = season_profiles[focus]
+    if not focus_profile or not focus_profile.get("columns"):
+        return _no_data(f"No percentile data available for {player_name}.")
+
+    cols = focus_profile["columns"]
+    keys = [c["key"] for c in cols]
+    labels = [c["label"] for c in cols]
+
+    fig = plt.figure(figsize=(7, 7))
+    ax, angles = _radar_axes(fig, labels)
+
+    # Ghost seasons first, so the focused polygon draws on top of them.
+    for season in seasons:
+        if season == focus:
+            continue
+        prof = season_profiles.get(season) or {}
+        by_key = {c["key"]: c["percentile"] for c in prof.get("columns", [])}
+        values = [by_key.get(k, 0) for k in keys]
+        vals = values + values[:1]
+        ax.plot(angles, vals, color=_RADAR_GHOST, linewidth=1, alpha=0.6,
+                linestyle="--", label=season)
+
+    focus_values = [c["percentile"] for c in cols]
+    vals = focus_values + focus_values[:1]
+    ax.plot(angles, vals, color=_RADAR_FILL, linewidth=2.5, label=focus)
+    ax.fill(angles, vals, color=_RADAR_FILL, alpha=0.25)
+    for ang, val in zip(angles[:-1], focus_values):
+        ax.text(ang, min(val + 9, 108), f"{val:.0f}", ha="center", va="center",
+                fontsize=8, color=T["ink"], fontweight="bold")
+
+    if len(seasons) > 1:
+        ax.legend(loc="upper right", bbox_to_anchor=(1.28, 1.12), fontsize=8.5,
+                  frameon=False, labelcolor=T["ink2"])
+
+    pos = focus_profile["position"]
+    n = focus_profile["n_population"]
+    fig.suptitle(f"{player_name} · {focus} percentile profile ({pos})",
+                fontsize=15, fontweight="bold", color=T["ink"], x=0.08, ha="left", y=0.985)
+    subtitle = f"Each axis: percentile among {n} real NFL {pos}s that season"
+    if len(seasons) > 1:
+        subtitle += f" · {len(seasons)} seasons shown, {focus} in focus"
+    fig.text(0.08, 0.925, subtitle, fontsize=9, color=T["muted"])
+    fig.patch.set_facecolor(T["bg"])
+    fig.tight_layout(rect=(0, 0, 1, 0.90))
+    return fig

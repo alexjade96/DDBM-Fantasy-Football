@@ -34,31 +34,31 @@
     </div>
 
     {# The league-loading function, in the header -- same place and shape it
-       sits on a loaded page (index.html's .utilbar). One lookup with a League
-       / User mode toggle.
-       League mode: JS navigates to /league=<id> (a clean path, no ?query). The
-       plain GET action="/dashboard" is the no-JS fallback -- that route still
-       resolves. User mode: JS fires an htmx.ajax GET to /user-leagues, whose
-       fragment renders the account's leagues into #user-results; picking one
-       there navigates to /league=<id>. The single text box carries name="league"
-       or name="user" per mode. No hx-* on the form itself, so the submit path is
-       unambiguous regardless of listener order. The id is pre-filled with the
-       Dank Soupers (DDBM) league so the default way in is one click. No season
+       sits on a loaded page (index.html's .utilbar). One box, auto-detected
+       server-side (see app.py's /lookup): paste a league ID, a username, or
+       a user ID, and it resolves as whichever one it actually is.
+       JS fires an htmx.ajax GET to /lookup?nav=1 (nav=1 tells it this page
+       has no dashboard shell loaded yet), dropping the response into
+       #user-results. A LEAGUE match answers with an HX-Redirect, which htmx
+       follows as a full navigation to /dashboard -- so opening a league from
+       here still becomes the loaded index.html shell, not an in-place swap.
+       A USER match (or no match) renders the "which of this account's
+       leagues?" list in place, same as before; picking one there navigates
+       to /dashboard?league=...&season=.... action="/dashboard" is the no-JS
+       fallback -- name="league" so a plain form submit (JS unavailable)
+       still resolves as a league id, the one case that route already
+       supports without this new endpoint. The id is pre-filled with the Dank
+       Soupers (DDBM) league so the default way in is one click. No season
        picker here -- nothing is loaded, so there are no seasons to choose. #}
     <div class="utilbar" role="group" aria-label="League tools">
-      <span class="utilbar-label">Look up a league</span>
       <form class="controls" id="lookup" action="/dashboard" method="get">
-        <div class="lookup-mode" role="radiogroup" aria-label="Look up by">
-          <label><input type="radio" name="mode" value="league" checked> League</label>
-          <label><input type="radio" name="mode" value="user"> User</label>
-        </div>
         <label>
-          <span id="lookup-label">League ID</span>
+          <span>League ID, username, or user ID</span>
           <input type="text" name="league" id="lookup-box" value="{{ league }}"
-                 inputmode="numeric" autocomplete="off" spellcheck="false" required
-                 data-ph-league="Sleeper league ID" data-ph-user="Sleeper username or user ID">
+                 autocomplete="off" spellcheck="false" required
+                 placeholder="Sleeper league ID, username, or user ID">
         </label>
-        <button type="submit" id="lookup-go">View league &rarr;</button>
+        <button type="submit" id="lookup-go">Search</button>
       </form>
     </div>
   </header>
@@ -87,49 +87,25 @@
   </footer>
 
   <script>
-    // League / User lookup toggle for the landing form (#lookup). Mirrors the
-    // loaded dashboard header's toggle (index.html), minus the season picker and
-    // the out-of-band shell sync -- the landing page has no league loaded yet.
-    // - League mode: submit navigates to /league=<id> (JS) or GETs /dashboard
-    //   (no-JS fallback); the box carries name="league".
-    // - User mode: submit fires an htmx.ajax GET to /user-leagues, dropping the
-    //   returned <section class="user-results"> inside #user-results (innerHTML,
-    //   so the container id survives a repeat lookup); the box carries
-    //   name="user".
+    // Landing form (#lookup): a single box, auto-detected server-side by
+    // /lookup?nav=1 (see app.py's lookup() for what nav=1 means). Submitting
+    // fires an htmx.ajax GET there. A LEAGUE match comes back as an
+    // HX-Redirect (htmx follows it as a full navigation to /dashboard). A
+    // USER match (or no match) drops the "which of this account's leagues?"
+    // fragment into #user-results AND carries its own HX-Push-Url
+    // (/?user=<handle> -- see app.py's lookup()/home()), which htmx applies
+    // automatically; no extra JS needed here for either case.
     (function () {
       var form = document.getElementById('lookup');
       if (!form) return;
-      var lbl = document.getElementById('lookup-label');
       var box = document.getElementById('lookup-box');
-      var go = document.getElementById('lookup-go');
-      var modeOf = function () {
-        var r = form.querySelector('input[name="mode"]:checked');
-        return r ? r.value : 'league';
-      };
-      var syncUI = function () {
-        var user = modeOf() === 'user';
-        lbl.textContent = user ? 'Username / user ID' : 'League ID';
-        box.name = user ? 'user' : 'league';
-        box.placeholder = box.dataset[user ? 'phUser' : 'phLeague'] || '';
-        go.textContent = user ? 'Find →' : 'View league →';
-        // /dashboard's no-JS fallback only makes sense for a league id.
-        form.setAttribute('action', user ? '/user-leagues' : '/dashboard');
-      };
-      form.querySelectorAll('input[name="mode"]').forEach(function (r) {
-        r.addEventListener('change', syncUI);
-      });
       form.addEventListener('submit', function (e) {
         var v = box.value.trim();
         if (!v) return;                          // let required-validation fire
         e.preventDefault();
-        if (modeOf() === 'user') {
-          window.htmx.ajax('GET', '/user-leagues?user=' + encodeURIComponent(v),
-            { target: '#user-results', swap: 'innerHTML' });
-        } else {
-          window.location.assign('/league=' + encodeURIComponent(v));
-        }
+        window.htmx.ajax('GET', '/lookup?nav=1&q=' + encodeURIComponent(v),
+          { target: '#user-results', swap: 'innerHTML', pushUrl: true });
       });
-      syncUI();
     })();
 
     // Make the ADP Comparison table (and any future #panel table) sortable each

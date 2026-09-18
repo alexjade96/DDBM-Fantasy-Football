@@ -114,6 +114,28 @@ def _recent_seasons(n: int = _DEFAULT_WINDOW) -> list[str]:
     return [str(y) for y in range(current, current - n, -1)]
 
 
+def _current_season() -> str:
+    """The current NFL season alone -- `_recent_seasons(1)[0]`, i.e. the same
+    "today's real season" reference `_recent_seasons` already resolves, not
+    "whichever season happens to have the most recent row" (an offseason or
+    a since-retired player would otherwise mislabel an old season as
+    current). Used to split a data source's rows into "this season" (shown
+    directly on the profile) vs "past seasons" (behind a drilldown)."""
+    return _recent_seasons(1)[0]
+
+
+def _split_current(rows: list[dict], current_season: str) -> tuple[list[dict], list[dict]]:
+    """Partition `rows` (each carrying a `"season"` key, any type Sleeper/
+    nflverse happens to use -- int or str) into (this season's rows, every
+    other season's rows), comparing as strings so `2025 == "2025"`. Order
+    within each half is preserved from the input."""
+    current: list[dict] = []
+    past: list[dict] = []
+    for r in rows:
+        (current if str(r.get("season")) == str(current_season) else past).append(r)
+    return current, past
+
+
 def _player_identity(player_id: str) -> dict:
     """{'player_id','player_name','position','team','gsis_id'} for one
     Sleeper player, or a mostly-empty dict (still carrying player_id) for
@@ -209,6 +231,48 @@ def _adp_history(sleeper_id: str, seasons: list[str],
             if str(row.get("sleeper_id")) == str(sleeper_id):
                 out.append({"season": season, **row})
                 break
+    return out
+
+
+def _percentile_profile_for(player_id: str, position: str | None,
+                            season: str) -> dict | None:
+    """One thin, patchable seam around `nflref.summary.percentile_profile`
+    (module-level so tests can `monkeypatch.setattr(pp, ...)` it exactly like
+    `_real_nfl_history`/`_adp_history` already are, rather than reaching
+    through a function-local import) -- see those two for the established
+    convention this mirrors. `source="sleeper"` since the leaderboard it
+    reads already carries the real Sleeper `player_id` directly (no
+    name/position fallback needed, unlike the PFR-bridged datasets
+    elsewhere in this module). Never raises; `None` on any failure or when
+    `position` is unknown.
+    """
+    if not position:
+        return None
+    try:
+        from webapp.sources.nflref import summary as nflref_summary
+        return nflref_summary.percentile_profile(
+            season, position, player_id, source="sleeper")
+    except Exception:
+        return None
+
+
+def _all_season_profiles(player_id: str, position: str | None,
+                         seasons: list[str]) -> dict:
+    """Every season's FULL percentile profile (all stat columns, not just
+    points), keyed by season string -- the radar-overlay chart's input.
+    A season with no leaderboard row for this player (never played, or the
+    position is unknown) is simply absent from the returned dict rather
+    than erroring; `plots.plot_player_radar` picks its focus season from
+    whatever keys survive.
+
+    League-free (Sleeper's own weekly-stat leaderboard, not this league's
+    roster history), so it works even with no league loaded.
+    """
+    out = {}
+    for season in seasons:
+        prof = _percentile_profile_for(player_id, position, season)
+        if prof:
+            out[season] = prof
     return out
 
 
@@ -309,12 +373,58 @@ def _build_profile(player_id: str, league_id: str | None = None) -> dict:
         identity.get("position"), real_nfl_seasons)
     adp = _adp_history(player_id, real_nfl_seasons)
 
+    # Split every season-tagged data source into "this season" (shown
+    # directly on the profile, no click needed) vs "past seasons" (behind a
+    # drilldown) -- the actual current NFL season, not just whichever season
+    # happens to have the most recent row (an offseason, or a since-retired
+    # player, would otherwise mislabel an old season as current).
+    current_season = _current_season()
+    for ds_data in real_nfl.values():
+        ds_data["current_rows"], ds_data["past_rows"] = _split_current(
+            ds_data["rows"], current_season)
+    adp_current, adp_past = _split_current(adp, current_season)
+
+    league_current = None
+    league_past = None
+    if league_section is not None:
+        dp_cur, dp_past = _split_current(league_section["draft_picks"], current_season)
+        tr_cur, tr_past = _split_current(league_section["trade_stints"], current_season)
+        wr_cur, wr_past = _split_current(league_section["waiver_rows"], current_season)
+        roster_cur = league_section["roster_splits"].get(current_season) or []
+        roster_past = {s: rows for s, rows in league_section["roster_splits"].items()
+                       if s != current_season}
+        league_current = {"draft_picks": dp_cur, "trade_stints": tr_cur,
+                          "waiver_rows": wr_cur, "roster": roster_cur}
+        league_past = {"draft_picks": dp_past, "trade_stints": tr_past,
+                       "waiver_rows": wr_past, "roster_splits": roster_past}
+
+    # Every season's full percentile profile, for the radar overlay -- the
+    # chart itself defaults its focus to the most recent season with data
+    # (same "most recent scoring season" convention already established for
+    # the playoff-splice chart's rank badges), overridable via a season pill
+    # on the page. `percentile_profile` stays as the focused (most recent)
+    # season's own dict, for the stat table rendered below the chart.
+    season_profiles = _all_season_profiles(
+        player_id, identity.get("position"), real_nfl_seasons)
+    available_seasons = sorted(season_profiles, reverse=True)
+    focus_season = available_seasons[0] if available_seasons else None
+    percentile_profile = season_profiles.get(focus_season) if focus_season else None
+
     return {
         "identity": identity,
         "seasons_covered": real_nfl_seasons,
         "real_nfl": real_nfl,
         "adp_history": adp,
+        "adp_current": adp_current,
+        "adp_past": adp_past,
+        "current_season": current_season,
         "league": league_section,
+        "league_current": league_current,
+        "league_past": league_past,
+        "percentile_profile": percentile_profile,
+        "season_profiles": season_profiles,
+        "available_seasons": available_seasons,
+        "focus_season": focus_season,
     }
 
 

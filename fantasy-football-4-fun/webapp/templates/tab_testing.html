@@ -16,3 +16,31 @@
    League / User lookup in place of the current centered card.  Opens in a new
    tab.</p>
 <p><a class="ghost" href="/" target="_blank" rel="noopener">Open the landing page prototype &rarr;</a></p>
+
+<h3>Prototype: "Seasons" menu instead of the header dropdown</h3>
+<p class="hint">Stands in for the header's plain Season <code>&lt;select&gt;</code>: a
+   button showing the current season that opens into the same season-history
+   list a fresh multi-season league load now shows first (see the League-ID
+   search flow). Picking a season here navigates the same way -- a full
+   dashboard load on that season -- rather than the header select's
+   in-place tab refresh, so switching seasons doubles as a bookmarkable URL.
+   Demo only: this control is not wired into the real header.</p>
+<details class="bkr-menu">
+  <summary>Season: {{ season }}</summary>
+  <div class="bkr-menu-body">
+    <ul class="ul-list">
+      {% for h in season_menu %}
+      <li>
+        <a href="/dashboard?league={{ league }}&season={{ h.season }}&tab=testing" class="ul-league">
+          <span class="ul-name">{{ h.season }}{% if h.season == season %} (current){% endif %}</span>
+          <span class="ul-meta">
+            {{ h.status }}
+            {%- if h.is_latest %} · latest{% endif -%}
+          </span>
+          <span class="ul-go">Open &rarr;</span>
+        </a>
+      </li>
+      {% endfor %}
+    </ul>
+  </div>
+</details>

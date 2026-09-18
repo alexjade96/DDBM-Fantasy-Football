@@ -60,6 +60,35 @@ def test_recent_seasons_falls_back_on_network_failure(monkeypatch):
     assert all(isinstance(y, str) for y in out)
 
 
+# --- _current_season / _split_current ---------------------------------------
+
+def test_current_season_matches_recent_seasons_first_entry(monkeypatch):
+    monkeypatch.setattr(pp, "_recent_seasons", lambda n=5: ["2026", "2025", "2024"])
+    assert pp._current_season() == "2026"
+
+
+def test_split_current_separates_by_season_string(monkeypatch):
+    rows = [{"season": "2025", "v": 1}, {"season": 2024, "v": 2},
+            {"season": "2025", "v": 3}]
+    current, past = pp._split_current(rows, "2025")
+    assert [r["v"] for r in current] == [1, 3]
+    assert [r["v"] for r in past] == [2]
+
+
+def test_split_current_compares_int_and_str_seasons_equal(monkeypatch):
+    """A row's `season` can be an int (nflverse/pandas) or a str (this
+    module's own league-scoped rows) -- both must match a str
+    current_season the same way."""
+    rows = [{"season": 2025, "v": 1}]
+    current, past = pp._split_current(rows, "2025")
+    assert len(current) == 1 and not past
+
+
+def test_split_current_empty_input():
+    current, past = pp._split_current([], "2025")
+    assert current == [] and past == []
+
+
 # --- _player_identity ------------------------------------------------------
 
 def _fake_players_df():
@@ -181,6 +210,64 @@ def test_adp_history_skips_seasons_with_no_match(monkeypatch):
     assert pp._adp_history("5995", ["2025"]) == []
 
 
+# --- _percentile_profile_for / _all_season_profiles -------------------------
+
+def test_percentile_profile_for_delegates_to_nflref(monkeypatch):
+    calls = []
+
+    def _fake_percentile_profile(season, pos, player_id, source="sleeper"):
+        calls.append((season, pos, player_id, source))
+        return {"season": season, "position": pos, "player_id": player_id,
+                "n_population": 40, "columns": [{"key": "fpts_ppr", "label": "PPR pts",
+                                                  "value": 200.0, "percentile": 90.0}]}
+
+    import webapp.sources.nflref.summary as nflref_summary
+    monkeypatch.setattr(nflref_summary, "percentile_profile", _fake_percentile_profile)
+
+    out = pp._percentile_profile_for("5995", "RB", "2025")
+    assert out["n_population"] == 40
+    assert calls == [("2025", "RB", "5995", "sleeper")]
+
+
+def test_percentile_profile_for_returns_none_with_no_position():
+    assert pp._percentile_profile_for("5995", None, "2025") is None
+
+
+def test_percentile_profile_for_degrades_on_error(monkeypatch):
+    import webapp.sources.nflref.summary as nflref_summary
+
+    def _boom(*a, **k):
+        raise RuntimeError("simulated failure")
+    monkeypatch.setattr(nflref_summary, "percentile_profile", _boom)
+    assert pp._percentile_profile_for("5995", "RB", "2025") is None
+
+
+def test_all_season_profiles_keys_by_season(monkeypatch):
+    def _fake(player_id, position, season):
+        pts = {"2023": 60.0, "2024": 75.0, "2025": 90.0}[season]
+        return {"season": season, "columns": [{"key": "fpts_ppr", "label": "PPR pts",
+                             "value": 200.0, "percentile": pts}],
+                "n_population": 40}
+    monkeypatch.setattr(pp, "_percentile_profile_for", _fake)
+
+    out = pp._all_season_profiles("5995", "RB", ["2025", "2023", "2024"])
+    assert sorted(out) == ["2023", "2024", "2025"]
+    assert out["2025"]["columns"][0]["percentile"] == 90.0
+
+
+def test_all_season_profiles_skips_seasons_with_no_data(monkeypatch):
+    def _fake(player_id, position, season):
+        return None if season == "2023" else {
+            "season": season,
+            "columns": [{"key": "fpts_ppr", "label": "PPR pts",
+                        "value": 100.0, "percentile": 50.0}],
+            "n_population": 40}
+    monkeypatch.setattr(pp, "_percentile_profile_for", _fake)
+
+    out = pp._all_season_profiles("5995", "RB", ["2023", "2024"])
+    assert list(out) == ["2024"]
+
+
 # --- _league_history / player_profile (end to end, all sources stubbed) ----
 
 def test_league_history_degrades_when_no_league_data(monkeypatch):
@@ -196,6 +283,8 @@ def test_player_profile_without_league_id_has_no_league_section(monkeypatch):
     monkeypatch.setattr(pp, "_real_nfl_history", lambda *a, **k: {})
     monkeypatch.setattr(pp, "_adp_history", lambda *a, **k: [])
     monkeypatch.setattr(pp, "_recent_seasons", lambda n=5: ["2025"])
+    monkeypatch.setattr(pp, "_percentile_profile_for", lambda *a, **k: None)
+    monkeypatch.setattr(pp, "_all_season_profiles", lambda *a, **k: {})
 
     out = pp.player_profile("5995")
     assert out["identity"]["player_name"] == "Justice Hill"
@@ -206,6 +295,8 @@ def test_player_profile_with_league_id_builds_league_section(monkeypatch):
     monkeypatch.setattr(pp, "sleeper_players", _fake_players_df)
     monkeypatch.setattr(pp, "_real_nfl_history", lambda *a, **k: {})
     monkeypatch.setattr(pp, "_adp_history", lambda *a, **k: [])
+    monkeypatch.setattr(pp, "_percentile_profile_for", lambda *a, **k: None)
+    monkeypatch.setattr(pp, "_all_season_profiles", lambda *a, **k: {})
 
     fake_season = object()  # never inspected directly -- draft/metrics are stubbed
     monkeypatch.setattr(
@@ -238,10 +329,64 @@ def test_player_profile_with_league_id_builds_league_section(monkeypatch):
     assert "2025" in out["seasons_covered"]
 
 
+def test_player_profile_splits_current_vs_past_seasons(monkeypatch):
+    """_build_profile's current/past split (league_current/league_past,
+    adp_current/adp_past, and real_nfl[ds]'s current_rows/past_rows) --
+    the shape player_profile.html reads to show this season directly and
+    push everything else behind a drilldown."""
+    monkeypatch.setattr(pp, "sleeper_players", _fake_players_df)
+    monkeypatch.setattr(pp, "_recent_seasons", lambda n=5: ["2026", "2025", "2024"])
+    monkeypatch.setattr(pp, "_percentile_profile_for", lambda *a, **k: None)
+    monkeypatch.setattr(pp, "_all_season_profiles", lambda *a, **k: {})
+    monkeypatch.setattr(
+        pp, "_real_nfl_history",
+        lambda *a, **k: {"player_stats": {
+            "rows": [{"season": "2026", "v": "new"}, {"season": "2024", "v": "old"}],
+            "best_effort": False}})
+    monkeypatch.setattr(
+        pp, "_adp_history",
+        lambda *a, **k: [{"season": "2026", "consensus": 10},
+                         {"season": "2024", "consensus": 20}])
+
+    fake_season = object()
+    monkeypatch.setattr(
+        "webapp.app.league_data",
+        lambda league_id: {"seasons": {"2026": fake_season, "2024": fake_season}})
+    monkeypatch.setattr(
+        "sleepermetrics.draft.draft_board",
+        lambda s: pd.DataFrame([{"player_id": "5995", "round": 4,
+                                  "pick_in_round": 2, "user_name": "rezzu"}]))
+    monkeypatch.setattr("sleepermetrics.metrics.player_honors", lambda s: [])
+    monkeypatch.setattr("sleepermetrics.metrics.trade_player_rates", lambda s: [])
+    monkeypatch.setattr(
+        "sleepermetrics.metrics.waiver_ledger",
+        lambda s, top_n=None: pd.DataFrame(columns=["player_id"]))
+    monkeypatch.setattr(
+        "sleepermetrics.draft._player_team_splits",
+        lambda s, ids: {"5995": [{"user_name": "rezzu", "points": 24.1}]}
+                       if s is fake_season else {})
+
+    out = pp.player_profile("5995", league_id="fake_league")
+
+    assert out["current_season"] == "2026"
+    assert [r["v"] for r in out["real_nfl"]["player_stats"]["current_rows"]] == ["new"]
+    assert [r["v"] for r in out["real_nfl"]["player_stats"]["past_rows"]] == ["old"]
+    assert [r["consensus"] for r in out["adp_current"]] == [10]
+    assert [r["consensus"] for r in out["adp_past"]] == [20]
+    # draft_board is stubbed identically for every season, so BOTH 2026 and
+    # 2024 draft_picks exist -- confirms the split, not just presence.
+    lg_cur = out["league_current"]
+    lg_past = out["league_past"]
+    assert len(lg_cur["draft_picks"]) == 1 and lg_cur["draft_picks"][0]["season"] == "2026"
+    assert len(lg_past["draft_picks"]) == 1 and lg_past["draft_picks"][0]["season"] == "2024"
+
+
 def test_player_profile_league_section_degrades_on_league_data_failure(monkeypatch):
     monkeypatch.setattr(pp, "sleeper_players", _fake_players_df)
     monkeypatch.setattr(pp, "_real_nfl_history", lambda *a, **k: {})
     monkeypatch.setattr(pp, "_adp_history", lambda *a, **k: [])
+    monkeypatch.setattr(pp, "_percentile_profile_for", lambda *a, **k: None)
+    monkeypatch.setattr(pp, "_all_season_profiles", lambda *a, **k: {})
 
     def _boom(league_id):
         raise RuntimeError("simulated failure")
@@ -262,6 +407,8 @@ def test_player_profile_league_section_degrades_on_league_data_failure(monkeypat
 def test_player_profile_caches_repeat_calls(monkeypatch):
     monkeypatch.setattr(pp, "sleeper_players", _fake_players_df)
     monkeypatch.setattr(pp, "_adp_history", lambda *a, **k: [])
+    monkeypatch.setattr(pp, "_percentile_profile_for", lambda *a, **k: None)
+    monkeypatch.setattr(pp, "_all_season_profiles", lambda *a, **k: {})
     calls = []
 
     def _tracked_real_nfl(*a, **k):
@@ -278,6 +425,8 @@ def test_player_profile_caches_repeat_calls(monkeypatch):
 def test_player_profile_fresh_bypasses_cache(monkeypatch):
     monkeypatch.setattr(pp, "sleeper_players", _fake_players_df)
     monkeypatch.setattr(pp, "_adp_history", lambda *a, **k: [])
+    monkeypatch.setattr(pp, "_percentile_profile_for", lambda *a, **k: None)
+    monkeypatch.setattr(pp, "_all_season_profiles", lambda *a, **k: {})
     calls = []
 
     def _tracked_real_nfl(*a, **k):
@@ -294,6 +443,8 @@ def test_player_profile_cache_keys_by_league_id_too(monkeypatch):
     monkeypatch.setattr(pp, "sleeper_players", _fake_players_df)
     monkeypatch.setattr(pp, "_real_nfl_history", lambda *a, **k: {})
     monkeypatch.setattr(pp, "_adp_history", lambda *a, **k: [])
+    monkeypatch.setattr(pp, "_percentile_profile_for", lambda *a, **k: None)
+    monkeypatch.setattr(pp, "_all_season_profiles", lambda *a, **k: {})
     monkeypatch.setattr(
         "webapp.app.league_data", lambda league_id: {"seasons": {}})
 
@@ -306,6 +457,8 @@ def test_player_profile_cache_keys_by_league_id_too(monkeypatch):
 def test_player_profile_cache_expires_after_ttl(monkeypatch):
     monkeypatch.setattr(pp, "sleeper_players", _fake_players_df)
     monkeypatch.setattr(pp, "_adp_history", lambda *a, **k: [])
+    monkeypatch.setattr(pp, "_percentile_profile_for", lambda *a, **k: None)
+    monkeypatch.setattr(pp, "_all_season_profiles", lambda *a, **k: {})
     calls = []
 
     def _tracked_real_nfl(*a, **k):
@@ -331,6 +484,8 @@ def test_is_cached_true_after_a_real_call(monkeypatch):
     monkeypatch.setattr(pp, "sleeper_players", _fake_players_df)
     monkeypatch.setattr(pp, "_real_nfl_history", lambda *a, **k: {})
     monkeypatch.setattr(pp, "_adp_history", lambda *a, **k: [])
+    monkeypatch.setattr(pp, "_percentile_profile_for", lambda *a, **k: None)
+    monkeypatch.setattr(pp, "_all_season_profiles", lambda *a, **k: {})
     pp.player_profile("5995")
     assert pp.is_cached("5995") is True
     # a different league_id key must not be reported cached just because
@@ -341,3 +496,97 @@ def test_is_cached_true_after_a_real_call(monkeypatch):
 def test_is_cached_false_after_ttl_expiry():
     pp._PROFILE_CACHE[("5995", None)] = {"data": {}, "at": 0}  # ancient
     assert pp.is_cached("5995") is False
+
+
+# --- percentile_profile / season_profiles wired into player_profile() -----
+
+def test_player_profile_picks_most_recent_season_with_data(monkeypatch):
+    monkeypatch.setattr(pp, "sleeper_players", _fake_players_df)
+    monkeypatch.setattr(pp, "_real_nfl_history", lambda *a, **k: {})
+    monkeypatch.setattr(pp, "_adp_history", lambda *a, **k: [])
+    monkeypatch.setattr(pp, "_recent_seasons", lambda n=5: ["2026", "2025", "2024"])
+
+    # 2026 has no data yet (offseason); 2025 does -- the focus season should
+    # land on 2025, the most recent with real data, not 2026.
+    def _fake(player_id, position, season):
+        return None if season == "2026" else {
+            "season": season, "position": position, "player_id": player_id,
+            "n_population": 30,
+            "columns": [{"key": "fpts_ppr", "label": "PPR pts",
+                        "value": 180.0, "percentile": 72.0}]}
+    monkeypatch.setattr(pp, "_percentile_profile_for", _fake)
+
+    out = pp.player_profile("5995")
+    assert out["focus_season"] == "2025"
+    assert out["percentile_profile"]["season"] == "2025"
+    assert out["percentile_profile"]["columns"][0]["percentile"] == 72.0
+
+
+def test_player_profile_includes_season_profiles(monkeypatch):
+    monkeypatch.setattr(pp, "sleeper_players", _fake_players_df)
+    monkeypatch.setattr(pp, "_real_nfl_history", lambda *a, **k: {})
+    monkeypatch.setattr(pp, "_adp_history", lambda *a, **k: [])
+    monkeypatch.setattr(
+        pp, "_all_season_profiles",
+        lambda *a, **k: {"2024": {"season": "2024", "columns": [], "n_population": 30},
+                         "2025": {"season": "2025", "columns": [], "n_population": 30}})
+
+    out = pp.player_profile("5995")
+    assert len(out["season_profiles"]) == 2
+    assert out["available_seasons"] == ["2025", "2024"]
+    assert out["focus_season"] == "2025"
+
+
+# --- plots.plot_player_radar (season-overlay radar) -------------------------
+
+def _profile(season, pct):
+    return {"season": season, "position": "RB", "player_id": "5995",
+           "n_population": 40,
+           "columns": [{"key": "fpts_ppr", "label": "PPR pts", "value": 180.0, "percentile": pct},
+                       {"key": "snap_share", "label": "Snap share", "value": 0.8, "percentile": pct},
+                       {"key": "rz_touches", "label": "RZ touch", "value": 12.0, "percentile": pct}]}
+
+
+def test_plot_player_radar_draws_a_single_season_figure():
+    import matplotlib.pyplot as plt
+
+    from sleepermetrics import plots
+    fig = plots.plot_player_radar({"2025": _profile("2025", 72.0)}, "2025", "Justice Hill")
+    assert fig is not None
+    plt.close(fig)
+
+
+def test_plot_player_radar_overlays_multiple_seasons_with_focus():
+    import matplotlib.pyplot as plt
+
+    from sleepermetrics import plots
+    profiles = {"2023": _profile("2023", 40.0), "2024": _profile("2024", 55.0),
+               "2025": _profile("2025", 72.0)}
+    fig = plots.plot_player_radar(profiles, "2024", "Justice Hill")
+    assert fig is not None
+    # Focus season's own line plus the two ghosted seasons.
+    ax = fig.axes[0]
+    assert len(ax.lines) == 3
+    plt.close(fig)
+
+
+def test_plot_player_radar_defaults_focus_to_most_recent_when_unresolved():
+    import matplotlib.pyplot as plt
+
+    from sleepermetrics import plots
+    profiles = {"2023": _profile("2023", 40.0), "2025": _profile("2025", 72.0)}
+    fig = plots.plot_player_radar(profiles, "2099", "Justice Hill")
+    assert fig._suptitle.get_text().startswith("Justice Hill · 2025")
+    plt.close(fig)
+
+
+def test_plot_player_radar_degrades_on_no_data():
+    import matplotlib.pyplot as plt
+
+    from sleepermetrics import plots
+    fig = plots.plot_player_radar(None, None, "Nobody")
+    assert fig is not None
+    plt.close(fig)
+    fig2 = plots.plot_player_radar({"2025": {"columns": []}}, "2025", "Nobody")
+    assert fig2 is not None
+    plt.close(fig2)

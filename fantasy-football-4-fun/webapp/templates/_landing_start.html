@@ -6,12 +6,17 @@
   <h2>Get started</h2>
   <p class="home-lede">
     Live-computed standings, luck, coaching, draft grades, playoffs and a full
-    season report, for any Sleeper league.  Enter a league ID in the header, or
-    switch to User to find one by account.
+    season report, for any Sleeper league.  Enter a league ID in the header,
+    or a Sleeper username/user ID to find one by account.
   </p>
   <p class="home-hint">Pre-filled with the Dank Soupers league.</p>
 
   {# The /user-leagues fragment (its own <section class="user-results">) is
-     dropped in here by home.html's submit handler (innerHTML swap). #}
-  <div id="user-results"></div>
+     normally dropped in here by home.html's submit handler (innerHTML swap).
+     `user_results`, when set (GET /?user=<handle>, a bookmarked/shared user
+     search), pre-renders that SAME fragment server-side so the page shows
+     real results on first paint instead of an empty placeholder waiting on
+     a client-side fetch. `| safe` since this is our own rendered HTML, not
+     user-supplied markup (user_leagues() already escapes the handle). #}
+  <div id="user-results">{{ user_results | safe if user_results else "" }}</div>
 </section>

@@ -1,7 +1,22 @@
 {# Results of a "look up by User" lookup from the dashboard header (renders
-   into #panel). Each league row links to /league=<id>, a full dashboard
-   load for that league -- which also corrects the header's #league/#season
-   state fields. Also reused as a plain fragment on the landing page. #}
+   into #panel). Each league row links to /dashboard?league=<id>&season=<year>,
+   a full dashboard load for that league/season -- which also corrects the
+   header's #league/#season state fields. Also reused as a plain fragment on
+   the landing page.
+
+   Query-string form, NOT /league=<id>&season=<year> -- that path route
+   (@app.get("/league={league}")) has no "?" before season, so the whole
+   "&season=..." tail gets swallowed into the {league} path segment itself
+   instead of becoming a real query param (a real bug this comment is here to
+   prevent repeating: the redirect silently loaded a garbage league id and
+   season was never passed at all). /dashboard accepts the same league/season/
+   tab query params and is what tab_season_history.html/tab_testing.html
+   already use for the identical kind of link.
+
+   The search is keyed on the user id/handle alone: every league the user has
+   EVER belonged to is swept in one go (no season input to gate the query),
+   then collapsed to one row per real league with every year they were in it
+   listed as a plain string. #}
 <section class="card user-results">
 {% if error %}
   <p class="ul-error">{{ error }}</p>
@@ -17,31 +32,18 @@
     </div>
   </div>
 
-  <form class="ul-season" hx-get="/user-leagues" hx-target="closest .user-results"
-        hx-swap="outerHTML" hx-trigger="change from:select">
-    <input type="hidden" name="user" value="{{ handle }}">
-    <label>
-      <span>Season</span>
-      <select name="season">
-        {% for y in seasons %}
-        <option value="{{ y }}" {% if y == season %}selected{% endif %}>{{ y }}</option>
-        {% endfor %}
-      </select>
-    </label>
-  </form>
-
   {% if leagues %}
-  <p class="hint">{{ leagues | length }} league{{ '' if leagues|length == 1 else 's' }} in {{ season }}. Pick one to open its dashboard.</p>
+  <p class="hint">{{ leagues | length }} league{{ '' if leagues|length == 1 else 's' }} found. Pick one to open its dashboard.</p>
   <ul class="ul-list">
     {% for lg in leagues %}
     <li>
-      <a href="/league={{ lg.league_id }}" class="ul-league">
+      <a href="/dashboard?league={{ lg.open_league_id }}&season={{ lg.open_season }}&tab=overview" class="ul-league">
         {% if lg.avatar %}<img src="{{ lg.avatar }}" alt="" width="28" height="28">{% endif %}
         <span class="ul-name">{{ lg.name }}</span>
         <span class="ul-meta">
-          {{ lg.season }}
+          {{ lg.years }}
           {%- if lg.total_rosters %} · {{ lg.total_rosters }} teams{% endif -%}
-          {%- if lg.status %} · {{ lg.status }}{% endif -%}
+          {%- if lg.current %} · current{% else %} · historical{% endif -%}
         </span>
         <span class="ul-go">Open &rarr;</span>
       </a>
@@ -49,7 +51,7 @@
     {% endfor %}
   </ul>
   {% else %}
-  <p class="ul-error">No leagues for this user in {{ season }}.</p>
+  <p class="ul-error">No leagues found for this user.</p>
   {% endif %}
 {% endif %}
 </section>

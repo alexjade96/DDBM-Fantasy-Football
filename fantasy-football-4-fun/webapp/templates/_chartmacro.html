@@ -9,6 +9,7 @@
      ch.chart("playoff_players", scope=scope)     -- playoff-analytics-scoped
      ch.chart("trade_single_cumulative", transaction_id=tid) -- one-deal-scoped
      ch.chart("redraft_standings", basis="adp")   -- redraft-basis-scoped
+     ch.chart("player_radar", player_id=pid)      -- player-profile-scoped
    `alt`/`caption` override the CHART_META-derived defaults for a key that has
    no CHART_META entry (or a bespoke one for this call site) -- e.g. a chart
    key with no registered `cap` would otherwise fall back to its bare key as
@@ -24,17 +25,27 @@
    like everything else there, or the wide class forces it across the whole
    row regardless of how much space is actually free). Unknown keys degrade
    to a plain, caption-less figure. #}
-{% macro chart(key, week=None, manager=None, bracket=None, scope=None, transaction_id=None, basis=None, alt=None, caption=None, wide=None) -%}
+{% macro chart(key, week=None, manager=None, bracket=None, scope=None, transaction_id=None, basis=None, player_id=None, season_override=None, alt=None, caption=None, wide=None) -%}
 {%- set m = CHART_META.get(key, {}) -%}
 {%- set cap = caption if caption is not none else m.cap -%}
 {%- set is_wide = wide if wide is not none else m.wide -%}
+{# `season_override` lets ONE call site override the context `season` global
+   (used by every other chart key for the league season) -- only the
+   league-free player-profile chart passes it, to carry a percentile-radar
+   FOCUS season instead, without disturbing what every other caller means by
+   "season" (this page's own back-link, in particular, needs the real league
+   season, not the radar's focus year -- see player_profile.html). Named
+   distinctly from the context `season` (rather than shadowing it) since a
+   same-named macro parameter would make the outer context value
+   unreachable inside this macro body. #}
+{%- set season_q = season_override if season_override is not none else season -%}
 {# aspect-ratio on the figure reserves a box the SHAPE of the coming chart, so
    the shimmer skeleton doesn't collapse to a flat strip and the page doesn't
    jump when the PNG swaps in. `.card.chart:not(.skeleton)` drops it in
    style.css once the image has loaded, so the real PNG's natural height wins. #}
 <figure class="card chart{% if is_wide %} wide{% endif %}"
         style="aspect-ratio: {{ '16 / 7' if is_wide else '3 / 2' }}">
-  <img src="/chart/{{ key }}?league={{ league }}&season={{ season }}{% if week is not none %}&week={{ week }}{% endif %}{% if manager is not none %}&manager={{ manager|urlencode }}{% endif %}{% if bracket %}&bracket={{ bracket }}{% endif %}{% if scope %}&scope={{ scope }}{% endif %}{% if transaction_id %}&transaction_id={{ transaction_id|urlencode }}{% endif %}{% if basis %}&basis={{ basis }}{% endif %}&theme={{ theme }}&_={{ bust }}"
+  <img src="/chart/{{ key }}?league={{ league }}&season={{ season_q }}{% if week is not none %}&week={{ week }}{% endif %}{% if manager is not none %}&manager={{ manager|urlencode }}{% endif %}{% if bracket %}&bracket={{ bracket }}{% endif %}{% if scope %}&scope={{ scope }}{% endif %}{% if transaction_id %}&transaction_id={{ transaction_id|urlencode }}{% endif %}{% if basis %}&basis={{ basis }}{% endif %}{% if player_id is not none %}&player_id={{ player_id|urlencode }}{% endif %}&theme={{ theme }}&_={{ bust }}"
        alt="{{ alt or cap or key.replace('_', ' ').title() }}" loading="lazy">
   {%- if cap %}<figcaption>{{ cap }}</figcaption>{%- endif %}
 </figure>

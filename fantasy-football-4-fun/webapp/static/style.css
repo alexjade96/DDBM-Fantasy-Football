@@ -58,10 +58,28 @@ a.brand:hover { filter: brightness(1.06); }
 .mark { width: 10px; height: 34px; border-radius: 3px; background: var(--turf); display: block; }
 h1 { font-size: 20px; margin: 0; letter-spacing: -.01em; }
 .sub { margin: 0; color: var(--faint); font-size: 13px; }
+/* index.html's title block: the "back to home" .brand link (icon + <h1>)
+   plus the #league-sub subtitle BUTTON as a sibling right under it, indented
+   to align under the title text (the icon's width + its gap) since it's no
+   longer a plain <p> nested inside .brand's own flex row. See index.html's
+   header comment for why it can't be nested inside the <a>. */
+.brand-block { display: flex; flex-direction: column; gap: 2px; align-items: flex-start; }
+.brand-sub {
+  margin: 0 0 0 calc(10px + 12px); /* .mark's width + .brand's gap */
+  padding: 0; border: none; background: none; color: var(--faint); font-size: 13px;
+  font-family: inherit; cursor: pointer; text-align: left;
+}
+.brand-sub:hover { color: var(--turf); text-decoration: underline; }
 
 .controls { display: flex; gap: 10px; align-items: flex-end; }
 .controls.inline { margin: 0 0 12px; }
 .controls label { display: flex; flex-direction: column; gap: 4px; }
+/* `.controls label`'s own display:flex (0,1,1) outranks the UA
+   `[hidden]{display:none}` (0,1,0), same trap as `.adp-dd-menu`/`.bkr` above
+   -- restores hidden-by-default for the header lookup's Season field, which
+   User mode hides (that search sweeps every season, so the picker has
+   nothing to filter). */
+.controls label[hidden] { display: none; }
 .controls span { font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: var(--faint); }
 input, select, button, a.ghost {
   font: inherit; color: var(--ink); background: var(--surface);
@@ -199,16 +217,6 @@ label.adp-dd-item { flex-direction: row; justify-content: center;
 .utilbar { display: flex; flex-direction: column; gap: 6px; align-items: flex-end; }
 .utilbar-label { font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: var(--faint); }
 
-/* Header lookup: League / User mode toggle, a small segmented pill sitting
-   left of the id box in the .controls form. */
-.lookup-mode { display: inline-flex; align-self: flex-end; border: 1px solid var(--line);
-  border-radius: 8px; overflow: hidden; }
-.lookup-mode label { display: flex; align-items: center; gap: 0; padding: 7px 12px;
-  font-size: 12px; font-weight: 600; color: var(--muted); cursor: pointer; }
-.lookup-mode label + label { border-left: 1px solid var(--line); }
-.lookup-mode input { position: absolute; opacity: 0; pointer-events: none; }
-.lookup-mode label:has(input:checked) { background: var(--ink); color: var(--surface); }
-
 /* Find-leagues-by-user results (shared by the landing page and the header
    lookup, where it renders into #panel). One row per league, the whole row a
    link to /league=<id>. */
@@ -216,11 +224,15 @@ label.adp-dd-item { flex-direction: row; justify-content: center;
 .user-results:empty { margin-top: 0; display: none; }
 .ul-error { color: var(--muted); font-size: 13px; margin: 8px 0 0; }
 .ul-user { display: flex; align-items: center; gap: 10px; font-size: 13px; margin-bottom: 10px; }
-.ul-avatar { border-radius: 50%; }
+/* The global `img { width: 100%; height: auto }` rule (meant for chart PNGs
+   filling their card) otherwise wins over these avatars' plain width/height
+   HTML attributes -- a browser's own presentational attributes always lose
+   to ANY CSS rule touching the same property, so a real, shipped bug had
+   this 32px avatar rendering at ~330px (its container's full width) with no
+   cap at all. Both need an explicit width/height here, not just
+   border-radius, to actually override it. */
+.ul-avatar { width: 32px; height: 32px; border-radius: 50%; }
 .ul-muted { color: var(--faint); }
-.ul-season { margin: 0 0 10px; }
-.ul-season label { display: flex; flex-direction: column; gap: 4px; }
-.ul-season span { font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: var(--faint); }
 .ul-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
 .ul-league {
   display: grid; grid-template-columns: auto 1fr auto; align-items: center;
@@ -228,10 +240,20 @@ label.adp-dd-item { flex-direction: row; justify-content: center;
   background: var(--surface); border: 1px solid var(--line); border-radius: 10px;
 }
 .ul-league:hover { border-color: var(--turf); filter: brightness(1.02); }
-.ul-league img { border-radius: 6px; grid-row: 1 / span 2; }
+/* Same override the .ul-avatar comment above explains -- the bare `img`
+   rule otherwise wins on width/height and this league icon (28px per its
+   HTML attribute) balloons to fill the row. */
+.ul-league img { width: 28px; height: 28px; border-radius: 6px; grid-row: 1 / span 2; }
 .ul-name { font-weight: 600; font-size: 14px; }
 .ul-meta { grid-column: 2; color: var(--faint); font-size: 12px; }
 .ul-go { grid-column: 3; grid-row: 1 / span 2; color: var(--turf); font-size: 12px; font-weight: 600; white-space: nowrap; }
+/* The season-history list's own row for whatever season is CURRENTLY being
+   viewed (GET /seasons, the header's "Seasons" button reopening it -- see
+   tab_season_history.html). Still a real link (revisiting it re-fetches the
+   same season, harmless), just visually marked so the list also answers
+   "where am I" and not only "where could I go". */
+.ul-current { border-color: var(--turf); background: color-mix(in srgb, var(--turf) 8%, var(--surface)); }
+.ul-current .ul-go { color: var(--faint); font-weight: 400; }
 
 .tabs {
   display: flex; gap: 4px; overflow-x: auto; padding: 0 clamp(16px, 4vw, 40px);
@@ -520,7 +542,8 @@ details summary { cursor: pointer; font-weight: 600; }
            color: var(--faint); font-weight: 600; margin-right: 4px; }
 .rail .year { padding: 4px 12px; border-radius: 20px; border: 1px solid var(--line);
               background: var(--surface); color: var(--muted); cursor: pointer;
-              font-size: 13px; font-variant-numeric: tabular-nums; }
+              font-size: 13px; font-variant-numeric: tabular-nums;
+              text-decoration: none; display: inline-block; }
 .rail .year:hover { color: var(--ink); }
 .rail .year.on { background: var(--ink); color: var(--surface); border-color: var(--ink);
                  font-weight: 600; }

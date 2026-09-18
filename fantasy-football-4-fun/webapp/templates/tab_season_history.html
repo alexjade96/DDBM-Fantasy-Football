@@ -1,0 +1,43 @@
+{# Season-history list: two entry points render this SAME template.
+   (1) tab()'s `boot` branch, shown instead of jumping straight into Overview
+   when a MULTI-season league is opened with no season already chosen (a bare
+   pasted league id, a fresh landing-page visit, or an in-dashboard league
+   switch) -- a single-season league never reaches it, falling straight
+   through to the real tab.
+   (2) GET /seasons, which the header subtitle (index.html) opens on demand
+   to switch seasons within an ALREADY-loaded league -- this replaced the
+   header's old season <select>, which could only show a bare year. Only
+   this second path sets `h.is_current` on any row (the boot path has no
+   "current" yet, since nothing has been chosen).
+
+   Each row links to ITS OWN season's real league_id (`h.league_id`), not
+   the id the caller happened to load the league with -- Sleeper gives every
+   season a different id, so a 2022 row must open 2022's own id, not the
+   current-season one shown elsewhere on the page.
+
+   Reuses the .ul-* row styling from the "find leagues by user" results list
+   (style.css) -- same shape, a clickable card per row linking to a season. #}
+<section class="card user-results">
+  <div class="ul-user">
+    <div>
+      <strong>{{ league_name }}</strong>
+      <span class="ul-muted">· {{ history | length }} seasons on record</span>
+    </div>
+  </div>
+  <p class="hint">Pick a season to open.</p>
+  <ul class="ul-list">
+    {% for h in history %}
+    <li>
+      <a href="/dashboard?league={{ h.league_id }}&season={{ h.season }}&tab=overview"
+         class="ul-league{% if h.is_current %} ul-current{% endif %}">
+        <span class="ul-name">{{ h.season }}</span>
+        <span class="ul-meta">
+          {{ h.league_id }} · {{ h.status }}
+          {%- if h.is_latest %} · latest{% endif -%}
+        </span>
+        <span class="ul-go">{% if h.is_current %}Viewing{% else %}Open &rarr;{% endif %}</span>
+      </a>
+    </li>
+    {% endfor %}
+  </ul>
+</section>

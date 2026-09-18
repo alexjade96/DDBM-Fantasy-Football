@@ -24,11 +24,11 @@ Public entry point: `load(dataset, season, reload=False) -> pd.DataFrame`.
 from . import summary
 from .base import DATASETS, NflDataset
 from .board import load
-from .summary import (compare_sources, leaderboard_columns, player_leaderboard,
-                      schedule_grid, schedule_weeks)
+from .summary import (compare_sources, leaderboard_columns, percentile_profile,
+                      player_leaderboard, schedule_grid, schedule_weeks)
 
 __all__ = [
     "load", "NflDataset", "DATASETS", "summary",
-    "player_leaderboard", "leaderboard_columns", "compare_sources",
-    "schedule_grid", "schedule_weeks",
+    "player_leaderboard", "leaderboard_columns", "percentile_profile",
+    "compare_sources", "schedule_grid", "schedule_weeks",
 ]

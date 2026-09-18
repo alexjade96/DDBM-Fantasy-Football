@@ -5,23 +5,39 @@
    known -- see app.py's dashboard()/tab()/_pushed()). #}
 <h1 id="league-name" hx-swap-oob="true">{{ league_name }}</h1>
 {# The subtitle under the h1 carries the loaded league id, so it has to follow
-   a league switch (and a forward-resolved id) the same way the h1 does. #}
+   a league switch (and a forward-resolved id) the same way the h1 does.
+   It's a <button> (see index.html's header comment), not a <p> -- htmx's OOB
+   swap replaces the whole matched element regardless of tag, so this only
+   needs to keep the same id and structure, not the same tag as any earlier
+   version of this fragment. #}
 {% if league is defined and league %}
-<p class="sub" id="league-sub" hx-swap-oob="true">League Analytics | {{ league }}</p>
+<button type="button" id="league-sub" class="brand-sub" hx-swap-oob="true" data-load-watch>
+  League ID {{ league }} | View History
+</button>
 {% endif %}
 {# htmx special-cases an out-of-band <title>: it updates document.title, so
    the browser tab / bookmark name follows the loaded league. #}
 <title hx-swap-oob="true">{{ league_name }} Fantasy Football</title>
-{# The header's League ID box. A pasted older-season id may have been resolved
+{# The header's lookup box. A pasted older-season id may have been resolved
    FORWARD to the league's current-season id (see app.py
    current_season_league_id) -- swap the box so the field, the pushed URL and
-   the loaded league all agree. Only emitted in League mode (`league` is passed
-   only then); User mode keeps its own box untouched. htmx settles this oob
-   <input> in place, and the mode-toggle JS re-resolves `#league` by id on its
-   next run, so the swap does not strand its handler. #}
+   the loaded league all agree. `name="league"` MUST match index.html's own
+   field name -- #panel's boot fetch and the .tabs nav both hx-include
+   #league by id and depend on it serializing as `league=` for every /tab/*
+   request. (Two real, shipped bugs happened here in sequence: first this
+   name was stale at "league" while index.html's box had briefly been
+   renamed to "q" for the new /lookup search, so every SUBSEQUENT search
+   silently reverted to the wrong name and submitted nothing; the fix then
+   swapped this OOB copy to "q" to match -- which fixed the search but broke
+   EVERY OTHER request on the page, since #panel/.tabs read #league expecting
+   "league=", so clicking any league link always fell back to
+   DEFAULT_LEAGUE. The real fix was neither: keep this input's name as
+   "league" for its many OTHER consumers, and have index.html's own /lookup
+   submit handler build its request by hand instead of relying on form
+   serialization -- see index.html's #lookup submit listener.) #}
 {% if league is defined and league %}
 <input hx-swap-oob="true" type="text" name="league" id="league" value="{{ league }}"
        autocomplete="off" spellcheck="false"
-       data-ph-league="Sleeper league ID" data-ph-user="Sleeper username or user ID">
+       placeholder="Sleeper league ID, username, or user ID">
 {% endif %}
 {% with oob = true %}{% include "_seasons.html" %}{% endwith %}

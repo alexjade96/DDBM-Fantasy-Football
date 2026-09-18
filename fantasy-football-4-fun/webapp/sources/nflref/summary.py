@@ -22,8 +22,12 @@ import pandas as pd
 
 from .board import load
 
-#: fantasy positions the player leaderboard offers, in menu order.
-POSITIONS = ("ALL", "QB", "RB", "WR", "TE")
+#: fantasy positions the player leaderboard offers, in menu order. "DEF" only
+#: has real data on the "sleeper" source (see `_SLEEPER_DEF_COLS`) --
+#: nflverse's `player_stats` release has no team-defense row shape at all, so
+#: `pos="DEF", source="nflverse"` degrades to an empty frame, same as any
+#: other no-data case this leaderboard already handles.
+POSITIONS = ("ALL", "QB", "RB", "WR", "TE", "DEF")
 
 #: NFL team abbreviations for the Team filter, in menu order ("ALL" first).
 #: nflverse's `recent_team` and Sleeper's `players()` `team` both use these.
@@ -88,6 +92,17 @@ _SLEEPER_QB_COLS = [
     ("carries", "Car"), ("rush_yards", "Rush yds"), ("rush_td", "Rush TD"),
     ("snap_share", "Snap share"),
     ("fpts_ppr", "Fantasy pts"), ("ppg_ppr", "Pts/G"),
+]
+# Team defense's own column set -- SLEEPER-ONLY (see the POSITIONS comment
+# above), and structurally disjoint from every offense/QB set: no
+# snap_share/tgt_share/adot equivalent exists for a team unit. Matches
+# sleepermetrics.nflstats._LB_DEF_SUMS's output columns exactly.
+_SLEEPER_DEF_COLS = [
+    ("games", "G"), ("sacks", "Sck"), ("ints", "INT"),
+    ("forced_fumbles", "FF"), ("fumble_rec", "FR"), ("def_td", "Def TD"),
+    ("safeties", "Saf"), ("blk_kick", "Blk"), ("tackles", "Tkl"),
+    ("qb_hits", "QB Hit"), ("pts_allow", "Pts Allow"), ("yds_allow", "Yds Allow"),
+    ("fpts_ppr", "PPR pts"), ("ppg_ppr", "PPR/G"),
 ]
 
 # The stats compare_sources() checks. Each is present in BOTH leaderboards
@@ -216,14 +231,85 @@ def player_leaderboard(season: str, pos: str = "ALL", source: str = "nflverse",
 def leaderboard_columns(pos: str, source: str = "nflverse") -> list[tuple[str, str]]:
     """The (df_key, header) list for a leaderboard view of `pos` + `source`.
 
-    QB gets a passing-stat set; every other position the skill set. The
-    Sleeper source swaps nflverse's WOPR / RACR / air-yards-share for its own
-    snap share / aDOT / RZ touches.
+    QB gets a passing-stat set; DEF gets its own (sleeper-only, see
+    `_SLEEPER_DEF_COLS`); every other position the skill set. The Sleeper
+    source swaps nflverse's WOPR / RACR / air-yards-share for its own snap
+    share / aDOT / RZ touches. A DEF request against `source="nflverse"`
+    still returns `_SLEEPER_DEF_COLS` -- nflverse has no DEF rows to render
+    at all, so the column set is moot there; returning the Sleeper shape
+    rather than the (also moot) skill-position default avoids handing the
+    caller a "Tgt/Rec/..." header row for a position that can never have one.
     """
-    qb = (pos or "").upper() == "QB"
+    p = (pos or "").upper()
+    if p == "DEF":
+        return _SLEEPER_DEF_COLS
+    qb = p == "QB"
     if (source or "nflverse").lower() == "sleeper":
         return _SLEEPER_QB_COLS if qb else _SLEEPER_SKILL_COLS
     return _NFLVERSE_QB_COLS if qb else _NFLVERSE_SKILL_COLS
+
+
+#: Leaderboard columns where a LOWER raw value is the better outcome, so the
+#: percentile rank direction must invert -- otherwise an elite defense (very
+#: few points/yards allowed) would read as a LOW percentile, backwards from
+#: every other column here ("beat N% of the field" always means higher is
+#: better, everywhere except these two DEF-only stats).
+_LOWER_IS_BETTER = {"pts_allow", "yds_allow"}
+
+
+def percentile_profile(season: str, pos: str, player_id: str,
+                       source: str = "sleeper", reload: bool = False) -> dict:
+    """This player's percentile at each of his position's leaderboard stats,
+    against every real NFL player at that position for `season` -- the
+    player-profile page's radar-chart input.
+
+    Pulls the FULL leaderboard (`limit=10_000`, effectively uncapped) rather
+    than the display-sized default, since a percentile computed against a
+    top-200-only slice would be wrong for anyone outside that cut. `source`
+    defaults to `"sleeper"` (matches player_id directly, no name/position
+    fallback needed -- see `player_leaderboard`'s own id note) rather than
+    `player_leaderboard`'s own `"nflverse"` default.
+
+    Percentile = this player's rank (1 = best) converted to a 0-100 scale
+    via `pandas.Series.rank(pct=True)` (no scipy dependency), so a player
+    alone at a stat reads 100, and the single worst reads a value just above
+    0 rather than a hard 0 -- consistent with how every other percentile
+    convention in this codebase (there are none yet) would be expected to
+    read: "beat N% of the field," not "beat N% or tied." `_LOWER_IS_BETTER`
+    columns (points/yards allowed) rank `ascending=False` so the direction
+    stays "beat N% of the field" rather than "ranked Nth by raw magnitude."
+
+    Returns `{"season", "position", "player_id", "n_population",
+    "columns": [{"key", "label", "value", "percentile"}, ...]}`, or `None`
+    if this player has no row in that season's leaderboard (never raises).
+    """
+    lb = player_leaderboard(season, pos=pos, source=source, limit=10_000,
+                            reload=reload)
+    if lb.empty or "player_id" not in lb.columns:
+        return None
+    row = lb[lb["player_id"].astype(str) == str(player_id)]
+    if row.empty:
+        return None
+
+    cols = []
+    for key, label in leaderboard_columns(pos, source=source):
+        if key not in lb.columns:
+            continue
+        series = pd.to_numeric(lb[key], errors="coerce")
+        value = series.loc[row.index[0]] if row.index[0] in series.index else None
+        if pd.isna(value):
+            continue
+        pct_rank = series.rank(pct=True, na_option="bottom",
+                               ascending=key not in _LOWER_IS_BETTER)
+        percentile = round(float(pct_rank.loc[row.index[0]]) * 100, 1)
+        cols.append({"key": key, "label": label, "value": round(float(value), 2),
+                     "percentile": percentile})
+
+    if not cols:
+        return None
+    return {"season": str(season), "position": (pos or "").upper(),
+            "player_id": str(player_id), "n_population": int(len(lb)),
+            "columns": cols}
 
 
 def compare_sources(season: str, pos: str = "ALL", limit: int = 200,

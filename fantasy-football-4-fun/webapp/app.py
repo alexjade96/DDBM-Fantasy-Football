@@ -544,6 +544,73 @@ def pick(league_id: str, season: str | None, fresh: bool = False):
     return d, d["seasons"][key], key
 
 
+def _season_history_rows(d: dict, current_season: str | None = None) -> list[dict]:
+    """One row per season in an assembled league, newest first: backs both
+    the season-history interstitial shown when a multi-season league is
+    opened without a season already chosen (tab()'s `boot` branch) and the
+    on-demand /seasons route the header subtitle reopens the same list from
+    (see index.html -- this replaced the header's season <select>, which
+    could only ever show the bare year with no status/context).
+
+    `league_id` is that SEASON's own real Sleeper id, not the id the caller
+    happened to load the league with -- Sleeper gives every season of a
+    league a different id, so a 2022 row's link must point at 2022's own id,
+    not (say) the current-season id the header/URL are showing. `status`/
+    `in_progress` come straight off each season's own `Season` object
+    (Sleeper's real phase signal -- see `Season.in_progress`), not inferred
+    from whether it's the newest entry: an abandoned newer season (drafted,
+    never played) would otherwise misreport an older, fully-played one as
+    "not current". `current_season`, when given, flags whichever row is the
+    one actually being viewed right now (only meaningful for the on-demand
+    reopen -- the boot-time interstitial has no "current" yet, since nothing
+    has been chosen).
+    """
+    names = list(reversed(d["names"]))
+    rows = []
+    for year in names:
+        s = d["seasons"][year]
+        rows.append({
+            "season": year,
+            "league_id": s.league_id,
+            "name": s.name,
+            "status": (s.status or "").replace("_", " ") or "unknown",
+            "in_progress": s.in_progress,
+            "is_latest": year == names[0],
+            "is_current": current_season is not None and year == current_season,
+        })
+    return rows
+
+
+@app.get("/seasons", response_class=HTMLResponse)
+def seasons_history(request: Request, league: str = DEFAULT_LEAGUE,
+                    season: str | None = None):
+    """The season-history list, on demand, for a league already loaded --
+    the header subtitle (`#league-sub`, see index.html) links here instead of
+    being plain text. Removed the header's old season <select> (which could
+    only show a bare year, no status/league_id/"latest" info, and no room to
+    add any) and its short-lived "Seasons" button replacement; this reuses
+    the same interstitial a fresh multi-season league open already shows via
+    tab_season_history.html, so there is only one season-picker UI to
+    maintain, not two. `season` (the CURRENTLY viewed one, carried in by the
+    hidden #season field) flags that row so the list shows where you are, not
+    just where you could go.
+
+    Same tolerant-failure contract as /load: a bad/unreachable league id
+    answers with a message in the panel rather than a 500.
+    """
+    try:
+        d, s, key = pick(league, season)
+    except Exception:
+        return HTMLResponse(
+            "<p class='empty'>Couldn&rsquo;t load this league&rsquo;s season "
+            "history right now. Try again.</p>")
+    ctx = {"league": league, "league_name": s.name,
+           "seasons": list(reversed(d["names"])),
+           "history": _season_history_rows(d, current_season=key)}
+    return _pushed_history(
+        tpl.TemplateResponse(request, "tab_season_history.html", ctx), ctx)
+
+
 # --- first-load warm-up -------------------------------------------------------
 # The htmx `preload` extension (index.html) warms a tab's HTML + chart <img>
 # URLs on hover, which is most navigation. This complements it for the FIRST
@@ -810,6 +877,33 @@ def _pushed(resp, ctx: dict, tab_name: str):
     return resp
 
 
+def _pushed_history(resp, ctx: dict):
+    """The season-history list's own version of _pushed() -- no season/tab
+    is meaningfully "current" on this page (that's the whole point of it:
+    nothing has been chosen yet), so its bookmarkable URL is the bare
+    /dashboard?league=<id>, NOT /dashboard?league=&season=&tab=overview like
+    _pushed() would build. That distinction is real, not cosmetic: reloading
+    a URL that names a season must land on THAT season's Overview, and
+    reloading this page's URL must land back on the history list -- sharing
+    _pushed()'s shape here (as tab()'s history branch briefly did) put a
+    season in the URL for a page where none was chosen, so bookmarking it
+    silently skipped straight to that season's Overview on revisit instead
+    of reopening the list.
+
+    Always appends the out-of-band shell sync (title etc.), same as
+    _pushed()'s `ctx["boot"]` branch -- every entry point that reaches this
+    page is either the very first boot fetch or the header subtitle/`/lookup`
+    JS call, both of which need the header corrected regardless.
+    """
+    resp.headers["HX-Push-Url"] = f"/dashboard?league={quote(str(ctx['league']))}"
+    oob = tpl.env.get_template("_shell_sync.html").render(
+        league_name=ctx["league_name"], seasons=ctx.get("seasons", []),
+        season="", league=ctx["league"])
+    resp.body += oob.encode("utf-8")
+    resp.headers["content-length"] = str(len(resp.body))
+    return resp
+
+
 # matplotlib's pyplot state is global and not thread-safe, and the chart theme
 # is a module-level token that a request flips before drawing -- so every render
 # path holds this lock, or two concurrent requests could draw on each other's
@@ -891,6 +985,13 @@ MANAGER_CHARTS = {
     "mgr_roster_heatmap": plots.plot_mgr_roster_heatmap,
 }
 
+# Player-profile charts take a `player_id` instead of a Season -- league-free
+# (see webapp/player_profile.py), dispatched BEFORE pick() in the /chart
+# route below since this page's `league` is genuinely optional.
+PLAYER_CHARTS = {
+    "player_radar": plots.plot_player_radar,
+}
+
 
 # Per-chart insight + placement, so a grid of PNGs reads as a narrated set rather
 # than a wall of graphics. `cap` is the one-line insight rendered as the figure's
@@ -947,6 +1048,8 @@ CHART_META = {
     # Week (used where these render via the macro, e.g. the season-so-far race)
     "week_matchups": {"cap": "Every game this week: who played whom, and the margin.", "wide": True},
     "week_race": {"cap": "Table position after each week: where lines cross, the lead changed."},
+    # Player profile (league-free)
+    "player_radar": {"cap": "Percentile at each stat, against every real NFL player at the position; other seasons ghosted behind the focused one."},
 }
 tpl.env.globals["CHART_META"] = CHART_META
 
@@ -966,7 +1069,27 @@ def chart(name: str, league: str = DEFAULT_LEAGUE, season: str | None = None,
           theme: str = "light", manager: str | None = None,
           week: str | None = None, bracket: str | None = None,
           transaction_id: str | None = None, basis: str = "value",
+          player_id: str | None = None,
+          position: str | None = None, mode: str = "snapshot",
+          player_ids: str | None = None, player_labels: str | None = None,
           _: str | None = None):
+    # Player-profile charts are league-free (the player-profile page's
+    # `league`/`season` are both genuinely optional, unlike every other
+    # chart caller) -- dispatch BEFORE pick(), which would otherwise force a
+    # full league chain-walk this branch doesn't need and can't always do
+    # (an empty `league` query param on this one page). `season` here is
+    # repurposed as the radar's FOCUS season override (a season pill on the
+    # page, not a league season -- this branch never reaches `pick()`).
+    if name in PLAYER_CHARTS:
+        if not player_id:
+            return Response(status_code=404)
+        from webapp import player_profile as pp
+        with _render_lock:
+            plots.set_chart_theme(theme)
+            profile = pp.player_profile(player_id, league_id=league or None)
+            pname = (profile.get("identity") or {}).get("player_name") or f"Player {player_id}"
+            focus = season or profile.get("focus_season")
+            return png(plots.plot_player_radar(profile.get("season_profiles"), focus, pname))
     d, s, key = pick(league, season)
     # A custom / rolled-back bracket (token) overrides this season's committed
     # one for every playoff chart, so the whole tab reflects it consistently.
@@ -1122,16 +1245,32 @@ def chart(name: str, league: str = DEFAULT_LEAGUE, season: str | None = None,
 
 # --- pages ----------------------------------------------------------------
 @app.get("/", response_class=HTMLResponse)
-def home(request: Request, league: str = DEFAULT_LEAGUE):
+def home(request: Request, league: str = DEFAULT_LEAGUE, user: str = ""):
     """The landing / home page: a league-id field that leads into the analytics.
 
     Deliberately does no league load -- it stays instant. The field is
     temporarily pre-filled with the Dank Soupers (DDBM) league id so the default
     path is one click; the form GET-submits to /dashboard, which is where the
     season analytics actually live.
+
+    `user`, when given, makes this page bookmarkable for a USER search too --
+    /?user=<handle> renders the same results a live search would, pre-filled
+    into #user-results server-side, instead of an empty placeholder the
+    client would then have to fetch. This is the landing page's counterpart
+    to /dashboard?league=<id> (the league-search bookmark): before this,
+    /lookup's JS-driven user search had no bookmarkable URL of its own at
+    all -- the address bar just stayed on "/" -- so a result could never be
+    reloaded, shared, or found again in browser history.
     """
+    user_results = None
+    if user.strip():
+        # Reuses user_leagues() itself rather than re-deriving the same
+        # lookup/grouping logic a second time; its own response is a
+        # standalone fragment (a <section>), so only its rendered body is
+        # needed here, not the whole Response object.
+        user_results = user_leagues(request, user=user).body.decode("utf-8")
     return tpl.TemplateResponse(request, "home.html", {
-        "league": league, "asset_v": asset_v(),
+        "league": league, "asset_v": asset_v(), "user_results": user_results,
     })
 
 
@@ -1552,13 +1691,87 @@ def load(request: Request, league: str = DEFAULT_LEAGUE, season: str | None = No
                theme=theme, boot=1)
 
 
+@app.get("/lookup", response_class=HTMLResponse)
+def lookup(request: Request, q: str = "", season: str | None = None,
+           theme: str = "light", nav: int = 0):
+    """One box, auto-detected: is `q` a Sleeper league id, or a username/user
+    id? Replaces the old explicit League/User mode toggle -- Sleeper's
+    numeric ids (league_id, user_id, ...) are drawn from one shared
+    ever-increasing id space, and a username is matched by its own field, so
+    checking `/league/{q}` (and `/user/{q}` only if that misses) and keeping
+    whichever resolves is a reliable way to tell them apart without asking
+    the user to know or declare which one they're pasting. `/league/{q}` is
+    checked first and short-circuits on a hit: real collisions (an all-digit
+    username, e.g. Sleeper's own "12345", that ALSO happens to be a real
+    18-19 digit league snowflake) aren't possible on length grounds alone, so
+    a league hit is decisive and there's no need to spend a second call
+    confirming `/user/{q}` also misses.
+
+    League match: `nav` decides HOW the caller wants to receive it -- `nav=1`
+    (the landing page, which has no dashboard shell loaded yet) gets an
+    `HX-Redirect` so htmx does a full browser navigation to /dashboard
+    instead of swapping this response's body into whatever target issued the
+    request; `nav=0` (the in-dashboard header, already showing the shell)
+    instead renders in place via the same tab("overview", boot=1) path
+    `/load` already used, preserving that fast in-place switch (no full page
+    reload, no re-fetching the shell's own CSS/JS) that /load was built to
+    give.
+
+    User match (or no match at all): renders the same `_user_leagues.html`
+    fragment `/user-leagues` always has, unaffected by `nav` -- there is no
+    league to redirect into, so this always swaps into `#panel`/
+    `#user-results` in place, both callers already expect that as-is. It
+    DOES still set `HX-Push-Url` to `/?user=<handle>` regardless of `nav`
+    (unlike the league branch, whose URL differs by `nav`): a user search's
+    results page is the landing page's own /?user=<handle> (see app.py's
+    home(), which renders these same results server-side) whichever shell
+    the search was made from, so bookmarking/sharing/reloading it always
+    lands back on the same real results instead of a blank search box --
+    this was a real gap this fixes: neither /user-leagues nor this route
+    used to touch the address bar at all for a user match.
+    """
+    handle = (q or "").strip()
+    if not handle:
+        return tpl.TemplateResponse(request, "_user_leagues.html", {
+            "error": "Enter a Sleeper league ID, username, or user ID.", "handle": handle})
+
+    # League wins outright when it resolves (see the "collisions" note above),
+    # so it's checked first and short-circuits -- no need to also spend a call
+    # checking `/user/{handle}` in the common case (a real league id).
+    try:
+        lg = sm.league(handle)
+    except Exception:
+        lg = None
+    if lg and lg.get("league_id"):
+        if nav:
+            resp = HTMLResponse("")
+            resp.headers["HX-Redirect"] = f"/dashboard?league={quote(handle)}"
+            return resp
+        return load(request, league=handle, season=season, theme=theme)
+
+    try:
+        u = sm.user(handle)
+    except Exception:
+        u = None
+    if u and u.get("user_id"):
+        resp = user_leagues(request, user=handle)
+        resp.headers["HX-Push-Url"] = f"/?user={quote(handle)}"
+        return resp
+
+    return tpl.TemplateResponse(request, "_user_leagues.html", {
+        "error": f"No Sleeper league or user found for “{handle}”.",
+        "handle": handle})
+
+
 # --- find leagues by user ------------------------------------------------
 # A prototype way in that doesn't need the user to already know a league id:
 # type a Sleeper username (or numeric user_id), get back every league that
-# account is in for a season, and click one to jump to its dashboard (the
-# links are the same /league=<id> route the landing form leads to). Sleeper's
-# user-leagues endpoint is season-scoped, so `season` is a real control here;
-# it defaults to whatever season leagues are currently being played for.
+# account has EVER been in, and click one to jump to its dashboard (the links
+# are the same /league=<id> route the landing form leads to). Sleeper's own
+# leagues-by-user endpoint is season-scoped, but the search itself is not --
+# it sweeps every season in the picker's range so a user who only joined a
+# league years ago is still found without having to guess which season to
+# pick first (see `user_leagues()`'s docstring below).
 _SLEEPER_CDN = "https://sleepercdn.com/avatars/thumbs/"
 
 
@@ -1750,9 +1963,83 @@ def _live_week_ctx(s, scored_leg: int | None = None) -> dict | None:
     return {"week": wk}
 
 
+def _group_leagues_by_chain(raw_by_season: dict[str, list]) -> list[dict]:
+    """Collapse per-season Sleeper league objects into one row per REAL league.
+
+    Sleeper gives every season of a league a different `league_id`, so the
+    same league a user has been in for years shows up once per season in the
+    raw per-season sweep. Each per-season object already carries its own
+    `previous_league_id` (no extra chain-walk calls needed), so grouping is
+    just: link every league_id fetched here to whichever OTHER fetched
+    league_id is its `previous_league_id`. This only merges links that fall
+    inside the swept season range -- fine here, since the sweep already
+    covers every season the picker offers.
+
+    Returns one dict per group: `seasons` (year -> league object, oldest
+    first), `latest_season`/`latest_league` (newest year found for this
+    group), and `current` (True when that latest league's own `status` says
+    the league is still active, i.e. the user is a CURRENT member, not just a
+    past one).
+    """
+    by_id: dict[str, dict] = {}
+    for season, leagues in raw_by_season.items():
+        for lg in leagues:
+            lid = lg.get("league_id")
+            if lid:
+                by_id[lid] = lg
+
+    # Union-find over league_id, linked by previous_league_id.
+    parent: dict[str, str] = {lid: lid for lid in by_id}
+
+    def find(x: str) -> str:
+        while parent[x] != x:
+            parent[x] = parent[parent[x]]
+            x = parent[x]
+        return x
+
+    def union(a: str, b: str) -> None:
+        ra, rb = find(a), find(b)
+        if ra != rb:
+            parent[ra] = rb
+
+    for lid, lg in by_id.items():
+        prev = lg.get("previous_league_id")
+        if prev and prev in by_id:
+            union(lid, prev)
+
+    groups: dict[str, list[str]] = {}
+    for lid in by_id:
+        groups.setdefault(find(lid), []).append(lid)
+
+    result = []
+    for members in groups.values():
+        members_lg = sorted(
+            (by_id[m] for m in members),
+            key=lambda lg: int(lg.get("season") or 0))
+        latest = members_lg[-1]
+        result.append({
+            "seasons": {lg["season"]: lg for lg in members_lg},
+            "latest_season": latest.get("season"),
+            "latest_league": latest,
+            "current": (latest.get("status") or "") in
+                       ("in_season", "drafting", "pre_draft", "post_season"),
+        })
+    result.sort(key=lambda g: int(g["latest_season"] or 0), reverse=True)
+    return result
+
+
 @app.get("/user-leagues", response_class=HTMLResponse)
-def user_leagues(request: Request, user: str = "", season: str | None = None):
-    """List the leagues a Sleeper user belongs to for a season (HTMX fragment).
+def user_leagues(request: Request, user: str = ""):
+    """Every league a Sleeper user has ever belonged to (HTMX fragment).
+
+    The lookup is keyed on the user id/handle alone -- Sleeper's own
+    per-season leagues endpoint means finding "every league" takes one sweep
+    across a season range regardless of which one the user actually joined
+    in, so there is no season input here to gate the search: a manager who
+    only joined a league in 2022 (and never again) must be findable the same
+    way as one who joined this year. Each REAL league (a league_id changes
+    every season, same underlying league) collapses to one row via
+    `_group_leagues_by_chain`, showing every year they were in it.
 
     A blank/unknown handle or a private account is a normal thing to hit, so
     every failure path answers with a message in the results area rather than
@@ -1762,7 +2049,6 @@ def user_leagues(request: Request, user: str = "", season: str | None = None):
     if not handle:
         return tpl.TemplateResponse(request, "_user_leagues.html", {
             "error": "Enter a Sleeper username or user ID.", "handle": handle})
-    sea = str(season).strip() if season else _current_nfl_season()
     try:
         u = sm.user(handle)
     except Exception:
@@ -1770,24 +2056,42 @@ def user_leagues(request: Request, user: str = "", season: str | None = None):
     if not u or not u.get("user_id"):
         return tpl.TemplateResponse(request, "_user_leagues.html", {
             "error": f"No Sleeper user found for “{handle}”.",
-            "handle": handle, "season": sea})
+            "handle": handle})
+    # Same season range the old per-season picker offered: current year back
+    # 7 more, newest first.
+    cur = int(_current_nfl_season())
+    season_range = [str(y) for y in range(cur, cur - 8, -1)]
     try:
-        raw = sm.user_leagues(u["user_id"], sea)
+        from sleepermetrics.api import sleeper_api_many
+        raw_lists = sleeper_api_many(
+            [f"/user/{u['user_id']}/leagues/nfl/{y}" for y in season_range])
     except Exception:
         return tpl.TemplateResponse(request, "_user_leagues.html", {
             "error": "Couldn’t load this user’s leagues right now. Try again.",
-            "handle": handle, "season": sea, "user": u})
+            "handle": handle, "user": u})
+    raw_by_season = {y: (lst or []) for y, lst in zip(season_range, raw_lists)}
+    groups = _group_leagues_by_chain(raw_by_season)
+
     leagues = [{
-        "league_id": lg.get("league_id"),
-        "name": lg.get("name") or "(unnamed league)",
-        "season": lg.get("season") or sea,
-        "status": (lg.get("status") or "").replace("_", " "),
-        "total_rosters": lg.get("total_rosters"),
-        "avatar": (_SLEEPER_CDN + lg["avatar"]) if lg.get("avatar") else None,
-    } for lg in raw if lg.get("league_id")]
+        "league_id": g["latest_league"].get("league_id"),
+        "name": g["latest_league"].get("name") or "(unnamed league)",
+        "years": ", ".join(sorted(g["seasons"], key=int)),
+        "latest_season": g["latest_season"],
+        "current": g["current"],
+        # Redirect target: the CURRENT season's league_id when still a
+        # member, else the league_id for the LAST season they were actually
+        # in it -- both are just `g["latest_league"]`, since that's already
+        # the newest season found for this group either way (an ex-member's
+        # newest found season is their last one, not the league's).
+        "open_league_id": g["latest_league"].get("league_id"),
+        "open_season": g["latest_season"],
+        "total_rosters": g["latest_league"].get("total_rosters"),
+        "avatar": (_SLEEPER_CDN + g["latest_league"]["avatar"])
+                  if g["latest_league"].get("avatar") else None,
+    } for g in groups]
     uav = u.get("avatar")
     ctx = {
-        "handle": handle, "season": sea,
+        "handle": handle,
         "user": {
             "user_id": u["user_id"],
             "display_name": u.get("display_name") or u.get("username") or handle,
@@ -1795,9 +2099,6 @@ def user_leagues(request: Request, user: str = "", season: str | None = None):
             "avatar": (_SLEEPER_CDN + uav) if uav else None,
         },
         "leagues": leagues,
-        # A few seasons back from the current one, newest first, for the picker.
-        "seasons": [str(y) for y in range(int(_current_nfl_season()),
-                                          int(_current_nfl_season()) - 8, -1)],
     }
     return tpl.TemplateResponse(request, "_user_leagues.html", ctx)
 
@@ -3127,6 +3428,17 @@ def tab(name: str, request: Request, league: str = DEFAULT_LEAGUE,
         # metric caches in the background so those tabs are quick to open. Off
         # the request path (daemon thread), best-effort, once per key.
         _warm_async(s)
+        # A fresh league entry (no season explicitly requested -- a bare
+        # pasted id or a first landing-page visit, NOT a bookmarked
+        # /dashboard?season=... URL or an in-app season switch) lands here on
+        # a MULTI-season league. Rather than silently picking the latest
+        # season for it, show the season history first so the user chooses --
+        # a single-season league has nothing to choose from and falls straight
+        # through to the real tab exactly as before (`len(d["names"]) <= 1`).
+        if not season and len(d["names"]) > 1:
+            ctx["history"] = _season_history_rows(d)
+            return _pushed_history(
+                tpl.TemplateResponse(request, "tab_season_history.html", ctx), ctx)
 
     if name == "overview":
         # Which real-world phase the season is in RIGHT NOW decides the whole
@@ -3642,10 +3954,15 @@ def tab(name: str, request: Request, league: str = DEFAULT_LEAGUE,
         })
         return _pushed(tpl.TemplateResponse(request, "tab_playoffs.html", ctx), ctx, name)
     elif name == "testing":
-        # Currently just a link to the redesigned landing page -- no charts, so
-        # nothing to render eagerly. `seasons` feeds the shell's season picker
-        # and the _liveband include.
+        # A link to the redesigned landing page, plus the season-switcher
+        # prototype below -- no charts, so nothing else to render eagerly.
+        # `seasons` feeds the shell's season picker and the _liveband include.
         ctx["seasons"] = list(reversed(d["names"]))
+        # Prototype: a "Seasons" history menu (see tab_season_history.html)
+        # in place of the header's plain <select>, so switching seasons for
+        # an ALREADY-loaded league can be tried without touching the real
+        # header -- see tab_testing.html for what it's replacing and why.
+        ctx["season_menu"] = _season_history_rows(d)
         return _pushed(tpl.TemplateResponse(request, "tab_testing.html", ctx), ctx, name)
     else:
         return HTMLResponse("<p class='empty'>Unknown tab.</p>", status_code=404)
@@ -4576,7 +4893,7 @@ def report(league: str = DEFAULT_LEAGUE, season: str | None = None,
 
 # --- player profile ---------------------------------------------------------
 def _player_loader(player_id: str, league: str | None, season: str | None,
-                   refresh: int) -> HTMLResponse:
+                   refresh: int, focus: str | None = None) -> HTMLResponse:
     """A fast, styled 'loading…' page that then navigates to the real
     render, same pattern as `_report_loader`. Only ever shown for a COLD
     request (see player_page's `pp.is_cached` check) -- a warm cache hit
@@ -4590,6 +4907,8 @@ def _player_loader(player_id: str, league: str | None, season: str | None,
         q += f"&league={quote(league)}"
     if season:
         q += f"&season={quote(season)}"
+    if focus:
+        q += f"&focus={quote(focus)}"
     if refresh:
         q += f"&refresh={refresh}"
     return HTMLResponse(f"""<!doctype html><html lang="en"><head>
@@ -4623,8 +4942,8 @@ def _player_loader(player_id: str, league: str | None, season: str | None,
 
 @app.get("/player/{player_id}", response_class=HTMLResponse)
 def player_page(request: Request, player_id: str, league: str | None = None,
-                season: str | None = None, refresh: int = 0, render: int = 0,
-                theme: str = "light"):
+                season: str | None = None, focus: str | None = None,
+                refresh: int = 0, render: int = 0, theme: str = "light"):
     """A single player's profile: real-NFL history + (when a league is
     given) this league's own draft/roster/trade/waiver history for them.
 
@@ -4633,6 +4952,12 @@ def player_page(request: Request, player_id: str, league: str | None = None,
     league-agnostic, so a click from there has no league to carry. When
     `league` IS given, `player_profile.player_profile()` adds the
     league-scoped section on top of the same real-NFL data.
+
+    `focus` is a SEPARATE concept from `season` (which, when a league is
+    given, `pick()` below reassigns to that league's own season) -- it picks
+    which season the percentile radar overlay is drawn bold/filled for, via
+    a season pill on the page; every other available season still renders
+    ghosted behind it. Defaults to the most recent season with real data.
 
     `player_profile()` caches its own result (a cold call is expensive --
     see that module's docstring), so `refresh=1` is threaded through as
@@ -4658,21 +4983,75 @@ def player_page(request: Request, player_id: str, league: str | None = None,
             resolved_league = None
 
     if not render and (refresh or not pp.is_cached(player_id, resolved_league)):
-        return _player_loader(player_id, league, season, refresh)
+        return _player_loader(player_id, league, season, refresh, focus)
 
     profile = pp.player_profile(player_id, league_id=resolved_league,
                                 fresh=bool(refresh))
     ident = profile["identity"]
+    available_seasons = profile.get("available_seasons") or []
+    focus_season = focus if focus in available_seasons else profile.get("focus_season")
+    focus_profile = (profile.get("season_profiles") or {}).get(focus_season) \
+        or profile.get("percentile_profile")
     ctx = {
+        # `season` stays the real LEAGUE season (used by the back-link and by
+        # every other chart key's `&season=`, per _chartmacro.html); the
+        # radar's own focus season rides separately as `focus_season` and is
+        # passed to the macro via its `season_override` kwarg (see the
+        # player_radar chart() call below).
         "league": resolved_league, "season": season, "theme": theme,
-        "asset_v": asset_v(), "player_id": player_id,
+        "asset_v": asset_v(), "player_id": player_id, "bust": 0,
         "identity": ident, "league_name": league_name,
         "seasons_covered": profile["seasons_covered"],
         "real_nfl": profile["real_nfl"], "adp_history": profile["adp_history"],
+        "adp_current": profile.get("adp_current"), "adp_past": profile.get("adp_past"),
+        "current_season": profile.get("current_season"),
         "league_history": profile["league"],
+        "league_current": profile.get("league_current"),
+        "league_past": profile.get("league_past"),
+        "percentile_profile": focus_profile,
+        "available_seasons": available_seasons,
+        "focus_season": focus_season,
         "avatars": {},   # _ident.html reads it; no manager avatars on this page
     }
     return tpl.TemplateResponse(request, "player_profile.html", ctx)
+
+
+@app.get("/player/{player_id}/percentile", response_class=HTMLResponse)
+def player_percentile_part(request: Request, player_id: str,
+                           league: str | None = None, season: str | None = None,
+                           focus: str | None = None, theme: str = "light"):
+    """The player-profile page's "Percentile profile" section, as an htmx
+    fragment -- clicking a season pill (`_player_percentile.html`) hx-gets
+    this instead of the pill being a plain link, so choosing a different
+    focus season swaps the chart + stat table in place rather than
+    reloading the whole page. Relies on `player_profile()`'s own cache (this
+    is always a WARM hit in practice -- the page can't have rendered pills
+    to click without already having populated it), so no loader/cold-cache
+    path is needed here the way the full page route has one.
+    """
+    from webapp import player_profile as pp
+
+    resolved_league = None
+    if league:
+        try:
+            d, s, season = pick(league, season)
+            resolved_league = d.get("resolved_league_id", league)
+        except Exception:
+            resolved_league = None
+
+    profile = pp.player_profile(player_id, league_id=resolved_league)
+    available_seasons = profile.get("available_seasons") or []
+    focus_season = focus if focus in available_seasons else profile.get("focus_season")
+    focus_profile = (profile.get("season_profiles") or {}).get(focus_season) \
+        or profile.get("percentile_profile")
+    ctx = {
+        "league": resolved_league, "season": season, "theme": theme,
+        "bust": 0, "player_id": player_id,
+        "percentile_profile": focus_profile,
+        "available_seasons": available_seasons,
+        "focus_season": focus_season,
+    }
+    return tpl.TemplateResponse(request, "_player_percentile.html", ctx)
 
 
 # --- custom playoff brackets ----------------------------------------------
