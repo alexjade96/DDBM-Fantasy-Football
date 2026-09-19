@@ -570,6 +570,40 @@ def test_plot_player_radar_overlays_multiple_seasons_with_focus():
     plt.close(fig)
 
 
+def test_plot_player_radar_multi_season_legend_sits_below_not_beside():
+    """Same layout fix as plot_player_overlay's own legend: centered BELOW
+    the radar, not off to the side pushing the polar axes off-center."""
+    import matplotlib.pyplot as plt
+
+    from sleepermetrics import plots
+    profiles = {"2023": _profile("2023", 40.0), "2024": _profile("2024", 55.0),
+               "2025": _profile("2025", 72.0)}
+    fig = plots.plot_player_radar(profiles, "2024", "Justice Hill")
+    ax = fig.axes[0]
+    legend = ax.get_legend()
+    assert legend is not None
+    bbox = legend.get_bbox_to_anchor()._bbox
+    assert bbox.y0 < 0
+    plt.close(fig)
+
+
+def test_plot_player_radar_long_subtitle_does_not_overflow_the_figure():
+    """A long subtitle (this function's own, always-present "Each spoke:
+    real stat value..." sentence) must wrap rather than run off a 7in-wide
+    centered figure -- a real, shipped regression once the title/subtitle
+    moved from left-aligned to centered (an unwrapped long line ran off the
+    right edge entirely). Asserts the rendered subtitle text actually
+    contains a newline (i.e. textwrap did wrap it, not a no-op)."""
+    import matplotlib.pyplot as plt
+
+    from sleepermetrics import plots
+    fig = plots.plot_player_radar({"2025": _profile("2025", 72.0)}, "2025", "Justice Hill")
+    subtitle_texts = [t for t in fig.texts if "Each spoke" in t.get_text()]
+    assert len(subtitle_texts) == 1
+    assert "\n" in subtitle_texts[0].get_text()
+    plt.close(fig)
+
+
 def test_plot_player_radar_defaults_focus_to_most_recent_when_unresolved():
     import matplotlib.pyplot as plt
 

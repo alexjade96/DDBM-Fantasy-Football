@@ -1,24 +1,160 @@
-{# The comparison charts for the checked leaderboard rows (HTMX fragment
-   from /playercompare/compare) -- a percentile-vs-field radar and a week-by-week
-   trend line, both from the shared plots.plot_player_overlay chart via
-   the league-free /chart/player_overlay PNG route. #}
+{% import "_ident.html" as idm with context %}
+{# The comparison results for the checked leaderboard rows (HTMX fragment
+   from /playercompare/compare) -- lives in its OWN <section class="card">,
+   separate from the leaderboard/controls card above it in
+   _playercompare_compare.html (that card holds the Position/Season/Load
+   controls + the checkbox leaderboard; this one is purely the "here's your
+   comparison" output, so the two don't read as one long undifferentiated
+   card -- they are now full SIBLINGS in the DOM, not nested cards).
+
+   ONE shared Total/Per game toggle (`.rail .year` pills, same reusable
+   pattern _player_percentile.html's season rail uses) drives THREE things
+   on click: (1) both chart <img> src's `stat_mode` query param, rewritten
+   client-side, no server round trip (a PNG's `stat_mode` is just a query
+   param on an already-dynamic image endpoint); (2) an htmx-style fetch of
+   `/playercompare/table` that swaps the metric table's <tbody> for the
+   requested stat_mode -- this is the FIX for a real, user-reported bug: the
+   table's values/percentiles are rendered server-side at page-load time, so
+   before this fix the toggle silently never touched them, leaving the table
+   stuck on whichever mode it first loaded with even while the charts
+   visibly updated. `stat_mode` means something slightly different per
+   surface (the radar: which reading a stat is percentile-ranked by; the
+   trend line: running cumulative total vs. each week's own value; the
+   table: which reading each metric VALUE itself shows -- see
+   player_compare.py/plots.py/app.py for each), but all three read
+   "Total"/"Per game" the same way from a reader's perspective, so one
+   control drives all three rather than three that could drift out of sync.
+
+   Layout: a `.compare-header-row` sits ABOVE the metric table as its own
+   3-column flex/grid strip -- portrait+name | radar chart | portrait+name --
+   deliberately pulled OUT of the table's own <thead> (an earlier design had
+   it there) so the portraits and the radar chart can both render at a
+   generously large, fixed size without being constrained by the table's
+   `table-layout: fixed` column-width math (which exists to keep the METRIC
+   VALUE columns aligned, a different sizing job than "make the header
+   photogenic"). The plain <table> below has no header row of its own --
+   just <tbody> rows, Player A's value | metric name | Player B's value,
+   colored (.dv-pos/.dv-neg, the same green/red convention the rest of this
+   app uses for "beat the comparison") toward whichever side has the better
+   percentile at that stat.
+
+   The radar chart itself carries no legend (see plots.py's
+   plot_player_overlay snapshot branch) -- the PNG's own title names both
+   players directly ("Christian McCaffrey vs Jonathan Taylor", built by
+   app.py's chart route from `player_labels`), so the surrounding layout
+   doesn't need to restate who's who for the chart to read correctly on its
+   own.
+
+   The trend line renders as its own chart card BELOW the table (not beside
+   it -- the table is the primary view). 3+ players have no natural 2-sided
+   table layout, so `rows` is empty and BOTH the header row and the table
+   are skipped (see the `{% if rows %}` guard below); 3+ players still get
+   the radar (as a plain standalone chart card) and the trend chart,
+   unaffected by any of this.
+
+   `idm.headshot`/`idm.player_link` link each portrait/name to that
+   player's profile page -- `pid_a`/`pid_b` are already real Sleeper
+   player_ids (this whole tab forces source="sleeper", see
+   player_compare.py), so no id-bridging is needed the way NFL Stats/ADP
+   need for their nflverse-sourced rows. A player whose headshot 404s
+   degrades to plain text (`onerror="this.remove()"` in _ident.html), same
+   as every other headshot in this app. #}
 {% if n_selected < 2 %}
 <p class="empty">Check at least 2 players above, then click
    <strong>Compare selected</strong>.</p>
 {% else %}
-<h3>{{ position }} comparison: {{ n_selected }} players</h3>
-<div class="grid two">
+<section class="card">
+  <h3>{{ position }} comparison: {{ n_selected }} players</h3>
+  <nav class="rail" data-stat-mode-rail="both">
+    <span class="k">Show</span>
+    <button type="button" class="year" data-stat-mode="total">Total</button>
+    <button type="button" class="year on" data-stat-mode="per_game">Per game</button>
+  </nav>
+  {% if rows %}
+  <div class="compare-header-row">
+    <div class="compare-header-side">
+      {{ idm.headshot(pid_a, link=True) }}<span>{{ idm.player_link(pid_a, label_a) }}</span>
+    </div>
+    <div class="compare-header-radar">
+      <img data-chart="snapshot" class="compare-radar-img"
+           src="/chart/player_overlay?position={{ position }}&season={{ season }}&mode=snapshot&stat_mode=per_game&player_ids={{ player_ids|urlencode }}&player_labels={{ player_labels|urlencode }}"
+           alt="{{ position }} percentile comparison against the real-NFL field" loading="lazy">
+    </div>
+    <div class="compare-header-side">
+      {{ idm.headshot(pid_b, link=True) }}<span>{{ idm.player_link(pid_b, label_b) }}</span>
+    </div>
+  </div>
+  <div class="tablewrap compare-3col">
+    <table class="compare-table">
+      <tbody id="compare-table-body">
+        {% include "_playercompare_compare_table.html" %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  {# 3+ players (or a missing profile for one side): no 2-sided table, so the
+     radar still needs to render somewhere -- falls back to a plain chart
+     card, same as before this session's table redesign. #}
   <figure class="card chart" style="aspect-ratio: 1 / 1">
-    <img src="/chart/player_overlay?position={{ position }}&season={{ season }}&mode=snapshot&player_ids={{ player_ids|urlencode }}&player_labels={{ player_labels|urlencode }}"
+    <img data-chart="snapshot"
+         src="/chart/player_overlay?position={{ position }}&season={{ season }}&mode=snapshot&stat_mode=per_game&player_ids={{ player_ids|urlencode }}&player_labels={{ player_labels|urlencode }}"
          alt="{{ position }} percentile comparison against the real-NFL field" loading="lazy">
     <figcaption>Percentile at each stat against every real NFL
       {{ position }} this season.</figcaption>
   </figure>
-  <figure class="card chart wide" style="aspect-ratio: 16 / 9">
-    <img src="/chart/player_overlay?position={{ position }}&season={{ season }}&mode=trend&player_ids={{ player_ids|urlencode }}&player_labels={{ player_labels|urlencode }}"
+  {% endif %}
+  <figure class="card chart" style="aspect-ratio: 16 / 9; margin-top: 16px">
+    <img data-chart="trend"
+         src="/chart/player_overlay?position={{ position }}&season={{ season }}&mode=trend&stat_mode=per_game&player_ids={{ player_ids|urlencode }}&player_labels={{ player_labels|urlencode }}"
          alt="{{ position }} weekly trend" loading="lazy">
-    <figcaption>Fantasy points per week across the season &mdash; a gap
-      means no game that week (bye or unscored), not a zero.</figcaption>
+    <figcaption>Per game shows each week&rsquo;s own value (a gap means no
+      game that week, not a zero); season total shows the running total
+      through that week.</figcaption>
   </figure>
-</div>
+</section>
+<script>
+  (function () {
+    // htmx re-executes a swapped fragment's own <script> tags (allowScriptTags,
+    // the default), so this runs fresh every time /playercompare/compare
+    // reloads this fragment -- no need to re-wire from an outer afterSwap
+    // handler the way _playercompare_compare.html's own JS does for the
+    // longer-lived leaderboard/button elements around this fragment.
+    // NOT document.currentScript -- htmx's allowScriptTags re-execution
+    // (how this <script> runs at all, since it arrives via an innerHTML
+    // swap rather than the initial page parse) does not reliably set
+    // document.currentScript, so `.closest()` on it threw `Cannot read
+    // properties of null` on EVERY load, silently breaking this entire
+    // handler (confirmed with a real browser console, not assumed) --
+    // #playercompare-charts is a stable top-level id this whole fragment is
+    // always swapped into (_playercompare_compare.html), so scope off that
+    // instead, same as this script did before the header-row redesign.
+    var root = document.getElementById('playercompare-charts');
+    var rail = root && root.querySelector('[data-stat-mode-rail="both"]');
+    var imgs = root ? root.querySelectorAll('img[data-chart]') : [];
+    var tableBody = root && root.querySelector('#compare-table-body');
+    if (!rail || !imgs.length) return;
+    var tableUrl = '/playercompare/table?position={{ position|urlencode }}&season={{ season|urlencode }}'
+      + '&player_ids={{ player_ids|urlencode }}&player_labels={{ player_labels|urlencode }}';
+    rail.querySelectorAll('button[data-stat-mode]').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        if (btn.classList.contains('on')) return;
+        rail.querySelectorAll('button').forEach(function (b) { b.classList.remove('on'); });
+        btn.classList.add('on');
+        var mode = btn.getAttribute('data-stat-mode');
+        imgs.forEach(function (img) {
+          img.src = img.src.replace(/([?&]stat_mode=)[^&]*/, '$1' + mode);
+        });
+        // Re-fetch just the table's <tbody> for the new stat_mode -- the
+        // table's values/percentiles are server-rendered, unlike the chart
+        // PNGs above, so they need an actual round trip to change (fixes
+        // the real bug where the table silently never updated on toggle).
+        if (tableBody && window.htmx) {
+          window.htmx.ajax('GET', tableUrl + '&stat_mode=' + mode, {
+            target: tableBody, swap: 'innerHTML',
+          });
+        }
+      });
+    });
+  })();
+</script>
 {% endif %}

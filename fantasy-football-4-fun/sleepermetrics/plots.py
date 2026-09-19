@@ -1,6 +1,7 @@
 """Charts (matplotlib; mirrors R plots.R theme, palette + flair)."""
 from __future__ import annotations
 
+import math
 import re
 import textwrap
 
@@ -4064,6 +4065,19 @@ _RADAR_GHOST = "#9aa5ad"  # every other season, dimmed behind the focus.
 _SHARE_STAT_KEYS = {"tgt_share", "air_yards_share", "wopr", "racr", "pacr", "snap_share"}
 _RATE_STAT_KEYS = {"ppg_ppr", "fpts_ppr", "adot"}
 
+# Genuine 0-1 PROPORTIONS among _SHARE_STAT_KEYS -- the ones a percentage
+# reads naturally for ("34%" of targets), unlike wopr/racr/pacr (efficiency
+# RATIOS that can run past 1.0, e.g. a real RACR of 1.5, where "150%" reads
+# oddly and isn't how these are conventionally shown). The radar's ring
+# ticks (see _draw_pizza_ticks) use this narrower set instead of the
+# leaderboard-table-wide `_SHARE_STAT_KEYS`; Player Comparison forces
+# `source="sleeper"`, whose own column set never carries wopr/racr/pacr at
+# all (nflverse-only columns), so in practice only these two are ever
+# reachable here -- kept as an explicit subset rather than reusing
+# `_SHARE_STAT_KEYS` wholesale so a future nflverse-sourced radar caller
+# doesn't silently mis-convert a ratio into a misleading percentage.
+_PERCENT_TICK_KEYS = {"tgt_share", "snap_share"}
+
 
 def _format_stat_value(key: str, value) -> str:
     """One stat value, formatted the same way the leaderboard tables already
@@ -4084,95 +4098,53 @@ def _format_stat_value(key: str, value) -> str:
     return f"{v:.0f}"
 
 
-# Candidate radial pushes (added to a player's own percentile) tried in
-# order for each label -- close-in first, further out as a fallback.
-_RADAR_LABEL_PUSHES = (7, 13, 19, 25, 31, 38, 45)
-# Angular nudges (radians) away from the spoke's own centerline, tried at
-# EVERY push distance -- a spoke pointing straight at its own tick label
-# (verified: a spoke at 12 o'clock puts the tick label directly above the
-# ring on the SAME angular line the label would be pushed along) can never
-# clear that collision by pushing further out alone, since the label and
-# the tick text stay on the identical ray however far out it goes. A small
-# sideways nudge is required for that case; small radii first (least visual
-# drift from the spoke each label actually belongs to).
-_RADAR_LABEL_NUDGES = (0.0, 0.05, -0.05, 0.10, -0.10, 0.16, -0.16)
+def _format_pizza_tick_value(key: str, value) -> str:
+    """Same as `_format_stat_value`, except a genuine 0-1 proportion (see
+    `_PERCENT_TICK_KEYS`) renders as a whole-number percentage ("34%")
+    instead of a 3-decimal fraction ("0.340") -- radar-ONLY, the leaderboard
+    table keeps its own `_format_stat_value` formatting unchanged.
 
-
-def _place_radar_labels(fig, ax, angles, keys, drawn_names, players, colors):
-    """Value-label placement for `plot_player_overlay`'s snapshot radar --
-    the polar counterpart to `_place_labels` (Cartesian scatter labels).
-
-    The first labeled render (2 players x 14 spokes) showed real collisions:
-    outer labels overlapping the rim's own spoke-name text (`ax.set_
-    xticklabels`, e.g. "Tgt"/"Rec yds"), and same-spoke players' labels
-    overlapping each other. A fixed radial-push formula alone wasn't
-    enough, and turned out to be structurally UNABLE to fix the tick-label
-    case: a spoke pointing at its own tick label puts that label on the
-    exact same ray a purely radial push travels along, so no distance ever
-    clears it (verified with an isolated single-spoke render). This tries a
-    2D grid -- `_RADAR_LABEL_PUSHES` (radius) x `_RADAR_LABEL_NUDGES` (a
-    small angular offset off the spoke's centerline), radius-major so the
-    closest/most-centered candidates are tried first -- measuring each
-    candidate's REAL rendered pixel bbox (same technique `_place_labels`
-    uses) and keeping the first that clashes with nothing already placed
-    and nothing in the rim's own tick-label boxes; falls back to the first-
-    tried (closest-in, centered) candidate if every combination collides.
-
-    Must run after the polygons are already drawn (so their fill patches
-    aren't candidates to dodge -- text over a translucent fill is legible;
-    text over another label or the rim text is not) and, like
-    `_place_labels`, benefits from a `fig.canvas.draw()` first so extents
-    reflect final layout.
+    This exists because the fraction form was a real, user-reported
+    collision source on a dense chart: two adjacent share spokes (e.g. "Tgt
+    share"/"Snap share") both print 5 rings of "0.xxx"-shaped text in a
+    crowded region of the chart, and the percentage form is both shorter
+    (less area to collide with a neighbor) and the more natural way a share
+    stat is read in the first place.
     """
-    fig.canvas.draw()
-    rend = fig.canvas.get_renderer()
-    # The rim's own spoke-name labels ("Tgt", "Rec yds", ...) are fixed --
-    # every value label must dodge them, but they never move themselves.
-    boxes: list = [t.get_window_extent(rend) for t in ax.get_xticklabels()]
-
-    def clashes(bb):
-        return any(bb.overlaps(o) for o in boxes)
-
-    for k_idx, key in enumerate(keys):
-        ang = angles[k_idx]
-        for p_idx, name in enumerate(drawn_names):
-            prof = players[name]
-            col = next((c for c in prof.get("columns", []) if c["key"] == key), None)
-            if not col:
-                continue
-            pct = float(col["percentile"])
-            text = f"{_format_stat_value(key, col['value'])} ({pct:.0f})"
-            style = dict(ha="center", va="center", fontsize=6.6, fontweight="bold",
-                        color=T["ink"], zorder=6,
-                        bbox=dict(facecolor=colors[name], edgecolor="none",
-                                  alpha=0.85, pad=1.1, boxstyle="round,pad=0.25"))
-            best = None          # first CLEAN candidate found, if any
-            fallback = None      # closest-in/most-centered candidate, kept only if none are clean
-            found = False
-            for push in _RADAR_LABEL_PUSHES:
-                r = min(pct + push, 148)
-                for nudge in _RADAR_LABEL_NUDGES:
-                    ann = ax.text(ang + nudge, r, text, **style)
-                    bb = ann.get_window_extent(rend)
-                    if not clashes(bb):
-                        best = (ann, bb)
-                        found = True
-                        break
-                    if fallback is None:
-                        fallback = (ann, bb)   # closest-in/centered try, last resort
-                    else:
-                        ann.remove()
-                if found:
-                    break
-            chosen = best or fallback
-            if best is not None and fallback is not None:
-                fallback[0].remove()       # a clean spot was found -- drop the fallback draft
-            boxes.append(chosen[1])
+    if value is None:
+        return "–"
+    try:
+        v = float(value)
+    except (TypeError, ValueError):
+        return "–"
+    if key in _PERCENT_TICK_KEYS:
+        return f"{v * 100:.0f}%"
+    return _format_stat_value(key, value)
 
 
-def _radar_axes(fig, labels: list[str]):
+def _radar_axes(fig, labels: list[str], pizza: bool = False):
     """A polar axes set up as a radar frame: one spoke per label, gridlines
-    at 25/50/75/100, spoke labels around the rim."""
+    at 25/50/75/100, spoke labels around the rim.
+
+    `pizza=False` (default, `plot_player_radar`'s season-over-season use)
+    keeps the ORIGINAL shared percentile scale: `set_yticklabels` prints the
+    same "25/50/75/100" ring labels on every spoke, since every plotted value
+    there already IS a percentile (comparing one player's own seasons, not
+    several different stats' native units).
+
+    `pizza=True` (the Statsbomb/Ted Knutson "pizza chart" style; see
+    `_draw_pizza_ticks`) suppresses those shared labels instead -- a caller
+    using this mode prints its own PER-SPOKE real-value ticks afterward, via
+    `_draw_pizza_ticks(ax, angles, keys, ...)`, so a bare "25/50/75/100" (a
+    percentile, not a real value) never renders underneath/behind them.
+    Percentile is still what determines radius here (0-100, unchanged) --
+    only which numbers get PRINTED at the rings differs. It also draws
+    alternating faint ring-band shading (every other band tinted, matching
+    the reference chart), so the 5 rings read as distinct zones rather than
+    plain unfilled gridlines, and rotates the spoke-NAME labels themselves
+    to align with their own spoke's angle (same formula/convention
+    `_draw_pizza_ticks` uses for the in-ring value labels).
+    """
     n = len(labels)
     angles = [i / n * 2 * 3.141592653589793 for i in range(n)]
     angles += angles[:1]
@@ -4180,16 +4152,172 @@ def _radar_axes(fig, labels: list[str]):
     ax.set_theta_offset(3.141592653589793 / 2)
     ax.set_theta_direction(-1)
     ax.set_xticks(angles[:-1])
-    ax.set_xticklabels(labels, fontsize=9, color=T["ink2"])
+    if pizza:
+        # Spoke-NAME labels are drawn as plain ax.text() calls, NOT via
+        # set_xticklabels -- matplotlib's PolarAxes silently resets a theta
+        # tick label's rotation back to 0 on every draw/redraw regardless of
+        # what set_rotation() was called with (confirmed directly: setting
+        # rotation on the Text objects set_xticklabels returns has no effect
+        # once the figure is actually rendered), so there is no way to rotate
+        # a REAL tick label on this projection. Hidden here (empty list) and
+        # replaced with manual text at a radius just past the rim (112, on
+        # the same 0-100 data scale) -- the same rotate-to-spoke-angle
+        # formula/upside-down fix `_draw_pizza_ticks` uses for the in-ring
+        # value labels, so "Shots"/"Passing%" tilt with their diagonal spokes
+        # rather than staying plain horizontal, matching the reference chart.
+        ax.set_xticklabels([])
+        for label_text, ang in zip(labels, angles[:-1]):
+            rot = -math.degrees(ang)
+            if 90 < rot % 360 < 270:
+                rot += 180
+            ax.text(ang, 112, label_text, rotation=rot, rotation_mode="anchor",
+                    ha="center", va="center", fontsize=11, fontweight="bold",
+                    color=T["ink2"])
+    else:
+        ax.set_xticklabels(labels, fontsize=9, color=T["ink2"])
     ax.set_rlabel_position(0)
-    ax.set_yticks([25, 50, 75, 100])
-    ax.set_yticklabels(["25", "50", "75", "100"], fontsize=7.5, color=T["faint"])
+    rings = [20, 40, 60, 80, 100] if pizza else [25, 50, 75, 100]
+    ax.set_yticks(rings)
+    if pizza:
+        ax.set_yticklabels([])
+        # Alternating concentric ring shading (the reference chart's own
+        # look) -- fills each ring band with a faint tint, alternating on/off
+        # band-to-band, so the rings themselves read as distinct zones rather
+        # than plain unfilled gridlines. Drawn zorder=0 (behind the grid, the
+        # player polygons, and everything else) via a full 0-2π sweep of
+        # theta at each ring boundary; `_RADAR_BAND_SHADE`/`_RADAR_BAND_STEP`
+        # are deliberately faint (a low, theme-aware alpha) so 2-3 overlapping
+        # translucent player fills stay the visually dominant layer.
+        band_theta = [i / 200 * 2 * 3.141592653589793 for i in range(201)]
+        band_edges = [0] + rings
+        for i in range(len(rings)):
+            if i % 2:
+                continue        # only shade every OTHER band, starting at the innermost
+            r0, r1 = band_edges[i], band_edges[i + 1]
+            ax.fill_between(band_theta, r0, r1, color=T["neutral"], alpha=0.30,
+                            zorder=0, linewidth=0)
+    else:
+        ax.set_yticklabels(["25", "50", "75", "100"], fontsize=7.5, color=T["faint"])
     ax.set_ylim(0, 100)
     ax.tick_params(colors=T["tick"])
     ax.spines["polar"].set_color(T["spine"])
     ax.grid(color=T["grid"], linewidth=0.7)
     ax.set_facecolor(T["bg"])
     return ax, angles
+
+
+def _draw_pizza_ticks(ax, angles: list[float], keys: list[str], players: dict):
+    """Per-spoke real-value ring labels for a `pizza=True` radar (see
+    `_radar_axes`) -- e.g. "581" printed at the 80th-percentile ring on the
+    Rush yds spoke, rather than a shared "80" every spoke would otherwise
+    read identically. This is the whole point of the pizza-chart style: each
+    stat keeps its own native-unit scale instead of forcing every stat onto
+    one shared 0-100 axis with no real-world meaning printed anywhere.
+
+    `players` is the SAME `{label: percentile_profile_dict}` mapping the
+    caller already has; `axis_ticks` (see `nflref.summary._axis_ticks`) is
+    identical across every player's profile for a given key (it describes
+    the FIELD's distribution, not any one player), so the first profile that
+    actually carries the key wins -- this is a lookup, not a per-player
+    quantity, and only needs computing once per spoke regardless of how many
+    players are being compared.
+
+    Drawn with a subtle background box so ring labels stay legible over a
+    filled polygon, and at a slightly INSET radius (`_TICK_R_SCALE`) rather
+    than each ring's literal percentile position -- printed at the bare
+    percentile, the 100-ring label sits exactly where `_radar_axes` already
+    draws the outer rim's own spoke-NAME text (`ax.set_xticklabels`, e.g.
+    "Tgt"), colliding with it on every spoke that reaches the outer ring
+    (which, on a percentile axis, the closest-to-best player on that stat
+    always does). Insetting leaves a visible gap before the rim.
+
+    Every label is drawn EXACTLY on its own spoke's angle (no angular
+    offset/stagger) and BOLD, ROTATED to align with that spoke's own radial
+    line -- matching the reference "pizza chart" style, where a spoke's
+    numbers run perpendicular to the rings (parallel to the spoke itself)
+    rather than staying plain horizontal text regardless of angle.
+
+    Matplotlib's `text(rotation=...)` on a polar axes is a SCREEN-space
+    angle in degrees, not the data-space theta radians `ax.text(theta, r,
+    ...)` positions by -- converting one to the other has to account for
+    THIS axes' own `set_theta_direction(-1)` (angles increase CLOCKWISE, not
+    the mathematical counter-clockwise default): `-degrees(theta)` is the
+    correct screen angle for that setting. `set_theta_offset(pi/2)` (spoke 0
+    is drawn "up") does NOT also enter this formula, despite rotating where
+    spoke 0 sits on the page -- a label's rotation tracks how far a spoke
+    has tilted AWAY from horizontal reading, and spoke 0 (theta=0) already
+    IS the horizontal-reading orientation the reference chart uses at its
+    own top spoke (its numbers read plain horizontal there, not turned a
+    further quarter-turn to run vertically along the spoke). An EARLIER
+    version of this formula included a `+ pi/2` term reasoned as "spoke 0
+    points up, so pi/2 must be added to compensate" -- this was wrong: it
+    conflated the offset that repositions WHERE a spoke is drawn with a
+    rotation that would need to apply to text drawn there, and produced
+    every label rotated a full 90 degrees off from the reference chart's own
+    convention (verified by direct visual comparison against the reference
+    image once reported, not caught by the earlier empirical check, which
+    only confirmed labels were non-overlapping and right-side-up -- both
+    true at either rotation, so that check alone couldn't have caught a
+    wrong-by-90-degrees error). Re-verified against a fresh empirical
+    8-spoke render before trusting the corrected formula. Labels in the
+    left/bottom half still need the same right-side-up correction as
+    before: a screen angle whose value mod 360 falls in (90, 270) degrees
+    gets 180 degrees added, the same convention a compass bearing label
+    would use.
+
+    `va` (not always "bottom") combined with `rotation_mode="anchor"` sits
+    each label just OUTSIDE its own ring intersection along the spoke's own
+    rotated frame, rather than dead-centered on top of the gridline itself --
+    verified with the same empirical render this whole rotation scheme was
+    checked against. This is what the reference chart's own ring numbers do
+    (offset from, not stamped directly onto, the ring line), and reads more
+    clearly than text sitting exactly on the line it's labelling.
+
+    `va` MUST flip between "bottom" and "top" depending on whether the
+    180-degree upside-down correction above fired for that spoke -- a real,
+    user-reported bug: with `va="bottom"` hardcoded, the top half of the
+    chart (no flip) pushed every label outward/away from center as intended,
+    but the bottom half (flipped 180 degrees to stay right-side-up) pushed
+    its OWN "bottom" of the text in the OPPOSITE screen direction, since
+    `rotation_mode="anchor"` applies `va` in the text's own (rotated, and
+    here flipped) local frame, not screen space. The visible symptom was
+    exactly what was reported: top-spoke ring numbers read fine (clearly
+    outside their own ring), bottom-spoke ring numbers looked wedged BETWEEN
+    rings instead of sitting on their own line, because the same nominal
+    "push outward" instruction pushed them inward on screen once flipped.
+    Fixed by tracking whether THIS spoke's rotation was flipped and using
+    `va="top"` there instead, so every label pushes away from the chart's
+    center in actual screen space regardless of which half it's on.
+    """
+    # Maps ring percentile (20..100) to a drawing radius (18..90): keeps the
+    # ticks' own relative spacing but pulls the outermost ring in from 100,
+    # where the rim's spoke-name labels live.
+    _TICK_R_SCALE = 0.90
+    tick_style = dict(fontsize=8.5, color=T["faint"], ha="center",
+                      fontweight="bold", zorder=4,
+                      bbox=dict(facecolor=T["bg"], edgecolor="none",
+                                alpha=0.75, pad=0.6))
+    for k_idx, key in enumerate(keys):
+        ticks = None
+        for prof in players.values():
+            if not prof:
+                continue
+            col = next((c for c in prof.get("columns", []) if c["key"] == key), None)
+            if col and col.get("axis_ticks"):
+                ticks = col["axis_ticks"]
+                break
+        if not ticks:
+            continue
+        ang = angles[k_idx]
+        rot = -math.degrees(ang)
+        flipped = 90 < rot % 360 < 270
+        if flipped:
+            rot += 180
+        va = "top" if flipped else "bottom"
+        for t in ticks:
+            ax.text(ang, t["percentile"] * _TICK_R_SCALE,
+                    _format_pizza_tick_value(key, t["value"]), rotation=rot,
+                    rotation_mode="anchor", va=va, **tick_style)
 
 
 def plot_player_radar(season_profiles: dict | None, focus_season: str | None,
@@ -4226,7 +4354,7 @@ def plot_player_radar(season_profiles: dict | None, focus_season: str | None,
     labels = [c["label"] for c in cols]
 
     fig = plt.figure(figsize=(7, 7))
-    ax, angles = _radar_axes(fig, labels)
+    ax, angles = _radar_axes(fig, labels, pizza=True)
 
     # Ghost seasons first, so the focused polygon draws on top of them.
     for season in seasons:
@@ -4243,29 +4371,46 @@ def plot_player_radar(season_profiles: dict | None, focus_season: str | None,
     vals = focus_values + focus_values[:1]
     ax.plot(angles, vals, color=_RADAR_FILL, linewidth=2.5, label=focus)
     ax.fill(angles, vals, color=_RADAR_FILL, alpha=0.25)
-    for ang, val in zip(angles[:-1], focus_values):
-        ax.text(ang, min(val + 9, 108), f"{val:.0f}", ha="center", va="center",
-                fontsize=8, color=T["ink"], fontweight="bold")
+    # Pizza-chart per-spoke real-value ring labels (see _draw_pizza_ticks) --
+    # replaces the old plain "72 (percentile)" point badges: with a real
+    # value scale printed on every spoke, a reader no longer needs the point
+    # itself annotated to know what it means.
+    _draw_pizza_ticks(ax, angles, keys, {focus: focus_profile})
 
     if len(seasons) > 1:
-        ax.legend(loc="upper right", bbox_to_anchor=(1.28, 1.12), fontsize=8.5,
+        # Legend BELOW the radar, centered and horizontal -- see the matching
+        # comment in plot_player_overlay for why (an off-to-the-side legend
+        # pushes the whole polar axes off-center within its own figure).
+        ax.legend(loc="upper center", bbox_to_anchor=(0.5, -0.06),
+                  ncol=min(len(seasons), 4), fontsize=8.5,
                   frameon=False, labelcolor=T["ink2"])
 
     pos = focus_profile["position"]
     n = focus_profile["n_population"]
-    fig.suptitle(f"{player_name} · {focus} percentile profile ({pos})",
-                fontsize=15, fontweight="bold", color=T["ink"], x=0.08, ha="left", y=0.985)
-    subtitle = f"Each axis: percentile among {n} real NFL {pos}s that season"
+    subtitle = f"Each spoke: real stat value at that percentile ring, among {n} real NFL {pos}s that season"
     if len(seasons) > 1:
         subtitle += f" · {len(seasons)} seasons shown, {focus} in focus"
-    fig.text(0.08, 0.925, subtitle, fontsize=9, color=T["muted"])
+    # Centered on a 7x7in figure, a long single-line subtitle runs off the
+    # canvas edge (a real, shipped regression once the title/subtitle moved
+    # from left-aligned to centered) -- wrap it, same technique _finish()
+    # already uses for its own centered-figure charts. A wrapped (2-line)
+    # subtitle then needs the title pushed up and the subtitle pushed down
+    # from where a single line sat, or the two collide -- same fixed-gap
+    # convention _finish() uses for a multi-line subtitle under its title.
+    wrapped_subtitle = textwrap.fill(subtitle, width=62, break_long_words=False)
+    n_lines = wrapped_subtitle.count("\n") + 1
+    fig.suptitle(f"{player_name} · {focus} percentile profile ({pos})",
+                fontsize=15, fontweight="bold", color=T["ink"], x=0.5, ha="center", y=0.99)
+    fig.text(0.5, 0.965 - (n_lines - 1) * 0.018, wrapped_subtitle, fontsize=9,
+             color=T["muted"], ha="center", va="top")
     fig.patch.set_facecolor(T["bg"])
-    fig.tight_layout(rect=(0, 0, 1, 0.90))
+    fig.tight_layout(rect=(0, 0.04 if len(seasons) > 1 else 0, 1, 0.88))
     return fig
 
 
 def plot_player_overlay(players: dict, stat_keys: list[str], mode: str = "snapshot",
-                        title: str | None = None, position: str | None = None):
+                        title: str | None = None, position: str | None = None,
+                        stat_mode: str = "total"):
     """One shared chart for the Player Comparison view (webapp-only, see
     `webapp.player_compare`), covering both the within-team depth chart
     and the across-teams field comparison -- same function, same `players`
@@ -4299,6 +4444,14 @@ def plot_player_overlay(players: dict, stat_keys: list[str], mode: str = "snapsh
     `stat_keys[0]`, rather than this function guessing which of several
     requested stats to plot.
 
+    `stat_mode` ("total" or "per_game") is a SNAPSHOT-only label/subtitle
+    concern here -- the actual per-game math already happened upstream in
+    `percentile_profile(stat_mode=...)`, so `players`' profiles already carry
+    the right values/percentiles/labels by the time they reach this
+    function; this param only picks which subtitle phrase to print (used by
+    `mode="trend"` too, purely for its own title/ylabel wording -- see the
+    `cumulative` param below, which is what actually changes the trend MATH).
+
     Colors come from the shared `palette()` (stable per player-label, same
     hue set the manager-facing charts already use) rather than a new
     palette, so a chart mixing real managers' names in its labels stays
@@ -4329,7 +4482,7 @@ def plot_player_overlay(players: dict, stat_keys: list[str], mode: str = "snapsh
         labels = [label_by_key.get(k, k) for k in keys]
 
         fig = plt.figure(figsize=(9.5, 9.5))
-        ax, angles = _radar_axes(fig, labels)
+        ax, angles = _radar_axes(fig, labels, pizza=True)
         drawn_names = []
         for name, prof in players.items():
             if not prof:
@@ -4338,37 +4491,45 @@ def plot_player_overlay(players: dict, stat_keys: list[str], mode: str = "snapsh
             values = [by_key.get(k, 0) for k in keys]
             vals = values + values[:1]
             ax.plot(angles, vals, color=colors[name], linewidth=2, label=name)
-            ax.fill(angles, vals, color=colors[name], alpha=0.08)
+            ax.fill(angles, vals, color=colors[name], alpha=0.15)
             drawn_names.append(name)
         if not drawn_names:
             plt.close(fig)
             return _no_data("No stat data available for this position.")
 
-        # Both the raw stat value AND its percentile at every spoke, for
-        # every player -- deliberately not trimmed to a smaller stat set or
-        # moved to a separate table; the raw numbers stay ON the radar
-        # itself, with real collision avoidance (see _place_radar_labels)
-        # rather than a fixed offset, which collided constantly with up to
-        # 2+ overlapping polygons across 14 spokes on the first real render.
-        _place_radar_labels(fig, ax, angles, keys, drawn_names, players, colors)
+        # Pizza-chart per-spoke real-value ring labels (see
+        # _draw_pizza_ticks): each stat prints ITS OWN scale (e.g. "581" for
+        # rush yards at the 80th-percentile ring), matching the classic
+        # Statsbomb/Ted Knutson radar style, rather than a shared 0-100
+        # percentile axis with a "value (percentile)" badge floating at every
+        # point -- the earlier design here, now superseded.
+        _draw_pizza_ticks(ax, angles, keys, players)
 
-        ax.legend(loc="upper right", bbox_to_anchor=(1.32, 1.12), fontsize=8.5,
-                  frameon=False, labelcolor=T["ink2"])
+        # No legend: the title now names every player directly ("Christian
+        # McCaffrey vs Jonathan Taylor", built by the caller from the same
+        # labels `players` is keyed by -- see webapp/app.py's snapshot
+        # branch), so a reader never needs to look up a color-to-player
+        # mapping in a separate legend. This replaced an earlier
+        # legend-below-the-radar layout (bbox_to_anchor=(0.5, -0.06)); with
+        # the legend gone, the tight_layout rect no longer needs to reserve
+        # that bottom margin for it.
         fig.suptitle(title or "Player comparison", fontsize=15, fontweight="bold",
-                    color=T["ink"], x=0.06, ha="left", y=0.985)
-        subtitle = "Percentile among real NFL players at this position"
+                    color=T["ink"], x=0.5, ha="center", y=0.985)
+        per_game = stat_mode == "per_game"
+        subtitle = "Each spoke: real stat value at that percentile ring, among real NFL players at this position"
         if position:
-            subtitle = f"Percentile among real NFL {position}s"
-        subtitle += " · each label: stat value (percentile)"
-        fig.text(0.06, 0.925, subtitle, fontsize=9, color=T["muted"])
+            subtitle = f"Each spoke: real stat value at that percentile ring, among real NFL {position}s"
+        subtitle += (" (per-game rates)" if per_game else " (season totals)")
+        fig.text(0.5, 0.94, subtitle, fontsize=9, color=T["muted"], ha="center")
         fig.patch.set_facecolor(T["bg"])
-        fig.tight_layout(rect=(0, 0, 1, 0.90))
+        fig.tight_layout(rect=(0, 0.02, 1, 0.90))
         return fig
 
     if mode == "trend":
         if not stat_keys:
             return _no_data("No stat selected for the trend chart.")
         stat_key = stat_keys[0]
+        cumulative = stat_mode == "total"
         fig, ax = plt.subplots(figsize=(9, 5.5))
         any_drawn = False
         stat_label = stat_key
@@ -4380,6 +4541,17 @@ def plot_player_overlay(players: dict, stat_keys: list[str], mode: str = "snapsh
             pts.sort()
             xs = [p[0] for p in pts]
             ys = [p[1] for p in pts]
+            # "Total" mode draws the running season total (a cumulative sum
+            # through that week) rather than each week's own value -- the
+            # per-game (weekly) reading is the default/base data already
+            # returned by player_trend(); cumulative is a pure display-time
+            # transform of that same series, computed here rather than in
+            # the data layer, since nothing else in this codebase needs a
+            # running total and player_trend()'s per-week rows stay the
+            # more broadly useful shape (e.g. a future recent-weeks window).
+            if cumulative:
+                total = 0.0
+                ys = [total := total + y for y in ys]
             ax.plot(xs, ys, color=colors[name], linewidth=2, marker="o",
                     markersize=4, label=name)
             any_drawn = True
@@ -4388,7 +4560,13 @@ def plot_player_overlay(players: dict, stat_keys: list[str], mode: str = "snapsh
             return _no_data("No week-by-week data available for this stat.")
         ax.set_facecolor(T["bg"])
         ax.legend(loc="best", fontsize=8.5, frameon=False, labelcolor=T["ink2"])
-        _finish(fig, ax, title or "Player trend", xlabel="Week",
+        chart_title = title or "Player trend"
+        if cumulative:
+            chart_title += " (season total)"
+            stat_label = f"Cumulative {stat_label}"
+        else:
+            chart_title += " (per game)"
+        _finish(fig, ax, chart_title, xlabel="Week",
                ylabel=stat_label, grid_axis="both")
         fig.patch.set_facecolor(T["bg"])
         return fig

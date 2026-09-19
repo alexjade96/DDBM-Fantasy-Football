@@ -1,0 +1,33 @@
+{# The 2-player metric-by-metric comparison table's rows (just <tr>s, no
+   <table> wrapper -- the caller supplies that, see below) -- shared by TWO
+   callers: `playercompare_chart_section` (app.py) `{% include %}`s this
+   directly inside `<tbody id="compare-table-body">` for the initial
+   "Compare selected" render (stat_mode="per_game", _playercompare_charts.
+   html), and `playercompare_table` re-renders JUST this partial for the
+   Total/Per game toggle's own refresh, swapped into that same `<tbody>`'s
+   innerHTML (see that route's docstring for the bug this fixes -- the
+   toggle used to rewrite the chart PNGs' `stat_mode` query param
+   client-side but never touched this table, so the numbers silently never
+   changed regardless of which pill was selected).
+
+   Rows only, no header: the portrait+radar header now lives in its OWN
+   `.compare-header-row` ABOVE the table (_playercompare_charts.html, pulled
+   out of the table entirely for sizing -- see its own comment), so this
+   partial never had a header to begin with. That header doesn't depend on
+   `stat_mode` for its own identity -- only these metric VALUES do -- so
+   refreshing just these rows on a toggle click leaves the header (and the
+   live radar `<img>` inside it) completely untouched, rather than forcing
+   an unnecessary rebuild/refetch of it. #}
+{% for r in rows %}
+<tr>
+  <td class="compare-side {{ 'dv-pos' if r.a_better else ('dv-neg' if r.b_better else '') }}">
+    {{ r.a_value }}
+    <span class="compare-pct">{{ r.a_pct }}%</span>
+  </td>
+  <td class="compare-metric">{{ r.label }}</td>
+  <td class="compare-side {{ 'dv-pos' if r.b_better else ('dv-neg' if r.a_better else '') }}">
+    {{ r.b_value }}
+    <span class="compare-pct">{{ r.b_pct }}%</span>
+  </td>
+</tr>
+{% endfor %}

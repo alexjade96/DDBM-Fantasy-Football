@@ -1562,6 +1562,20 @@ footer code { font-family: ui-monospace, Consolas, monospace; }
 #playercompare-picks th:first-child, #playercompare-picks td:first-child {
   width: 1%; padding-right: 8px; text-align: center; }
 
+/* Player Comparison's Load button sits with the Position/Season selection
+   criteria on the LEFT of the controls row (per user request), unlike NFL
+   Stats'/ADP's own Load buttons (both plain `.nfl-apply`, right-aligned via
+   that class's own `margin-left: auto`). `.playercompare-load` overrides
+   just that one property -- (0,2,0) beats `.nfl-apply`'s (0,1,0) -- so this
+   button keeps every other `.nfl-apply` style (green fill, bottom-align,
+   etc.) and only its horizontal position changes. Compare selected/Clear
+   selection (both `#playercompare-compare-btn`/`.playercompare-clear`
+   below) are NOT `.nfl-apply` at all, so they're unaffected and stay
+   wherever they fall after Load in source order -- still visually grouped
+   with the criteria+Load on the left, not pushed to the row's far right the
+   way they'd be if anything upstream still carried margin-left:auto. */
+.nfl-apply.playercompare-load { margin-left: 0; }
+
 /* "Compare selected (N)" button sits inside .controls (_playercompare_compare.
    html), so its count span would otherwise inherit `.controls span`'s
    11px/uppercase label styling (meant for the Position/Season field
@@ -1572,12 +1586,112 @@ footer code { font-family: ui-monospace, Consolas, monospace; }
    this targets the id (1,0,0), which unambiguously outranks it. */
 #playercompare-count { font-size: inherit; text-transform: none;
   letter-spacing: normal; color: inherit; }
-/* Bottom-align with Load/the dropdowns in the flex row (same reason
-   .nfl-apply carries align-self:flex-end), WITHOUT that class's
-   margin-left:auto -- see the template's own comment on why a second
-   auto-margined button splits away from Load instead of sitting flush
-   beside it. A small fixed gap instead of the auto-push. */
-#playercompare-compare-btn { align-self: flex-end; margin-left: 10px; }
+/* Compare selected carries its OWN margin-left:auto -- Load moved to the
+   LEFT with the Position/Season criteria (see .playercompare-load above),
+   but Compare selected/Clear selection stay right-justified as a pair (user
+   request): the auto margin on Compare pushes IT and everything after it in
+   source order (Clear) to the row's right edge, while Load and the two
+   selects keep their normal flow on the left. Bottom-align matches the
+   sibling selects/Load (same reason .nfl-apply carries
+   align-self:flex-end). */
+#playercompare-compare-btn { align-self: flex-end; margin-left: auto; }
+/* "Clear selection" -- a quiet/secondary button (bordered, neutral text)
+   next to the primary green Load/Compare selected buttons, so it reads as
+   the lower-stakes "undo my picks" action rather than competing with them
+   visually. Same bordered-neutral look as .chart-retry elsewhere in this
+   file, not a new pattern. */
+.playercompare-clear { align-self: flex-end; margin-left: 8px;
+  background: var(--surface); border: 1px solid var(--line); color: var(--muted);
+  font-weight: 500; }
+.playercompare-clear:hover { color: var(--ink); border-color: var(--turf); filter: none; }
+
+/* Player Comparison's header row (_playercompare_charts.html):
+   portrait+name | radar chart | portrait+name, its own 3-column flex strip
+   ABOVE the metric table (not inside the table's own <thead> -- an earlier
+   design had it there, and putting it back would reintroduce the very bug
+   fixed below: `table-layout: fixed`'s column math is tuned for aligning
+   METRIC VALUES, and fighting it to also host a big portrait/radar was what
+   made both look cramped/off-center in the first place). As an independent
+   flex row, the portrait and radar can both be sized generously (see
+   .compare-header-radar/.compare-header-side .pface below) with no table
+   column constraint at all. */
+.compare-header-row { display: flex; align-items: flex-start;
+  justify-content: center; gap: 18px; margin-top: 4px; }
+.compare-header-side { flex: 1 1 0; min-width: 0; display: flex;
+  flex-direction: column; align-items: center; gap: 6px; text-align: center;
+  padding-top: 8px; }
+/* A larger portrait than the ~22px inline convention used elsewhere in this
+   app (.pface's own base rule) -- this row exists specifically to make the
+   two players more visually prominent, per user request, so it gets its own
+   scoped override rather than changing the shared .pface size everywhere
+   else it's used (inline in dense tables, where a bigger face would break
+   row height). */
+.compare-header-side .pface { width: 72px; height: 72px; margin-right: 0; }
+.compare-header-side > span, .compare-header-side > span > a {
+  width: 100%; min-width: 0; font-weight: 600; font-size: 15px;
+  overflow-wrap: break-word; }
+/* The radar's own ring/spoke labels (_draw_pizza_ticks, plots.py) are real
+   text baked into the server-rendered PNG, so they only get more legible by
+   giving the whole image more ROOM to render at, not by any CSS text-size
+   trick -- confirmed with a real render at the previous 380px cap that the
+   ring numbers were nearly unreadable (a genuine, user-reported visibility
+   problem, not a subjective size preference). `flex: 2.2` (vs. 1 on each
+   side column) gives it the clear majority of the row's width, up to a
+   560px cap so it doesn't dwarf the portraits on a very wide viewport. */
+.compare-header-radar { flex: 2.2 1 0; min-width: 0; max-width: 560px; }
+/* Same fade-in/skeleton contract as any other chart image (.card.chart img
+   elsewhere) -- opacity 0 until loaded, a shimmer placeholder reserving a
+   square box so nothing jumps when the PNG swaps in
+   (_playercompare_compare.html's fadeInCharts() drives both `.card.chart`
+   AND `.compare-header-radar` images identically). */
+.compare-header-radar { padding: 0; }
+.compare-radar-img { width: 100%; height: auto; opacity: 0; transition: opacity .3s ease;
+  border-radius: 8px; }
+.compare-radar-img.loaded { opacity: 1; }
+.compare-header-radar.skeleton { aspect-ratio: 1 / 1; display: block; }
+.compare-header-radar.skeleton .compare-radar-img { opacity: 0; }
+.compare-header-radar.chart-failed { display: grid; place-items: center; aspect-ratio: 1 / 1; }
+.compare-header-radar.chart-failed .compare-radar-img { display: none; }
+@media (max-width: 560px) {
+  .compare-header-row { gap: 8px; }
+  .compare-header-side .pface { width: 40px; height: 40px; }
+  .compare-header-side > span { font-size: 12px; }
+}
+
+/* Player Comparison's 2-player metric table (_playercompare_charts.html +
+   _playercompare_compare_table.html): a real 3-column layout -- Player A
+   value | metric name | Player B value -- rather than a normal left-aligned
+   data table, so the two players' numbers land in fixed, aligned columns
+   for direct side-by-side reading (the whole point of this view for exactly
+   2 players; 3+ players keep the radar/trend charts only, no natural
+   2-sided layout for more players). No <thead> -- the header row is now
+   `.compare-header-row` above the table (see its own comment block just
+   above), not part of this table at all. `table-layout: fixed` with three
+   equal columns keeps every row's value columns the same width regardless
+   of how long a metric label runs. */
+.compare-3col { margin-top: 14px; }
+.compare-table { width: 100%; table-layout: fixed; border-collapse: collapse; }
+.compare-table td { padding: 7px 10px; text-align: center;
+  border-bottom: 1px solid var(--line); }
+.compare-table td.compare-side { width: 34%; font-variant-numeric: tabular-nums;
+  font-weight: 600; }
+.compare-table td.compare-metric { width: 32%; text-align: center; font-weight: 500; }
+.compare-table .compare-pct { display: block; font-size: 11px;
+  font-weight: 400; opacity: .75; }
+/* .dv-pos/.dv-neg (defined above) already give a colored pill background;
+   this table applies them to the whole cell rather than an inline span, so
+   the pill spans the value AND the percentile line beneath it. */
+.compare-table td.compare-side.dv-pos, .compare-table td.compare-side.dv-neg {
+  border-radius: 6px; }
+@media (max-width: 720px) {
+  .compare-table td.compare-side { width: 40%; }
+  .compare-table td.compare-metric { width: 20%; }
+}
+@media (max-width: 560px) {
+  .compare-table th, .compare-table td { padding: 6px 4px; font-size: 13px; }
+  .compare-table thead th { font-size: 10px; }
+  .compare-table .compare-pct { font-size: 10px; }
+}
 
 /* Free-agent best team vs one real team: team selection (fat-0, fat-1, ...)
    and the Actual/Optimized mode (fam-actual/fam-opt) are TWO INDEPENDENT

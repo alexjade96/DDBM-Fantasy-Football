@@ -256,9 +256,72 @@ def leaderboard_columns(pos: str, source: str = "nflverse") -> list[tuple[str, s
 #: better, everywhere except these two DEF-only stats).
 _LOWER_IS_BETTER = {"pts_allow", "yds_allow"}
 
+#: Leaderboard columns that are ALREADY a rate/share, not a counting total --
+#: `stat_mode="per_game"` leaves these alone (dividing a share by games played
+#: would be meaningless) and only converts genuine season-total columns (rush
+#: yards, receptions, TDs, points allowed, ...) to a per-game rate. `games`
+#: itself is metadata, not a performance stat, so it is excluded from BOTH
+#: modes rather than being treated as a (trivially 1.0) per-game column.
+_ALREADY_RATE_KEYS = {"snap_share", "tgt_share", "adot", "ppg_ppr"}
+_EXCLUDED_FROM_PER_GAME = {"games"}
+
+#: Leaderboard columns EXCLUDED from a radar profile (percentile_profile's
+#: own `columns`, feeding both the player-profile page's season radar and
+#: Player Comparison's snapshot radar -- see that function's own docstring).
+#: `fpts_ppr`/`ppg_ppr` are fantasy-SCORING outputs (a weighted blend of the
+#: real stats already on every other spoke, using this app's own PPR chart),
+#: not on-field production themselves -- a radar meant to compare real
+#: player performance shouldn't also plot a derived score built out of the
+#: very stats surrounding it. `games` is metadata, not a stat, and was
+#: already effectively excluded from `per_game` mode via
+#: `_EXCLUDED_FROM_PER_GAME`, but stayed visible in `total` mode; radar
+#: profiles drop it in BOTH modes for the same "not a performance stat"
+#: reason. The LEADERBOARD TABLE itself (`leaderboard_columns()`'s direct
+#: callers) is UNCHANGED -- PPR points/rate and games played are still
+#: normal, expected reference columns there; this filter applies only
+#: inside `percentile_profile()`, not to `leaderboard_columns()` itself.
+_RADAR_EXCLUDED_KEYS = {"fpts_ppr", "ppg_ppr", "games"}
+
+#: The 5 percentile marks each column's `axis_ticks` reports a real value at --
+#: matches a classic 5-ring "pizza chart" radar (Statsbomb/Ted Knutson style):
+#: each spoke prints its OWN stat's actual value at evenly-spaced rings, not a
+#: shared 0/25/50/75/100 percentile scale, so a reader sees "72 rush yards"
+#: printed at that ring rather than a bare, cross-stat-meaningless "50".
+_AXIS_TICK_PERCENTILES = (20, 40, 60, 80, 100)
+
+
+def _axis_ticks(series: pd.Series, higher_is_better: bool) -> list[dict]:
+    """This stat's real-value tick marks at `_AXIS_TICK_PERCENTILES`, for a
+    pizza-chart radar's own per-spoke scale (see the module comment above
+    `_AXIS_TICK_PERCENTILES`). `series` is the SAME ranked series
+    `percentile_profile` already built for this column (raw or per-game,
+    whichever `stat_mode` is active), so this is free follow-on work, not a
+    second leaderboard pass.
+
+    `pandas.Series.quantile` on the percentile FRACTION (not a rank position)
+    gives "the value that N% of the field is at or below" -- e.g. quantile(1.0)
+    is always the field's real maximum, matching a percentile-100 spoke tip.
+    `higher_is_better=False` (points/yards allowed) flips which end is
+    "best": quantile(0.0) -- the field MINIMUM -- is what a 100th-percentile
+    defense actually allows, so the tick order is reversed to keep "outward
+    on the spoke = better" consistent with how the point itself is plotted.
+
+    Returns `[{"percentile": p, "value": v}, ...]`, or `[]` for an
+    all-NaN/empty series (nothing to derive a scale from).
+    """
+    clean = series.dropna()
+    if clean.empty:
+        return []
+    out = []
+    for p in _AXIS_TICK_PERCENTILES:
+        frac = p / 100.0 if higher_is_better else 1.0 - p / 100.0
+        out.append({"percentile": p, "value": round(float(clean.quantile(frac)), 2)})
+    return out
+
 
 def percentile_profile(season: str, pos: str, player_id: str,
-                       source: str = "sleeper", reload: bool = False) -> dict:
+                       source: str = "sleeper", reload: bool = False,
+                       stat_mode: str = "total") -> dict:
     """This player's percentile at each of his position's leaderboard stats,
     against every real NFL player at that position for `season` -- the
     player-profile page's radar-chart input.
@@ -279,9 +342,34 @@ def percentile_profile(season: str, pos: str, player_id: str,
     columns (points/yards allowed) rank `ascending=False` so the direction
     stays "beat N% of the field" rather than "ranked Nth by raw magnitude."
 
-    Returns `{"season", "position", "player_id", "n_population",
-    "columns": [{"key", "label", "value", "percentile"}, ...]}`, or `None`
-    if this player has no row in that season's leaderboard (never raises).
+    `stat_mode="total"` (default, unchanged from before this param existed)
+    reads every column as its raw season value. `stat_mode="per_game"`
+    divides every counting-total column (everything except
+    `_ALREADY_RATE_KEYS`, which are already a share/rate and left as-is) by
+    that ROW's OWN `games` -- computed fresh per call rather than reading a
+    stored per-game column, since the leaderboard already carries season
+    totals + games played for every counting stat and this codebase has no
+    "per-game rush yards" column anywhere. Percentile is then ranked against
+    the WHOLE FIELD's own per-game rate for that stat (not the raw totals),
+    so "per game" is a genuinely different ranking, not just a relabeled
+    total. A player with 0 games contributes no derived value (would be a
+    divide-by-zero) and is dropped from that column's ranking pool, mirroring
+    how a missing/NaN value is already handled below. `games` itself is
+    excluded in per-game mode (see `_EXCLUDED_FROM_PER_GAME`) -- it isn't a
+    performance stat, and every player's "games per game" is a trivial 1.0.
+
+    Fantasy-scoring outputs (`fpts_ppr`/`ppg_ppr`) and `games` itself are
+    excluded from `columns` ENTIRELY, in both `stat_mode`s -- see
+    `_RADAR_EXCLUDED_KEYS`'s own comment for why. This is scoped to THIS
+    function (the radar's own data source), not `leaderboard_columns()`
+    itself, so the ordinary leaderboard TABLE still shows PPR points/rate
+    and games played as normal reference columns.
+
+    Returns `{"season", "position", "player_id", "n_population", "stat_mode",
+    "columns": [{"key", "label", "value", "percentile", "axis_ticks"}, ...]}`,
+    or `None` if this player has no row in that season's leaderboard (never
+    raises). `axis_ticks` is `[{"percentile", "value"}, ...]` -- see
+    `_axis_ticks()`'s own docstring for the pizza-chart radar this feeds.
     """
     lb = player_leaderboard(season, pos=pos, source=source, limit=10_000,
                             reload=reload)
@@ -291,11 +379,20 @@ def percentile_profile(season: str, pos: str, player_id: str,
     if row.empty:
         return None
 
+    per_game = stat_mode == "per_game"
+    games = pd.to_numeric(lb["games"], errors="coerce") if "games" in lb.columns else None
+
     cols = []
     for key, label in leaderboard_columns(pos, source=source):
+        if key in _RADAR_EXCLUDED_KEYS:
+            continue
         if key not in lb.columns:
             continue
+        if per_game and key in _EXCLUDED_FROM_PER_GAME:
+            continue
         series = pd.to_numeric(lb[key], errors="coerce")
+        if per_game and key not in _ALREADY_RATE_KEYS and games is not None:
+            series = (series / games.replace(0, pd.NA))
         value = series.loc[row.index[0]] if row.index[0] in series.index else None
         if pd.isna(value):
             continue
@@ -303,13 +400,14 @@ def percentile_profile(season: str, pos: str, player_id: str,
                                ascending=key not in _LOWER_IS_BETTER)
         percentile = round(float(pct_rank.loc[row.index[0]]) * 100, 1)
         cols.append({"key": key, "label": label, "value": round(float(value), 2),
-                     "percentile": percentile})
+                     "percentile": percentile,
+                     "axis_ticks": _axis_ticks(series, key not in _LOWER_IS_BETTER)})
 
     if not cols:
         return None
     return {"season": str(season), "position": (pos or "").upper(),
             "player_id": str(player_id), "n_population": int(len(lb)),
-            "columns": cols}
+            "stat_mode": stat_mode, "columns": cols}
 
 
 def compare_sources(season: str, pos: str = "ALL", limit: int = 200,

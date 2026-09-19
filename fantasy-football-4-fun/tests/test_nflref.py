@@ -429,6 +429,11 @@ def _fake_sleeper_wr_board():
 
 
 def test_percentile_profile_top_player_reads_100th(monkeypatch):
+    """Uses rec_yards, not fpts_ppr -- fpts_ppr/ppg_ppr are fantasy-scoring
+    outputs, excluded from radar profiles entirely (see
+    test_percentile_profile_excludes_fantasy_scoring_columns below); this
+    test is about the percentile-ranking mechanics, which any real stat
+    column exercises identically."""
     from sleepermetrics import nflstats
     monkeypatch.setattr(nflstats, "player_leaderboard",
                         lambda *a, **k: _fake_sleeper_wr_board())
@@ -436,8 +441,8 @@ def test_percentile_profile_top_player_reads_100th(monkeypatch):
     assert prof is not None
     assert prof["season"] == "2024" and prof["position"] == "WR"
     assert prof["n_population"] == 3
-    pts = next(c for c in prof["columns"] if c["key"] == "fpts_ppr")
-    assert pts["value"] == pytest.approx(220.0)
+    pts = next(c for c in prof["columns"] if c["key"] == "rec_yards")
+    assert pts["value"] == pytest.approx(1200.0)
     assert pts["percentile"] == 100.0                  # best of 3
 
 
@@ -447,8 +452,8 @@ def test_percentile_profile_mid_and_worst_player(monkeypatch):
                         lambda *a, **k: _fake_sleeper_wr_board())
     mid = nflref.percentile_profile("2024", "WR", "2", source="sleeper")
     worst = nflref.percentile_profile("2024", "WR", "3", source="sleeper")
-    mid_pts = next(c for c in mid["columns"] if c["key"] == "fpts_ppr")
-    worst_pts = next(c for c in worst["columns"] if c["key"] == "fpts_ppr")
+    mid_pts = next(c for c in mid["columns"] if c["key"] == "rec_yards")
+    worst_pts = next(c for c in worst["columns"] if c["key"] == "rec_yards")
     assert 0 < worst_pts["percentile"] < mid_pts["percentile"] < 100  # never a hard 0
 
 
@@ -464,6 +469,124 @@ def test_percentile_profile_empty_board_returns_none(monkeypatch):
     monkeypatch.setattr(nflstats, "player_leaderboard",
                         lambda *a, **k: pd.DataFrame())
     assert nflref.percentile_profile("2024", "WR", "1", source="sleeper") is None
+
+
+def test_percentile_profile_default_stat_mode_is_total(monkeypatch):
+    from sleepermetrics import nflstats
+    monkeypatch.setattr(nflstats, "player_leaderboard",
+                        lambda *a, **k: _fake_sleeper_wr_board())
+    prof = nflref.percentile_profile("2024", "WR", "1", source="sleeper")
+    assert prof["stat_mode"] == "total"
+    rec_yds = next(c for c in prof["columns"] if c["key"] == "rec_yards")
+    assert rec_yds["value"] == pytest.approx(1200.0)
+    assert rec_yds["label"] == "Rec yds"
+
+
+def test_percentile_profile_per_game_divides_counting_stats_by_games(monkeypatch):
+    """Top WR: rec_yards=1200 over 10 games -> a per-game rate of 120, ranked
+    against the field's own per-game rates, not the raw totals. The LABEL
+    stays plain ("Rec yds", not "Rec yds/G") -- the total/per-game distinction
+    is the toggle itself, not something every spoke name needs to restate."""
+    from sleepermetrics import nflstats
+    monkeypatch.setattr(nflstats, "player_leaderboard",
+                        lambda *a, **k: _fake_sleeper_wr_board())
+    prof = nflref.percentile_profile("2024", "WR", "1", source="sleeper",
+                                     stat_mode="per_game")
+    assert prof["stat_mode"] == "per_game"
+    rec_yds = next(c for c in prof["columns"] if c["key"] == "rec_yards")
+    assert rec_yds["value"] == pytest.approx(120.0)
+    assert rec_yds["label"] == "Rec yds"
+    assert rec_yds["percentile"] == 100.0  # still the best of 3 on a per-game basis too
+
+
+def test_percentile_profile_per_game_leaves_already_rate_columns_alone(monkeypatch):
+    """snap_share/tgt_share/adot are already rates -- per_game mode must not
+    divide them again by games. (ppg_ppr was also in _ALREADY_RATE_KEYS, but
+    is now excluded from radar profiles entirely as a fantasy-scoring output
+    -- see test_percentile_profile_excludes_fantasy_scoring_columns -- so
+    it's dropped from this loop rather than asserting on a key that no
+    longer appears in `columns` at all.)"""
+    from sleepermetrics import nflstats
+    monkeypatch.setattr(nflstats, "player_leaderboard",
+                        lambda *a, **k: _fake_sleeper_wr_board())
+    total = nflref.percentile_profile("2024", "WR", "1", source="sleeper")
+    per_game = nflref.percentile_profile("2024", "WR", "1", source="sleeper",
+                                         stat_mode="per_game")
+    for key in ("snap_share", "tgt_share", "adot"):
+        t = next(c for c in total["columns"] if c["key"] == key)
+        p = next(c for c in per_game["columns"] if c["key"] == key)
+        assert t["value"] == pytest.approx(p["value"])
+        assert t["label"] == p["label"]  # no "/G" suffix added
+
+
+def test_percentile_profile_per_game_drops_games_column(monkeypatch):
+    """`games` itself isn't a performance stat -- excluded from per_game mode
+    (every player's own "games per game" would be a trivial, meaningless 1.0)."""
+    from sleepermetrics import nflstats
+    monkeypatch.setattr(nflstats, "player_leaderboard",
+                        lambda *a, **k: _fake_sleeper_wr_board())
+    per_game = nflref.percentile_profile("2024", "WR", "1", source="sleeper",
+                                         stat_mode="per_game")
+    assert all(c["key"] != "games" for c in per_game["columns"])
+
+
+def test_percentile_profile_axis_ticks_present_for_pizza_chart(monkeypatch):
+    """Every column carries axis_ticks -- 5 real-value reference points at
+    20/40/60/80/100, the pizza-chart radar's own per-spoke scale."""
+    from sleepermetrics import nflstats
+    monkeypatch.setattr(nflstats, "player_leaderboard",
+                        lambda *a, **k: _fake_sleeper_wr_board())
+    prof = nflref.percentile_profile("2024", "WR", "1", source="sleeper")
+    pts = next(c for c in prof["columns"] if c["key"] == "rec_yards")
+    ticks = pts["axis_ticks"]
+    assert [t["percentile"] for t in ticks] == [20, 40, 60, 80, 100]
+    # 100th-percentile tick is the field's real max (1200.0, Top WR's own value)
+    assert ticks[-1]["value"] == pytest.approx(1200.0)
+
+
+def test_percentile_profile_excludes_fantasy_scoring_columns(monkeypatch):
+    """A radar profile should only compare REAL on-field production, not a
+    fantasy-scoring output derived from that same production (per user
+    request). fpts_ppr/ppg_ppr are excluded entirely, in BOTH stat_modes --
+    `games` is excluded too (metadata, not a stat -- it was already dropped
+    in per_game mode via a separate mechanism, but now also in total mode).
+    Real stats (rec_yards etc.) are unaffected and still present."""
+    from sleepermetrics import nflstats
+    monkeypatch.setattr(nflstats, "player_leaderboard",
+                        lambda *a, **k: _fake_sleeper_wr_board())
+    for mode in ("total", "per_game"):
+        prof = nflref.percentile_profile("2024", "WR", "1", source="sleeper",
+                                         stat_mode=mode)
+        keys = {c["key"] for c in prof["columns"]}
+        assert "fpts_ppr" not in keys
+        assert "ppg_ppr" not in keys
+        assert "games" not in keys
+        assert "rec_yards" in keys
+
+
+def test_percentile_profile_axis_ticks_ascend_for_higher_is_better_stat(monkeypatch):
+    """A normal (higher-is-better) stat's ticks rise from the 20th to the
+    100th percentile ring, matching "further out on the spoke = better"."""
+    from sleepermetrics import nflstats
+    monkeypatch.setattr(nflstats, "player_leaderboard",
+                        lambda *a, **k: _fake_sleeper_wr_board())
+    prof = nflref.percentile_profile("2024", "WR", "1", source="sleeper")
+    ticks = next(c for c in prof["columns"] if c["key"] == "rec_yards")["axis_ticks"]
+    values = [t["value"] for t in ticks]
+    assert values == sorted(values)
+
+
+def test_percentile_profile_axis_ticks_descend_for_lower_is_better_stat(monkeypatch):
+    """pts_allow/yds_allow are LOWER-is-better -- the 100th-percentile ring
+    (best defense, outermost point) must be the field's MINIMUM, not its
+    maximum, so ticks descend outward instead of ascending."""
+    from sleepermetrics import nflstats
+    monkeypatch.setattr(nflstats, "player_leaderboard",
+                        lambda *a, **k: _fake_sleeper_def_board())
+    prof = nflref.percentile_profile("2024", "DEF", "AAA", source="sleeper")
+    ticks = next(c for c in prof["columns"] if c["key"] == "pts_allow")["axis_ticks"]
+    values = [t["value"] for t in ticks]
+    assert values == sorted(values, reverse=True)
 
 
 def test_schedule_grid_team_filter(monkeypatch):

@@ -7,7 +7,14 @@
    a per-format leaderboard/percentile aggregation exists to select between.
    The leaderboard (/playercompare/data) streams in on Load; checking 2+
    players there and clicking "Compare selected" streams in the comparison
-   charts (/playercompare/compare) below it. #}
+   charts (/playercompare/compare) below it.
+
+   `#playercompare-charts` is a SIBLING of the controls/leaderboard
+   <section class="card"> below, NOT nested inside it -- a card nested
+   inside another card still reads as one long panel (the outer card's
+   border/padding wraps both), which is what "completely separated" here
+   means to fix: the comparison results get their own independent card at
+   the top level of this fragment, not a card-in-a-card. #}
 <section class="card">
   <h2>Player Comparison</h2>
   <p class="hint">Compare same-position players against the real-NFL field,
@@ -33,21 +40,36 @@
         {% endfor %}
       </select>
     </label>
-    <button type="submit" class="nfl-apply">Load</button>
-    {# Sits right beside Load rather than below the board -- both controls
-       for "get me a comparison" live in one place. Hidden until the
-       leaderboard has rows to pick from (see wireCheckboxes() below). A
-       bare <button>, not wrapped in a <span>: `.controls span` (styled for
-       the field-label captions above) was bleeding its 11px/uppercase
-       styling into a wrapper span here, shrinking the "(N)" count.
-       Deliberately NOT `.nfl-apply` -- that class's `margin-left: auto`
-       is what pushes Load to the row's right edge; a SECOND button with
-       the same class claims its own leftover space too, splitting the two
-       apart with a gap instead of sitting flush together (verified with a
-       real render). `playercompare-compare-btn` alone carries just the
-       button's visual styling, no auto-margin. #}
+    {# `nfl-apply playercompare-load`: keeps .nfl-apply's shared green button
+       styling but overrides its `margin-left: auto` (style.css) with a
+       scoped rule -- Load sits with the Position/Season criteria on the
+       LEFT here, not pushed to the row's right edge the way NFL Stats/ADP's
+       own Load buttons are (per user request; those other tabs are
+       untouched, since .nfl-apply itself isn't). #}
+    <button type="submit" class="nfl-apply playercompare-load">Load</button>
+    {# Compare selected + Clear selection stay RIGHT-JUSTIFIED as a pair
+       (user request) -- Compare selected's OWN `margin-left: auto`
+       (style.css) pushes it and everything after it in source order
+       (Clear) to the row's right edge, while Load/the two selects keep
+       normal left-to-right flow. They also appear/disappear TOGETHER, both
+       hidden until 2+ rows are checked -- never one without the other.
+       Showing Clear alone as soon as 1 row is checked (an earlier design)
+       meant it could pop in and back out on every single checkbox click
+       while exactly 1 was checked, a visible "jiggle" in the row's width;
+       gating both on the SAME "2+ checked" condition removes that
+       in-between state entirely, so nothing in this row ever
+       appears/disappears except this one pair, at one shared moment. #}
     <button type="button" id="playercompare-compare-btn" hidden disabled>
       Compare selected (<span id="playercompare-count">0</span>)
+    </button>
+    {# Unchecks every currently-picked row in one click -- swapping out an
+       earlier selection for a fresh pair used to mean scrolling the board
+       to find and manually uncheck each one. Deliberately does NOT touch
+       #playercompare-charts -- the previous comparison stays visible below
+       until a new one is actually run, rather than blanking the page the
+       moment Clear is clicked (see wireCheckboxes()'s own comment on why). #}
+    <button type="button" id="playercompare-clear-btn" class="playercompare-clear" hidden>
+      Clear selection
     </button>
   </form>
 
@@ -56,14 +78,15 @@
   <div id="playercompare-board">
     <p class="hint">Choose a position and season, then click <strong>Load</strong>.</p>
   </div>
-
-  <div id="playercompare-charts"></div>
 </section>
+
+<div id="playercompare-charts"></div>
 
 <script>
   (function () {
     var board = document.getElementById('playercompare-board');
     var btn = document.getElementById('playercompare-compare-btn');
+    var clearBtn = document.getElementById('playercompare-clear-btn');
     var count = document.getElementById('playercompare-count');
     var charts = document.getElementById('playercompare-charts');
     var controls = document.getElementById('playercompare-controls');
@@ -78,6 +101,14 @@
         count.textContent = n;
         btn.disabled = n < 2;
         btn.hidden = !boxes.length;
+        // Clear appears/disappears in lockstep with Compare selected (the
+        // SAME n < 2 condition), never on its own -- gating Clear on any
+        // lower threshold (e.g. "hidden until 1+ checked") let it pop in
+        // and back out on every single checkbox click while exactly 1 box
+        // was checked, a visible width jiggle in this row (user-reported).
+        // Tying both buttons to one shared condition means this row only
+        // ever changes shape at ONE moment, not two independent ones.
+        if (clearBtn) clearBtn.hidden = !boxes.length || n < 2;
       };
       boxes.forEach(function (b) {
         b.addEventListener('change', function (e) {
@@ -85,6 +116,12 @@
           sync();
         });
       });
+      if (clearBtn) {
+        clearBtn.onclick = function () {
+          boxes.forEach(function (b) { b.checked = false; });
+          sync();
+        };
+      }
       sync();
     };
     // .card.chart img starts at opacity:0 (style.css) and normally fades in
@@ -94,10 +131,17 @@
     // player_profile.html already needed for the same reason -- see its own
     // fadeInCharts, mirrored here minus the dark-mode theme swap, since this
     // page has no theme toggle and never builds a themed chart URL).
+    //
+    // Also covers the radar PNG living in the comparison header row's own
+    // middle column (.compare-header-radar img, not .card.chart img -- see
+    // _playercompare_charts.html's own comment on the header-row layout) so
+    // it gets the identical load/fail/retry treatment; `.closest('.card.
+    // chart, .compare-header-radar')` picks whichever ancestor actually
+    // applies rather than needing two near-duplicate handlers.
     var fadeInCharts = function (root) {
-      root.querySelectorAll('.card.chart img:not([data-sk])').forEach(function (img) {
+      root.querySelectorAll('.card.chart img:not([data-sk]), .compare-header-radar img:not([data-sk])').forEach(function (img) {
         img.setAttribute('data-sk', '1');
-        var fig = img.closest('.card.chart');
+        var fig = img.closest('.card.chart, .compare-header-radar');
         var ok = function () {
           fig.classList.remove('skeleton', 'chart-failed'); img.classList.add('loaded');
         };

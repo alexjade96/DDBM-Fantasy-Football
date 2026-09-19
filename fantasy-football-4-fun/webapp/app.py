@@ -1072,6 +1072,7 @@ def chart(name: str, league: str = DEFAULT_LEAGUE, season: str | None = None,
           player_id: str | None = None,
           position: str | None = None, mode: str = "snapshot",
           player_ids: str | None = None, player_labels: str | None = None,
+          stat_mode: str = "total",
           _: str | None = None):
     # Player-profile charts are league-free (the player-profile page's
     # `league`/`season` are both genuinely optional, unlike every other
@@ -1097,12 +1098,20 @@ def chart(name: str, league: str = DEFAULT_LEAGUE, season: str | None = None,
         # since this tab has no league at all (see _playercompare_compare.html's
         # own player-picker: checkboxes on the real-NFL leaderboard, not a
         # roster). `player_ids`/`player_labels` are comma-joined, same order,
-        # built client-side from the checked leaderboard rows.
+        # built client-side from the checked leaderboard rows. `stat_mode`
+        # ("total"/"per_game") is the client-side toggle each chart carries:
+        # in snapshot mode it changes which VALUES get percentile-ranked
+        # (season totals vs. derived per-game rates, see
+        # nflref.summary.percentile_profile's own stat_mode docs); in trend
+        # mode it changes the plotted SERIES (weekly per-game value vs. a
+        # running cumulative season total, both from the same underlying
+        # per-week data -- see plot_player_overlay's own cumulative branch).
         from webapp import player_compare as pc
 
         pos = (position or "RB").upper()
         ids = [i for i in (player_ids or "").split(",") if i]
         labels = [l for l in (player_labels or "").split(",") if l]
+        sm = stat_mode if stat_mode in ("total", "per_game") else "total"
         with _render_lock:
             plots.set_chart_theme(theme)
             if not ids or len(ids) != len(labels):
@@ -1115,12 +1124,18 @@ def chart(name: str, league: str = DEFAULT_LEAGUE, season: str | None = None,
                 players = {lab: by_id.get(pid, []) for pid, lab in zip(ids, labels)}
                 stat_keys = pc._DEFAULT_TREND_KEYS.get(pos, ("pts_ppr",))[:1]
                 return png(plots.plot_player_overlay(
-                    players, list(stat_keys), mode="trend", title=f"{pos} trend"))
-            profiles = pc.player_field_compare(sea, pos, ids)
+                    players, list(stat_keys), mode="trend", title=f"{pos} trend",
+                    stat_mode=sm))
+            profiles = pc.player_field_compare(sea, pos, ids, stat_mode=sm)
             players = {lab: profiles.get(pid) for pid, lab in zip(ids, labels)}
+            # "Christian McCaffrey vs Jonathan Taylor" (or "vs ... vs ..." for
+            # 3+) names every player directly in the title -- the radar has no
+            # legend (see plot_player_overlay's snapshot branch) to look up a
+            # color-to-player mapping from, so the title carries that instead.
+            snap_title = " vs ".join(labels) if labels else f"{pos} comparison"
             return png(plots.plot_player_overlay(
                 players, [], mode="snapshot",
-                title=f"{pos} comparison", position=pos))
+                title=snap_title, position=pos, stat_mode=sm))
     d, s, key = pick(league, season)
     # A custom / rolled-back bracket (token) overrides this season's committed
     # one for every playoff chart, so the whole tab reflects it consistently.
@@ -1739,6 +1754,53 @@ def playercompare_data(request: Request, position: str = _PLAYERCOMPARE_POS_DEFA
     return tpl.TemplateResponse(request, "_playercompare_table.html", ctx)
 
 
+def _playercompare_table_ctx(pos: str, sea: str, ids: list[str], labels: list[str],
+                             stat_mode: str = "per_game") -> dict:
+    """The 2-player metric-by-metric table's context (`rows` + the header
+    identity fields) -- shared by `playercompare_chart_section` (the initial
+    "Compare selected" render) and `playercompare_table` (the Total/Per game
+    toggle's own refresh, see that route's docstring for why the table needs
+    a SEPARATE endpoint from the charts). Pulled out as its own function so
+    the two routes can't drift: both call the identical `player_field_compare`
+    lookup and row-building logic, just with a different `stat_mode`.
+
+    Returns `{"rows": [...], "label_a", "label_b", "pid_a", "pid_b"}`, with
+    `rows` empty (and the pid/label fields blank) for anything other than
+    exactly 2 ids, or when either side's profile never resolved -- the
+    caller's template already treats an empty `rows` as "no table" (see
+    _playercompare_charts.html's own `{% if rows %}` guard).
+    """
+    ctx = {"rows": [], "label_a": "", "label_b": "", "pid_a": "", "pid_b": ""}
+    if len(ids) != 2:
+        return ctx
+    from webapp import player_compare as pc
+    profiles = pc.player_field_compare(sea, pos, ids, stat_mode=stat_mode)
+    prof_a, prof_b = profiles.get(ids[0]), profiles.get(ids[1])
+    ctx["label_a"], ctx["label_b"] = labels[0], labels[1]
+    # Player Comparison forces source="sleeper" throughout (see this
+    # module's own header comment), so `ids` ARE already real Sleeper
+    # player_ids -- no id-bridging needed for the table's headshots,
+    # unlike NFL Stats'/ADP's nflverse-sourced rows.
+    ctx["pid_a"], ctx["pid_b"] = ids[0], ids[1]
+    if prof_a and prof_b:
+        cols_b_by_key = {c["key"]: c for c in prof_b["columns"]}
+        for col_a in prof_a["columns"]:
+            col_b = cols_b_by_key.get(col_a["key"])
+            if col_b is None:
+                continue
+            pct_a, pct_b = col_a["percentile"], col_b["percentile"]
+            ctx["rows"].append({
+                "label": col_a["label"],
+                "a_value": plots._format_stat_value(col_a["key"], col_a["value"]),
+                "a_pct": pct_a,
+                "b_value": plots._format_stat_value(col_b["key"], col_b["value"]),
+                "b_pct": pct_b,
+                "a_better": pct_a > pct_b,
+                "b_better": pct_b > pct_a,
+            })
+    return ctx
+
+
 @app.get("/playercompare/compare", response_class=HTMLResponse)
 def playercompare_chart_section(request: Request, position: str = _PLAYERCOMPARE_POS_DEFAULT,
                                 season: str | None = None, player_ids: str = "",
@@ -1762,15 +1824,64 @@ def playercompare_chart_section(request: Request, position: str = _PLAYERCOMPARE
     a browser, not by template/route unit tests alone. Living under
     /playercompare/ instead of /chart/ sidesteps the collision structurally,
     rather than depending on registration order staying correct forever.
+
+    When exactly 2 players are selected, also builds `rows` -- a metric-by-
+    metric side-by-side table (Player A value | metric | Player B value),
+    the "ease of comparison" view for the 1-v-1 case the radar/trend charts
+    don't give you directly (a radar makes SHAPE comparable at a glance, not
+    exact numbers). Built from the same `player_field_compare()` profiles
+    the radar chart itself reads (see /chart/player_overlay above), so the
+    values always agree with what the radar plots. 3+ players skip this
+    entirely -- a 3-column table has no natural extension past 2 columns of
+    values, and the radar/trend charts already handle the N-player case.
+
+    Always renders at `stat_mode="per_game"` (the toggle's own default) --
+    the Total/Per game toggle refreshes the table separately afterward via
+    `playercompare_table` below, same as it already refreshes the chart PNGs
+    client-side without reloading this whole fragment.
     """
     pos, sea = _playercompare_params(position, season)
     ids = [i for i in (player_ids or "").split(",") if i]
     labels = [l for l in (player_labels or "").split(",") if l]
-    return tpl.TemplateResponse(request, "_playercompare_charts.html", {
+    ctx = {
         "position": pos, "season": sea,
         "player_ids": ",".join(ids), "player_labels": ",".join(labels),
         "n_selected": len(ids),
-    })
+    }
+    ctx.update(_playercompare_table_ctx(pos, sea, ids, labels, stat_mode="per_game"))
+    return tpl.TemplateResponse(request, "_playercompare_charts.html", ctx)
+
+
+@app.get("/playercompare/table", response_class=HTMLResponse)
+def playercompare_table(request: Request, position: str = _PLAYERCOMPARE_POS_DEFAULT,
+                        season: str | None = None, player_ids: str = "",
+                        player_labels: str = "", stat_mode: str = "per_game"):
+    """Just the 2-player metric table's BODY ROWS (`<tr>`s, no `<table>`/
+    `<thead>`), for the Total/Per game toggle's own refresh -- a REAL,
+    user-reported bug this route fixes: the toggle used to only rewrite the
+    two chart `<img>` src's `stat_mode` query param client-side (no server
+    round trip, since a PNG's `stat_mode` is just a query param on an
+    already-dynamic image endpoint), but the table's values/percentiles are
+    baked into the HTML at RENDER time by `playercompare_chart_section`
+    above -- clicking the toggle never touched that markup at all, so the
+    numbers silently stayed on whichever `stat_mode` the table happened to
+    load with.
+
+    Body-rows-only, not the whole table: the header row (portraits + the
+    radar image) doesn't depend on `stat_mode` for its own identity, only
+    the metric VALUES do, so re-rendering it on every toggle click would
+    tear down and rebuild the live radar `<img>` (forcing an unnecessary
+    fresh fetch, racing the chart's own independent client-side src-rewrite
+    in the same click handler) for no visible change. The toggle's own JS
+    (_playercompare_charts.html) fetches this route and swaps it into the
+    table's `<tbody>` in place, leaving the header untouched.
+    """
+    pos, sea = _playercompare_params(position, season)
+    ids = [i for i in (player_ids or "").split(",") if i]
+    labels = [l for l in (player_labels or "").split(",") if l]
+    sm = stat_mode if stat_mode in ("total", "per_game") else "per_game"
+    ctx = _playercompare_table_ctx(pos, sea, ids, labels, stat_mode=sm)
+    return tpl.TemplateResponse(request, "_playercompare_compare_table.html", ctx)
 
 
 # The analytics link reads `/league=<id>` (no `/dashboard?` query) -- a literal

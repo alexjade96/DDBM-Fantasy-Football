@@ -41,7 +41,8 @@ _DEFAULT_TREND_KEYS = {
 
 def player_field_compare(season: str, position: str, player_ids: list[str],
                           weeks: list[int] | None = None,
-                          source: str = "sleeper") -> dict:
+                          source: str = "sleeper",
+                          stat_mode: str = "total") -> dict:
     """Each of `player_ids`' percentile profile against the full real-NFL
     field at `position` for `season` -- the across-teams real-NFL view.
 
@@ -49,6 +50,8 @@ def player_field_compare(season: str, position: str, player_ids: list[str],
     one player's percentile at every stat for their position, against the
     full leaderboard, for one season) -- no new percentile math here, just
     fanning it out over several players so they can be shown side by side.
+    `stat_mode` ("total" or "per_game") passes straight through to that
+    function; see its own docstring for how a per-game radar is derived.
 
     `weeks` is accepted here as this function's forward-looking seam for a
     "recent weeks only" comparison, but `percentile_profile()` itself takes
@@ -71,7 +74,7 @@ def player_field_compare(season: str, position: str, player_ids: list[str],
     for pid in player_ids:
         try:
             out[str(pid)] = nflref_summary.percentile_profile(
-                season, position, pid, source=source)
+                season, position, pid, source=source, stat_mode=stat_mode)
         except Exception:
             out[str(pid)] = None
     return out
