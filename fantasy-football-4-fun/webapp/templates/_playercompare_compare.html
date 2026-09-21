@@ -6,7 +6,7 @@
    comment above the /playercompare routes: everything here is PPR-based until
    a per-format leaderboard/percentile aggregation exists to select between.
    The leaderboard (/playercompare/data) streams in on Load; checking 2+
-   players there and clicking "Compare selected" streams in the comparison
+   players there and clicking "Compare" streams in the comparison
    charts (/playercompare/compare) below it.
 
    `#playercompare-charts` is a SIBLING of the controls/leaderboard
@@ -21,56 +21,68 @@
      and against each other week by week &mdash; built for lineup
      decisions, not a season-end leaderboard. No league required.</p>
 
-  <form class="controls adp-controls-row" id="playercompare-controls"
+  {# Controls read as TWO groups -- filters (Position/Season/Load) and
+     actions (Reset/Compare) -- separated by a thin vertical divider, rather
+     than one flat row of five controls (promoted from the Testing tab's
+     "grouped controls" demo, prototype #3, per user request). Each group is
+     its own flex sub-row so they can wrap independently on narrow
+     viewports (see the media query in style.css). #}
+  <form class="controls playercompare-controls-row" id="playercompare-controls"
         hx-get="/playercompare/data" hx-target="#playercompare-board"
         hx-swap="innerHTML" hx-trigger="submit" hx-include="#playercompare-controls">
-    <label>
-      <span>Position</span>
-      <select name="position">
-        {% for p in positions %}
-        <option value="{{ p }}" {% if p == position %}selected{% endif %}>{{ p }}</option>
-        {% endfor %}
-      </select>
-    </label>
-    <label>
-      <span>Season</span>
-      <select name="season">
-        {% for y in seasons %}
-        <option value="{{ y }}" {% if y == season %}selected{% endif %}>{{ y }}</option>
-        {% endfor %}
-      </select>
-    </label>
-    {# `nfl-apply playercompare-load`: keeps .nfl-apply's shared green button
-       styling but overrides its `margin-left: auto` (style.css) with a
-       scoped rule -- Load sits with the Position/Season criteria on the
-       LEFT here, not pushed to the row's right edge the way NFL Stats/ADP's
-       own Load buttons are (per user request; those other tabs are
-       untouched, since .nfl-apply itself isn't). #}
-    <button type="submit" class="nfl-apply playercompare-load">Load</button>
-    {# Compare selected + Clear selection stay RIGHT-JUSTIFIED as a pair
-       (user request) -- Compare selected's OWN `margin-left: auto`
-       (style.css) pushes it and everything after it in source order
-       (Clear) to the row's right edge, while Load/the two selects keep
-       normal left-to-right flow. They also appear/disappear TOGETHER, both
-       hidden until 2+ rows are checked -- never one without the other.
-       Showing Clear alone as soon as 1 row is checked (an earlier design)
-       meant it could pop in and back out on every single checkbox click
-       while exactly 1 was checked, a visible "jiggle" in the row's width;
-       gating both on the SAME "2+ checked" condition removes that
-       in-between state entirely, so nothing in this row ever
-       appears/disappears except this one pair, at one shared moment. #}
-    <button type="button" id="playercompare-compare-btn" hidden disabled>
-      Compare selected (<span id="playercompare-count">0</span>)
-    </button>
-    {# Unchecks every currently-picked row in one click -- swapping out an
-       earlier selection for a fresh pair used to mean scrolling the board
-       to find and manually uncheck each one. Deliberately does NOT touch
-       #playercompare-charts -- the previous comparison stays visible below
-       until a new one is actually run, rather than blanking the page the
-       moment Clear is clicked (see wireCheckboxes()'s own comment on why). #}
-    <button type="button" id="playercompare-clear-btn" class="playercompare-clear" hidden>
-      Clear selection
-    </button>
+    <div class="playercompare-group playercompare-group-filters">
+      <label>
+        <span>Position</span>
+        <select name="position">
+          {% for p in positions %}
+          <option value="{{ p }}" {% if p == position %}selected{% endif %}>{{ p }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>
+        <span>Season</span>
+        <select name="season">
+          {% for y in seasons %}
+          <option value="{{ y }}" {% if y == season %}selected{% endif %}>{{ y }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      {# `nfl-apply playercompare-load`: keeps .nfl-apply's shared green
+         button styling but overrides its `margin-left: auto` (style.css)
+         with a scoped rule -- Load sits with the Position/Season criteria
+         in the FILTERS group, not the actions group. #}
+      <button type="submit" class="nfl-apply playercompare-load">Load</button>
+    </div>
+    <div class="playercompare-group-divider" aria-hidden="true"></div>
+    <div class="playercompare-group playercompare-group-actions">
+      {# "Reset" (id/class still playercompare-clear -- internal name
+         unchanged, only the visible label is "Reset") sits LEFT of
+         "Compare" within the actions group. Both buttons render (not
+         `hidden`) as soon as the leaderboard loads, but stay
+         `disabled`/non-clickable until 2+ rows are checked (user request:
+         show both buttons on load, just make them non-selectable until a
+         player is checked -- neither pops in/out of the layout anymore,
+         only its clickability changes). Unchecks every currently-picked
+         row in one click -- swapping out an earlier selection for a fresh
+         pair used to mean scrolling the board to find and manually
+         uncheck each one. Deliberately does NOT touch
+         #playercompare-charts -- the previous comparison stays visible
+         below until a new one is actually run, rather than blanking the
+         page the moment Reset is clicked (see wireCheckboxes()'s own
+         comment on why). #}
+      <button type="button" id="playercompare-clear-btn" class="playercompare-clear" disabled>
+        Reset
+      </button>
+      {# "Compare" (id still playercompare-compare-btn -- internal name
+         unchanged, only the visible label is "Compare") stays disabled
+         until 2+ rows are checked, on the IDENTICAL condition Reset (right
+         above) uses -- see sync()'s own `disabled` assignment, shared by
+         both buttons, so the two only ever change clickability at one
+         shared moment. #}
+      <button type="button" id="playercompare-compare-btn" disabled>
+        Compare (<span id="playercompare-count">0</span>)
+      </button>
+    </div>
   </form>
 
   {# The board does NOT auto-load -- opening this tab shows only the
@@ -78,6 +90,13 @@
   <div id="playercompare-board">
     <p class="hint">Choose a position and season, then click <strong>Load</strong>.</p>
   </div>
+  {# Selected-players chip strip (promoted from the Testing tab's "chip
+     strip" demo, prototype #1, per user request): one small pill per
+     checked row -- label + an x to uncheck -- below the board, so picks
+     are visible without scrolling back to the counter. Reset/Compare stay
+     in the fixed controls row above, unaffected by whether any chips are
+     showing (same "agnostic to the table" placement the demo settled on). #}
+  <div class="playercompare-chips" id="playercompare-chip-strip" hidden></div>
 </section>
 
 <div id="playercompare-charts"></div>
@@ -90,6 +109,7 @@
     var count = document.getElementById('playercompare-count');
     var charts = document.getElementById('playercompare-charts');
     var controls = document.getElementById('playercompare-controls');
+    var chipStrip = document.getElementById('playercompare-chip-strip');
     if (!board || !btn) return;
 
     // Checkboxes render fresh every time the leaderboard reloads (htmx swap),
@@ -99,16 +119,51 @@
       var sync = function () {
         var n = board.querySelectorAll('input[data-playercompare-pick]:checked').length;
         count.textContent = n;
-        btn.disabled = n < 2;
-        btn.hidden = !boxes.length;
-        // Clear appears/disappears in lockstep with Compare selected (the
-        // SAME n < 2 condition), never on its own -- gating Clear on any
-        // lower threshold (e.g. "hidden until 1+ checked") let it pop in
-        // and back out on every single checkbox click while exactly 1 box
-        // was checked, a visible width jiggle in this row (user-reported).
-        // Tying both buttons to one shared condition means this row only
-        // ever changes shape at ONE moment, not two independent ones.
-        if (clearBtn) clearBtn.hidden = !boxes.length || n < 2;
+        // Both buttons are always VISIBLE once the board has rows (never
+        // `hidden` -- user request: show both on load, right-justified,
+        // rather than having them pop into the layout later); only their
+        // `disabled` state changes, and it changes for BOTH on the
+        // IDENTICAL condition (n < 2) so they become clickable at the same
+        // moment, never one before the other.
+        var usable = n >= 2;
+        btn.disabled = !usable;
+        if (clearBtn) clearBtn.disabled = !usable;
+        // Row highlight (promoted from the Testing tab's "row highlight on
+        // check" demo, prototype #2, per user request): a checked row gets
+        // a tinted background so picks read directly in the table, not
+        // just via the checkbox. Driven from `sync()` itself, not just the
+        // `change` listener below, so Reset (which sets `checked = false`
+        // directly, without dispatching a `change` event) still clears
+        // every row's highlight when it calls sync().
+        boxes.forEach(function (b) {
+          var tr = b.closest('tr');
+          if (tr) tr.classList.toggle('playercompare-row-picked', b.checked);
+        });
+        // Chip strip (promoted from the Testing tab's "chip strip" demo,
+        // prototype #1, per user request): rebuilt from scratch on every
+        // sync() call (cheap -- at most a handful of chips), same pattern
+        // the row-highlight toggle above already uses to stay correct
+        // whether triggered by a checkbox's own `change` event or by
+        // Reset's direct `checked = false` (which fires no `change`).
+        if (chipStrip) {
+          var checkedBoxes = Array.prototype.slice.call(
+            board.querySelectorAll('input[data-playercompare-pick]:checked'));
+          chipStrip.hidden = !checkedBoxes.length;
+          chipStrip.innerHTML = '';
+          checkedBoxes.forEach(function (b) {
+            var chip = document.createElement('span');
+            chip.className = 'playercompare-chip';
+            var label = document.createElement('span');
+            label.textContent = b.dataset.label || 'Player';
+            var x = document.createElement('button');
+            x.type = 'button'; x.className = 'playercompare-chip-x'; x.textContent = '×';
+            x.setAttribute('aria-label', 'Remove ' + (b.dataset.label || 'player'));
+            x.onclick = function () { b.checked = false; sync(); };
+            chip.appendChild(label);
+            chip.appendChild(x);
+            chipStrip.appendChild(chip);
+          });
+        }
       };
       boxes.forEach(function (b) {
         b.addEventListener('change', function (e) {

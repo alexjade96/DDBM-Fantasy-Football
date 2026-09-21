@@ -8,9 +8,6 @@
    now. The source feed could not be reached and there is no saved
    snapshot yet.</p>
 {% else %}
-<p class="hint">{{ rows | length }} {{ position }}s &middot; {{ season }}
-   season &middot; Sleeper feed, ranked by PPR fantasy points. Check 2 or
-   more players below, then <strong>Compare selected</strong>.</p>
 <form id="playercompare-picks">
   <div class="tablewrap scrolltable">
     <table class="sortable">
@@ -28,7 +25,7 @@
           </td>
           <td class="n">{{ r.rank }}</td>
           <td data-sort="{{ r.player }}">{{ idm.headshot(r.sleeper_id, link=True) }}<strong>{{ idm.player_link(r.sleeper_id, r.player) }}</strong></td>
-          <td><span class="q">{{ r.team or "" }}</span></td>
+          <td><span class="q">{{ idm.team_link(r.team) }}</span></td>
           {% for key, hdr in cols %}
             {%- set v = r.get(key) -%}
             <td class="n" data-sort="{{ v if v is not none else -1 }}">

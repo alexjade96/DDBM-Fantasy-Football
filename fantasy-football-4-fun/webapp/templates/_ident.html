@@ -6,6 +6,7 @@
      idm.headshot(pid, link=False)    -- a player's Sleeper headshot (bare img)
      idm.posrank(pid)                 -- that player's position rank THIS WEEK
      idm.player_link(pid, name)       -- a player's name, linked to /player/<pid>
+     idm.team_link(abbr)              -- an NFL team abbreviation, linked to /team/<abbr>
 
    All best-effort and degrade cleanly: `who` shows the portrait only when a
    manager avatar exists for that name (else just the name); a headshot that 404s
@@ -50,6 +51,10 @@
 
 {% macro player_link(pid, name) -%}
 {%- if pid is string and pid %}<a class="plink" href="{{ _player_url(pid) }}" target="_blank" rel="noopener">{{ name }}</a>{% else %}{{ name }}{% endif -%}
+{%- endmacro %}
+
+{% macro team_link(abbr) -%}
+{%- if abbr is string and abbr and abbr not in ("ALL", "FA") %}<a class="plink" href="/team/{{ abbr }}" target="_blank" rel="noopener">{{ abbr }}</a>{% else %}{{ abbr or "" }}{% endif -%}
 {%- endmacro %}
 
 {% macro posrank(pid) -%}

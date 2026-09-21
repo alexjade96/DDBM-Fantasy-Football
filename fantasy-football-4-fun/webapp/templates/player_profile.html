@@ -39,7 +39,7 @@
   </h2>
   <p class="hint">
     {%- if identity.position %}{{ identity.position }}{% endif -%}
-    {%- if identity.team %} &middot; {{ identity.team }}{% endif -%}
+    {%- if identity.team %} &middot; {{ idm.team_link(identity.team) }}{% endif -%}
     {%- if league_name %} &middot; {{ league_name }}{% endif -%}
     {%- if not identity.position and not identity.team and not league_name %}No Sleeper record found for this player id.{% endif -%}
   </p>

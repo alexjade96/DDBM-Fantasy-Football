@@ -203,6 +203,70 @@ def test_plot_player_overlay_snapshot_has_no_legend():
     plt.close(fig)
 
 
+def test_plot_player_overlay_snapshot_title_colors_each_name_to_match_its_polygon():
+    """User-reported: with no legend (see the test above), a reader had no
+    way to tell which polygon belonged to which player. The title now
+    draws each player's name in THEIR OWN chart color (`_colored_vs_title`)
+    instead of one flat color -- verify each drawn name appears as its own
+    Text artist on the figure, colored to match `palette()`'s assignment
+    for that name, and that a plain " vs " separator (not either player's
+    color) sits between them."""
+    import matplotlib.pyplot as plt
+
+    from sleepermetrics import plots
+    players = {"Alice's RB1": _snapshot_profile(70.0), "Bob's RB1": _snapshot_profile(40.0)}
+    colors = plots.palette(players.keys())
+    fig = plots.plot_player_overlay(players, ["fpts_ppr", "rush_yd"], mode="snapshot",
+                                    title="Alice's RB1 vs Bob's RB1")
+    by_text = {t.get_text(): t for t in fig.texts}
+    assert by_text["Alice's RB1"].get_color() == colors["Alice's RB1"]
+    assert by_text["Bob's RB1"].get_color() == colors["Bob's RB1"]
+    assert by_text[" vs "].get_color() == plots.T["ink"]
+    plt.close(fig)
+
+
+def test_plot_player_overlay_snapshot_title_segments_are_centered_as_a_group():
+    """Regression test: the colored title segments are drawn as SEPARATE
+    Text artists (matplotlib has no single-Text multi-color API) that must
+    be repositioned to read as one centered line -- verify the leftmost
+    segment's left edge and the rightmost segment's right edge are
+    symmetric around the figure's horizontal center (x=0.5 in figure
+    fraction), not left-aligned or drifted to one side."""
+    import matplotlib.pyplot as plt
+
+    from sleepermetrics import plots
+    players = {"Alice's RB1": _snapshot_profile(70.0), "Bob's RB1": _snapshot_profile(40.0)}
+    fig = plots.plot_player_overlay(players, ["fpts_ppr", "rush_yd"], mode="snapshot",
+                                    title="Alice's RB1 vs Bob's RB1")
+    title_texts = [t for t in fig.texts if t.get_text() in
+                   ("Alice's RB1", "Bob's RB1", " vs ")]
+    assert len(title_texts) == 3
+    fig.canvas.draw()
+    boxes = [t.get_window_extent() for t in title_texts]
+    left = min(b.x0 for b in boxes)
+    right = max(b.x1 for b in boxes)
+    fig_width = fig.get_window_extent().width
+    center = (left + right) / 2
+    assert abs(center - fig_width / 2) < 1.0  # within a pixel of true center
+    plt.close(fig)
+
+
+def test_plot_player_overlay_snapshot_title_single_player_draws_no_separator():
+    """A single player (edge case -- callers normally require 2+, but the
+    function itself shouldn't crash) draws just their own colored name,
+    no " vs " segment."""
+    import matplotlib.pyplot as plt
+
+    from sleepermetrics import plots
+    players = {"Alice's RB1": _snapshot_profile(70.0)}
+    fig = plots.plot_player_overlay(players, ["fpts_ppr", "rush_yd"], mode="snapshot",
+                                    title="Alice's RB1")
+    texts = [t.get_text() for t in fig.texts]
+    assert "Alice's RB1" in texts
+    assert " vs " not in texts
+    plt.close(fig)
+
+
 def test_plot_player_overlay_snapshot_defaults_stat_keys_from_first_profile():
     import matplotlib.pyplot as plt
 

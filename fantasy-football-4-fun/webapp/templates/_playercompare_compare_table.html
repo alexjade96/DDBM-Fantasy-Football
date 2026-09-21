@@ -2,7 +2,7 @@
    <table> wrapper -- the caller supplies that, see below) -- shared by TWO
    callers: `playercompare_chart_section` (app.py) `{% include %}`s this
    directly inside `<tbody id="compare-table-body">` for the initial
-   "Compare selected" render (stat_mode="per_game", _playercompare_charts.
+   "Compare" render (stat_mode="per_game", _playercompare_charts.
    html), and `playercompare_table` re-renders JUST this partial for the
    Total/Per game toggle's own refresh, swapped into that same `<tbody>`'s
    innerHTML (see that route's docstring for the bug this fixes -- the

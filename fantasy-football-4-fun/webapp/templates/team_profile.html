@@ -1,0 +1,261 @@
+{# Team profile: a shareable, stand-alone page (no dashboard shell) for one
+   real NFL team -- mirrors player_profile.html's shape (see that file's own
+   header comment) but keyed on an NFL abbreviation instead of a Sleeper
+   player_id, and fully league-free: an NFL team has no fantasy-league
+   identity, so there is no league/season-picker concept here beyond the
+   real-NFL `season` this page itself resolves. Every section degrades
+   independently to "no data" rather than assuming any dataset resolves. #}
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ abbr }} team profile{% if current_season %} ({{ current_season }}){% endif %}</title>
+  <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+  <link rel="stylesheet" href="/static/style.css?v={{ asset_v }}">
+</head>
+<body hx-indicator="#bar">
+  <div id="bar"></div>
+{% import "_ident.html" as idm with context %}
+{# Shared dataset-label list + row-table macro, used by BOTH the per-game
+   drilldown (week-sliced rows) and the season-wide Advanced stats section
+   below -- one definition so the two can't drift out of sync with each
+   other (see CLAUDE.md's own "computed twice, drifted" caution). #}
+{# "player_stats" is nflverse's COMPREHENSIVE box score -- every rostered
+   player, zero-filled, every week -- shown separately from and ahead of
+   the "Next Gen Stats" sections because NGS only publishes a row for
+   players NFL's tracking system covers that week, which is NOT every real
+   passer/rusher/receiver (verified live: a real week where 8 SF players
+   had a reception, ngs_receiving had rows for only 2, missing a 9-catch
+   game entirely). Labelled "Box score" so it reads as the complete,
+   ground-truth list, distinct from NGS's narrower tracking-derived one. #}
+{% set advanced_datasets = [
+  ("snap_counts", "Snap counts"),
+  ("player_stats", "Box score"),
+  ("ngs_passing", "Next Gen Stats: Passing"),
+  ("ngs_receiving", "Next Gen Stats: Receiving"), ("ngs_rushing", "Next Gen Stats: Rushing"),
+  ("pfr_pass", "PFR advanced: Passing"), ("pfr_rec", "PFR advanced: Receiving"),
+  ("pfr_rush", "PFR advanced: Rushing"), ("pfr_def", "PFR advanced: Defense")] %}
+{# Per-game drilldown ONLY: snap_counts and player_stats are each split by
+   role (see webapp.team_profile._split_snap_counts/_split_player_stats/
+   _attach_week_stats), so an offensive player's row never shows a
+   meaningless defense_pct column, and a receiving-only player's row
+   doesn't carry a wall of zeroed passing/rushing columns -- everything
+   else is unchanged from `advanced_datasets` above. #}
+{% set game_stat_labels = [
+  ("snap_counts_offense", "Snap counts: Offense"),
+  ("snap_counts_defense", "Snap counts: Defense"),
+  ("snap_counts_special_teams", "Snap counts: Special teams"),
+  ("player_stats_passing", "Box score: Passing"),
+  ("player_stats_rushing", "Box score: Rushing"),
+  ("player_stats_receiving", "Box score: Receiving"),
+  ("ngs_passing", "Next Gen Stats: Passing"),
+  ("ngs_receiving", "Next Gen Stats: Receiving"), ("ngs_rushing", "Next Gen Stats: Rushing"),
+  ("pfr_pass", "PFR advanced: Passing"), ("pfr_rec", "PFR advanced: Receiving"),
+  ("pfr_rush", "PFR advanced: Rushing"), ("pfr_def", "PFR advanced: Defense"),
+  ("injuries", "Injury reports")] %}
+{# player-NAME columns get pulled into their own "Player" column rather than
+   dropped -- a stat row with no name attached is meaningless, especially
+   once it's sliced down to one game. player_id/pfr_player_id/gsis_id and
+   team/week/season are still excluded: pure keys/scope, not stats. Each
+   dataset uses a different name-column key, so the row's actual name is
+   whichever of these four is present (each dataset only ever populates
+   one of them -- see nflref's _NAME_COL/_GSIS_COL-style per-dataset
+   column maps in webapp.player_profile for the same pattern). #}
+{% set name_cols = ("player", "player_display_name", "pfr_player_name", "full_name") %}
+{% set id_cols = ("player_id", "pfr_player_id", "gsis_id", "player_gsis_id",
+  "team", "team_abbr", "recent_team", "week", "season") + name_cols %}
+{# Per-game drilldown ONLY: game_id/game_type/opponent/season_type are
+   constant across EVERY row in a single game's table (the drilldown is
+   already scoped to one team + one week, and opponent/week are already
+   shown in the row's own summary line above), so repeating them on every
+   row is pure duplication -- excluded here, on top of id_cols, rather than
+   from id_cols itself, since the season-wide Advanced stats section below
+   spans every game and genuinely needs week/opponent/game_type to vary
+   row by row there. #}
+{% set game_extra_cols = ("game_id", "game_type", "opponent", "season_type") %}
+{# Real advanced-stat columns (NGS separation/YAC, PFR rates, snap-count
+   shares) come through as raw Python floats with full double precision --
+   e.g. a real observed cell was "0.1282051282051282", not "0.13". Rounded
+   here at DISPLAY time only (the underlying value passed to the template
+   is untouched) to 1 decimal place, matching the site's existing
+   convention for figures like PPR pts/PPG elsewhere in this app. An
+   integer-valued float (e.g. a snap count, "57.0") also gets this
+   treatment -- 1dp is harmless there and keeps the rule uniform rather
+   than special-casing "does this float happen to be a whole number." #}
+{% macro cell(v) %}
+{%- if v is none -%}&ndash;
+{%- elif v is number and v is not integer -%}{{ "%.1f"|format(v) }}
+{%- else -%}{{ v }}
+{%- endif -%}
+{% endmacro %}
+{% macro stat_table(rows, scroll=false, game_scoped=false) %}
+{% set drop = id_cols + game_extra_cols if game_scoped else id_cols %}
+{% set cols = rows[0].keys() | list | reject("in", drop) | list %}
+<div class="tablewrap{% if scroll %} scrolltable{% endif %}">
+  <table class="dt-games">
+    <thead><tr><th>Player</th>{% for k in cols %}<th>{{ k.replace("_", " ") }}</th>{% endfor %}</tr></thead>
+    <tbody>
+    {% for row in rows %}
+      <tr>
+        <td>{% set nm = row.get("player") or row.get("player_display_name") or row.get("pfr_player_name") or row.get("full_name") %}{% if nm %}{{ nm }}{% else %}&ndash;{% endif %}</td>
+        {% for k in cols %}<td>{{ cell(row[k]) }}</td>{% endfor %}
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endmacro %}
+<main class="reportpanel">
+  <a class="back-link" href="/nflstats"
+     onclick="if (document.referrer) { history.back(); return false; }">&larr; Back</a>
+  <p class="eyebrow">Team profile</p>
+  <h2 class="rtitle">{{ abbr }}</h2>
+  <p class="hint">
+    {%- if identity.known is sameas false %}Not a recognised NFL team abbreviation -- showing whatever data resolves anyway.
+    {%- else %}Real-NFL data &middot; {{ current_season }} season{% endif -%}
+  </p>
+
+  {# --- season picker -------------------------------------------------- #}
+  {% if seasons_covered|length > 1 %}
+  <nav class="rail">
+    {% for s in seasons_covered %}
+    <a class="year{% if s == current_season %} on{% endif %}"
+       href="/team/{{ abbr }}?season={{ s }}">{{ s }}</a>
+    {% endfor %}
+  </nav>
+  {% endif %}
+
+  {# --- roster / season leaderboard, grouped by position ------------------ #}
+  <h2>Roster &middot; {{ current_season }} leaderboard</h2>
+  {% if roster_by_position %}
+  {% for grp in roster_by_position %}
+  <h3>{{ grp.position }} <span class="hint">({{ grp.players|length }})</span></h3>
+  <div class="tablewrap scrolltable">
+    <table class="dt-games">
+      <thead><tr>
+        <th class="n">#</th><th>Player</th>
+        <th class="n">PPR pts</th><th class="n">PPR/G</th>
+      </tr></thead>
+      <tbody>
+      {% for r in grp.players %}
+        <tr>
+          <td class="n">{{ r.rank }}</td>
+          <td>{{ idm.headshot(r.player_id, link=True) }}{{ idm.player_link(r.player_id, r.player) }}</td>
+          <td class="n">{% if r.fpts_ppr is not none %}{{ "%.1f"|format(r.fpts_ppr) }}{% else %}&ndash;{% endif %}</td>
+          <td class="n">{% if r.ppg_ppr is not none %}{{ "%.1f"|format(r.ppg_ppr) }}{% else %}&ndash;{% endif %}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endfor %}
+  {% else %}
+  <p class="empty">No roster data found for {{ abbr }} in {{ current_season }}.</p>
+  {% endif %}
+
+  {# --- schedule & results, one drilldown row per game --------------------
+     Each game expands into this team's own advanced/usage stat lines for
+     that week (see webapp.team_profile._attach_week_stats), sliced from the
+     same team_datasets already loaded for the Advanced stats section below
+     -- no extra data pull per game. A dataset/week with nothing for this
+     team is simply absent from that game's stats, so a game with no
+     advanced data at all shows one "nothing for this game" line rather than
+     nine empty dataset headers. #}
+  {# The per-game drilldown tables (below) EXCLUDE game_id/game_type/
+     opponent/season_type as their own row columns (see game_extra_cols) --
+     opponent/week are already implied by Away/Home + Wk right here, and
+     game_id is a bare join key with no display value beyond that. game_type
+     (REG/WC/DIV/CON/SB, from webapp.team_profile._attach_week_stats) is the
+     one genuinely new fact, so it's surfaced here instead, next to the week
+     number, rather than dropped along with the others. #}
+  <h2>Schedule &amp; results <span class="hint">({{ current_season }})</span></h2>
+  {% if schedule %}
+  <div class="tablewrap">
+    <div class="drilltable"
+         style="--cols: 70px minmax(90px,1fr) 70px minmax(90px,1fr) 70px 80px">
+      <div class="dt-head">
+        <span>Wk</span><span>Away</span><span class="n">Score</span>
+        <span>Home</span><span class="n">Score</span><span class="n">Margin</span>
+      </div>
+      {% for g in schedule %}
+      <details class="dt-row">
+        <summary>
+          <span>{{ g.week }}{% if g.game_type %} <span class="q">{{ g.game_type }}</span>{% endif %}</span>
+          <span>{{ idm.team_link(g.away_team) }}</span>
+          <span class="n">{% if g.away_score is not none %}{{ g.away_score }}{% else %}&ndash;{% endif %}</span>
+          <span>{{ idm.team_link(g.home_team) }}</span>
+          <span class="n">{% if g.home_score is not none %}{{ g.home_score }}{% else %}&ndash;{% endif %}</span>
+          <span class="n">{% if g.margin is not none %}{{ g.margin }}{% else %}&ndash;{% endif %}</span>
+        </summary>
+        <div class="dt-detail">
+          {% set any_stats = g.stats and g.stats.values() | select | list %}
+          {% if any_stats %}
+          {% for ds, label in game_stat_labels %}
+          {% set rows = g.stats.get(ds) %}
+          {% if rows %}
+          <p class="hint"><strong>{{ label }}</strong></p>
+          {{ stat_table(rows, game_scoped=true) }}
+          {% endif %}
+          {% endfor %}
+          {% else %}
+          <p class="hint">No advanced stats found for this game.</p>
+          {% endif %}
+        </div>
+      </details>
+      {% endfor %}
+    </div>
+  </div>
+  {% else %}
+  <p class="empty">No schedule data found for {{ abbr }} in {{ current_season }}.</p>
+  {% endif %}
+
+  {# --- multi-season history ---------------------------------------------- #}
+  <h2>Season history</h2>
+  {% if season_history %}
+  <div class="tablewrap">
+    <table class="dt-games">
+      <thead><tr>
+        <th>Season</th><th class="n">W</th><th class="n">L</th><th class="n">T</th>
+        <th class="n">PF</th><th class="n">PA</th><th class="n">Diff</th>
+      </tr></thead>
+      <tbody>
+      {% for h in season_history %}
+        <tr>
+          <td>{{ h.season }}</td>
+          <td class="n">{{ h.wins }}</td>
+          <td class="n">{{ h.losses }}</td>
+          <td class="n">{{ h.ties }}</td>
+          <td class="n">{{ h.points_for }}</td>
+          <td class="n">{{ h.points_against }}</td>
+          <td class="n {% if h.point_diff > 0 %}dv-pos{% elif h.point_diff < 0 %}dv-neg{% endif %}">
+            {{- "%+g"|format(h.point_diff) -}}
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="empty">No season history found for {{ abbr }}.</p>
+  {% endif %}
+
+  {# --- advanced / usage stats --------------------------------------------- #}
+  <h2>Advanced &amp; usage stats <span class="hint">({{ current_season }})</span></h2>
+  {% set flags = namespace(any=false) %}
+  {% for ds, label in advanced_datasets + [("injuries", "Injury reports")] %}
+  {% set rows = team_datasets.get(ds) %}
+  {% if rows %}
+  {% set flags.any = true %}
+  <details class="dt-row">
+    <summary>{{ label }} ({{ rows|length }} rows)</summary>
+    {{ stat_table(rows, scroll=true) }}
+  </details>
+  {% endif %}
+  {% endfor %}
+  {% if not flags.any %}
+  <p class="empty">No advanced/usage data found for {{ abbr }} in {{ current_season }}.</p>
+  {% endif %}
+</main>
+</body>
+</html>

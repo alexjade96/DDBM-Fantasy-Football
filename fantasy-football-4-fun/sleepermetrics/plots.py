@@ -196,6 +196,51 @@ def palette(names) -> dict:
     return {n: _MANAGER_HUES[i % len(_MANAGER_HUES)] for i, n in enumerate(names)}
 
 
+def _colored_vs_title(fig, names, colors, y=0.985, fontsize=15, sep=" vs "):
+    """Draws a centered title line naming each player in THEIR OWN chart
+    color ("Christian McCaffrey vs Jonathan Taylor", McCaffrey in his
+    line's color, Taylor in his), in place of a plain single-color
+    `fig.suptitle()` -- the color-to-player identification a viewer needs
+    since these charts carry no legend (see plot_player_overlay's own
+    comment on why: a side/bottom legend would push the radar off-center
+    or add a margin the user explicitly asked to avoid). `sep` (plain
+    `T["ink"]`, not any player's color) joins each pair of names.
+
+    matplotlib has no single-Text multi-color API, so this draws each
+    segment as its OWN `fig.text()`, measures their rendered widths via
+    `get_window_extent()` (draw once to realize them, the same idiom
+    `_finish`/`_place_labels` already use elsewhere in this file), then
+    repositions every segment left-to-right so the whole group is centered
+    as one line -- reads as a single title despite being N separate Text
+    artists. 1 name draws with no separator; an empty `names` draws
+    nothing and returns immediately (falls through to the caller's own
+    "no data" title if this is reached with nothing to show, which should
+    not happen in practice since callers already guard on `drawn_names`).
+    """
+    if not names:
+        return
+    segments = []
+    for i, name in enumerate(names):
+        if i:
+            segments.append((sep, T["ink"], False))
+        segments.append((name, colors.get(name, T["ink"]), True))
+    # Draw every segment at a throwaway x=0.5 first so matplotlib lays out
+    # real Text artists to measure -- their FINAL x is computed below from
+    # those measured widths, not this placeholder.
+    texts = [fig.text(0.5, y, s, fontsize=fontsize,
+                      fontweight=("bold" if bold else "normal"),
+                      color=color, ha="left", va="top")
+            for s, color, bold in segments]
+    fig.canvas.draw()
+    widths_px = [t.get_window_extent().width for t in texts]
+    total_px = sum(widths_px)
+    fig_px = fig.get_window_extent().width
+    x_px = (fig_px - total_px) / 2
+    for t, w_px in zip(texts, widths_px):
+        t.set_x(x_px / fig_px)  # fig.text's default transform is already transFigure
+        x_px += w_px
+
+
 def _finish(fig, ax, title, subtitle=None, xlabel=None, ylabel=None, caption=None,
             grid_axis="x"):
     # A long subtitle (e.g. plot_efficiency's 3-clause one) runs off the right
@@ -4457,6 +4502,13 @@ def plot_player_overlay(players: dict, stat_keys: list[str], mode: str = "snapsh
     palette, so a chart mixing real managers' names in its labels stays
     visually consistent with the rest of the dashboard.
 
+    `title` is used as-is in `mode="trend"` (which keeps a normal legend --
+    colors are identified there already). In `mode="snapshot"`, `title` is
+    IGNORED: the radar carries no legend, so the title is instead built
+    straight from `drawn_names`/`colors` via `_colored_vs_title`, coloring
+    each player's own name to match their polygon (a plain single-color
+    title left it unclear which shape belonged to which player).
+
     Returns `_no_data(...)` for an empty `players` dict or an unrecognized
     `mode`, never raises.
     """
@@ -4505,16 +4557,21 @@ def plot_player_overlay(players: dict, stat_keys: list[str], mode: str = "snapsh
         # point -- the earlier design here, now superseded.
         _draw_pizza_ticks(ax, angles, keys, players)
 
-        # No legend: the title now names every player directly ("Christian
-        # McCaffrey vs Jonathan Taylor", built by the caller from the same
-        # labels `players` is keyed by -- see webapp/app.py's snapshot
-        # branch), so a reader never needs to look up a color-to-player
-        # mapping in a separate legend. This replaced an earlier
-        # legend-below-the-radar layout (bbox_to_anchor=(0.5, -0.06)); with
-        # the legend gone, the tight_layout rect no longer needs to reserve
-        # that bottom margin for it.
-        fig.suptitle(title or "Player comparison", fontsize=15, fontweight="bold",
-                    color=T["ink"], x=0.5, ha="center", y=0.985)
+        # No legend: the title names every player directly ("Christian
+        # McCaffrey vs Jonathan Taylor") AND each name is drawn in that
+        # player's own chart color (_colored_vs_title, user-reported: a
+        # plain single-color title still left it unclear which polygon
+        # belonged to which player) -- so a reader never needs to look up a
+        # color-to-player mapping in a separate legend. This replaced an
+        # earlier legend-below-the-radar layout (bbox_to_anchor=(0.5,
+        # -0.06)); with the legend gone, the tight_layout rect doesn't need
+        # to reserve a bottom margin for it. `drawn_names` (not
+        # `players.keys()`) so a player whose profile never resolved (no
+        # polygon drawn) doesn't get a colored name in the title either --
+        # the caller's own `title` string (built from the full label set)
+        # is ignored here in favor of building the title straight from what
+        # was actually drawn, so the two can never disagree.
+        _colored_vs_title(fig, drawn_names, colors)
         per_game = stat_mode == "per_game"
         subtitle = "Each spoke: real stat value at that percentile ring, among real NFL players at this position"
         if position:

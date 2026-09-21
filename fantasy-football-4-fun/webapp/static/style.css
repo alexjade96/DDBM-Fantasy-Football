@@ -1561,22 +1561,43 @@ footer code { font-family: ui-monospace, Consolas, monospace; }
   appearance: auto; accent-color: var(--turf); cursor: pointer; }
 #playercompare-picks th:first-child, #playercompare-picks td:first-child {
   width: 1%; padding-right: 8px; text-align: center; }
+/* Row highlight on check (promoted from the Testing tab's demo, prototype
+   #2, per user request): a checked row gets a tinted background + left
+   accent bar so picks read directly in the table, not just via the
+   checkbox -- same green the app already uses for "good" (.dv-pos), at low
+   opacity so it reads as a highlight, not a value judgment on the row's
+   own stats. Driven by _playercompare_compare.html's sync(). */
+#playercompare-board tr.playercompare-row-picked {
+  background: color-mix(in srgb, var(--turf) 12%, transparent);
+  box-shadow: inset 3px 0 0 var(--turf); }
 
-/* Player Comparison's Load button sits with the Position/Season selection
-   criteria on the LEFT of the controls row (per user request), unlike NFL
-   Stats'/ADP's own Load buttons (both plain `.nfl-apply`, right-aligned via
-   that class's own `margin-left: auto`). `.playercompare-load` overrides
-   just that one property -- (0,2,0) beats `.nfl-apply`'s (0,1,0) -- so this
-   button keeps every other `.nfl-apply` style (green fill, bottom-align,
-   etc.) and only its horizontal position changes. Compare selected/Clear
-   selection (both `#playercompare-compare-btn`/`.playercompare-clear`
-   below) are NOT `.nfl-apply` at all, so they're unaffected and stay
-   wherever they fall after Load in source order -- still visually grouped
-   with the criteria+Load on the left, not pushed to the row's far right the
-   way they'd be if anything upstream still carried margin-left:auto. */
+/* Player Comparison's controls row reads as TWO groups -- filters
+   (Position/Season/Load) and actions (Reset/Compare) -- separated by a
+   thin vertical divider, rather than one flat row of five controls
+   (promoted from the Testing tab's "grouped controls" demo, per user
+   request; that demo -- along with the row-highlight, chip-strip, sticky-
+   bar, and combo demos it shared the Testing tab with -- has since been
+   removed from _landing_testing.html once every idea from it was either
+   promoted here or dropped). `.playercompare-controls-row` wraps
+   `.controls`' own `display:flex` so each group can be its own flex
+   sub-row rather than every control sharing one flat flex context. */
+.playercompare-controls-row { align-items: center; }
+.playercompare-group { display: flex; align-items: flex-end; gap: 10px; }
+.playercompare-group-divider { align-self: stretch; width: 1px;
+  background: var(--line); margin: 0 4px; }
+.playercompare-group-actions { margin-left: auto; }
+@media (max-width: 640px) {
+  .playercompare-controls-row { flex-wrap: wrap; }
+  .playercompare-group-divider { display: none; }
+  .playercompare-group-actions { margin-left: 0; }
+}
+/* Load keeps its own `.nfl-apply` styling (green fill, bottom-align) but
+   sits inside the FILTERS group now, so it needs no leftward margin
+   override -- the group itself, not an individual margin trick on Load,
+   is what keeps it out of the actions group's right-justified pair. */
 .nfl-apply.playercompare-load { margin-left: 0; }
 
-/* "Compare selected (N)" button sits inside .controls (_playercompare_compare.
+/* "Compare (N)" button sits inside .controls (_playercompare_compare.
    html), so its count span would otherwise inherit `.controls span`'s
    11px/uppercase label styling (meant for the Position/Season field
    captions above it) -- reset explicitly to match the surrounding button
@@ -1586,24 +1607,43 @@ footer code { font-family: ui-monospace, Consolas, monospace; }
    this targets the id (1,0,0), which unambiguously outranks it. */
 #playercompare-count { font-size: inherit; text-transform: none;
   letter-spacing: normal; color: inherit; }
-/* Compare selected carries its OWN margin-left:auto -- Load moved to the
-   LEFT with the Position/Season criteria (see .playercompare-load above),
-   but Compare selected/Clear selection stay right-justified as a pair (user
-   request): the auto margin on Compare pushes IT and everything after it in
-   source order (Clear) to the row's right edge, while Load and the two
-   selects keep their normal flow on the left. Bottom-align matches the
-   sibling selects/Load (same reason .nfl-apply carries
-   align-self:flex-end). */
-#playercompare-compare-btn { align-self: flex-end; margin-left: auto; }
-/* "Clear selection" -- a quiet/secondary button (bordered, neutral text)
-   next to the primary green Load/Compare selected buttons, so it reads as
-   the lower-stakes "undo my picks" action rather than competing with them
-   visually. Same bordered-neutral look as .chart-retry elsewhere in this
-   file, not a new pattern. */
-.playercompare-clear { align-self: flex-end; margin-left: 8px;
+/* Reset sits BEFORE Compare in source order (left of it) within the
+   actions group; both stay bottom-aligned like the filters group's own
+   selects/Load (same reason .nfl-apply carries align-self:flex-end). */
+#playercompare-compare-btn { align-self: flex-end; }
+/* Neither button has a generic app-wide `:disabled` look (the base `button`
+   rule is a solid green fill regardless of state, `.tabs button[disabled]`
+   is scoped to a different component) -- both Reset/Compare now stay
+   VISIBLE while unusable (0/1 checked), so without this they'd look fully
+   clickable despite doing nothing on click. Dimmed + no-pointer-events
+   signals "not yet available" without hiding them. */
+#playercompare-compare-btn:disabled, .playercompare-clear:disabled {
+  opacity: 0.45; cursor: default; pointer-events: none; filter: none; }
+/* "Reset" (id/class playercompare-clear -- internal name unchanged, only
+   the visible label is "Reset") -- a quiet/secondary button (bordered,
+   neutral text) next to the primary green Load/Compare buttons, so it
+   reads as the lower-stakes "undo my picks" action rather than competing
+   with them visually. Same bordered-neutral look as .chart-retry elsewhere
+   in this file, not a new pattern. */
+.playercompare-clear { align-self: flex-end;
   background: var(--surface); border: 1px solid var(--line); color: var(--muted);
   font-weight: 500; }
 .playercompare-clear:hover { color: var(--ink); border-color: var(--turf); filter: none; }
+
+/* Selected-players chip strip (promoted from the Testing tab's "chip
+   strip" demo, prototype #1, per user request): one small pill per
+   checked leaderboard row, below the board -- label + an x to uncheck.
+   Wraps onto multiple lines rather than overflowing the card. Portrait-
+   free (a plain label chip, not a data-fetch-per-chip exercise) -- same
+   as the demo it was promoted from. */
+.playercompare-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.playercompare-chip { display: inline-flex; align-items: center; gap: 6px;
+  background: var(--surface); border: 1px solid var(--line); border-radius: 999px;
+  padding: 3px 6px 3px 10px; font-size: 13px; font-weight: 500; }
+.playercompare-chip-x { display: inline-grid; place-items: center; width: 18px; height: 18px;
+  border-radius: 50%; background: var(--line); border: 0; color: var(--muted);
+  font-size: 13px; line-height: 1; cursor: pointer; padding: 0; }
+.playercompare-chip-x:hover { background: var(--turf); color: #fff; filter: none; }
 
 /* Player Comparison's header row (_playercompare_charts.html):
    portrait+name | radar chart | portrait+name, its own 3-column flex strip

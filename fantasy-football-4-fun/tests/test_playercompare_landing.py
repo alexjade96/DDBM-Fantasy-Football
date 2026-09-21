@@ -41,43 +41,47 @@ def test_playercompare_shell_renders_controls():
 
 
 def test_playercompare_shell_renders_clear_selection_button():
-    """A "Clear selection" button next to Compare selected lets a user
-    uncheck every currently-picked row in one click, instead of scrolling
-    the leaderboard to find and manually uncheck each one (user request).
-    It must start hidden (same as Compare selected -- nothing is checked
-    yet on a fresh load), and its click handler must uncheck every box and
-    re-sync the counter/button state rather than only hiding itself."""
+    """A "Reset" button (id/class playercompare-clear -- internal name
+    unchanged, only the visible label is "Reset") lets a user uncheck every
+    currently-picked row in one click, instead of scrolling the leaderboard
+    to find and manually uncheck each one (user request). It must be
+    VISIBLE (never `hidden`) as soon as the board loads, same as Compare --
+    both render immediately, just non-clickable (`disabled`) until 2+ rows
+    are checked (user request). Its click handler must uncheck every box
+    and re-sync the counter/button state."""
     from webapp import app
     resp = app.playercompare(_Req())
     body = resp.body.decode()
     assert 'id="playercompare-clear-btn"' in body
-    assert "Clear selection" in body
+    assert "Reset" in body
     clear_btn = body[body.index('id="playercompare-clear-btn"') - 60:
                      body.index('id="playercompare-clear-btn"') + 100]
-    assert "hidden" in clear_btn
+    assert "hidden" not in clear_btn
+    assert "disabled" in clear_btn
     assert "clearBtn.onclick" in body
     assert "b.checked = false" in body
 
 
 def test_playercompare_shell_clear_button_gated_on_same_threshold_as_compare():
-    """Regression test: Clear selection must appear/disappear at the SAME
-    checked-count threshold as Compare selected (n < 2), never a looser one
-    (e.g. n < 1) -- an earlier version showed Clear as soon as 1 box was
-    checked, which meant it popped in and back out on every single checkbox
-    click while exactly 1 box was checked (a visible width "jiggle" in the
-    controls row, user-reported). Tying both to the identical condition
-    means the row only ever changes shape once, when Compare itself first
-    becomes usable."""
+    """Regression test: Reset must become clickable at the SAME
+    checked-count threshold as Compare (n >= 2), never a looser one -- user
+    asked explicitly that neither button work without the other. Both
+    buttons render immediately on board load (never `hidden` -- an earlier
+    version hid them until 2+ checked, popping them into the layout late;
+    a later version hid Compare only when the board was completely empty
+    while Reset stayed hidden until 2+ checked, so the two disagreed on
+    when to even appear); now both are always visible and only their
+    `disabled` state -- driven by the SAME `usable` variable -- changes."""
     from webapp import app
     resp = app.playercompare(_Req())
     body = resp.body.decode()
-    assert "n < 2" in body
-    # The clearBtn.hidden assignment must reuse the same `n < 2` condition,
-    # not a separate, looser one -- find its own assignment line and check
-    # it references `n < 2`, not some other comparison.
-    idx = body.index("clearBtn.hidden")
+    assert "var usable = n >= 2;" in body
+    idx = body.index("btn.disabled")
     line = body[idx:body.index(";", idx)]
-    assert "n < 2" in line
+    assert "!usable" in line
+    idx = body.index("clearBtn.disabled")
+    line = body[idx:body.index(";", idx)]
+    assert "!usable" in line
 
 
 def test_playercompare_shell_load_button_sits_on_the_left():
@@ -99,23 +103,105 @@ def test_playercompare_shell_load_button_sits_on_the_left():
 
 
 def test_playercompare_shell_compare_and_clear_stay_right_justified():
-    """Regression test: Compare selected/Clear selection must stay pushed to
-    the controls row's RIGHT edge (user request) even though Load moved to
-    the left -- `#playercompare-compare-btn` carries its OWN
-    `margin-left: auto`, which pushes it and Clear (sitting right after it
-    in source order, with only a small fixed gap) to the right, independent
-    of Load's own leftward position."""
+    """Regression test: Reset/Compare must stay pushed to the controls row's
+    RIGHT edge (user request) even though Load moved to the left. Promoted
+    from the Testing tab's "grouped controls" demo (prototype #3): the
+    controls now read as two GROUPS (filters, actions) separated by a
+    divider, and `.playercompare-group-actions` (not an individual button's
+    own margin) carries the `margin-left: auto` that pushes the whole
+    Reset+Compare group to the right edge."""
     from webapp import app
     css = (app.BASE / "static" / "style.css").read_text(encoding="utf-8")
-    idx = css.index("#playercompare-compare-btn {")
+    idx = css.index(".playercompare-group-actions {")
     block = css[idx:css.index("}", idx)]
     assert "margin-left: auto" in block
-    # Clear sits flush after Compare with a small FIXED gap, not another
-    # auto-margin (which would push it away from Compare instead of beside
-    # it, splitting the pair apart at the row's right edge).
-    clear_idx = css.index(".playercompare-clear {")
-    clear_block = css[clear_idx:css.index("}", clear_idx)]
-    assert "margin-left: auto" not in clear_block
+    body = app.playercompare(_Req()).body.decode()
+    assert 'class="playercompare-group playercompare-group-actions"' in body
+    # Reset/Compare must both be INSIDE that actions group in the markup.
+    grp_idx = body.index('class="playercompare-group playercompare-group-actions"')
+    grp_end = body.index('</div>', grp_idx)
+    grp_block = body[grp_idx:grp_end]
+    assert 'id="playercompare-clear-btn"' in grp_block
+    assert 'id="playercompare-compare-btn"' in grp_block
+
+
+def test_playercompare_shell_controls_are_grouped_with_a_divider():
+    """Regression test: filters (Position/Season/Load) and actions
+    (Reset/Compare) sit in separate `.playercompare-group` sub-rows with a
+    `.playercompare-group-divider` between them, promoted from the Testing
+    tab's "grouped controls" demo, prototype #3 (user request)."""
+    from webapp import app
+    body = app.playercompare(_Req()).body.decode()
+    assert 'class="playercompare-group playercompare-group-filters"' in body
+    assert 'class="playercompare-group-divider"' in body
+    css = (app.BASE / "static" / "style.css").read_text(encoding="utf-8")
+    assert ".playercompare-group-divider {" in css
+
+
+def test_playercompare_shell_clear_precedes_compare_in_source_order():
+    """Regression test: Reset must appear BEFORE Compare
+    in the rendered markup, so it sits to Compare's LEFT (user request)."""
+    from webapp import app
+    resp = app.playercompare(_Req())
+    body = resp.body.decode()
+    assert body.index('id="playercompare-clear-btn"') < \
+        body.index('id="playercompare-compare-btn"')
+
+
+def test_playercompare_shell_row_highlight_wired_in_sync():
+    """Promoted from the Testing tab's "row highlight on check" demo
+    (prototype #2, user request): a checked leaderboard row gets a tinted
+    background. Must be driven from sync() itself (not just the checkbox's
+    own `change` listener), since Reset sets `checked = false` directly
+    without dispatching a `change` event -- if the highlight toggle only
+    lived in the `change` handler, Reset would leave stale highlights on
+    every row it cleared."""
+    from webapp import app
+    body = app.playercompare(_Req()).body.decode()
+    assert "playercompare-row-picked" in body
+    sync_idx = body.index("var sync = function ()")
+    sync_end = body.index("};", sync_idx)
+    sync_block = body[sync_idx:sync_end]
+    assert "playercompare-row-picked" in sync_block
+    css = (app.BASE / "static" / "style.css").read_text(encoding="utf-8")
+    assert "#playercompare-board tr.playercompare-row-picked" in css
+
+
+def test_playercompare_shell_chip_strip_wired_in_sync():
+    """Promoted from the Testing tab's "chip strip" demo (prototype #1,
+    user request): a small pill per checked leaderboard row renders below
+    the board, with an x to uncheck. Must be driven from sync() itself
+    (same reasoning as the row-highlight promotion), so Reset's direct
+    `checked = false` (no `change` event) still clears the strip. The
+    strip sits BELOW the board, not tied to Reset/Compare's own position
+    in the controls row (the "agnostic to the table" placement the demo
+    settled on)."""
+    from webapp import app
+    body = app.playercompare(_Req()).body.decode()
+    assert 'id="playercompare-chip-strip"' in body
+    strip_marker = body.index('id="playercompare-chip-strip"')
+    assert "hidden" in body[strip_marker - 10:strip_marker + 40]
+    sync_idx = body.index("var sync = function ()")
+    sync_end = body.index("};", sync_idx)
+    sync_block = body[sync_idx:sync_end]
+    assert "chipStrip" in sync_block
+    assert "playercompare-chip" in sync_block
+    css = (app.BASE / "static" / "style.css").read_text(encoding="utf-8")
+    assert ".playercompare-chips {" in css
+    assert ".playercompare-chip {" in css
+    assert ".playercompare-chip-x {" in css
+
+
+def test_playercompare_shell_chip_strip_sits_below_the_board():
+    """Regression test: the chip strip must appear AFTER `#playercompare-
+    board` in source order (below it), not interleaved with or above the
+    controls row -- Reset/Compare stay in the fixed controls row regardless
+    of the chip strip's own presence."""
+    from webapp import app
+    body = app.playercompare(_Req()).body.decode()
+    board_idx = body.index('id="playercompare-board"')
+    strip_idx = body.index('id="playercompare-chip-strip"')
+    assert board_idx < strip_idx
 
 
 def test_playercompare_shell_charts_div_is_not_nested_in_loader_card():

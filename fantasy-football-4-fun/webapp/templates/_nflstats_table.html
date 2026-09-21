@@ -117,7 +117,7 @@
             <td data-sort="{{ r.player }}">{{ idm.headshot(r.sleeper_id, link=True) }}<strong>{{ idm.player_link(r.sleeper_id, r.player) }}</strong></td>
             <td data-sort="{{ r.position or '' }}">
               {%- if r.position %}<span class="q">{{ r.position }}</span>{% endif -%}</td>
-            <td><span class="q">{{ r.team or "" }}</span></td>
+            <td><span class="q">{{ idm.team_link(r.team) }}</span></td>
             {% for lbl, key in compare.stats %}
               {%- set a = r.get(key ~ "_sleeper") -%}
               {%- set b = r.get(key ~ "_nflverse") -%}
@@ -165,7 +165,7 @@
           <td data-sort="{{ r.position or '' }}">
             {%- if r.position %}<span class="q">{{ r.position }}</span>{% endif -%}
           </td>
-          <td><span class="q">{{ r.team or "" }}</span></td>
+          <td><span class="q">{{ idm.team_link(r.team) }}</span></td>
           {% for key, hdr in cols %}
             {%- set v = r.get(key) -%}
             <td class="n" data-sort="{{ v if v is not none else -1 }}">

@@ -84,7 +84,7 @@
         <tr>
           <td class="n">{{ loop.index }}</td>
           <td data-sort="{{ r.player }}">{{ idm.headshot(r.sleeper_id) }}<strong>{{ r.player }}</strong>
-            {%- if r.team %} <span class="q">{{ r.team }}</span>{% endif -%}
+            {%- if r.team %} <span class="q">{{ idm.team_link(r.team) }}</span>{% endif -%}
           </td>
           {# position on its own column; data-sort is the plain string (blank
              for a team defense with no position, which sorts to the top). #}

@@ -1345,6 +1345,19 @@ def landing_start(request: Request):
     return tpl.TemplateResponse(request, "_landing_start.html", {})
 
 
+@app.get("/testing", response_class=HTMLResponse)
+def landing_testing(request: Request):
+    """League-free counterpart to the loaded-dashboard Testing tab
+    (tab_testing.html) -- reachable from the main site nav (home.html)
+    without loading a league first, same as ADP Comparison / NFL Stats /
+    Player Comparison. First content: four layout/style demos for the
+    Player Comparison leaderboard-to-compare flow, each against the same
+    real RB leaderboard (see _landing_testing.html's own module comment)."""
+    return tpl.TemplateResponse(request, "_landing_testing.html", {
+        "demo_season": _current_nfl_season(),
+    })
+
+
 def _adp_params(season, scoring, pos):
     sea = str(season).strip() if season else _current_nfl_season()
     scoring = scoring if scoring in {k for k, _ in _ADP_SCORING} else _ADP_SCORING_DEFAULT
@@ -1683,7 +1696,7 @@ def nflstats_export_xlsx(view: str = _NFLSTATS_VIEW_DEFAULT, season: str | None 
 #
 # Flow: load the position's Sleeper-sourced leaderboard (same board/columns
 # the NFL Stats tab's own Sleeper source already renders -- reused rather
-# than duplicated), check players in it, click "Compare selected" to render
+# than duplicated), check players in it, click "Compare" to render
 # the snapshot radar (percentile vs. the real-NFL field) and the week-by-week
 # trend line for just those players. `source="sleeper"` is forced (not a
 # toggle like NFL Stats) since the checked player_ids feed straight into
@@ -1758,7 +1771,7 @@ def _playercompare_table_ctx(pos: str, sea: str, ids: list[str], labels: list[st
                              stat_mode: str = "per_game") -> dict:
     """The 2-player metric-by-metric table's context (`rows` + the header
     identity fields) -- shared by `playercompare_chart_section` (the initial
-    "Compare selected" render) and `playercompare_table` (the Total/Per game
+    "Compare" render) and `playercompare_table` (the Total/Per game
     toggle's own refresh, see that route's docstring for why the table needs
     a SEPARATE endpoint from the charts). Pulled out as its own function so
     the two routes can't drift: both call the identical `player_field_compare`
@@ -1808,7 +1821,7 @@ def playercompare_chart_section(request: Request, position: str = _PLAYERCOMPARE
     """The snapshot radar + trend-line section for the checked leaderboard
     rows (HTMX fragment, replaces the "check players above" placeholder).
     `player_ids`/`player_labels` arrive comma-joined from the client-side
-    "Compare selected" button (see _playercompare_compare.html's script) --
+    "Compare" button (see _playercompare_compare.html's script) --
     same convention the /chart/player_overlay PNG route itself uses, kept
     separate here since this route renders the surrounding HTML (heading,
     hint text, the two <img> chart tags), not a PNG.
@@ -5307,6 +5320,87 @@ def player_percentile_part(request: Request, player_id: str,
         "focus_season": focus_season,
     }
     return tpl.TemplateResponse(request, "_player_percentile.html", ctx)
+
+
+# --- team profile ------------------------------------------------------------
+def _team_loader(abbr: str, season: str | None, refresh: int) -> HTMLResponse:
+    """A fast, styled 'loading…' page that then navigates to the real
+    render, same pattern as `_player_loader`. Only ever shown for a COLD
+    request (see team_page's `tp.is_cached` check) -- a warm cache hit
+    skips this entirely.
+    """
+    from urllib.parse import quote
+    q = "render=1"
+    if season:
+        q += f"&season={quote(season)}"
+    if refresh:
+        q += f"&refresh={refresh}"
+    return HTMLResponse(f"""<!doctype html><html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Loading team profile…</title>
+<style>
+  :root {{ --bg:#f6f7f5; --ink:#1d2321; --faint:#8b938f; --turf:#2f7d4f; --line:#e2e6e3; }}
+  @media (prefers-color-scheme: dark) {{
+    :root {{ --bg:#121614; --ink:#e6ebe8; --faint:#6b7570; --turf:#5fbf85; --line:#28302c; }} }}
+  html,body {{ height:100%; margin:0; }}
+  body {{ display:grid; place-items:center; background:var(--bg); color:var(--ink);
+    font-family:ui-sans-serif,-apple-system,"Segoe UI",Roboto,sans-serif; }}
+  .box {{ text-align:center; }}
+  .ring {{ width:42px; height:42px; margin:0 auto 18px; border-radius:50%;
+    border:3px solid var(--line); border-top-color:var(--turf);
+    animation:spin .8s linear infinite; }}
+  @keyframes spin {{ to {{ transform:rotate(360deg); }} }}
+  @media (prefers-reduced-motion:reduce) {{ .ring {{ animation-duration:2s; }} }}
+  h1 {{ font-size:16px; font-weight:600; margin:0 0 4px; }}
+  p {{ color:var(--faint); font-size:13px; margin:0; }}
+</style></head><body>
+  <div class="box">
+    <div class="ring" role="status" aria-label="Loading team profile"></div>
+    <h1>Loading team profile…</h1>
+    <p>Pulling real-NFL roster, schedule, and history data, this can take
+       a moment the first time.</p>
+  </div>
+  <script>location.replace("/team/{abbr}?{q}");</script>
+</body></html>""")
+
+
+@app.get("/team/{abbr}", response_class=HTMLResponse)
+def team_page(request: Request, abbr: str, season: str | None = None,
+             refresh: int = 0, render: int = 0, theme: str = "light"):
+    """A single NFL team's profile: real-NFL roster leaderboard, schedule &
+    results, multi-season history, and advanced/usage stats for `season`.
+
+    League-free, like the NFL Stats tab -- an NFL team has no fantasy-
+    league identity of its own, so unlike `/player/{player_id}` there is no
+    `league=` parameter here at all.
+
+    `team_profile()` caches its own result (a cold call loads a season
+    leaderboard, a schedule, a multi-season history loop, and several
+    nflref datasets), so `refresh=1` is threaded through as `fresh=True`,
+    same convention `player_page` already uses. A COLD request
+    (`tp.is_cached` false, or `refresh=1`) returns `_team_loader` instead
+    of rendering inline -- same instant-spinner-then-redirect pattern
+    `_player_loader`/`_report_loader` already use.
+    """
+    from webapp import team_profile as tp
+
+    if not render and (refresh or not tp.is_cached(abbr, season)):
+        return _team_loader(abbr, season, refresh)
+
+    profile = tp.team_profile(abbr, season=season, fresh=bool(refresh))
+    ctx = {
+        "theme": theme, "asset_v": asset_v(), "abbr": abbr.upper().strip(),
+        "bust": 0, "identity": profile["identity"],
+        "current_season": profile["current_season"],
+        "seasons_covered": profile["seasons_covered"],
+        "roster": profile["roster"],
+        "roster_by_position": profile["roster_by_position"],
+        "schedule": profile["schedule"],
+        "season_history": profile["season_history"],
+        "team_datasets": profile["team_datasets"],
+        "avatars": {},   # _ident.html reads it; no manager avatars on this page
+    }
+    return tpl.TemplateResponse(request, "team_profile.html", ctx)
 
 
 # --- custom playoff brackets ----------------------------------------------
