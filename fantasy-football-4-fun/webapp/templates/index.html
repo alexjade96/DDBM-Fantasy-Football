@@ -673,7 +673,14 @@
   <nav class="tabs" role="tablist" hx-push-url="true" hx-ext="preload"
        hx-target="#panel" hx-swap="innerHTML" hx-include="#league, #season, #theme, #bracket">
     {% for id, label in tabs %}
-    <button role="tab" hx-get="/tab/{{ id }}" preload="mousedown" preload-images="true"
+    {# Testing is the one tab reachable at a URL OUTSIDE /tab/<id> -- unified
+       2026-09 with the landing page's own Testing nav (home.html), which
+       reaches the same content league-free at /testing. #league/#season are
+       still hx-included from the parent <nav> exactly as for every other
+       button, so this dashboard's own league/season ride along automatically;
+       webapp.app.landing_testing() is what branches on whether they resolved. #}
+    <button role="tab" hx-get="{% if id == 'testing' %}/testing{% else %}/tab/{{ id }}{% endif %}"
+            preload="mousedown" preload-images="true"
             class="{% if id == initial_tab %}active{% endif %}"
             onclick="document.querySelectorAll('.tabs button').forEach(b=>b.classList.remove('active'));this.classList.add('active')">
       {{ label }}
@@ -682,7 +689,8 @@
   </nav>
 
   <main id="panel" data-load-watch
-        hx-get="/tab/{{ initial_tab }}?boot=1" hx-trigger="load" hx-include="#league, #season, #theme, #bracket">
+        hx-get="{% if initial_tab == 'testing' %}/testing{% else %}/tab/{{ initial_tab }}{% endif %}?boot=1"
+        hx-trigger="load" hx-include="#league, #season, #theme, #bracket">
     {# First cold panel load runs league_data()'s full Sleeper chain walk (can
        be 10-30s on a cold container, longer still if Render's free-tier
        container was asleep). A bare "Loading..." for that long reads as a

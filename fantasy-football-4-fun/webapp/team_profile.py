@@ -276,45 +276,153 @@ def _split_player_stats(rows: list[dict]) -> dict[str, list[dict]]:
     return out
 
 
+# Sleeper's raw weekly line (`_sleeper_week_rows`) uses its own volume-key
+# names (pass_att/rush_att/rec_tgt), already the exact column names
+# stat_reconcile's own "sleeper" source mapping expects -- so, unlike
+# `_split_player_stats`, no column renaming happens here, only bucketing.
+# A player with 0 (or missing) for a role's volume key is simply not
+# included in that bucket, same "bucket by nonzero value" rule.
+_SLEEPER_STATS_BUCKETS = [
+    ("passing", "pass_att"), ("rushing", "rush_att"), ("receiving", "rec_tgt"),
+]
+
+
+def _split_sleeper_stats(rows: list[dict]) -> dict[str, list[dict]]:
+    """Split Sleeper's own weekly rows (see `_sleeper_week_rows`) into
+    `{"passing": [...], "rushing": [...], "receiving": [...]}` by real
+    volume, the Sleeper-native counterpart to `_split_player_stats` --
+    Sleeper's line already carries every role's keys on one flat row (it
+    has no role-specific column families to trim between roles the way
+    player_stats does), so every bucket a row qualifies for gets the FULL
+    row, unmodified."""
+    out: dict[str, list[dict]] = {}
+    for bucket, vol_key in _SLEEPER_STATS_BUCKETS:
+        picked = [r for r in rows if (r.get(vol_key) or 0) > 0]
+        if picked:
+            out[bucket] = picked
+    return out
+
+
+# PFR's own passing/receiving/rushing datasets carry columns with NO
+# cross-source overlap (pressure rate, broken tackles, yards after contact
+# -- see stat_reconcile's own docstring), so they are never fed into
+# reconcile_metric(); they still belong under the same metric heading
+# (per user request: "next gen stats: passing and pfr advanced: passing
+# should lay strictly under Passing"), just as PFR's own labelled,
+# un-reconciled table alongside the reconciled one.
+_PFR_METRIC_DS = {"passing": "pfr_pass", "rushing": "pfr_rush", "receiving": "pfr_rec"}
+
+
+def _grouped_metric_stats(role_rows: dict[str, list[dict]],
+                          multi_week: bool = False) -> dict[str, dict]:
+    """Build the metric-grouped `stats["passing"/"rushing"/"receiving"]`
+    shape from already-role-split rows (`role_rows` keys: "player_stats_
+    passing", "ngs_passing", "pfr_pass", "sleeper_passing", ... -- whatever
+    of these are present for this slice, per-game or season-wide alike).
+
+    `{"reconciled": [...], "pfr": [...], "sources": [...]}` per metric:
+    `reconciled` is `stat_reconcile.reconcile_metric`'s consensus-per-player
+    rows (empty list, not absent, when no contributing source had data --
+    lets the template tell "no data" apart from "not attempted yet"); `pfr`
+    is PFR's own un-reconciled table for that metric (absent entirely, not
+    an empty list, when PFR has no rows for this slice -- matches every
+    other single-source table's own "absent means nothing to show"
+    convention elsewhere in this module); `sources` is the plain list of
+    source keys (e.g. `["player_stats", "ngs_passing", "sleeper"]`) that
+    actually had rows feeding `reconciled` for THIS slice -- computed here,
+    once, rather than reverse-engineered from the reconciled rows'
+    themselves in the template, so the "which sources fed this" note stays
+    trivially correct even as a reconciled row's own per-stat `_sources`
+    dict can differ player to player. Look up display labels via
+    `stat_reconcile.SOURCE_LABELS`.
+
+    `multi_week=True` (the season-wide caller) first sums each source's own
+    weekly rows per player via `stat_reconcile.aggregate_weeks` before
+    reconciling -- REQUIRED whenever `role_rows` can hold more than one
+    week's rows per player per source, or `reconcile_metric` (built for the
+    "one row per player per source" per-game case) silently keeps only the
+    LAST week it happens to see, not a season total. Real bug this fixed:
+    KC's season-wide Passing table showed Mahomes at 189 passing yards (one
+    week's number) instead of his real ~4,900-yard season, before this flag
+    existed. `multi_week=False` (the per-game caller) skips the aggregation
+    step entirely -- a single week's rows are already one-per-player, so
+    aggregating would be a harmless no-op paid for nothing, every game.
+    """
+    from webapp import stat_reconcile
+
+    out: dict[str, dict] = {}
+    for metric in ("passing", "rushing", "receiving"):
+        rows_by_source: dict[str, list[dict]] = {}
+        for src in stat_reconcile.METRIC_SOURCES[metric]:
+            key = f"player_stats_{metric}" if src == "player_stats" else (
+                f"sleeper_{metric}" if src == "sleeper" else src)
+            hit = role_rows.get(key)
+            if hit:
+                rows_by_source[src] = hit
+        ngs_coverage = {}
+        if multi_week:
+            rows_by_source, ngs_coverage = stat_reconcile.aggregate_weeks(rows_by_source, metric)
+        reconciled = stat_reconcile.reconcile_metric(rows_by_source, metric)
+        entry = {
+            "reconciled": reconciled, "sources": sorted(rows_by_source),
+            # Per-stat source breakdown (e.g. rushing's "carries" pulling
+            # from one more source than "rushing_yards"/"rushing_tds") --
+            # see stat_source_groups's own docstring for why the flat
+            # "sources" list above overstates this. Restricted to sources
+            # that actually had rows THIS slice (rows_by_source's own
+            # keys), not stat_reconcile's full theoretical map.
+            "source_groups": stat_reconcile.stat_source_groups(
+                metric, present=set(rows_by_source)),
+        }
+        if ngs_coverage:
+            # Not displayed anywhere yet -- kept for a future NGS
+            # coverage-rate analysis (see aggregate_weeks's own docstring).
+            entry["ngs_coverage"] = ngs_coverage
+        pfr_rows = role_rows.get(_PFR_METRIC_DS[metric])
+        if pfr_rows:
+            entry["pfr"] = pfr_rows
+        out[metric] = entry
+    return out
+
+
 def _attach_week_stats(schedule: list[dict], team_datasets: dict) -> list[dict]:
-    """Attach `game["stats"] = {dataset: [rows for this team, this week]}`
-    to each schedule row, for the "advanced stats for this game" dropdown.
-    Also attaches `game["game_type"]` (REG/WC/DIV/CON/SB, nflverse's own
-    convention) pulled out of whichever advanced-stat dataset carries it --
-    `schedule_grid()` itself has no `game_type` column, only the
-    snap_counts/pfr_* datasets do.
+    """Attach `game["stats"]` to each schedule row, for the "advanced stats
+    for this game" dropdown. Also attaches `game["game_type"]` (REG/WC/DIV/
+    CON/SB, nflverse's own convention) pulled out of whichever advanced-stat
+    dataset carries it -- `schedule_grid()` itself has no `game_type`
+    column, only the snap_counts/pfr_* datasets do.
 
     `team_datasets` is already loaded team-wide for the season (see
     `_team_datasets`) -- this only SLICES those already-fetched rows by
-    `week`, no additional dataset loads. A dataset/week combination with no
-    rows for this team is simply absent from that game's `stats` dict
-    (never an empty-list placeholder), so the template can render "no
-    advanced stats for this game" once rather than once per dataset.
+    `week`, no additional dataset loads.
 
-    `snap_counts` is special-cased: instead of one mixed offense/defense/ST
-    row set under the key `"snap_counts"`, it's split into
-    `"snap_counts_offense"` / `"snap_counts_defense"` /
-    `"snap_counts_special_teams"` (see `_split_snap_counts`) so each
-    sub-table only shows the columns relevant to that role. `player_stats`
-    is split the same way into `"player_stats_passing"` /
-    `"player_stats_rushing"` / `"player_stats_receiving"` (see
-    `_split_player_stats`) -- it's the comprehensive box-score baseline
-    (every rostered player, zero-filled), included specifically because
-    the ngs_passing/ngs_receiving/ngs_rushing datasets only cover players
-    NFL's Next Gen Stats tracking system published for that week, which is
-    NOT every real passer/rusher/receiver.
-
-    `game_type` (along with `game_id`/`opponent`/`season_type`) is
-    otherwise constant across every row of a single game's advanced-stat
-    tables -- repeating it per stat row is pure duplication once it's
-    pulled up here, which is why the template's per-game drilldown tables
-    drop those columns entirely (see team_profile.html's `game_extra_cols`)
-    rather than just deduping them visually.
+    `game["stats"]` is grouped BY METRIC, not by source (2026-09 redesign,
+    user request: "unify the stat categories by metric measured instead of
+    segmenting by source"):
+      - `stats["passing"/"rushing"/"receiving"]` = `{"reconciled": [...],
+        "pfr": [...]}` -- see `_grouped_metric_stats`. `player_stats` is
+        role-split first (`_split_player_stats`, every rostered player,
+        zero-filled -- fills the real coverage gap `ngs_*` leaves, see that
+        function's own docstring) and Sleeper's own weekly lines are
+        role-split the SAME way (`_split_player_stats` works on any rows
+        carrying `attempts`/`carries`/`targets`-equivalent volume, and
+        Sleeper's raw keys are pre-mapped to those names via
+        `_sleeper_role_rows` below) before either feeds the reconciler.
+      - `stats["snap_counts_offense"/"_defense"/"_special_teams"]` --
+        unchanged, single source, no metric family to unify under (a snap
+        share has no cross-source equivalent at all).
+      - `stats["pfr_def"]` -- unchanged, PFR is the only defense-advanced
+        source, so there is nothing to reconcile.
+      - `stats["injuries"]` -- unchanged, single source.
+    A dataset/week combination with no rows for this team simply leaves
+    that key/sub-key absent (or, for `reconciled`, an empty list -- see
+    `_grouped_metric_stats`), so the template can render "no advanced
+    stats" once rather than once per dataset.
     """
     out = []
     for g in schedule:
         wk = g.get("week")
-        stats = {}
+        role_rows: dict[str, list[dict]] = {}
         game_type = None
         if wk is not None:
             for ds, rows in team_datasets.items():
@@ -326,12 +434,20 @@ def _attach_week_stats(schedule: list[dict], team_datasets: dict) -> list[dict]:
                         (r.get("game_type") for r in hit if r.get("game_type")), None)
                 if ds == "snap_counts":
                     for bucket, rows_b in _split_snap_counts(hit).items():
-                        stats[f"snap_counts_{bucket}"] = rows_b
+                        role_rows[f"snap_counts_{bucket}"] = rows_b
                 elif ds == "player_stats":
                     for bucket, rows_b in _split_player_stats(hit).items():
-                        stats[f"player_stats_{bucket}"] = rows_b
+                        role_rows[f"player_stats_{bucket}"] = rows_b
+                elif ds == "sleeper":
+                    for bucket, rows_b in _split_sleeper_stats(hit).items():
+                        role_rows[f"sleeper_{bucket}"] = rows_b
                 else:
-                    stats[ds] = hit
+                    role_rows[ds] = hit
+        stats = _grouped_metric_stats(role_rows)
+        for extra_key in ("snap_counts_offense", "snap_counts_defense",
+                         "snap_counts_special_teams", "pfr_def", "injuries"):
+            if extra_key in role_rows:
+                stats[extra_key] = role_rows[extra_key]
         out.append({**g, "stats": stats, "game_type": game_type})
     return out
 
@@ -385,13 +501,91 @@ def _season_history(abbr: str, seasons: list[str]) -> list[dict]:
     return out
 
 
+def _sleeper_week_rows(abbr: str, seasons: list[str],
+                       player_stats_rows: list[dict]) -> list[dict]:
+    """This team's roster's per-week stat lines from Sleeper's own weekly
+    feed (`sleepermetrics.nflstats.raw_week`), reshaped to the same
+    {"player", "week", "season", <stat keys>} row shape every other source
+    in `_team_datasets` already returns, so `stat_reconcile.reconcile_metric`
+    can treat it identically to `player_stats`/`ngs_*`/`pfr_*`.
+
+    `raw_week` returns {player_id: {stat: value}} with NO name/team of its
+    own (unlike the nflref datasets, which already carry both). A player's
+    CURRENT roster team (from `sleepermetrics.players()`) is NOT enough to
+    attribute a given past WEEK to `abbr` -- a real bug this fixed: a
+    player traded mid-season (verified live: Justin Fields, on KC's CURRENT
+    roster but on the Jets for every real 2025 game per player_stats) would
+    otherwise have his OLD team's entire game line misattributed to his
+    CURRENT team for every week, since nothing here previously checked
+    whether he was actually on `abbr` for that specific week.
+
+    Fixed by requiring the SAME player+week to appear on `player_stats_rows`
+    (already fetched, team-filtered, for this exact abbr+season -- ground
+    truth for "who really played for this team this week") before trusting
+    Sleeper's line for it. A player `player_stats` has no row for that week
+    (a bye, or player_stats coverage gap) is excluded rather than guessed --
+    a missing data point is preferable to a wrongly-attributed one. This
+    does mean Sleeper coverage is now bounded by player_stats's own
+    coverage; that's an accepted tradeoff for correctness over completeness
+    (Sleeper is the 4th, most best-effort source here, not the anchor).
+
+    Walks every week 1..18 for each season (`raw_week` itself is cheap --
+    snapshot-first, see its own docstring) rather than trying to intersect
+    with the schedule first, mirroring how `_team_datasets` below just pulls
+    every week of every requested season and lets the per-game slice in
+    `_attach_week_stats` pick out what it needs. Degrades to `[]` on any
+    failure (no sleepermetrics import, no network, no snapshot)."""
+    try:
+        from sleepermetrics.nflstats import raw_week
+        from sleepermetrics.players import players
+    except Exception:
+        return []
+
+    try:
+        pool = players()
+        roster = pool[pool["team"] == abbr]
+        name_by_pid = dict(zip(roster["player_id"].astype(str),
+                               roster["player_name"]))
+    except Exception:
+        return []
+    if not name_by_pid:
+        return []
+
+    verified_weeks = {
+        (r.get("player_display_name"), r.get("season"), r.get("week"))
+        for r in player_stats_rows if r.get("player_display_name")
+    }
+
+    out: list[dict] = []
+    for season in seasons:
+        for wk in range(1, 19):
+            try:
+                lines = raw_week(season, wk)
+            except Exception:
+                continue
+            for pid, line in (lines or {}).items():
+                name = name_by_pid.get(str(pid))
+                if not name:
+                    continue
+                if (name, int(season), wk) not in verified_weeks:
+                    continue
+                out.append({"player": name, "week": wk, "season": season,
+                           "team": abbr, **line})
+    return out
+
+
 def _team_datasets(abbr: str, seasons: list[str]) -> dict:
     """Real-NFL advanced/usage data for this team's roster, keyed by
     dataset name -> list of row dicts, across `seasons`. Filtered by each
     dataset's own team column (see `_TEAM_COL`), not by player id -- this
     is a team-wide pull, mirroring `player_profile._real_nfl_history`'s
     per-dataset try/except-continue discipline but scoped by team instead
-    of by player."""
+    of by player.
+
+    Also includes `"sleeper"` (see `_sleeper_week_rows`) -- a genuine 4th
+    real-NFL data source, added specifically to feed the passing/rushing/
+    receiving reconciliation (`stat_reconcile.reconcile_metric`) a
+    non-nflverse, non-PFR data point to vote alongside the others."""
     try:
         from webapp.sources.nflref import board as nflref_board
     except Exception:
@@ -412,7 +606,40 @@ def _team_datasets(abbr: str, seasons: list[str]) -> dict:
             if not hit.empty:
                 rows.extend(_clean_records(hit))
         out[ds] = rows
+    out["sleeper"] = _sleeper_week_rows(abbr, seasons, out.get("player_stats", []))
     return out
+
+
+def _season_grouped_stats(team_datasets: dict) -> dict:
+    """The season-wide "Advanced & usage stats" section's own metric
+    grouping -- same shape/logic `_grouped_metric_stats` builds per-game,
+    just fed the WHOLE season's rows per source instead of one week's
+    slice, so Passing/Rushing/Receiving show one reconciled table across
+    every game rather than needing to be reassembled from 17-18 per-game
+    ones. `snap_counts`/`pfr_def`/`injuries` pass through unchanged
+    (single source, nothing to group by metric)."""
+    role_rows: dict[str, list[dict]] = {}
+    for ds, rows in team_datasets.items():
+        if not rows:
+            continue
+        if ds == "snap_counts":
+            for bucket, rows_b in _split_snap_counts(rows).items():
+                role_rows[f"snap_counts_{bucket}"] = rows_b
+        elif ds == "player_stats":
+            for bucket, rows_b in _split_player_stats(rows).items():
+                role_rows[f"player_stats_{bucket}"] = rows_b
+        elif ds == "sleeper":
+            for bucket, rows_b in _split_sleeper_stats(rows).items():
+                role_rows[f"sleeper_{bucket}"] = rows_b
+        else:
+            role_rows[ds] = rows
+
+    stats = _grouped_metric_stats(role_rows, multi_week=True)
+    for extra_key in ("snap_counts_offense", "snap_counts_defense",
+                     "snap_counts_special_teams", "pfr_def", "injuries"):
+        if extra_key in role_rows:
+            stats[extra_key] = role_rows[extra_key]
+    return stats
 
 
 def _build_profile(abbr: str, season: str | None) -> dict:
@@ -439,6 +666,7 @@ def _build_profile(abbr: str, season: str | None) -> dict:
         "schedule": _attach_week_stats(schedule, team_datasets),
         "season_history": _season_history(tm, seasons),
         "team_datasets": team_datasets,
+        "team_stats_grouped": _season_grouped_stats(team_datasets),
     }
 
 

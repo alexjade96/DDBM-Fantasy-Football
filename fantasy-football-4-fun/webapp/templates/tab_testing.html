@@ -1,46 +1,21 @@
-{# Testing tab: a holding area for prototypes under review -- "should we
-   build/keep this", not a finished feature. Chart prototypes get a chart
-   function + a CHART_META entry + a /chart dispatch line in app.py; a
-   layout/section prototype gets a @tab_part(...) handler + a lazy section
-   here. No in-tab season rail -- one season control for the whole page, same
-   as the Draft tab. #}
-{% with oob = true %}{% include "_seasons.html" %}{% endwith %}
-{% include "_liveband.html" %}
+{# Testing: a holding area for prototypes under review -- "should we
+   build/keep this", not a finished feature. A layout/section prototype gets
+   demoed inline here (league-free where possible); once adopted or dropped,
+   its section is removed from this file.
+
+   Reachable at GET /testing, both from the landing page's nav (home.html, no
+   league loaded) and from inside a loaded dashboard (index.html, league +
+   season carried via hx-include) -- see webapp.app.landing_testing()'s own
+   docstring for how the two paths share this one template.
+
+   2026-09: every prototype that has lived here so far -- the redesigned
+   landing page, the "Seasons" menu, the pill-toggle metric grouping, its
+   successor a schedule-drilldown restyle mockup, and that mockup's own
+   follow-up (a per-source hover flyout on every reconciled cell) -- has now
+   either shipped for real (to team_profile.html) or been dropped. This
+   file currently has no active section; the intro block below is the
+   standing shell for the next one. #}
 <h2>Testing</h2>
 <p class="hint"><strong>Prototypes under review, not a finished feature.</strong> Items
    here may be adopted, reworked, or dropped.</p>
-
-<h3>Prototype: redesigned landing page</h3>
-<p class="hint">The reworked entry page for when nothing is loaded (no league, no
-   user).  It wears the same header and footer as a loaded page, with a single
-   League / User lookup in place of the current centered card.  Opens in a new
-   tab.</p>
-<p><a class="ghost" href="/" target="_blank" rel="noopener">Open the landing page prototype &rarr;</a></p>
-
-<h3>Prototype: "Seasons" menu instead of the header dropdown</h3>
-<p class="hint">Stands in for the header's plain Season <code>&lt;select&gt;</code>: a
-   button showing the current season that opens into the same season-history
-   list a fresh multi-season league load now shows first (see the League-ID
-   search flow). Picking a season here navigates the same way -- a full
-   dashboard load on that season -- rather than the header select's
-   in-place tab refresh, so switching seasons doubles as a bookmarkable URL.
-   Demo only: this control is not wired into the real header.</p>
-<details class="bkr-menu">
-  <summary>Season: {{ season }}</summary>
-  <div class="bkr-menu-body">
-    <ul class="ul-list">
-      {% for h in season_menu %}
-      <li>
-        <a href="/dashboard?league={{ league }}&season={{ h.season }}&tab=testing" class="ul-league">
-          <span class="ul-name">{{ h.season }}{% if h.season == season %} (current){% endif %}</span>
-          <span class="ul-meta">
-            {{ h.status }}
-            {%- if h.is_latest %} · latest{% endif -%}
-          </span>
-          <span class="ul-go">Open &rarr;</span>
-        </a>
-      </li>
-      {% endfor %}
-    </ul>
-  </div>
-</details>
+<p class="empty">Nothing under review right now.</p>

@@ -1980,6 +1980,51 @@ footer code { font-family: ui-monospace, Consolas, monospace; }
    _week_scoreboard.html's header comment. Only the plain Weekly/Overview
    tabs' real Actual/Optimized toggle uses .dt-lineup-mode now. */
 
+/* Team-profile prototype (tab_testing.html): a pill toggle over a VARIABLE
+   number of stat-dataset panels (up to 14, matching team_profile.html's own
+   game_stat_labels list), one toggle per game row in the schedule drilldown.
+   .dt-lineup-mode's :first-of-type/:nth-of-type(2) trick doesn't extend past
+   a fixed 2 panels, so this generalises it: :nth-of-type(N) is enumerated
+   1..14 once, here, and every instance on the page (however many pills it
+   actually uses) shares these same rules -- unmatched nth-of-type rules for
+   an instance with fewer panels are harmless no-ops, same rationale
+   .viewswitch's own fixed-position-set comment already gives. Purely
+   structural (radio position order == panel position order); no per-dataset
+   class names are referenced here, so a future dataset addition needs no
+   matching CSS change, only another (dataset, label) tuple in the template. */
+.dt-stat-mode .vs-radio:nth-of-type(1):checked ~ .vs-panel:nth-of-type(1),
+.dt-stat-mode .vs-radio:nth-of-type(2):checked ~ .vs-panel:nth-of-type(2),
+.dt-stat-mode .vs-radio:nth-of-type(3):checked ~ .vs-panel:nth-of-type(3),
+.dt-stat-mode .vs-radio:nth-of-type(4):checked ~ .vs-panel:nth-of-type(4),
+.dt-stat-mode .vs-radio:nth-of-type(5):checked ~ .vs-panel:nth-of-type(5),
+.dt-stat-mode .vs-radio:nth-of-type(6):checked ~ .vs-panel:nth-of-type(6),
+.dt-stat-mode .vs-radio:nth-of-type(7):checked ~ .vs-panel:nth-of-type(7),
+.dt-stat-mode .vs-radio:nth-of-type(8):checked ~ .vs-panel:nth-of-type(8),
+.dt-stat-mode .vs-radio:nth-of-type(9):checked ~ .vs-panel:nth-of-type(9),
+.dt-stat-mode .vs-radio:nth-of-type(10):checked ~ .vs-panel:nth-of-type(10),
+.dt-stat-mode .vs-radio:nth-of-type(11):checked ~ .vs-panel:nth-of-type(11),
+.dt-stat-mode .vs-radio:nth-of-type(12):checked ~ .vs-panel:nth-of-type(12),
+.dt-stat-mode .vs-radio:nth-of-type(13):checked ~ .vs-panel:nth-of-type(13),
+.dt-stat-mode .vs-radio:nth-of-type(14):checked ~ .vs-panel:nth-of-type(14) { display: block; }
+.dt-stat-mode:has(.vs-radio:nth-of-type(1):checked) .vs-tabs label:nth-of-type(1),
+.dt-stat-mode:has(.vs-radio:nth-of-type(2):checked) .vs-tabs label:nth-of-type(2),
+.dt-stat-mode:has(.vs-radio:nth-of-type(3):checked) .vs-tabs label:nth-of-type(3),
+.dt-stat-mode:has(.vs-radio:nth-of-type(4):checked) .vs-tabs label:nth-of-type(4),
+.dt-stat-mode:has(.vs-radio:nth-of-type(5):checked) .vs-tabs label:nth-of-type(5),
+.dt-stat-mode:has(.vs-radio:nth-of-type(6):checked) .vs-tabs label:nth-of-type(6),
+.dt-stat-mode:has(.vs-radio:nth-of-type(7):checked) .vs-tabs label:nth-of-type(7),
+.dt-stat-mode:has(.vs-radio:nth-of-type(8):checked) .vs-tabs label:nth-of-type(8),
+.dt-stat-mode:has(.vs-radio:nth-of-type(9):checked) .vs-tabs label:nth-of-type(9),
+.dt-stat-mode:has(.vs-radio:nth-of-type(10):checked) .vs-tabs label:nth-of-type(10),
+.dt-stat-mode:has(.vs-radio:nth-of-type(11):checked) .vs-tabs label:nth-of-type(11),
+.dt-stat-mode:has(.vs-radio:nth-of-type(12):checked) .vs-tabs label:nth-of-type(12),
+.dt-stat-mode:has(.vs-radio:nth-of-type(13):checked) .vs-tabs label:nth-of-type(13),
+.dt-stat-mode:has(.vs-radio:nth-of-type(14):checked) .vs-tabs label:nth-of-type(14) {
+  background: var(--ink); color: var(--surface); border-color: var(--ink); }
+.dt-stat-mode { margin-top: 8px; }
+.dt-stat-mode .vs-tabs { margin-bottom: 10px; }
+.dt-stat-mode .vs-panel { display: none; }
+
 /* Draft tab: redraft simulation's Season/Playoffs/Roster/Weekly toggle -- all
    four are genuinely DIFFERENT tables (season totals, postseason rounds, one
    row per manager, one row per week), not different ways of looking at the
@@ -2259,3 +2304,86 @@ tr.bench-impact td { background: color-mix(in srgb, #d9a441 8%, transparent); }
    the grid they title, same convention as h2 above but a smaller gap since h3
    is itself a lighter-weight label. */
 #panel > h3 + * { margin-top: 8px; }
+
+/* --- team-profile (/team/{abbr}) reconciled-stat cell styling -----------
+   Started as a Testing-tab mockup, both changes fully shipped since:
+   (1) a per-metric .metric-card wrap and a dropped redundant PFR caption
+   (see the .metric-card rules below), (2) the .stat-flag/.stat-cell/
+   .stat-flyout rules here. History, for context: .stat-flag (the
+   reconciled-table disagreement ⚠) originally had ZERO CSS anywhere --
+   bare inline text, no color, no hover affordance. */
+
+/* The disagreement flag: small amber chip (reuses --gold, the same token
+   .bkr-msg.warn already uses for "pay attention here"). Purely a visual
+   marker when nested inside a .stat-cell (see below) -- the cell itself
+   owns the hover/focus affordance and cursor there, so the flag must not
+   intercept the pointer or it would end the hover the instant the cursor
+   crossed onto it. */
+.stat-flag { display: inline-flex; align-items: center; justify-content: center;
+  width: 15px; height: 15px; margin-left: 4px; border-radius: 4px;
+  background: color-mix(in srgb, var(--gold) 24%, transparent);
+  color: var(--gold); font-size: 10px; line-height: 1; cursor: help;
+  vertical-align: 1px; }
+.stat-cell .stat-flag { cursor: help; pointer-events: none; }
+
+/* Per-source breakdown flyout: hover (or keyboard focus, via the cell's own
+   tabindex="0") over ANY reconciled value on /team/{abbr} -- not just a
+   disagreeing one -- reveals which source(s) fed it and what each one
+   actually reported. User request: "if i hover over player x receiving
+   value '10' the flyout shows the n number of sources and their
+   respective values." CSS-only reveal (:hover/:focus-within), no JS.
+   .stat-cell must be a positioned inline block so the absolutely-
+   positioned .stat-flyout anchors to IT, not the table cell (whose own
+   width varies per column).
+
+   Known, accepted limitation: both .tablewrap and .dt-detail use
+   overflow-x:auto, which per the CSS spec also clips overflow-y -- a
+   flyout near a scroll container's edge can get visually cut off (most
+   likely on the season-wide scrolltable). Trialled first as a
+   Testing-tab-only mockup specifically to weigh this tradeoff before
+   shipping it to the real page. */
+.stat-cell { position: relative; display: inline-block; cursor: help; }
+.stat-flyout { display: none; position: absolute; left: 50%;
+  bottom: calc(100% + 6px); transform: translateX(-50%);
+  z-index: 20; min-width: 140px; max-width: 240px;
+  background: var(--surface); border: 1px solid var(--line);
+  border-radius: 8px; box-shadow: var(--shadow);
+  padding: 8px 10px; font-size: 11.5px; line-height: 1.5;
+  white-space: normal; text-align: left; cursor: default; }
+.stat-cell:hover .stat-flyout, .stat-cell:focus-within .stat-flyout,
+.stat-cell:focus .stat-flyout { display: block; }
+.stat-flyout-head { display: block; font-size: 10px; text-transform: uppercase;
+  letter-spacing: .04em; color: var(--faint); font-weight: 700;
+  margin-bottom: 4px; }
+.stat-flyout-row { display: flex; align-items: center; justify-content: space-between;
+  gap: 10px; padding: 1px 0; color: var(--muted); }
+.stat-flyout-src { white-space: nowrap; }
+.stat-flyout-val { font-variant-numeric: tabular-nums; font-weight: 600;
+  color: var(--ink); }
+/* A source whose own value differs from the shown consensus gets a warm
+   tint on its row -- the same visual language .dv-neg/cmp-down already use
+   elsewhere for "this one's the outlier," scoped to just this row rather
+   than the whole flyout (an agreeing majority alongside one dissenter
+   should still read as mostly-agreeing at a glance). */
+.stat-flyout-diff .stat-flyout-val { color: var(--gold); }
+
+/* One card per metric (Passing/Rushing/Receiving), replacing the flat
+   <p><strong>Label</strong> + table + table stream -- each metric now reads
+   as its own bounded section, matching the .facts-card treatment already
+   used elsewhere in .reportpanel rather than inventing a new component. */
+.metric-card { border: 1px solid var(--line); border-radius: 10px;
+  background: var(--surface); padding: 12px 14px 14px; }
+.metric-card + .metric-card { margin-top: 10px; }
+.metric-card > .metric-card-head { display: flex; align-items: baseline;
+  justify-content: space-between; gap: 10px; margin-bottom: 2px; }
+.metric-card > .metric-card-head > strong { font-size: 13.5px; color: var(--ink); }
+/* Provenance ("Source: X, Y") stays a quiet .hint, unchanged -- it is
+   metadata about the table above it. */
+.metric-card .hint { margin-bottom: 8px; }
+.metric-card .hint:last-child { margin-bottom: 0; }
+.metric-card table.dt-games { margin-top: 4px; }
+/* A second (PFR) table under the reconciled one in the same card gets a
+   little breathing room above it, since there's no caption between them
+   any more to supply that gap on its own. */
+.metric-card table.dt-games + table.dt-games,
+.metric-card .tablewrap + .tablewrap { margin-top: 10px; }

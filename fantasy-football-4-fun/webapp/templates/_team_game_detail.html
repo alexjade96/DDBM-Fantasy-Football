@@ -1,0 +1,98 @@
+{# One game's advanced/usage stat detail, for the team-profile schedule
+   drilldown (team_profile.html). Lazy-loaded: the parent <summary> carries
+   `hx-get`/`hx-trigger="toggle once"` so this partial is only fetched the
+   first time a reader actually expands that game row, rather than every
+   game's full detail (up to 8 stacked tables) shipping inline for the
+   whole season on page load -- a real, measured cost (~900KB of HTML for
+   one team-season) confirmed before this change. `webapp.app.
+   team_game_detail()` renders this directly from the same cached
+   `team_profile()` call the parent page already made, so there is no
+   second data pull, only a second render.
+
+   Sub-tab grouping (2026-09, replacing a flat stack of every table with
+   nothing but a bold label between them): the up to 8 tables one game can
+   carry (Passing/Rushing/Receiving reconciled + PFR, 3 snap-count roles,
+   PFR defense, injuries) are grouped into 4 pills -- Box score / Snap
+   counts / Defense / Injuries -- using .dt-stat-mode, the same structural
+   viewswitch CSS (style.css) a since-shipped Testing-tab mockup already
+   established for this exact "variable number of stat-dataset panels"
+   shape. Only a pill with real data for THIS game is shown; a pill with
+   nothing renders no radio/label pair at all, so the tab list itself
+   already tells a reader what this game actually has.
+
+   Rendered as its own TemplateResponse (webapp.app.team_game_detail),
+   not a Jinja {% include %} from team_profile.html, so `tsm` is imported
+   fresh here rather than relying on the parent template's own import
+   carrying over -- it wouldn't. #}
+{% import "_teamstat_macros.html" as tsm %}
+{% set _metric_has_data = stats.passing.reconciled or stats.passing.pfr
+                          or stats.rushing.reconciled or stats.rushing.pfr
+                          or stats.receiving.reconciled or stats.receiving.pfr %}
+{% set _snap_labels = [
+  ("snap_counts_offense", "Offense"),
+  ("snap_counts_defense", "Defense"),
+  ("snap_counts_special_teams", "Special teams")] %}
+{% set _any_snap = _snap_labels | selectattr("0", "in", stats.keys()) | list %}
+{% set _has_def = "pfr_def" in stats %}
+{% set _has_injuries = "injuries" in stats %}
+{% if _metric_has_data or _any_snap or _has_def or _has_injuries %}
+{# Exactly one radio starts checked: whichever pill is FIRST among the ones
+   actually rendered (Box score > Snap counts > Defense > Injuries) -- a
+   namespace flag rather than a growing "and not X and not Y..." chain per
+   radio, so a future 5th pill only needs one more {% if %} block, not an
+   edit to every earlier one's condition. #}
+{% set _checked = namespace(done=false) %}
+<div class="viewswitch dt-stat-mode">
+  {% for present, gid in ((_metric_has_data, "box"), (_any_snap, "snaps"), (_has_def, "def"), (_has_injuries, "inj")) %}
+  {% if present %}
+  <input type="radio" name="gamestat{{ game_key }}" id="gs-{{ game_key }}-{{ gid }}" class="vs-radio"{% if not _checked.done %} checked{% set _checked.done = true %}{% endif %}>
+  {% endif %}
+  {% endfor %}
+  <div class="rail vs-tabs">
+    {% if _metric_has_data %}<label class="year" for="gs-{{ game_key }}-box">Box score</label>{% endif %}
+    {% if _any_snap %}<label class="year" for="gs-{{ game_key }}-snaps">Snap counts</label>{% endif %}
+    {% if _has_def %}<label class="year" for="gs-{{ game_key }}-def">Defense</label>{% endif %}
+    {% if _has_injuries %}<label class="year" for="gs-{{ game_key }}-inj">Injuries</label>{% endif %}
+  </div>
+  {% if _metric_has_data %}
+  <div class="vs-panel">
+    {% for metric, label in METRIC_LABELS %}
+    {% set entry = stats.get(metric) %}
+    {% if entry and (entry.reconciled or entry.pfr) %}
+    <p class="hint"><strong>{{ label }}</strong></p>
+    {{ tsm.metric_sources_note(entry, metric, source_labels) }}
+    {% if entry.reconciled %}
+    {{ tsm.reconciled_table(entry.reconciled, metric, source_labels) }}
+    {% endif %}
+    {% if entry.pfr %}
+    {{ tsm.stat_table(entry.pfr, game_scoped=true) }}
+    {% endif %}
+    {% endif %}
+    {% endfor %}
+  </div>
+  {% endif %}
+  {% if _any_snap %}
+  <div class="vs-panel">
+    {% for ds, label in _snap_labels %}
+    {% set rows = stats.get(ds) %}
+    {% if rows %}
+    <p class="hint"><strong>{{ label }}</strong></p>
+    {{ tsm.stat_table(rows, game_scoped=true) }}
+    {% endif %}
+    {% endfor %}
+  </div>
+  {% endif %}
+  {% if _has_def %}
+  <div class="vs-panel">
+    {{ tsm.stat_table(stats.pfr_def, game_scoped=true) }}
+  </div>
+  {% endif %}
+  {% if _has_injuries %}
+  <div class="vs-panel">
+    {{ tsm.stat_table(stats.injuries, game_scoped=true) }}
+  </div>
+  {% endif %}
+</div>
+{% else %}
+<p class="hint">No advanced stats found for this game.</p>
+{% endif %}

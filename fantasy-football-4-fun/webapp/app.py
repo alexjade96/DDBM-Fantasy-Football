@@ -1053,14 +1053,18 @@ CHART_META = {
 }
 tpl.env.globals["CHART_META"] = CHART_META
 
-# Testing tab: a holding area for prototypes under review. Currently a single
-# non-chart item -- a link to the redesigned landing page -- rendered directly
-# by tab_testing.html, so there is no registry here right now. For a CHART
-# prototype: write the chart function, a CHART_META entry, and a /chart dispatch
-# line (SEASON_CHARTS for a plain season-scoped chart, or an `if name ==` branch
-# for one that needs a sibling's special-cased args), then reintroduce a list
-# like the one removed here and wire tab_testing.html back to iterate it. Remove
-# the chart function + dispatch line once a prototype's fate is decided.
+from webapp import stat_reconcile as _stat_reconcile  # noqa: E402
+tpl.env.globals["METRIC_LABELS"] = _stat_reconcile.METRIC_LABELS
+
+# Testing tab: a holding area for prototypes under review. Nothing is
+# currently active there (tab_testing.html just shows the standing shell),
+# so there is no registry here right now. For a CHART prototype: write the
+# chart function, a CHART_META entry, and a /chart dispatch line
+# (SEASON_CHARTS for a plain season-scoped chart, or an `if name ==` branch
+# for one that needs a sibling's special-cased args), then reintroduce a
+# list like the one removed here and wire tab_testing.html back to iterate
+# it. Remove the chart function + dispatch line once a prototype's fate is
+# decided.
 
 
 @app.get("/chart/{name}")
@@ -1346,16 +1350,45 @@ def landing_start(request: Request):
 
 
 @app.get("/testing", response_class=HTMLResponse)
-def landing_testing(request: Request):
-    """League-free counterpart to the loaded-dashboard Testing tab
-    (tab_testing.html) -- reachable from the main site nav (home.html)
-    without loading a league first, same as ADP Comparison / NFL Stats /
-    Player Comparison. First content: four layout/style demos for the
-    Player Comparison leaderboard-to-compare flow, each against the same
-    real RB leaderboard (see _landing_testing.html's own module comment)."""
-    return tpl.TemplateResponse(request, "_landing_testing.html", {
-        "demo_season": _current_nfl_season(),
-    })
+def landing_testing(request: Request, league: str = "", season: str | None = None,
+                    theme: str = "light", boot: int = 0):
+    """The one Testing URL, reachable BOTH from the main site nav (home.html,
+    no league loaded) and from inside a loaded dashboard (index.html's tab
+    nav, which carries `league`/`season` via its `.tabs` hx-include the same
+    way every other tab does). Previously these were two separate
+    routes/templates (this route -> _landing_testing.html for the
+    league-free case, GET /tab/testing -> tab_testing.html for the
+    league-scoped case) reachable at genuinely different URLs for the same
+    "prototypes under review" concept; unified 2026-09 per user request so
+    both navs point at this one location.
+
+    With no `league` (the landing-page path, or a bad/empty id): renders
+    tab_testing.html's league-free branch directly -- no Season object
+    exists to hand it, so this is the one tab() bypasses entirely rather
+    than trying to force a league-shaped ctx that doesn't apply.
+
+    With a `league` that resolves: delegates into tab("testing", ...), same
+    "one user-facing action, delegates into the real tab() dispatch" pattern
+    load() already uses for its own Overview delegation -- tab() already
+    builds the season list and other league-scoped shell context this
+    route's own league-free branch skips, so there is no second copy of
+    that logic here.
+
+    A bad/unresolvable league id degrades to the SAME league-free render
+    rather than an error page -- a mistyped id typed into the dashboard
+    header is a normal thing to happen mid-navigation, not a reason to
+    break this one tab when every other tab already shows its own
+    "couldn't load" message inline.
+    """
+    if league:
+        try:
+            pick(league, season)
+        except Exception:
+            league = ""
+    if league:
+        return tab("testing", request, league=league, season=season,
+                   theme=theme, boot=boot)
+    return tpl.TemplateResponse(request, "tab_testing.html", {"league": ""})
 
 
 def _adp_params(season, scoring, pos):
@@ -4222,15 +4255,9 @@ def tab(name: str, request: Request, league: str = DEFAULT_LEAGUE,
         })
         return _pushed(tpl.TemplateResponse(request, "tab_playoffs.html", ctx), ctx, name)
     elif name == "testing":
-        # A link to the redesigned landing page, plus the season-switcher
-        # prototype below -- no charts, so nothing else to render eagerly.
-        # `seasons` feeds the shell's season picker and the _liveband include.
-        ctx["seasons"] = list(reversed(d["names"]))
-        # Prototype: a "Seasons" history menu (see tab_season_history.html)
-        # in place of the header's plain <select>, so switching seasons for
-        # an ALREADY-loaded league can be tried without touching the real
-        # header -- see tab_testing.html for what it's replacing and why.
-        ctx["season_menu"] = _season_history_rows(d)
+        # Nothing currently active on this tab (see tab_testing.html's own
+        # header comment) -- ctx already carries the shared league/season
+        # shell fields every tab gets.
         return _pushed(tpl.TemplateResponse(request, "tab_testing.html", ctx), ctx, name)
     else:
         return HTMLResponse("<p class='empty'>Unknown tab.</p>", status_code=404)
@@ -5387,6 +5414,8 @@ def team_page(request: Request, abbr: str, season: str | None = None,
     if not render and (refresh or not tp.is_cached(abbr, season)):
         return _team_loader(abbr, season, refresh)
 
+    from webapp import stat_reconcile
+
     profile = tp.team_profile(abbr, season=season, fresh=bool(refresh))
     ctx = {
         "theme": theme, "asset_v": asset_v(), "abbr": abbr.upper().strip(),
@@ -5398,9 +5427,41 @@ def team_page(request: Request, abbr: str, season: str | None = None,
         "schedule": profile["schedule"],
         "season_history": profile["season_history"],
         "team_datasets": profile["team_datasets"],
+        "team_stats_grouped": profile["team_stats_grouped"],
+        "source_labels": stat_reconcile.SOURCE_LABELS,
         "avatars": {},   # _ident.html reads it; no manager avatars on this page
     }
     return tpl.TemplateResponse(request, "team_profile.html", ctx)
+
+
+@app.get("/team/{abbr}/game/{week}", response_class=HTMLResponse)
+def team_game_detail(request: Request, abbr: str, week: int, season: str | None = None,
+                     theme: str = "light"):
+    """One schedule row's advanced/usage stat detail (_team_game_detail.html),
+    fetched by team_profile.html's `hx-get`/`hx-trigger="toggle once"` the
+    first time a reader actually expands that game -- see that template's
+    own comment for why (a real, measured payload cost: baking every game's
+    full detail inline ran ~900KB of HTML for one team-season).
+
+    Reads the SAME cached team_profile() call the parent page already made
+    (keyed on abbr+season, same as team_page) -- no second data pull, only
+    a second render slicing out this one week's `stats`. A 404 for a week
+    that isn't in this team's schedule (a stale/tampered URL, not a normal
+    click path) rather than a silent empty panel.
+    """
+    from webapp import team_profile as tp
+    from webapp import stat_reconcile
+
+    profile = tp.team_profile(abbr, season=season)
+    game = next((g for g in profile["schedule"] if g.get("week") == week), None)
+    if game is None:
+        return HTMLResponse("<p class='empty'>No data for this game.</p>", status_code=404)
+
+    ctx = {
+        "theme": theme, "game_key": week, "stats": game.get("stats") or {},
+        "source_labels": stat_reconcile.SOURCE_LABELS,
+    }
+    return tpl.TemplateResponse(request, "_team_game_detail.html", ctx)
 
 
 # --- custom playoff brackets ----------------------------------------------

@@ -1,0 +1,170 @@
+{# Shared stat-table rendering for team_profile.html (the real page) and any
+   Testing-tab mockup that reuses these same tables -- factored out so a
+   mockup demoing a NEW layout can reuse the exact same cell-formatting/
+   column-exclusion rules rather than a copy that could silently drift from
+   the real page's own. Importing team_profile.html directly does NOT work
+   for this: it is a full standalone page (its own
+   <!doctype html>...</html>), and Jinja's {% import %} with context
+   executes the whole template body eagerly, which crashes without the real
+   page's own route-supplied context (abbr/identity/schedule/etc). A
+   macro-only file has no body to execute, so it imports cleanly anywhere.
+
+   id_cols/name_cols/game_extra_cols are plain top-level assignments (not
+   macros) -- Jinja's {% import %} pulls those in too, so a caller doesn't
+   need to redefine the exclusion lists to use stat_table(). #}
+{% set name_cols = ("player", "player_display_name", "pfr_player_name", "full_name") %}
+{% set id_cols = ("player_id", "pfr_player_id", "gsis_id", "player_gsis_id",
+  "team", "team_abbr", "recent_team", "week", "season") + name_cols %}
+{% set game_extra_cols = ("game_id", "game_type", "opponent", "season_type") %}
+
+{# Real advanced-stat columns (NGS separation/YAC, PFR rates, snap-count
+   shares) come through as raw Python floats with full double precision --
+   e.g. a real observed cell was "0.1282051282051282", not "0.13". Rounded
+   here at DISPLAY time only, to 1 decimal place, matching the site's
+   existing convention for figures like PPR pts/PPG elsewhere in this app.
+   An integer-valued float (e.g. a snap count, "57.0") also gets this
+   treatment -- 1dp is harmless there and keeps the rule uniform rather
+   than special-casing "does this float happen to be a whole number." #}
+{% macro cell(v) %}
+{%- if v is none -%}&ndash;
+{%- elif v is number and v is not integer -%}{{ "%.1f"|format(v) }}
+{%- else -%}{{ v }}
+{%- endif -%}
+{% endmacro %}
+
+{% macro stat_table(rows, scroll=false, game_scoped=false) %}
+{% set drop = id_cols + game_extra_cols if game_scoped else id_cols %}
+{% set cols = rows[0].keys() | list | reject("in", drop) | list %}
+<div class="tablewrap{% if scroll %} scrolltable{% endif %}">
+  <table class="dt-games">
+    <thead><tr><th>Player</th>{% for k in cols %}<th>{{ k.replace("_", " ") }}</th>{% endfor %}</tr></thead>
+    <tbody>
+    {% for row in rows %}
+      <tr>
+        <td>{% set nm = row.get("player") or row.get("player_display_name") or row.get("pfr_player_name") or row.get("full_name") %}{% if nm %}{{ nm }}{% else %}&ndash;{% endif %}</td>
+        {% for k in cols %}<td>{{ cell(row[k]) }}</td>{% endfor %}
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endmacro %}
+
+{# The canonical stat columns per reconciled metric, in display order --
+   matches webapp.stat_reconcile._METRIC_MAPS's own key sets (a stat here
+   with no matching key in that module's map simply never has data to
+   show, same as any other absent-column case). #}
+{% set reconciled_cols = {
+  "passing": [("attempts", "Att"), ("completions", "Cmp"),
+              ("passing_yards", "Yds"), ("passing_tds", "TD"),
+              ("interceptions", "INT")],
+  "rushing": [("carries", "Car"), ("rushing_yards", "Yds"),
+              ("rushing_tds", "TD")],
+  "receiving": [("targets", "Tgt"), ("receptions", "Rec"),
+                ("receiving_yards", "Yds"), ("receiving_tds", "TD")],
+} %}
+
+{# One row per player, one column per canonical stat (`reconciled_cols`).
+   `flyout=true` (the DEFAULT for both team_profile.html call sites --
+   the real /team/{abbr} page, per-game drilldown and season-wide section
+   alike) wraps every reconciled cell -- not just a disagreeing one -- in
+   a hoverable/keyboard-focusable (`tabindex="0"`) `.stat-cell`, whose
+   `.stat-flyout` panel (style.css) lists every contributing source's own
+   figure for that stat, with a disagreeing source tinted. A stat with no
+   data for a player at all (key absent from the row) renders a plain
+   dash, not hoverable -- there is nothing to break down.
+
+   Known limitation, accepted: the flyout is `position: absolute`, and
+   both `.tablewrap` and `.dt-detail` use `overflow-x: auto`, which per
+   the CSS spec also clips overflow-y -- a flyout near a scroll
+   container's edge can get visually cut off (most likely on the
+   season-wide scrolltable). Trialled first as a Testing-tab-only mockup
+   (`flyout=true` demoed there before this default flipped) specifically
+   to weigh that tradeoff before shipping it here.
+
+   `flyout=false` keeps the ORIGINAL behaviour (a bare `title=` tooltip on
+   only a disagreeing cell's own &#9888; flag) -- kept as an explicit
+   opt-out for any future caller that can't tolerate the clipping risk,
+   not currently used by either shipped call site. #}
+{% macro reconciled_table(rows, metric, source_labels=none, scroll=false, flyout=true) %}
+{% set cols = reconciled_cols[metric] %}
+<div class="tablewrap{% if scroll %} scrolltable{% endif %}">
+  <table class="dt-games">
+    <thead><tr><th>Player</th>{% for key, label in cols %}<th>{{ label }}</th>{% endfor %}</tr></thead>
+    <tbody>
+    {% for row in rows %}
+      <tr>
+        <td>{{ row.player }}</td>
+        {% for key, label in cols %}
+        <td>
+          {%- if key not in row -%}&ndash;
+          {%- elif flyout -%}
+          {% set consensus = row[key] %}
+          {% set srcs = row.get(key ~ "_sources") or {} %}
+          {% set agreed = row.get(key ~ "_agreed") %}
+          {%- if srcs -%}
+          <span class="stat-cell" tabindex="0">{{ cell(consensus) }}
+            {%- if agreed is sameas false -%}<span class="stat-flag">&#9888;</span>{%- endif -%}
+            <span class="stat-flyout">
+              <span class="stat-flyout-head">{{ label }}{% if agreed is sameas false %} &middot; sources disagree{% endif %}</span>
+              {% for src, val in srcs.items() | sort %}
+              <span class="stat-flyout-row{% if val != consensus %} stat-flyout-diff{% endif %}">
+                <span class="stat-flyout-src">{{ source_labels.get(src, src) if source_labels else src }}</span>
+                <span class="stat-flyout-val">{{ cell(val) }}</span>
+              </span>
+              {% endfor %}
+            </span>
+          </span>
+          {%- else -%}
+          {{ cell(consensus) }}
+          {%- endif -%}
+          {%- else -%}
+            {{ cell(row[key]) }}
+            {%- if row.get(key ~ "_agreed") is sameas false -%}
+            {% set src_txt = row[key ~ "_sources"].items() | map("join", ": ") | join(", ") %}
+            <span class="stat-flag" title="Sources disagree -- {{ src_txt }}">&#9888;</span>
+            {%- endif -%}
+          {%- endif -%}
+        </td>
+        {% endfor %}
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endmacro %}
+
+{# Renders the "Source: X, Y, Z" line under a metric's reconciled table --
+   one flat, deduped list of every source that fed ANY stat in the table,
+   not split out per stat (per user request: "don't need to split out which
+   data is from which source etc, just coagulated together"). Lives here
+   (not inlined in team_profile.html) so a future Testing-tab mockup can
+   reuse it without a copy that could drift.
+
+   `entry.source_groups` is computed once in
+   webapp.team_profile._grouped_metric_stats (stat_reconcile.
+   stat_source_groups) -- grouped by exact per-stat source combination for
+   OTHER potential uses of that data, but this macro only needs the union
+   of every source across every combo, so it flattens them back into one
+   list here. `source_labels` (caller's own `stat_reconcile.SOURCE_LABELS`
+   context var, passed explicitly since this file's macros take no
+   implicit context) maps each source key to a display name.
+
+   `entry.pfr` (a metric's own un-reconciled PFR sub-table) adds "PFR
+   advanced" to the list too, deduped against a `pfr_*` source that might
+   already be there from a real reconcile_metric() vote (e.g. rushing's
+   "carries", which pfr_rush does feed) -- the real bug this dedup guards
+   against: rendering "PFR advanced" twice when pfr_rush is both a voting
+   source AND supplies the separate own-metrics sub-table. #}
+{% macro metric_sources_note(entry, metric, source_labels) %}
+{% set names = [] %}
+{% for combo, stats in entry.source_groups %}
+  {% for src in combo %}{% set _ = names.append(source_labels.get(src, src)) %}{% endfor %}
+{% endfor %}
+{% if entry.pfr and "PFR advanced" not in names %}
+  {% set _ = names.append("PFR advanced") %}
+{% endif %}
+{% if names %}
+<p class="hint">Source: {{ names | unique | join(", ") }}</p>
+{% endif %}
+{% endmacro %}

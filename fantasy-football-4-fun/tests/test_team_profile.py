@@ -287,18 +287,25 @@ def test_split_player_stats_empty_input():
 
 
 # --- _attach_week_stats -------------------------------------------------------
+# 2026-09: stats["passing"/"rushing"/"receiving"] are ALWAYS-present dict
+# entries ({"reconciled": [...], "sources": [...], optionally "pfr": [...]})
+# now that stats are grouped BY METRIC (see webapp.stat_reconcile / this
+# module's _grouped_metric_stats) rather than by source. A single-source
+# dataset with no metric family (pfr_def, snap_counts_*, injuries) still
+# appears as its own flat top-level list, exactly as before.
 
 def test_attach_week_stats_slices_by_week():
     schedule = [{"week": 1}, {"week": 2}]
     team_datasets = {
-        "pfr_rush": [{"player": "C", "week": 1}, {"player": "D", "week": 2}],
-        "pfr_def": [{"player": "E", "week": 1}],
+        "pfr_def": [{"pfr_player_name": "E", "week": 1}],
     }
     out = tp._attach_week_stats(schedule, team_datasets)
-    assert out[0]["stats"] == {"pfr_rush": [{"player": "C", "week": 1}],
-                                "pfr_def": [{"player": "E", "week": 1}]}
-    assert out[1]["stats"] == {"pfr_rush": [{"player": "D", "week": 2}]}
+    assert out[0]["stats"]["pfr_def"] == [{"pfr_player_name": "E", "week": 1}]
+    assert "pfr_def" not in out[1]["stats"]
     assert out[0]["week"] == 1  # original game fields preserved
+    # passing/rushing/receiving are always present, even with no data.
+    for metric in ("passing", "rushing", "receiving"):
+        assert out[0]["stats"][metric] == {"reconciled": [], "sources": [], "source_groups": []}
 
 
 def test_attach_week_stats_extracts_game_type():
@@ -310,8 +317,8 @@ def test_attach_week_stats_extracts_game_type():
     schedule = [{"week": 1}, {"week": 20}]
     team_datasets = {
         "pfr_def": [
-            {"player": "A", "week": 1, "game_type": "REG"},
-            {"player": "A", "week": 20, "game_type": "DIV"},
+            {"pfr_player_name": "A", "week": 1, "game_type": "REG"},
+            {"pfr_player_name": "A", "week": 20, "game_type": "DIV"},
         ],
     }
     out = tp._attach_week_stats(schedule, team_datasets)
@@ -321,36 +328,42 @@ def test_attach_week_stats_extracts_game_type():
 
 def test_attach_week_stats_game_type_none_when_no_datasets_carry_it():
     schedule = [{"week": 1}]
-    team_datasets = {"pfr_rush": [{"player": "A", "week": 1}]}  # no game_type key
+    team_datasets = {"pfr_def": [{"pfr_player_name": "A", "week": 1}]}  # no game_type key
     out = tp._attach_week_stats(schedule, team_datasets)
     assert out[0]["game_type"] is None
 
 
 def test_attach_week_stats_game_type_none_when_week_missing():
     schedule = [{"week": None}]
-    team_datasets = {"pfr_rush": [{"player": "A", "week": 1, "game_type": "REG"}]}
+    team_datasets = {"pfr_def": [{"pfr_player_name": "A", "week": 1, "game_type": "REG"}]}
     out = tp._attach_week_stats(schedule, team_datasets)
     assert out[0]["game_type"] is None
 
 
 def test_attach_week_stats_dataset_absent_when_no_rows_for_week():
     schedule = [{"week": 3}]
-    team_datasets = {"pfr_rush": [{"player": "A", "week": 1}]}
+    team_datasets = {"pfr_def": [{"pfr_player_name": "A", "week": 1}]}
     out = tp._attach_week_stats(schedule, team_datasets)
-    assert out[0]["stats"] == {}  # no pfr_rush key at all, not an empty list
+    assert "pfr_def" not in out[0]["stats"]  # no key at all, not an empty list
+    for metric in ("passing", "rushing", "receiving"):
+        assert out[0]["stats"][metric] == {"reconciled": [], "sources": [], "source_groups": []}
 
 
 def test_attach_week_stats_handles_missing_week_on_game():
     schedule = [{"week": None}]
-    team_datasets = {"pfr_rush": [{"player": "A", "week": 1}]}
+    team_datasets = {"pfr_def": [{"pfr_player_name": "A", "week": 1}]}
     out = tp._attach_week_stats(schedule, team_datasets)
-    assert out[0]["stats"] == {}
+    assert "pfr_def" not in out[0]["stats"]
 
 
 def test_attach_week_stats_empty_inputs():
     assert tp._attach_week_stats([], {}) == []
-    assert tp._attach_week_stats([{"week": 1}], {}) == [
-        {"week": 1, "stats": {}, "game_type": None}]
+    out = tp._attach_week_stats([{"week": 1}], {})
+    assert out[0]["week"] == 1
+    assert out[0]["game_type"] is None
+    for metric in ("passing", "rushing", "receiving"):
+        assert out[0]["stats"][metric] == {"reconciled": [], "sources": [], "source_groups": []}
+    assert set(out[0]["stats"]) == {"passing", "rushing", "receiving"}
 
 
 def test_attach_week_stats_splits_snap_counts_by_role():
@@ -384,12 +397,15 @@ def test_attach_week_stats_snap_counts_bucket_absent_when_empty_that_week():
     assert "snap_counts_special_teams" not in stats
 
 
-def test_attach_week_stats_splits_player_stats_by_role():
-    """Regression coverage for the real gap this feature fixed: NGS-only
-    coverage silently dropped players from the drilldown (verified live --
-    a real week where 8 SF players caught a pass, ngs_receiving had rows
-    for only 2). player_stats is the comprehensive box-score fallback,
-    special-cased the same way snap_counts already is."""
+def test_attach_week_stats_player_stats_feeds_reconciled_passing_rushing_receiving():
+    """Regression coverage for the real gap this feature originally fixed:
+    NGS-only coverage silently dropped players from the drilldown (verified
+    live -- a real week where 8 SF players caught a pass, ngs_receiving had
+    rows for only 2). player_stats is the comprehensive box-score fallback;
+    its role-split rows now feed straight into the RECONCILED
+    passing/rushing/receiving tables (stat_reconcile.reconcile_metric) --
+    not their own separate top-level table the way they used to, since
+    stats are grouped by metric now, not by source."""
     schedule = [{"week": 1}]
     team_datasets = {
         "player_stats": [
@@ -401,22 +417,26 @@ def test_attach_week_stats_splits_player_stats_by_role():
     }
     out = tp._attach_week_stats(schedule, team_datasets)
     stats = out[0]["stats"]
-    assert "player_stats" not in stats  # replaced entirely by the split keys
-    assert [r["player_display_name"] for r in stats["player_stats_receiving"]] == ["Kyle Juszczyk"]
-    assert [r["player_display_name"] for r in stats["player_stats_passing"]] == ["Brock Purdy"]
-    assert [r["player_display_name"] for r in stats["player_stats_rushing"]] == ["Brock Purdy"]
+    receiving_players = [r["player"] for r in stats["receiving"]["reconciled"]]
+    passing_players = [r["player"] for r in stats["passing"]["reconciled"]]
+    rushing_players = [r["player"] for r in stats["rushing"]["reconciled"]]
+    assert receiving_players == ["Kyle Juszczyk"]
+    assert passing_players == ["Brock Purdy"]
+    assert rushing_players == ["Brock Purdy"]
+    assert "player_stats" in stats["receiving"]["sources"]
+    assert "player_stats" in stats["passing"]["sources"]
 
 
-def test_attach_week_stats_player_stats_bucket_absent_when_nobody_qualifies_that_week():
+def test_attach_week_stats_metric_stays_empty_when_nobody_qualifies_that_week():
     schedule = [{"week": 1}]
     team_datasets = {
         "player_stats": [_player_stats_row(targets=2, receptions=2, receiving_yards=32)],
     }
     out = tp._attach_week_stats(schedule, team_datasets)
     stats = out[0]["stats"]
-    assert "player_stats_receiving" in stats
-    assert "player_stats_passing" not in stats
-    assert "player_stats_rushing" not in stats
+    assert stats["receiving"]["reconciled"]
+    assert stats["passing"]["reconciled"] == []
+    assert stats["rushing"]["reconciled"] == []
 
 
 # --- _schedule / _season_record / _season_history -----------------------------
@@ -618,11 +638,19 @@ def test_team_profile_assembles_all_sections(monkeypatch):
     assert out["roster"] == [{"player": "X", "position": "QB"}]
     assert out["roster_by_position"] == [{"position": "QB", "players": [{"player": "X", "position": "QB"}]}]
     # schedule rows get "stats"/"game_type" attached (per-game advanced-stat
-    # slices) -- both empty/None here since _team_datasets returns nothing
-    # week-tagged.
-    assert out["schedule"] == [{"week": 1, "stats": {}, "game_type": None}]
+    # slices) -- game_type is None and every metric is empty here since
+    # _team_datasets returns nothing week-tagged. passing/rushing/receiving
+    # are ALWAYS-present dict entries now (2026-09 metric-grouped redesign).
+    empty_metric = {"reconciled": [], "sources": [], "source_groups": []}
+    assert out["schedule"] == [{"week": 1, "game_type": None, "stats": {
+        "passing": empty_metric, "rushing": empty_metric, "receiving": empty_metric}}]
     assert out["season_history"] == [{"season": "2025"}]
     assert out["team_datasets"] == {"snap_counts": []}
+    # team_stats_grouped is the season-wide counterpart, built from the
+    # same team_datasets via _season_grouped_stats -- also always carries
+    # the three metric keys, empty here for the same reason.
+    assert out["team_stats_grouped"] == {
+        "passing": empty_metric, "rushing": empty_metric, "receiving": empty_metric}
 
 
 def test_team_profile_caches_repeat_calls(monkeypatch):
@@ -750,6 +778,7 @@ def test_team_profile_template_never_double_escapes_ndash():
         "season_history": [],
         "team_datasets": {"snap_counts": [
             {"player": None, "team": "SF", "offense_pct": None}]},
+        "team_stats_grouped": {}, "source_labels": {},
         "avatars": {}, "league": None, "season": None,
     }
     html = template.render(**ctx)
@@ -766,17 +795,34 @@ def test_team_profile_template_condenses_constant_columns_in_game_drilldown():
     and week are already shown in the row's own summary line above), so
     showing them per-row is pure duplication. The season-wide Advanced
     stats section, by contrast, spans every game and must KEEP these
-    columns, since they genuinely differ row to row there."""
+    columns, since they genuinely differ row to row there.
+
+    The per-game detail is lazy-loaded (2026-09 -- see team_profile.html's
+    own comment on the schedule section) via _team_game_detail.html, a
+    separate TemplateResponse from the parent page; rendered directly
+    here, same as webapp.app.team_game_detail() would build it."""
     env = _tpl.env
-    template = env.get_template("team_profile.html")
 
     stat_row = {
         "pfr_player_name": "Fred Warner", "team": "SF", "opponent": "DAL",
         "game_id": "2025_01_SF_DAL", "game_type": "REG", "week": 1,
         "season": 2025, "def_tackles_combined": 12,
     }
+    empty_metric = {"reconciled": [], "sources": [], "source_groups": []}
+    stats = {"pfr_def": [stat_row], "passing": empty_metric,
+             "rushing": empty_metric, "receiving": empty_metric}
+
+    detail_template = env.get_template("_team_game_detail.html")
+    detail = detail_template.render(
+        theme="light", game_key=1, stats=stats, source_labels={})
+
+    import re
+    game_headers = re.findall(r"<th>(.*?)</th>", re.search(r"<thead>(.*?)</thead>", detail, re.S).group(1))
+    assert game_headers == ["Player", "def tackles combined"]
+
+    template = env.get_template("team_profile.html")
     schedule = [{"week": 1, "away_team": "SF", "away_score": 24, "home_team": "DAL",
-                "home_score": 20, "margin": 4, "stats": {"pfr_def": [stat_row]}}]
+                "home_score": 20, "margin": 4, "stats": stats}]
     team_datasets = {"pfr_def": [stat_row]}
     ctx = {
         "abbr": "SF", "asset_v": "1", "theme": "light",
@@ -785,15 +831,13 @@ def test_team_profile_template_condenses_constant_columns_in_game_drilldown():
         "roster": [], "roster_by_position": [],
         "schedule": schedule, "season_history": [],
         "team_datasets": team_datasets,
+        # pfr_def is single-source (no cross-source metric to group under),
+        # so it still reaches the season-wide section straight from
+        # team_stats_grouped, unaffected by the reconciliation redesign.
+        "team_stats_grouped": {"pfr_def": [stat_row]}, "source_labels": {},
         "avatars": {}, "league": None, "season": None,
     }
     html = template.render(**ctx)
-
-    import re
-    detail = re.search(r'<div class="dt-detail">(.*?)</div>\s*</details>', html, re.S).group(1)
-    game_headers = re.findall(r"<th>(.*?)</th>", re.search(r"<thead>(.*?)</thead>", detail, re.S).group(1))
-    assert game_headers == ["Player", "def tackles combined"]
-
     season_section = html[html.find("Advanced &amp; usage stats"):]
     season_headers = re.findall(r"<th>(.*?)</th>", re.search(r"<thead>(.*?)</thead>", season_section, re.S).group(1))
     assert "opponent" in season_headers
@@ -823,7 +867,7 @@ def test_team_profile_template_shows_game_type_in_row_header():
         "current_season": "2025", "seasons_covered": ["2025"],
         "roster": [], "roster_by_position": [],
         "schedule": schedule, "season_history": [],
-        "team_datasets": {},
+        "team_datasets": {}, "team_stats_grouped": {}, "source_labels": {},
         "avatars": {}, "league": None, "season": None,
     }
     html = template.render(**ctx)
@@ -833,37 +877,57 @@ def test_team_profile_template_shows_game_type_in_row_header():
 
 
 @pytest.mark.skipif(_tpl is None, reason="webapp.app import chain unavailable")
-def test_team_profile_template_game_stat_labels_covers_every_team_dataset():
-    """Regression guard for a real gap that shipped: _TEAM_DATASETS (the
-    Python-side list of datasets actually fetched into team_datasets) had
-    9 entries, but the template's game_stat_labels list -- the per-game
-    drilldown's own dataset loop -- only covered 8, silently omitting
-    "injuries" from every per-match dropdown even though the data was
-    fully present in g.stats["injuries"]. Every dataset _attach_week_stats
-    can surface under g.stats (every _TEAM_DATASETS entry, with
-    "snap_counts"/"player_stats" replaced by their split-bucket keys) must
-    have a corresponding game_stat_labels entry, or a future dataset
-    addition will repeat this same silent-gap bug.
+def test_team_profile_template_stats_covers_every_real_top_level_key():
+    """Regression guard for a real gap that shipped originally (pre-2026-09
+    metric regroup): _TEAM_DATASETS had 9 entries, but the template's own
+    dataset-label loop only covered 8, silently omitting "injuries" from
+    every per-match dropdown even though the data was fully present in
+    g.stats["injuries"].
 
-    Derives the expected key set from _TEAM_DATASETS/_SNAP_BUCKETS/
-    _PLAYER_STATS_BUCKETS directly (not a hand-maintained literal) so this
-    test itself can't go stale the next time a dataset is added -- it
-    would have caught the player_stats addition automatically rather than
-    needing a manual edit alongside it."""
+    2026-09: stats are grouped BY METRIC now (webapp.stat_reconcile /
+    _grouped_metric_stats), so the template no longer has one label per
+    raw dataset -- it has `metric_labels` (passing/rushing/receiving,
+    which absorb player_stats/ngs_*/sleeper/pfr_* role-split rows) plus
+    `single_source_labels` (snap_counts_*/pfr_def/injuries, unchanged,
+    single-source). This test re-derives the SAME invariant against the
+    new shape: every real top-level key `_attach_week_stats` can actually
+    put into `g.stats` (every _TEAM_DATASETS entry PLUS "sleeper" -- added
+    separately in `_team_datasets()`, not in the static list -- run through
+    the real role-split/grouping functions) must be covered by either
+    metric_labels or single_source_labels, so a future dataset addition
+    can't silently vanish from the per-game drilldown the same way
+    "injuries" once did."""
     import re
+    from webapp import stat_reconcile
+    # metric_labels is now `{% set metric_labels = METRIC_LABELS %}` -- the
+    # single Python source of truth (stat_reconcile.METRIC_LABELS,
+    # registered as a Jinja global), so read it directly rather than
+    # regex-parsing a literal that no longer lives in the template source.
+    metric_keys = {key for key, _ in stat_reconcile.METRIC_LABELS}
     src = pathlib.Path(_tpl.env.loader.searchpath[0], "team_profile.html").read_text(encoding="utf-8")
-    block = re.search(r"game_stat_labels\s*=\s*\[(.*?)\]\s*%\}", src, re.S).group(1)
-    game_keys = set(re.findall(r'\("([\w]+)"', block))
+    single_block = re.search(r"single_source_labels\s*=\s*\[(.*?)\]\s*%\}", src, re.S).group(1)
+    single_keys = set(re.findall(r'\("([\w]+)"', single_block))
 
-    split_ds = {"snap_counts": [b for b, _ in tp._SNAP_BUCKETS],
-               "player_stats": [b for b, _ in tp._PLAYER_STATS_BUCKETS]}
-    expected = set()
-    for ds in tp._TEAM_DATASETS:
-        if ds in split_ds:
-            expected.update(f"{ds}_{bucket}" for bucket in split_ds[ds])
-        else:
-            expected.add(ds)
-    assert game_keys == expected
+    # What top-level key does each real dataset ultimately surface under?
+    # snap_counts/pfr_def/injuries -> themselves (single_source_labels).
+    # player_stats/sleeper -> role-split into passing/rushing/receiving
+    # (metric_labels). ngs_*/pfr_pass/pfr_rec/pfr_rush -> already named
+    # for their own metric (metric_labels covers them via reconciliation
+    # or the "pfr" sub-table).
+    expected_metric_datasets = {
+        "player_stats", "sleeper", "ngs_passing", "ngs_receiving", "ngs_rushing",
+        "pfr_pass", "pfr_rec", "pfr_rush"}
+    expected_single_datasets = {"snap_counts", "pfr_def", "injuries"}
+    all_datasets = set(tp._TEAM_DATASETS) | {"sleeper"}
+    assert all_datasets == expected_metric_datasets | expected_single_datasets
+
+    # snap_counts itself splits into 3 role keys, all of which must be
+    # covered by single_source_labels (it has no metric family).
+    snap_keys = {f"snap_counts_{b}" for b, _ in tp._SNAP_BUCKETS}
+    assert snap_keys <= single_keys
+    assert {"pfr_def", "injuries"} <= single_keys
+    # Every metric family (passing/rushing/receiving) must be covered.
+    assert metric_keys == {"passing", "rushing", "receiving"}
 
 
 @pytest.mark.skipif(_tpl is None, reason="webapp.app import chain unavailable")
@@ -872,7 +936,11 @@ def test_team_profile_template_renders_injuries_in_game_drilldown():
     _attach_week_stats, not a hand-built stub) must actually appear in
     that game's rendered drilldown -- the bug this guards against had the
     data present in g.stats but nothing rendered because the template's
-    label loop skipped the key entirely."""
+    label loop skipped the key entirely.
+
+    The per-game detail is lazy-loaded (2026-09) via _team_game_detail.html
+    -- rendered directly here, same as webapp.app.team_game_detail() would
+    build it for this game's `stats`."""
     schedule_raw = [{"week": 1, "away_team": "SF", "away_score": 24,
                      "home_team": "DAL", "home_score": 20, "margin": 4}]
     team_datasets = {"injuries": [
@@ -880,32 +948,28 @@ def test_team_profile_template_renders_injuries_in_game_drilldown():
          "report_primary_injury": "Knee", "report_status": "Questionable"}]}
     schedule = tp._attach_week_stats(schedule_raw, team_datasets)
 
-    template = _tpl.env.get_template("team_profile.html")
-    ctx = {
-        "abbr": "SF", "asset_v": "1", "theme": "light",
-        "identity": {"abbr": "SF", "known": True},
-        "current_season": "2025", "seasons_covered": ["2025"],
-        "roster": [], "roster_by_position": [],
-        "schedule": schedule, "season_history": [],
-        "team_datasets": team_datasets,
-        "avatars": {}, "league": None, "season": None,
-    }
-    html = template.render(**ctx)
-    import re
-    detail = re.search(r'<div class="dt-detail">(.*?)</div>\s*</details>', html, re.S).group(1)
-    assert "Injury reports" in detail
+    template = _tpl.env.get_template("_team_game_detail.html")
+    detail = template.render(theme="light", game_key=1,
+                             stats=schedule[0]["stats"], source_labels={})
+    assert "Injuries" in detail  # the sub-tab pill label
     assert "Fred Warner" in detail
     assert "Knee" in detail
 
 
 @pytest.mark.skipif(_tpl is None, reason="webapp.app import chain unavailable")
-def test_team_profile_template_renders_player_stats_box_score_in_game_drilldown():
+def test_team_profile_template_renders_player_stats_in_reconciled_metric_tables():
     """End-to-end: player_stats rows (the comprehensive box-score fallback,
     added specifically because ngs_receiving/ngs_rushing/ngs_passing only
-    cover players NFL's tracking system published that week) render as
-    three separate "Box score: <role>" sections in the per-game drilldown,
-    distinct from the narrower "Next Gen Stats" sections, via the real
-    _attach_week_stats pipeline."""
+    cover players NFL's tracking system published that week) feed the
+    RECONCILED Passing/Rushing/Receiving tables now (2026-09 metric
+    regroup) rather than their own separate "Box score: <role>" sections --
+    player_stats is the only source with data here, so each reconciled row
+    shows player_stats as its sole source, via the real _attach_week_stats
+    pipeline end to end.
+
+    The per-game detail is lazy-loaded (2026-09) via _team_game_detail.html
+    -- rendered directly here, same as webapp.app.team_game_detail() would
+    build it for this game's `stats`."""
     schedule_raw = [{"week": 1, "away_team": "SF", "away_score": 24,
                      "home_team": "DAL", "home_score": 20, "margin": 4}]
     team_datasets = {"player_stats": [
@@ -916,34 +980,35 @@ def test_team_profile_template_renders_player_stats_box_score_in_game_drilldown(
     ]}
     schedule = tp._attach_week_stats(schedule_raw, team_datasets)
 
-    template = _tpl.env.get_template("team_profile.html")
-    ctx = {
-        "abbr": "SF", "asset_v": "1", "theme": "light",
-        "identity": {"abbr": "SF", "known": True},
-        "current_season": "2025", "seasons_covered": ["2025"],
-        "roster": [], "roster_by_position": [],
-        "schedule": schedule, "season_history": [],
-        "team_datasets": team_datasets,
-        "avatars": {}, "league": None, "season": None,
-    }
-    html = template.render(**ctx)
-    import re
-    detail = re.search(r'<div class="dt-detail">(.*?)</div>\s*</details>', html, re.S).group(1)
-    assert "Box score: Receiving" in detail
-    assert "Box score: Passing" in detail
-    assert "Box score: Rushing" in detail
+    template = _tpl.env.get_template("_team_game_detail.html")
+    detail = template.render(theme="light", game_key=1, stats=schedule[0]["stats"],
+                             source_labels={"player_stats": "Box score (nflverse)"})
+    assert "<strong>Receiving</strong>" in detail
+    assert "<strong>Passing</strong>" in detail
+    assert "<strong>Rushing</strong>" in detail
+    assert "Source: Box score (nflverse)" in detail
     assert "Kyle Juszczyk" in detail
     assert "Brock Purdy" in detail
+    # No stray "Box score: <role>" headings from the old source-segmented
+    # layout -- the metric heading alone is the section title now.
+    assert "Box score: Receiving" not in detail
+    assert "Box score: Passing" not in detail
+    assert "Box score: Rushing" not in detail
 
 
 @pytest.mark.skipif(_tpl is None, reason="webapp.app import chain unavailable")
-def test_team_profile_template_season_wide_shows_player_stats_as_box_score():
-    """The season-wide Advanced & usage stats section (unsplit, unlike the
-    per-game drilldown) must also surface player_stats, labelled "Box
-    score" -- added to advanced_datasets alongside snap_counts."""
+def test_team_profile_template_season_wide_reconciles_player_stats():
+    """The season-wide Advanced & usage stats section must surface
+    player_stats-sourced rows under the reconciled Receiving table (2026-09
+    metric regroup -- player_stats no longer gets its own "Box score"
+    section; its role-split rows feed reconciliation like every other
+    source). Uses the real _season_grouped_stats pipeline end to end,
+    including the source note naming player_stats by its display label."""
+    from webapp import stat_reconcile
     team_datasets = {"player_stats": [
         _player_stats_row(player_display_name="Kyle Juszczyk", targets=2,
                           receptions=2, receiving_yards=32)]}
+    team_stats_grouped = tp._season_grouped_stats(team_datasets)
     template = _tpl.env.get_template("team_profile.html")
     ctx = {
         "abbr": "SF", "asset_v": "1", "theme": "light",
@@ -952,44 +1017,89 @@ def test_team_profile_template_season_wide_shows_player_stats_as_box_score():
         "roster": [], "roster_by_position": [],
         "schedule": [], "season_history": [],
         "team_datasets": team_datasets,
+        "team_stats_grouped": team_stats_grouped,
+        "source_labels": stat_reconcile.SOURCE_LABELS,
         "avatars": {}, "league": None, "season": None,
     }
     html = template.render(**ctx)
     season_section = html[html.find("Advanced &amp; usage stats"):]
-    assert "Box score" in season_section
+    assert "<summary>Receiving" in season_section
+    assert "Source: Box score" in season_section
     assert "Kyle Juszczyk" in season_section
 
 
 @pytest.mark.skipif(_tpl is None, reason="webapp.app import chain unavailable")
-def test_team_profile_template_stat_table_excludes_recent_team_column():
-    """Regression guard for a real bug caught while verifying a live DET
-    render: player_stats's team column is named "recent_team" (every OTHER
-    dataset uses "team"/"team_abbr"), which id_cols didn't originally
-    include -- so every row in a Box score table repeated the team
-    abbreviation as its own column, identical on every row, pure noise."""
-    team_datasets = {"player_stats": [
-        {"player_display_name": "Jahmyr Gibbs", "recent_team": "DET", "week": 1,
-         "season": 2026, "position": "RB", "targets": 5, "receptions": 5,
-         "receiving_yards": 30, "receiving_tds": 0, "receiving_air_yards": -4,
-         "target_share": 0.1282051282051282, "air_yards_share": -0.01932367149758454,
-         "wopr": 0.1787811222593831, "racr": -7.5,
-         "carries": 0, "rushing_yards": 0, "rushing_tds": 0,
-         "attempts": 0, "completions": 0, "passing_yards": 0, "passing_tds": 0,
-         "interceptions": 0, "passing_air_yards": 0, "pacr": None,
-         "fantasy_points": 28.6, "fantasy_points_ppr": 33.6}]}
+def test_metric_sources_note_lists_pfr_advanced_only_once():
+    """Regression guard for a real bug: pfr_rush legitimately appears BOTH
+    as a carries-voting source (stat_reconcile._METRIC_MAPS maps "carries"
+    to pfr_rush too, so it's a real reconcile_metric() participant) AND
+    supplies its own separate un-reconciled `entry.pfr` sub-table (its
+    OTHER columns -- yards before/after contact -- have no cross-source
+    overlap). The source note's macro appended "PFR advanced" once for
+    each of those two reasons before this fix, rendering "Source: PFR
+    advanced, Box score, Sleeper, PFR advanced" -- the same name twice.
+
+    The note is a single flat, deduped "Source: X, Y" list (per user
+    request: "don't need to split out which data is from which source,
+    just coagulated together") -- this test only checks that flattening
+    every source across every source_groups combination still dedupes
+    PFR advanced correctly, not that it's split per stat."""
+    from webapp import stat_reconcile
+    team_datasets = {
+        "player_stats": [_player_stats_row(player_display_name="Christian McCaffrey",
+                                           carries=20, rushing_yards=90)],
+        "pfr_rush": [{"pfr_player_name": "Christian McCaffrey", "team": "SF", "week": 1,
+                      "carries": 20, "rushing_yards_before_contact": 40}],
+    }
+    team_stats_grouped = tp._season_grouped_stats(team_datasets)
     template = _tpl.env.get_template("team_profile.html")
     ctx = {
-        "abbr": "DET", "asset_v": "1", "theme": "light",
-        "identity": {"abbr": "DET", "known": True},
-        "current_season": "2026", "seasons_covered": ["2026"],
+        "abbr": "SF", "asset_v": "1", "theme": "light",
+        "identity": {"abbr": "SF", "known": True},
+        "current_season": "2025", "seasons_covered": ["2025"],
         "roster": [], "roster_by_position": [],
         "schedule": [], "season_history": [],
         "team_datasets": team_datasets,
+        "team_stats_grouped": team_stats_grouped,
+        "source_labels": stat_reconcile.SOURCE_LABELS,
         "avatars": {}, "league": None, "season": None,
     }
     html = template.render(**ctx)
+    season_section = html[html.find("Advanced &amp; usage stats"):]
+    import re
+    m = re.search(r"<summary>Rushing.*?Source: ([^<]+)</p>", season_section, re.S)
+    assert m, "expected a Rushing source note"
+    names = [n.strip() for n in m.group(1).split(",")]
+    assert names.count("PFR advanced") == 1
+
+
+@pytest.mark.skipif(_tpl is None, reason="webapp.app import chain unavailable")
+def test_teamstat_macros_stat_table_excludes_recent_team_column():
+    """Regression guard for a real bug caught while verifying a live DET
+    render: player_stats's team column is named "recent_team" (every OTHER
+    dataset uses "team"/"team_abbr"), which id_cols didn't originally
+    include -- so every row in a source-segmented table repeated the team
+    abbreviation as its own column, identical on every row, pure noise.
+
+    2026-09: player_stats itself no longer renders through stat_table() at
+    all (its rows feed the reconciler, which uses a FIXED column list --
+    see reconciled_table() -- so this specific bug class is now
+    structurally impossible for player_stats). id_cols still excludes
+    recent_team defensively for any OTHER dataset that might reuse that
+    column name, and the guard is now tested directly against
+    _teamstat_macros.html's stat_table() -- the real code path any
+    single-source table (PFR advanced, snap counts, injuries) still uses --
+    rather than through team_profile.html's now-moot player_stats route."""
+    from jinja2 import Environment, FileSystemLoader
+    env = Environment(loader=FileSystemLoader(str(pathlib.Path(_tpl.env.loader.searchpath[0]))))
+    tpl = env.from_string(
+        '{% import "_teamstat_macros.html" as tsm %}{{ tsm.stat_table(rows) }}')
+    rows = [{"player_display_name": "Jahmyr Gibbs", "recent_team": "DET",
+            "week": 1, "targets": 5}]
+    html = tpl.render(rows=rows)
     assert "<td>DET</td>" not in html
     assert "recent team" not in html
+    assert "Jahmyr Gibbs" in html
 
 
 @pytest.mark.skipif(_tpl is None, reason="webapp.app import chain unavailable")
@@ -999,7 +1109,9 @@ def test_team_profile_template_rounds_float_cells_to_one_decimal():
     full double precision, "0.1282051282051282" instead of "0.1" -- the
     cell() macro rounds any non-integer float to 1dp at display time,
     leaves real integers (receptions=5) and whole-number floats (57.0,
-    still rounded for consistency) alone otherwise."""
+    still rounded for consistency) alone otherwise. snap_counts is
+    single-source (no metric family), so it's unaffected by the 2026-09
+    metric regroup and still renders through stat_table() directly."""
     team_datasets = {"snap_counts": [
         {"player": "Jahmyr Gibbs", "team": "DET", "week": 1, "position": "RB",
          "offense_snaps": 57.0, "offense_pct": 0.1282051282051282,
@@ -1012,9 +1124,88 @@ def test_team_profile_template_rounds_float_cells_to_one_decimal():
         "roster": [], "roster_by_position": [],
         "schedule": [], "season_history": [],
         "team_datasets": team_datasets,
+        "team_stats_grouped": tp._season_grouped_stats(team_datasets),
+        "source_labels": {},
         "avatars": {}, "league": None, "season": None,
     }
     html = template.render(**ctx)
     assert "0.1282051282051282" not in html
     assert "57.0" in html  # a whole-number float still shows (1dp, harmless)
     assert "0.1</td>" in html or "0.1<" in html
+
+
+# --- _teamstat_macros.html (shared with the Testing-tab prototype) ------------
+
+
+@pytest.mark.skipif(_tpl is None, reason="webapp.app import chain unavailable")
+def test_teamstat_macros_shared_file_renders_identically_to_inline_original():
+    """_teamstat_macros.html was factored out of team_profile.html so a
+    Testing-tab layout prototype could reuse the exact same cell()/
+    stat_table() rendering without a copy that could drift from the real
+    page's own (see tab_testing.html's schedule-drilldown restyle mockup).
+    This locks
+    in that team_profile.html's real per-game and season-wide tables still
+    render through the shared macros with identical output shape -- a
+    header row, one data row, values matching cell()'s own float-rounding/
+    None-dash rules -- rather than silently reverting to a local copy."""
+    template = _tpl.env.get_template("team_profile.html")
+    stat_row = {"pfr_player_name": "Fred Warner", "team": "SF", "week": 1,
+                "def_tackles_combined": 12, "missed_tackle_pct": 0.128205}
+    team_datasets = {"pfr_def": [stat_row]}
+    ctx = {
+        "abbr": "SF", "asset_v": "1", "theme": "light",
+        "identity": {"abbr": "SF", "known": True},
+        "current_season": "2025", "seasons_covered": ["2025"],
+        "roster": [], "roster_by_position": [],
+        "schedule": [], "season_history": [],
+        "team_datasets": team_datasets,
+        "team_stats_grouped": tp._season_grouped_stats(team_datasets),
+        "source_labels": {},
+        "avatars": {}, "league": None, "season": None,
+    }
+    html = template.render(**ctx)
+    assert "Fred Warner" in html
+    assert "<th>def tackles combined</th>" in html
+    assert "12" in html
+    assert "0.1</td>" in html or "0.1<" in html  # cell() rounding still applies
+    assert "0.128205" not in html
+
+
+@pytest.mark.skipif(_tpl is None, reason="webapp.app import chain unavailable")
+def test_team_profile_reconciled_table_renders_flyout_on_every_cell():
+    """End-to-end: the per-source hover flyout, shipped to the real
+    /team/{abbr} page (2026-09 -- trialled first as a Testing-tab mockup,
+    reconciled_table's default flipped to `flyout=true` once that mockup
+    was reviewed). EVERY reconciled cell, not just a disagreeing one, is
+    wrapped in a hoverable `.stat-cell` carrying its own `.stat-flyout`
+    breakdown of every contributing source's own value, with the
+    disagreement flag `.stat-flag` still present on a disagreeing cell.
+
+    The per-game detail is lazy-loaded (2026-09) via _team_game_detail.html
+    -- rendered directly here, same as webapp.app.team_game_detail() would
+    build it for this game's `stats`."""
+    schedule_raw = [{"week": 1, "away_team": "SF", "away_score": 24,
+                     "home_team": "DAL", "home_score": 20, "margin": 4}]
+    team_datasets = {
+        "player_stats": [_player_stats_row(player_display_name="Patrick Mahomes",
+                                           attempts=29)],
+        "sleeper": [{"player": "Patrick Mahomes", "team": "KC", "week": 1,
+                    "pass_att": 28}],
+    }
+    schedule = tp._attach_week_stats(schedule_raw, team_datasets)
+
+    template = _tpl.env.get_template("_team_game_detail.html")
+    detail = template.render(theme="light", game_key=1, stats=schedule[0]["stats"],
+                             source_labels={"player_stats": "Box score", "sleeper": "Sleeper"})
+
+    assert '<span class="stat-cell" tabindex="0">' in detail
+    assert 'class="stat-flyout"' in detail
+    assert "stat-flyout-src\">Box score" in detail
+    assert "stat-flyout-src\">Sleeper" in detail
+    assert 'class="stat-flyout-val">29' in detail  # player_stats's own value
+    assert 'class="stat-flyout-val">28' in detail  # sleeper's own value
+    assert 'class="stat-flag">' in detail  # disagreement flag, still present
+    assert "Patrick Mahomes" in detail
+    # The old flag+title-only rendering (flyout=false) is gone from the
+    # real page's own output -- no bare `title="Sources disagree` tooltip.
+    assert 'title="Sources disagree' not in detail
