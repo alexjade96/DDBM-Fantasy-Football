@@ -1,0 +1,168 @@
+{# Every season-DEPENDENT section on the team-profile page (team_profile.
+   html), in one file so it can be re-rendered as a single htmx fragment
+   when the season dropdown changes: Roster leaderboard, Schedule &
+   results, Advanced & usage stats. Mirrors player_profile.html's own
+   _player_season_sections.html split (same user request, applied to this
+   page too) -- picking a season re-renders ALL THREE of these in
+   lockstep, in place, rather than the old plain <a> pill row navigating
+   the whole page.
+
+   "Season history" (the multi-season W-L-T/PF-PA table) stays OUTSIDE
+   this container in team_profile.html -- it deliberately spans every
+   season at once and was never season-SCOPED to begin with, so it has
+   nothing to swap.
+
+   UNLIKE player_profile.py's `scope_profile()`, `team_profile()` itself
+   is cached per (abbr, season) -- see that module's own docstring -- so a
+   season switch here can be a genuinely COLD data pull (a new
+   roster/schedule/nflref-dataset fetch), not a cheap in-memory re-filter.
+   `webapp.app.team_season_sections()` calls `tp.team_profile(abbr,
+   season=...)` directly (same as team_page() itself does); the shared
+   `hx-indicator="#bar"` on <body> is what gives a slow/cold season its
+   own visual feedback here, since there is no separate loader-fragment
+   mechanism the way the full-page route has (`_team_loader`) -- an htmx
+   fragment swap has nowhere to redirect FROM.
+
+   Needs in context: abbr, theme, current_season, roster_by_position,
+   schedule, team_stats_grouped, source_labels, metric_labels (a Jinja
+   global), plus tsm ("_teamstat_macros.html") and idm ("_ident.html"),
+   imported here directly (mirrors _player_season_sections.html's own
+   local imports) so this file also renders standalone from the htmx
+   fragment route, which has no other template around it. #}
+{% import "_ident.html" as idm with context %}
+{% import "_teamstat_macros.html" as tsm %}
+{% set metric_labels = METRIC_LABELS %}
+{% set single_source_labels = [
+  ("snap_counts_offense", "Snap counts: Offense"),
+  ("snap_counts_defense", "Snap counts: Defense"),
+  ("snap_counts_special_teams", "Snap counts: Special teams"),
+  ("pfr_def", "Defense (PFR advanced)"),
+  ("injuries", "Injury reports")] %}
+
+{# --- roster / season leaderboard, grouped by position ------------------
+   Each position is its own bordered .card (the same framed-block look
+   .facts-card already establishes elsewhere on this page) laid out in a
+   wrapping grid, rather than a flat stream of h3+table pairs -- with 5-6
+   groups on one page, same-weight h3 headings and a bare 22px sibling gap
+   read as one long undifferentiated scroll. The card border is what
+   actually separates "QB" from "RB" at a glance; the heading alone
+   wasn't doing that job. #}
+<h2>Roster &middot; {{ current_season }} leaderboard</h2>
+{% if roster_by_position %}
+<div class="grid two roster-pos-grid">
+{% for grp in roster_by_position %}
+<div class="card roster-pos-card">
+  <h3>{{ grp.position }} <span class="hint">({{ grp.players|length }})</span></h3>
+  <div class="tablewrap scrolltable">
+    <table class="dt-games">
+      <thead><tr>
+        <th class="n">#</th><th>Player</th>
+        <th class="n">PPR pts</th><th class="n">PPR/G</th>
+      </tr></thead>
+      <tbody>
+      {% for r in grp.players %}
+        <tr>
+          <td class="n">{{ r.rank }}</td>
+          <td>{{ idm.headshot(r.player_id, link=True) }}{{ idm.player_link(r.player_id, r.player) }}</td>
+          <td class="n">{% if r.fpts_ppr is not none %}{{ "%.1f"|format(r.fpts_ppr) }}{% else %}&ndash;{% endif %}</td>
+          <td class="n">{% if r.ppg_ppr is not none %}{{ "%.1f"|format(r.ppg_ppr) }}{% else %}&ndash;{% endif %}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endfor %}
+</div>
+{% else %}
+<p class="empty">No roster data found for {{ abbr }} in {{ current_season }}.</p>
+{% endif %}
+
+{# --- schedule & results, one drilldown row per game --------------------
+   Each game expands into this team's own advanced/usage stat lines for
+   that week (see webapp.team_profile._attach_week_stats), sliced from the
+   same team_datasets already loaded for the Advanced stats section below
+   -- no extra data pull per game, only a second RENDER: each row's detail
+   is now LAZY-LOADED on first expand (`hx-get`/`hx-trigger="toggle once"`
+   to webapp.app.team_game_detail(), which reads the same cached
+   team_profile() call this page already made) rather than every game's
+   full detail baked inline into the page on load. A real, measured cost
+   motivated this (2026-09): a full season's schedule section alone ran
+   ~900KB of HTML, almost entirely up-to-8-stacked-tables-per-game detail
+   a reader may never open. The detail itself is ALSO now sub-tabbed
+   (Box score / Snap counts / Defense / Injuries, see
+   _team_game_detail.html) instead of a flat stack with nothing but a
+   bold label between sections -- both changes address the same
+   complaint (this section reading as one long, heavy scroll), one on
+   payload, one on layout. #}
+<h2>Schedule &amp; results <span class="hint">({{ current_season }})</span></h2>
+{% if schedule %}
+<div class="tablewrap">
+  <div class="drilltable"
+       style="--cols: 70px minmax(90px,1fr) 70px minmax(90px,1fr) 70px 80px">
+    <div class="dt-head">
+      <span>Wk</span><span>Away</span><span class="n">Score</span>
+      <span>Home</span><span class="n">Score</span><span class="n">Margin</span>
+    </div>
+    {% for g in schedule %}
+    <details class="dt-row"
+       hx-get="/team/{{ abbr }}/game/{{ g.week }}?season={{ current_season }}&theme={{ theme }}"
+       hx-trigger="toggle once" hx-target="find .dt-detail" hx-swap="innerHTML">
+      <summary>
+        <span>{{ g.week }}{% if g.game_type %} <span class="q">{{ g.game_type }}</span>{% endif %}</span>
+        <span>{{ idm.team_link(g.away_team) }}</span>
+        <span class="n">{% if g.away_score is not none %}{{ g.away_score }}{% else %}&ndash;{% endif %}</span>
+        <span>{{ idm.team_link(g.home_team) }}</span>
+        <span class="n">{% if g.home_score is not none %}{{ g.home_score }}{% else %}&ndash;{% endif %}</span>
+        <span class="n">{% if g.margin is not none %}{{ g.margin }}{% else %}&ndash;{% endif %}</span>
+      </summary>
+      <div class="dt-detail"><p class="hint">Loading&hellip;</p></div>
+    </details>
+    {% endfor %}
+  </div>
+</div>
+{% else %}
+<p class="empty">No schedule data found for {{ abbr }} in {{ current_season }}.</p>
+{% endif %}
+
+{# --- advanced / usage stats, grouped by metric (see team_profile.html's
+     own header comment block for the full rationale) ---------------------
+   Each metric is its own bordered .card (via .adv-stat-card, layered on
+   the plain <details> rather than the .dt-row/.drilltable treatment --
+   these aren't rows of a shared grid, they're independent collapsible
+   sections, and .dt-row's thin top-border-only look reads as one
+   continuous list once several sit back to back). Explicit margin-top
+   between them (.adv-stat-card + .adv-stat-card) on top of the page's
+   usual 22px sibling gap, since a heavier bordered block wants a little
+   more air than a plain heading did. #}
+<h2>Advanced &amp; usage stats <span class="hint">({{ current_season }})</span></h2>
+{% set flags = namespace(any=false) %}
+{% for metric, label in metric_labels %}
+{% set entry = team_stats_grouped.get(metric) %}
+{% if entry and (entry.reconciled or entry.pfr) %}
+{% set flags.any = true %}
+<details class="dt-row adv-stat-card">
+  <summary>{{ label }}{% if entry.reconciled %} ({{ entry.reconciled|length }} players){% endif %}</summary>
+  {{ tsm.metric_sources_note(entry, metric, source_labels) }}
+  {% if entry.reconciled %}
+  {{ tsm.reconciled_table(entry.reconciled, metric, source_labels, scroll=true, flyout=true) }}
+  {% endif %}
+  {% if entry.pfr %}
+  {{ tsm.stat_table(entry.pfr, scroll=true) }}
+  {% endif %}
+</details>
+{% endif %}
+{% endfor %}
+{% for ds, label in single_source_labels %}
+{% set rows = team_stats_grouped.get(ds) %}
+{% if rows %}
+{% set flags.any = true %}
+<details class="dt-row adv-stat-card">
+  <summary>{{ label }} ({{ rows|length }} rows)</summary>
+  {{ tsm.stat_table(rows, scroll=true) }}
+</details>
+{% endif %}
+{% endfor %}
+{% if not flags.any %}
+<p class="empty">No advanced/usage data found for {{ abbr }} in {{ current_season }}.</p>
+{% endif %}

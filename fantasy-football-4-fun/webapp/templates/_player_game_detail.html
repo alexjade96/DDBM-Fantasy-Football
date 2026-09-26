@@ -1,0 +1,75 @@
+{# One game-log row's detail, for the player-profile page's game log
+   (player_profile.html). Lazy-loaded: the parent <summary> carries
+   `hx-get`/`hx-trigger="toggle once"` so this partial is only fetched the
+   first time a reader actually expands that game row -- mirrors
+   team_profile.html/_team_game_detail.html's identical pattern and the
+   identical real cost that motivated it there (~900KB for one team-season
+   of inline detail; a full player career log measured ~780KB before this
+   fix). `webapp.app.player_game_detail()` renders this directly from the
+   same cached `player_profile()` call the parent page already made, so
+   there is no second data pull, only a second render.
+
+   `game` is one entry from `webapp.player_profile._game_log` --
+   `{"season","week","position","merged_row","raw_by_category",
+   "route_summary","route_unavailable"}`. `merged_row` is the SAME shape
+   `team_profile._merge_offense_players`/`_merge_defense_players` produce
+   for this exact player+game on the team page's own drilldown (same
+   reconciliation code, just called for one player instead of a whole
+   team) -- rendered through the identical `position_group_table` macro so
+   the two pages show byte-identical numbers/columns/flyouts for the same
+   game. `raw_by_category` groups the SAME raw, unreconciled per-source
+   rows the page's own "Real-NFL history" section shows in full elsewhere,
+   just scoped to this one game and grouped by metric category instead of
+   by source across the whole page -- kept for a reader to inspect what
+   each individual source actually reported, per standing direction to
+   keep the player page's underlying data inspectable. #}
+{# hide_player=true on every call below: this whole partial is already
+   scoped to the one player whose row was just expanded (the parent
+   .dt-row's own summary states season/week/opponent), so re-printing
+   their name and position on every nested table here was pure repetition
+   -- see _teamstat_macros.html's own comment on both macros' `hide_player`
+   param for the team_profile.html contrast (a whole roster per table,
+   where the name IS the needed identifier). #}
+{% import "_teamstat_macros.html" as tsm %}
+{% set is_defense = identity.position in ("DL", "LB", "DB", "DE", "DT", "CB", "S") %}
+{% set group = [{"group": identity.position, "players": [game.merged_row]}] %}
+{% if is_defense %}
+{{ tsm.position_group_table(group, {identity.position: DEF_COLS.get(identity.position, DEF_COLS.get("DL"))}, source_labels, hide_player=true) }}
+{% else %}
+{{ tsm.position_group_table(group, {identity.position: OFF_POSITION_COLS.get(identity.position, [])}, source_labels, hide_player=true) }}
+{% endif %}
+{% if game.route_summary %}
+<div class="metric-card">
+  <p class="hint"><strong>Route participation</strong></p>
+  {{ tsm.stat_table([game.route_summary], hide_player=true) }}
+</div>
+{% elif game.route_unavailable %}
+{# No "for {{ game.season }}" here -- the parent row's own summary already
+   states the season, right above this expanded detail. #}
+<p class="empty">Not yet available &mdash; nflverse doesn&rsquo;t publish
+  this data until after the season ends. Route stats will appear here
+  once it&rsquo;s released.</p>
+{% endif %}
+{# Raw source data now mirrors team_profile.html/_team_game_detail.html's
+   own "nested card" look (the route-participation block just above, and
+   that page's identical treatment) -- one .metric-card per category, each
+   source's table inside it under a plain "Source label" heading, rather
+   than hidden behind a .quiet-toggle triangle. Each category's own card is
+   small (typically one or two one-row tables -- a single game's worth of
+   data, never a whole season), so there's no payload reason to collapse
+   it the way the game ROW itself is collapsed/lazy-loaded; showing it
+   directly also matches how route participation (above) and every other
+   per-game block on the team page's own drilldown already render. #}
+{% for category, cat_label in [("passing", "Passing"), ("rushing", "Rushing"),
+                                ("receiving", "Receiving"), ("snap", "Snap counts"),
+                                ("defense", "Defense (raw)")] %}
+{% if game.raw_by_category.get(category) %}
+<div class="metric-card">
+  <p class="hint"><strong>{{ cat_label }}: raw source data</strong></p>
+  {% for ds_label, rows in game.raw_by_category[category] %}
+  <p class="hint">{{ ds_label }}</p>
+  {{ tsm.stat_table(rows, game_scoped=true, hide_player=true) }}
+  {% endfor %}
+</div>
+{% endif %}
+{% endfor %}

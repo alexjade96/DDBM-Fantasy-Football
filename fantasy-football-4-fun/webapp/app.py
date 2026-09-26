@@ -1056,6 +1056,13 @@ tpl.env.globals["CHART_META"] = CHART_META
 from webapp import stat_reconcile as _stat_reconcile  # noqa: E402
 tpl.env.globals["METRIC_LABELS"] = _stat_reconcile.METRIC_LABELS
 
+from webapp import team_profile as _team_profile  # noqa: E402
+tpl.env.globals["OFF_POSITION_COLS"] = _team_profile._OFF_POSITION_COLS
+tpl.env.globals["OFF_GROUP_ORDER"] = _team_profile._OFF_GROUP_ORDER
+tpl.env.globals["DEF_COLS"] = _team_profile._DEF_COLS
+tpl.env.globals["DEF_GROUP_ORDER"] = _team_profile._DEF_GROUP_ORDER
+tpl.env.globals["KICKER_COLS"] = _team_profile._KICKER_COLS
+
 # Testing tab: a holding area for prototypes under review. Nothing is
 # currently active there (tab_testing.html just shows the standing shell),
 # so there is no registry here right now. For a CHART prototype: write the
@@ -5188,7 +5195,7 @@ def report(league: str = DEFAULT_LEAGUE, season: str | None = None,
 
 # --- player profile ---------------------------------------------------------
 def _player_loader(player_id: str, league: str | None, season: str | None,
-                   refresh: int, focus: str | None = None) -> HTMLResponse:
+                   refresh: int, season_scope: str | None = None) -> HTMLResponse:
     """A fast, styled 'loading…' page that then navigates to the real
     render, same pattern as `_report_loader`. Only ever shown for a COLD
     request (see player_page's `pp.is_cached` check) -- a warm cache hit
@@ -5202,8 +5209,8 @@ def _player_loader(player_id: str, league: str | None, season: str | None,
         q += f"&league={quote(league)}"
     if season:
         q += f"&season={quote(season)}"
-    if focus:
-        q += f"&focus={quote(focus)}"
+    if season_scope:
+        q += f"&season_scope={quote(season_scope)}"
     if refresh:
         q += f"&refresh={refresh}"
     return HTMLResponse(f"""<!doctype html><html lang="en"><head>
@@ -5235,9 +5242,29 @@ def _player_loader(player_id: str, league: str | None, season: str | None,
 </body></html>""")
 
 
+def _player_season_ctx(profile: dict, season_scope: str | None) -> dict:
+    """The context keys `_player_season_sections.html` (and, by extension,
+    `_player_percentile.html`) need, built from `player_profile.scope_
+    profile()` -- shared by `player_page()` (the full page) and
+    `player_season_sections()` (the season dropdown's own htmx fragment)
+    so the two can't drift out of sync with each other."""
+    from webapp import player_profile as pp
+    scoped = pp.scope_profile(profile, season_scope)
+    return {
+        "real_nfl": scoped["real_nfl"],
+        "game_log": scoped["game_log"],
+        "game_log_stat_cols": profile.get("game_log_stat_cols") or [],
+        "adp_history": scoped["adp_history"],
+        "league_scoped": scoped["league_scoped"],
+        "percentile_profile": scoped["percentile_profile"],
+        "season_scope": scoped["season_scope"],
+        "seasons_covered": profile.get("seasons_covered") or [],
+    }
+
+
 @app.get("/player/{player_id}", response_class=HTMLResponse)
 def player_page(request: Request, player_id: str, league: str | None = None,
-                season: str | None = None, focus: str | None = None,
+                season: str | None = None, season_scope: str | None = None,
                 refresh: int = 0, render: int = 0, theme: str = "light"):
     """A single player's profile: real-NFL history + (when a league is
     given) this league's own draft/roster/trade/waiver history for them.
@@ -5248,11 +5275,13 @@ def player_page(request: Request, player_id: str, league: str | None = None,
     `league` IS given, `player_profile.player_profile()` adds the
     league-scoped section on top of the same real-NFL data.
 
-    `focus` is a SEPARATE concept from `season` (which, when a league is
-    given, `pick()` below reassigns to that league's own season) -- it picks
-    which season the percentile radar overlay is drawn bold/filled for, via
-    a season pill on the page; every other available season still renders
-    ghosted behind it. Defaults to the most recent season with real data.
+    `season_scope` is a SEPARATE concept from `season` (which, when a
+    league is given, `pick()` below reassigns to that league's own
+    season) -- it's the ONE season every "follow-up section" (percentile
+    radar, game log, league history, real-NFL history, ADP history) shows
+    at once, picked via a single shared dropdown on the page (see
+    player_profile.scope_profile's own docstring). Defaults to the current
+    real NFL season.
 
     `player_profile()` caches its own result (a cold call is expensive --
     see that module's docstring), so `refresh=1` is threaded through as
@@ -5266,6 +5295,7 @@ def player_page(request: Request, player_id: str, league: str | None = None,
     A warm hit skips the loader and renders straight through.
     """
     from webapp import player_profile as pp
+    from webapp import stat_reconcile
 
     resolved_league = None
     league_name = None
@@ -5278,75 +5308,110 @@ def player_page(request: Request, player_id: str, league: str | None = None,
             resolved_league = None
 
     if not render and (refresh or not pp.is_cached(player_id, resolved_league)):
-        return _player_loader(player_id, league, season, refresh, focus)
+        return _player_loader(player_id, league, season, refresh, season_scope)
 
     profile = pp.player_profile(player_id, league_id=resolved_league,
                                 fresh=bool(refresh))
     ident = profile["identity"]
-    available_seasons = profile.get("available_seasons") or []
-    focus_season = focus if focus in available_seasons else profile.get("focus_season")
-    focus_profile = (profile.get("season_profiles") or {}).get(focus_season) \
-        or profile.get("percentile_profile")
+    scoped_ctx = _player_season_ctx(profile, season_scope)
     ctx = {
         # `season` stays the real LEAGUE season (used by the back-link and by
         # every other chart key's `&season=`, per _chartmacro.html); the
-        # radar's own focus season rides separately as `focus_season` and is
-        # passed to the macro via its `season_override` kwarg (see the
-        # player_radar chart() call below).
+        # page's own shared season scope rides separately as `season_scope`.
         "league": resolved_league, "season": season, "theme": theme,
         "asset_v": asset_v(), "player_id": player_id, "bust": 0,
         "identity": ident, "league_name": league_name,
-        "seasons_covered": profile["seasons_covered"],
-        "real_nfl": profile["real_nfl"], "adp_history": profile["adp_history"],
-        "adp_current": profile.get("adp_current"), "adp_past": profile.get("adp_past"),
-        "current_season": profile.get("current_season"),
+        "source_labels": stat_reconcile.SOURCE_LABELS,
         "league_history": profile["league"],
-        "league_current": profile.get("league_current"),
-        "league_past": profile.get("league_past"),
-        "percentile_profile": focus_profile,
-        "available_seasons": available_seasons,
-        "focus_season": focus_season,
         "avatars": {},   # _ident.html reads it; no manager avatars on this page
+        **scoped_ctx,
     }
     return tpl.TemplateResponse(request, "player_profile.html", ctx)
 
 
-@app.get("/player/{player_id}/percentile", response_class=HTMLResponse)
-def player_percentile_part(request: Request, player_id: str,
+@app.get("/player/{player_id}/season", response_class=HTMLResponse)
+def player_season_sections(request: Request, player_id: str,
                            league: str | None = None, season: str | None = None,
-                           focus: str | None = None, theme: str = "light"):
-    """The player-profile page's "Percentile profile" section, as an htmx
-    fragment -- clicking a season pill (`_player_percentile.html`) hx-gets
-    this instead of the pill being a plain link, so choosing a different
-    focus season swaps the chart + stat table in place rather than
-    reloading the whole page. Relies on `player_profile()`'s own cache (this
-    is always a WARM hit in practice -- the page can't have rendered pills
-    to click without already having populated it), so no loader/cold-cache
-    path is needed here the way the full page route has one.
+                           season_scope: str | None = None, theme: str = "light"):
+    """The player-profile page's shared "follow-up sections" container
+    (Percentile profile, {league} history, Game log, Real-NFL history,
+    Draft ADP history), as an htmx fragment -- the season dropdown
+    (`_player_percentile.html`) hx-gets this instead of a plain link, so
+    picking a different season re-renders every one of those sections in
+    lockstep, in place, rather than reloading the whole page (user
+    request: previously only the percentile chart followed its own
+    narrower "focus season" pick, while the rest stayed fixed on today's
+    real NFL season). Relies on `player_profile()`'s own cache (this is
+    always a WARM hit in practice -- the page can't have rendered a
+    dropdown to change without already having populated it), so no
+    loader/cold-cache path is needed here the way the full page route has
+    one.
     """
     from webapp import player_profile as pp
+    from webapp import stat_reconcile
+
+    resolved_league = None
+    league_name = None
+    if league:
+        try:
+            d, s, season = pick(league, season)
+            resolved_league = d.get("resolved_league_id", league)
+            league_name = s.name
+        except Exception:
+            resolved_league = None
+
+    profile = pp.player_profile(player_id, league_id=resolved_league)
+    scoped_ctx = _player_season_ctx(profile, season_scope)
+    ctx = {
+        "league": resolved_league, "season": season, "theme": theme,
+        "bust": 0, "player_id": player_id, "league_name": league_name,
+        "league_history": profile["league"],
+        "source_labels": stat_reconcile.SOURCE_LABELS,
+        **scoped_ctx,
+    }
+    return tpl.TemplateResponse(request, "_player_season_sections.html", ctx)
+
+
+@app.get("/player/{player_id}/game/{season}/{week}", response_class=HTMLResponse)
+def player_game_detail(request: Request, player_id: str, season: str, week: int,
+                       league: str | None = None, theme: str = "light"):
+    """One game-log row's detail (position_group_table summary + raw
+    per-category breakdown), lazy-loaded the first time a reader actually
+    expands that row -- the exact same "toggle once" htmx pattern
+    `team_game_detail()` already uses, for the identical reason (see that
+    route's own docstring: rendering every game's full detail inline ran
+    ~900KB for one team-season; a real player's own game log is the same
+    shape of cost, verified live at ~780KB for a full career before this
+    fix, 71 games each with a stacked raw-source breakdown).
+
+    Reads the SAME cached `player_profile()` call the parent page already
+    made (keyed on player_id+league, same as `player_page`) -- no second
+    data pull, only a second render slicing out this one (season, week)
+    entry from `game_log`. A 404 for a (season, week) not in this player's
+    own game log (a stale/tampered URL, not a normal click path) rather
+    than a silent empty panel."""
+    from webapp import player_profile as pp
+    from webapp import stat_reconcile
 
     resolved_league = None
     if league:
         try:
-            d, s, season = pick(league, season)
+            d, s, _ = pick(league, None)
             resolved_league = d.get("resolved_league_id", league)
         except Exception:
             resolved_league = None
 
     profile = pp.player_profile(player_id, league_id=resolved_league)
-    available_seasons = profile.get("available_seasons") or []
-    focus_season = focus if focus in available_seasons else profile.get("focus_season")
-    focus_profile = (profile.get("season_profiles") or {}).get(focus_season) \
-        or profile.get("percentile_profile")
+    game = next((g for g in profile.get("game_log") or []
+                if str(g.get("season")) == str(season) and g.get("week") == week), None)
+    if game is None:
+        return HTMLResponse("<p class='empty'>No data for this game.</p>", status_code=404)
+
     ctx = {
-        "league": resolved_league, "season": season, "theme": theme,
-        "bust": 0, "player_id": player_id,
-        "percentile_profile": focus_profile,
-        "available_seasons": available_seasons,
-        "focus_season": focus_season,
+        "theme": theme, "game": game, "identity": profile.get("identity") or {},
+        "source_labels": stat_reconcile.SOURCE_LABELS,
     }
-    return tpl.TemplateResponse(request, "_player_percentile.html", ctx)
+    return tpl.TemplateResponse(request, "_player_game_detail.html", ctx)
 
 
 # --- team profile ------------------------------------------------------------
@@ -5391,6 +5456,23 @@ def _team_loader(abbr: str, season: str | None, refresh: int) -> HTMLResponse:
 </body></html>""")
 
 
+def _team_season_ctx(profile: dict) -> dict:
+    """The context keys `_team_season_sections.html` needs, straight off a
+    `team_profile.team_profile()` result -- shared by `team_page()` (the
+    full page) and `team_season_sections()` (the season dropdown's own
+    htmx fragment) so the two can't drift out of sync with each other.
+    UNLIKE player_profile's `_player_season_ctx`, there is no separate
+    re-scoping step here: `team_profile()` is already cached PER (abbr,
+    season) -- see that module's own docstring -- so whichever season the
+    caller asked for is already the only season in this dict."""
+    return {
+        "current_season": profile["current_season"],
+        "roster_by_position": profile["roster_by_position"],
+        "schedule": profile["schedule"],
+        "team_stats_grouped": profile["team_stats_grouped"],
+    }
+
+
 @app.get("/team/{abbr}", response_class=HTMLResponse)
 def team_page(request: Request, abbr: str, season: str | None = None,
              refresh: int = 0, render: int = 0, theme: str = "light"):
@@ -5410,28 +5492,57 @@ def team_page(request: Request, abbr: str, season: str | None = None,
     `_player_loader`/`_report_loader` already use.
     """
     from webapp import team_profile as tp
+    from webapp import stat_reconcile
 
     if not render and (refresh or not tp.is_cached(abbr, season)):
         return _team_loader(abbr, season, refresh)
-
-    from webapp import stat_reconcile
 
     profile = tp.team_profile(abbr, season=season, fresh=bool(refresh))
     ctx = {
         "theme": theme, "asset_v": asset_v(), "abbr": abbr.upper().strip(),
         "bust": 0, "identity": profile["identity"],
-        "current_season": profile["current_season"],
         "seasons_covered": profile["seasons_covered"],
-        "roster": profile["roster"],
-        "roster_by_position": profile["roster_by_position"],
-        "schedule": profile["schedule"],
         "season_history": profile["season_history"],
-        "team_datasets": profile["team_datasets"],
-        "team_stats_grouped": profile["team_stats_grouped"],
         "source_labels": stat_reconcile.SOURCE_LABELS,
         "avatars": {},   # _ident.html reads it; no manager avatars on this page
+        **_team_season_ctx(profile),
     }
     return tpl.TemplateResponse(request, "team_profile.html", ctx)
+
+
+@app.get("/team/{abbr}/season", response_class=HTMLResponse)
+def team_season_sections(request: Request, abbr: str, season: str | None = None,
+                         refresh: int = 0, theme: str = "light"):
+    """The team-profile page's shared "follow-up sections" container
+    (Roster leaderboard, Schedule & results, Advanced & usage stats), as an
+    htmx fragment -- the season dropdown (team_profile.html) hx-gets this
+    instead of the old plain <a> pill row navigating the whole page, so
+    picking a different season re-renders all three sections in lockstep,
+    in place (mirrors player_profile.html's own identical switch, see
+    webapp.app.player_season_sections).
+
+    UNLIKE that player-profile route, this one can be a genuinely COLD
+    request: `team_profile()` is cached PER (abbr, season) -- a season the
+    dropdown just switched to may never have been fetched before, unlike
+    player_profile.py's single whole-career aggregation. There is no
+    separate loader-fragment mechanism here (an htmx fragment swap has
+    nowhere to redirect FROM the way a full-page navigation does) -- the
+    shared `hx-indicator="#bar"` on team_profile.html's <body> is this
+    request's only loading feedback; `refresh=1` still threads through to
+    `fresh=True` for parity with the full-page route, though nothing on
+    the page links to it with that param today.
+    """
+    from webapp import team_profile as tp
+    from webapp import stat_reconcile
+
+    profile = tp.team_profile(abbr, season=season, fresh=bool(refresh))
+    ctx = {
+        "theme": theme, "abbr": abbr.upper().strip(),
+        "source_labels": stat_reconcile.SOURCE_LABELS,
+        "avatars": {},   # _ident.html reads it; no manager avatars on this page
+        **_team_season_ctx(profile),
+    }
+    return tpl.TemplateResponse(request, "_team_season_sections.html", ctx)
 
 
 @app.get("/team/{abbr}/game/{week}", response_class=HTMLResponse)
@@ -5460,6 +5571,7 @@ def team_game_detail(request: Request, abbr: str, week: int, season: str | None 
     ctx = {
         "theme": theme, "game_key": week, "stats": game.get("stats") or {},
         "source_labels": stat_reconcile.SOURCE_LABELS,
+        "current_season": profile.get("current_season"),
     }
     return tpl.TemplateResponse(request, "_team_game_detail.html", ctx)
 

@@ -32,16 +32,49 @@
 {%- endif -%}
 {% endmacro %}
 
-{% macro stat_table(rows, scroll=false, game_scoped=false) %}
+{# Some real columns are stored as a 0-1 FRACTION (a genuine proportion --
+   0.75 means 75%) rather than nflverse/Sleeper's more common 0-100 scale
+   (e.g. Sleeper's own `fgm_pct` already reads "100.0", "80.0" -- no fix
+   needed there). Rendered through plain `cell()`, a fraction like 0.1
+   read as "10% of snaps played" instead showed the literal decimal "0.1"
+   -- this macro is the fix: multiply by 100 and append "%". `_pct_keys`
+   (below) is the list of raw keys known to need this -- position_group_
+   table branches to this macro instead of `cell()` when a column's own
+   key is in that set. #}
+{% macro pct_cell(v) %}
+{%- if v is none -%}&ndash;
+{%- elif v is number -%}{{ "%.0f"|format(v * 100) }}%
+{%- else -%}{{ v }}
+{%- endif -%}
+{% endmacro %}
+
+{# Keys genuinely stored as a 0-1 fraction (see `pct_cell` above), across
+   every source this module's position-group tables read from: nflverse's
+   snap_counts (offense_pct/defense_pct/st_pct -- team_profile._OFF_
+   POSITION_COLS/_DEF_PLAYER_COLS's own "Snap%" columns) and PFR's rate
+   columns (times_pressured_pct/passing_bad_throw_pct/receiving_drop_pct
+   -- team_profile._OFF_POSITION_COLS's own "Prss%"/"Bad thr%"/"Drop%").
+   Sleeper's own fgm_pct ("FG%") is DELIBERATELY excluded -- verified live,
+   it already reads 0-100 ("100.0", "80.0"), not 0-1, so running it through
+   this same *100 transform would inflate a real 100% make to "10000%". #}
+{% set _pct_keys = ("offense_pct", "defense_pct", "st_pct",
+  "times_pressured_pct", "passing_bad_throw_pct", "receiving_drop_pct") %}
+
+{# `hide_player=true` drops the leading Player column entirely -- for a
+   caller already scoped to exactly one known player (player_profile.html's
+   per-game detail, see _player_game_detail.html), repeating that same name
+   on every row of every table on the page added nothing; team_profile.html
+   (a whole team's roster per table) keeps the default `false`. #}
+{% macro stat_table(rows, scroll=false, game_scoped=false, hide_player=false) %}
 {% set drop = id_cols + game_extra_cols if game_scoped else id_cols %}
 {% set cols = rows[0].keys() | list | reject("in", drop) | list %}
 <div class="tablewrap{% if scroll %} scrolltable{% endif %}">
   <table class="dt-games">
-    <thead><tr><th>Player</th>{% for k in cols %}<th>{{ k.replace("_", " ") }}</th>{% endfor %}</tr></thead>
+    <thead><tr>{% if not hide_player %}<th>Player</th>{% endif %}{% for k in cols %}<th>{{ k.replace("_", " ") }}</th>{% endfor %}</tr></thead>
     <tbody>
     {% for row in rows %}
       <tr>
-        <td>{% set nm = row.get("player") or row.get("player_display_name") or row.get("pfr_player_name") or row.get("full_name") %}{% if nm %}{{ nm }}{% else %}&ndash;{% endif %}</td>
+        {% if not hide_player %}<td>{% set nm = row.get("player") or row.get("player_display_name") or row.get("pfr_player_name") or row.get("full_name") %}{% if nm %}{{ nm }}{% else %}&ndash;{% endif %}</td>{% endif %}
         {% for k in cols %}<td>{{ cell(row[k]) }}</td>{% endfor %}
       </tr>
     {% endfor %}
@@ -62,6 +95,39 @@
               ("rushing_tds", "TD")],
   "receiving": [("targets", "Tgt"), ("receptions", "Rec"),
                 ("receiving_yards", "Yds"), ("receiving_tds", "TD")],
+} %}
+
+{# PFR's own advanced columns per metric, appended to the RIGHT of
+   `reconciled_cols` in the same table (user request: seeing e.g. a
+   rusher's 156 total yards is less useful without HOW it broke down --
+   112 before contact / 44 after contact -- rather than that breakdown
+   sitting in a second, separate table below). Real column names per
+   webapp.stat_reconcile's own docstring: PFR's passing/receiving/rushing
+   datasets carry columns with NO cross-source overlap at all (pressure
+   rate, broken tackles, yards after contact), so nothing here is ever
+   reconciled against another source -- these render as PLAIN values,
+   never inside a `.stat-cell` flyout (there is only one source, nothing
+   to break down).
+
+   `pfr_rush`'s OWN `carries` column is deliberately EXCLUDED here (not
+   listed below) -- unlike PFR's passing/receiving datasets, pfr_rush IS
+   one of the voting sources behind the reconciled "Car" column itself
+   (see stat_reconcile._METRIC_MAPS's "rushing"."carries" entry), so
+   listing it again here would duplicate a number already shown, sourced
+   and flyout-explained by `reconciled_cols` above. #}
+{% set pfr_extra_cols = {
+  "passing": [("times_pressured", "Prss"), ("times_pressured_pct", "Prss%"),
+              ("times_hurried", "Hrd"), ("times_hit", "Hit"),
+              ("times_blitzed", "Blitz"), ("times_sacked", "Sack"),
+              ("passing_bad_throws", "Bad thr"), ("passing_bad_throw_pct", "Bad thr%")],
+  "rushing": [("rushing_yards_before_contact", "YBC"),
+              ("rushing_yards_before_contact_avg", "YBC/att"),
+              ("rushing_yards_after_contact", "YAC"),
+              ("rushing_yards_after_contact_avg", "YAC/att"),
+              ("rushing_broken_tackles", "Broken tkl")],
+  "receiving": [("receiving_drop", "Drop"), ("receiving_drop_pct", "Drop%"),
+                ("receiving_broken_tackles", "Broken tkl"),
+                ("receiving_int", "Int"), ("receiving_rat", "Rtg targeted")],
 } %}
 
 {# One row per player, one column per canonical stat (`reconciled_cols`).
@@ -86,11 +152,38 @@
    only a disagreeing cell's own &#9888; flag) -- kept as an explicit
    opt-out for any future caller that can't tolerate the clipping risk,
    not currently used by either shipped call site. #}
+{# `pfr_rows`, when given, merges PFR's own extra advanced columns
+   (`pfr_extra_cols[metric]`, above) onto the SAME row/table rather than a
+   second table underneath (user request, prompted by a real example: DET
+   2026 wk1, Jahmyr Gibbs' reconciled Rushing row read "29 Car, 156 Yds, 2
+   TD" with the yardage breakdown -- 112 before contact, 44 after contact
+   -- sitting in a separate PFR table below; the two are the same play's
+   data and belong on the same line). Joined by NORMALISED player name
+   (`_norm_name`, the identical join key `stat_reconcile.reconcile_metric`
+   itself already uses -- safe here for the same reason that module's own
+   docstring gives: both `rows` and `pfr_rows` are already scoped to one
+   team's one metric's one game/season slice by the caller, a handful of
+   players, not a whole-league pool where a name collision is a real risk).
+   A player PFR didn't cover that game (or metric) simply shows a dash in
+   every PFR column, same as any other absent-stat cell. #}
 {% macro reconciled_table(rows, metric, source_labels=none, scroll=false, flyout=true) %}
 {% set cols = reconciled_cols[metric] %}
+{# PFR's own extra advanced columns (pfr_extra_cols) are pre-joined onto
+   each row by team_profile.py's own _grouped_metric_stats -- see that
+   function's docstring -- as `row["_pfr_extra"]`, a plain {key: value}
+   dict, rather than joined here by name. The Python-side join reuses
+   nflref.summary._norm_name (the same key stat_reconcile.reconcile_metric
+   itself already joins on), which isn't registered as a Jinja global, and
+   name-matching is data-layer logic anyway, not presentation. `extra`
+   below is simply "does ANY row in this table carry a _pfr_extra dict" --
+   the column HEADERS are the same fixed list regardless of which rows
+   happen to have PFR data (a player PFR missed shows dashes in those
+   columns, same as any other absent stat), so the header row doesn't need
+   its own per-row check. #}
+{% set extra = pfr_extra_cols.get(metric, []) if (rows | selectattr("_pfr_extra") | list) else [] %}
 <div class="tablewrap{% if scroll %} scrolltable{% endif %}">
   <table class="dt-games">
-    <thead><tr><th>Player</th>{% for key, label in cols %}<th>{{ label }}</th>{% endfor %}</tr></thead>
+    <thead><tr><th>Player</th>{% for key, label in cols %}<th>{{ label }}</th>{% endfor %}{% for key, label in extra %}<th class="pfr-extra">{{ label }}</th>{% endfor %}</tr></thead>
     <tbody>
     {% for row in rows %}
       <tr>
@@ -127,6 +220,12 @@
           {%- endif -%}
         </td>
         {% endfor %}
+        {% if extra %}
+        {% set pr = row.get("_pfr_extra") %}
+        {% for key, label in extra %}
+        <td class="pfr-extra">{{ cell(pr.get(key)) if pr else "–" }}</td>
+        {% endfor %}
+        {% endif %}
       </tr>
     {% endfor %}
     </tbody>
@@ -167,4 +266,119 @@
 {% if names %}
 <p class="hint">Source: {{ names | unique | join(", ") }}</p>
 {% endif %}
+{% endmacro %}
+
+{# Position-grouped, one-row-per-player table for the per-game drilldown's
+   Offense/Defense panels (2026-09, THIRD rework of that section -- user
+   request: "breakdown the subsections by player position groups... and
+   include all player data in this new setup in singular rows instead of
+   splitting by further subsections"). Each player who touched the ball in
+   ANY category this game -- a rushing QB, a pass-catching RB, both real
+   and common -- gets exactly ONE row, not one row per metric he happened
+   to record; `team_profile._merge_offense_players`/`_merge_defense_players`
+   do that merge in Python, this macro only renders the already-merged
+   shape.
+
+   `cols` is a list of `(category, [(key, label), ...])` pairs (e.g.
+   `OFF_POSITION_COLS["QB"]`, a Jinja global registered in app.py from
+   team_profile._OFF_POSITION_COLS/_DEF_COLS) -- `category` says which of
+   the player's `passing`/`rushing`/`receiving`/`snap`/`pfr_def` sub-dicts
+   to read `key` from; a player with that sub-dict `None` (he never
+   attempted that category) shows a dash in every one of that category's
+   columns, not an error. FIXED column set per user's own choice (same
+   shape every week, not trimmed to only what this particular group's
+   players actually used this game) -- see the column-strategy discussion
+   this rework started from.
+
+   A key ending in a reconciled row's own `_sources`/`_agreed` pair (the
+   box-score columns: attempts, carries, targets, etc. -- anything
+   `stat_reconcile.reconcile_metric` actually voted on) gets the SAME
+   `.stat-cell`/`.stat-flyout` hover treatment `reconciled_table()` already
+   gives those columns; a PFR-extra or snap-share column (no `_sources`
+   sibling -- there is only ever one source for those) renders as a plain
+   value, matching `reconciled_table()`'s own extra-column convention
+   (see that macro + `_teamstat_macros.pfr-extra` CSS).
+
+   A vertical divider (`.grp-divider`, style.css -- the same border-left
+   visual language `.pfr-extra` already established) marks the FIRST
+   column of every category after the first (e.g. QB: Att/Cmp/Yds/TD/INT/
+   Prss/Sack/Bad thr all read as "passing", then a divider before Car/Yds/
+   TD ("rushing"), then another before Snaps/Snap% ("snap")) -- per user
+   request: visible separators only, no repeated "Passing"/"Rushing"
+   category labels above the columns (the group heading above the table,
+   e.g. "QB", already names the player group; a second row of category
+   labels was judged unnecessary on top of that). #}
+{# `cols_by_group` is EITHER a dict keyed by group name (offense --
+   OFF_POSITION_COLS, since QB/RB/WR/TE/OL/K each have their own distinct
+   column set) OR a plain list (defense -- DEF_COLS, since PFR's defensive
+   stat line + snap share is the SAME column set for DL/LB/DB alike, one
+   list covers every group). #}
+{# `hide_player=true` drops the group's own name heading AND the leading
+   Player column -- for a caller already scoped to exactly one known
+   player whose position is shown elsewhere on the page (player_profile.
+   html's per-game detail, see _player_game_detail.html: `identity.
+   position` is in the page header, and the row's own position now rides
+   the game log's stat-column header too), both were pure repetition;
+   team_profile.html (a whole team's roster grouped by position) keeps the
+   default `false`, where the group name is the only thing saying which
+   position a table's rows belong to. #}
+{% macro position_group_table(groups, cols_by_group, source_labels=none, hide_player=false) %}
+{% for grp in groups %}
+{% set cols = cols_by_group.get(grp.group) if cols_by_group is mapping else cols_by_group %}
+{% if cols %}
+<div class="metric-card">
+  {% if not hide_player %}<p class="hint"><strong>{{ grp.group }}</strong></p>{% endif %}
+  <div class="tablewrap">
+    <table class="dt-games">
+      <thead><tr>{% if not hide_player %}<th>Player</th>{% endif %}
+        {%- for category, category_cols in cols -%}
+          {% set cat_first = loop.first %}
+          {%- for key, label in category_cols -%}
+          <th{% if loop.first and not cat_first %} class="grp-divider"{% endif %}>{{ label }}</th>
+          {%- endfor -%}
+        {%- endfor -%}
+      </tr></thead>
+      <tbody>
+      {% for p in grp.players %}
+        <tr>
+          {% if not hide_player %}<td>{{ p.name }}</td>{% endif %}
+          {% for category, category_cols in cols %}
+          {% set cat_first = loop.first %}
+          {% set src = p.get(category) %}
+          {% for key, label in category_cols %}
+          <td{% if loop.first and not cat_first %} class="grp-divider"{% endif %}>
+            {%- if not src or key not in src -%}&ndash;
+            {%- else -%}
+            {% set consensus = src[key] %}
+            {% set srcs = src.get(key ~ "_sources") %}
+            {% set agreed = src.get(key ~ "_agreed") %}
+            {% set is_pct = key in _pct_keys %}
+            {%- if srcs -%}
+            <span class="stat-cell" tabindex="0">{{ pct_cell(consensus) if is_pct else cell(consensus) }}
+              {%- if agreed is sameas false -%}<span class="stat-flag">&#9888;</span>{%- endif -%}
+              <span class="stat-flyout">
+                <span class="stat-flyout-head">{{ label }}{% if agreed is sameas false %} &middot; sources disagree{% endif %}</span>
+                {% for s, val in srcs.items() | sort %}
+                <span class="stat-flyout-row{% if val != consensus %} stat-flyout-diff{% endif %}">
+                  <span class="stat-flyout-src">{{ source_labels.get(s, s) if source_labels else s }}</span>
+                  <span class="stat-flyout-val">{{ pct_cell(val) if is_pct else cell(val) }}</span>
+                </span>
+                {% endfor %}
+              </span>
+            </span>
+            {%- else -%}
+            {{ pct_cell(consensus) if is_pct else cell(consensus) }}
+            {%- endif -%}
+            {%- endif -%}
+          </td>
+          {% endfor %}
+          {% endfor %}
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+{% endfor %}
 {% endmacro %}

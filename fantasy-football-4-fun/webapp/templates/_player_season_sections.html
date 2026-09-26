@@ -1,0 +1,266 @@
+{# Every season-DEPENDENT section on the player-profile page (player_profile.
+   html), in one file so it can be re-rendered as a single htmx fragment
+   when the season dropdown changes: Percentile profile, {league} history,
+   Game log, Real-NFL history, Draft ADP history. Factored out specifically
+   so a season switch re-renders ALL of these in lockstep (user request --
+   previously only the Percentile chart followed the dropdown, while the
+   other four sections stayed fixed on today's real NFL season via their
+   own separate current/past split).
+
+   `webapp.player_profile.scope_profile(profile, season)` does the actual
+   per-season filtering (cheap: it only re-filters lists `player_profile()`
+   already fetched and cached, no second data pull) -- this template only
+   RENDERS whatever it returns, never computes a current/past split itself.
+   `season_scope` is ALWAYS one concrete season string (never None/"all"),
+   so every section here shows exactly that one season's data with no
+   separate "Past seasons" drilldown; picking a different season in the
+   dropdown re-renders this whole fragment for that season instead.
+
+   Needs in context: player_id, league, season, theme, league_history,
+   league_name, league_scoped, season_scope, seasons_covered, game_log,
+   game_log_stat_cols, real_nfl, adp_history, percentile_profile, plus
+   whatever _player_percentile.html itself needs (bust). Served two ways:
+   inline (`{% include %}` from player_profile.
+   html's own full-page render) and as the dropdown's own htmx fragment
+   (`webapp.app.player_season_sections()`, GET /player/{id}/season/
+   {season}) -- both paths build this exact same context shape, so the
+   fragment always matches what a fresh full-page load would have shown.
+   Imports its own `idm` (rather than relying on player_profile.html's own
+   top-level import) since this file also renders standalone from the
+   htmx fragment route, which has no other template around it -- same
+   reasoning _player_percentile.html/_player_game_detail.html already
+   give for their own local imports. #}
+{% import "_ident.html" as idm with context %}
+{% include "_player_percentile.html" %}
+
+{% if league_history %}
+<h2>{{ league_name }} history <span class="hint">({{ season_scope }})</span></h2>
+{# `league_scoped` is already filtered to `season_scope` (see
+   webapp.player_profile.scope_profile) -- no separate current/past split
+   or "Past seasons" drilldown here any more, same as the other
+   "follow-up" sections; picking a different season re-renders this
+   whole section for that season. #}
+{% if league_scoped.draft_picks or league_scoped.roster or league_scoped.trade_stints or league_scoped.waiver_rows %}
+{% if league_scoped.draft_picks %}
+<div class="tablewrap">
+  <table class="dt-games">
+    <thead><tr><th>Round</th><th>Pick</th><th>Drafted by</th>
+      <th class="n">Total pts</th><th class="n">PPG</th><th class="n">draft +/-</th></tr></thead>
+    <tbody>
+    {% for p in league_scoped.draft_picks %}
+      <tr>
+        <td class="n">{{ p.round }}</td>
+        <td class="n">{{ p.pick_in_round }}</td>
+        <td>{{ idm.who(p.user_name) }}</td>
+        <td class="n">{{ "%.1f"|format(p.total) if p.total is not none else "&ndash;" }}</td>
+        <td class="n">{{ "%.1f"|format(p.ppg) if p.ppg is not none else "&ndash;" }}</td>
+        <td class="n {% if p.pos_steal is not none and p.pos_steal > 0 %}dv-pos{% elif p.pos_steal is not none and p.pos_steal < 0 %}dv-neg{% endif %}">
+          {{- "%+d"|format(p.pos_steal) if p.pos_steal is not none else "&ndash;" -}}
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+
+{% if league_scoped.roster %}
+<div class="tablewrap">
+  <table class="dt-games">
+    <thead><tr><th>Manager</th><th class="n">Weeks</th><th class="n">Points</th><th class="n">PPG</th></tr></thead>
+    <tbody>
+    {% for r in league_scoped.roster %}
+      <tr>
+        <td>{{ idm.who(r.user_name) if r.user_name != "FA" else "Free agent (unrostered)" }}</td>
+        <td class="n">{{ r.weeks }}</td>
+        <td class="n">{{ "%.1f"|format(r.points) }}</td>
+        <td class="n">{{ "%.1f"|format(r.ppg) }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+
+{% if league_scoped.trade_stints %}
+<p class="hint"><strong>Trade history</strong></p>
+<div class="tablewrap">
+  <table class="dt-games">
+    <thead><tr><th>Roster stints (in order moved)</th></tr></thead>
+    <tbody>
+    {% for t in league_scoped.trade_stints %}
+      <tr>
+        <td>{% for st in t.stints %}{{ idm.who(st.user_name) }} ({{ "%.1f"|format(st.ppg) }} ppg over {{ st.weeks }} wk){% if not loop.last %} &rarr; {% endif %}{% endfor %}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+
+{% if league_scoped.waiver_rows %}
+<p class="hint"><strong>Waiver / free-agent activity</strong></p>
+<div class="tablewrap">
+  <table class="dt-games">
+    <thead><tr><th class="n">Week</th><th>Manager</th><th>Via</th><th class="n">Points</th></tr></thead>
+    <tbody>
+    {% for w in league_scoped.waiver_rows %}
+      <tr>
+        <td class="n">{{ w.week }}</td>
+        <td>{{ idm.who(w.user_name) }}</td>
+        <td>{{ w.via }}</td>
+        <td class="n">{{ "%.1f"|format(w.points) if w.points is not none else "&ndash;" }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+{% else %}
+<p class="empty">No {{ league_name }} activity for this player in {{ season_scope }}.</p>
+{% endif %}
+{% endif %}
+
+{# Game log: the reconciled per-game summary, byte-identical in shape and
+   values to the team-profile page's own per-game drilldown row for this
+   player (see webapp.player_profile._game_log's own header comment) --
+   one collapsible row per game, matching team_profile.html's own
+   schedule-drilldown convention AND its lazy-load mechanism
+   (`hx-get`/`hx-trigger="toggle once"` -> webapp.app.player_game_detail()
+   -> _player_game_detail.html): a full game log rendered inline measured
+   ~780KB for one player's career (71 games x a stacked raw-source
+   breakdown each) before this fix, the same shape of cost that already
+   prompted team_profile.html's own identical lazy-load treatment. Each
+   row's detail, once expanded, includes the SAME raw, unreconciled
+   per-source tables the flat "Real-NFL history" section below still
+   shows in full (per standing direction to keep the player page's
+   underlying data inspectable), just scoped to that one game and grouped
+   by metric category instead of by source across the whole page. #}
+<h2>Game log <span class="hint">({{ season_scope }})</span></h2>
+{# One shared .drilltable frame (style.css), matching team_profile.html's
+   own Schedule & results drilldown exactly: a single bordered/rounded
+   wrapper holding a .dt-head label row plus a flat list of .dt-row
+   entries, each just a thin top-border separator -- NOT one bordered
+   card per row (an earlier version of this section tried that, via
+   .adv-stat-card, and it read as a stack of separate boxes rather than
+   one continuous log). Columns: Week/Opponent (the schedule drilldown's
+   own equivalent of "who"), THEN a select few position-relevant REAL
+   box-score statlines (`game_log_stat_cols` --
+   webapp.player_profile._log_stat_cols, e.g. Cmp/Att/Yds/TD/INT for a
+   QB, Tgt/Rec/Yds/TD for a WR/TE -- computed once from this player's own
+   position, same spec for every row). `--cols` is built to match
+   however many stat columns this player's position actually has (0 for
+   a position `_log_stat_cols` has no spec for, e.g. K) -- a fixed
+   literal here would either truncate a QB's 5 columns or leave dead
+   grid space for a position with fewer. Every value blank/dash when its
+   source didn't resolve for that week, same convention as every other
+   absent-stat cell on this page.
+
+   Deliberately NO fantasy-derived column (points/PPG) -- a `ppr_pts`
+   column briefly lived here and was removed on user request: this
+   section is "what actually happened in the game," and fantasy scoring
+   belongs in its own separate comparison section later (see
+   webapp.player_profile._LOG_STAT_COLS's own comment).
+
+   `game_log` is already filtered to `season_scope` (see
+   webapp.player_profile.scope_profile) -- ALWAYS exactly one season now
+   (the whole point of this section following the shared season
+   dropdown), so there is no Season column and no "Past seasons"
+   drilldown any more; a different season's games appear here directly
+   when the dropdown changes, same as every other "follow-up section". #}
+{% set game_log_cols_style %}60px 64px{{ " minmax(48px,1fr)" * (game_log_stat_cols|length) }}{% endset %}
+{% if game_log %}
+<div class="tablewrap">
+  <div class="drilltable" style="--cols: {{ game_log_cols_style }}">
+    <div class="dt-head">
+      <span>Week</span><span>Opp</span>
+      {%- for cat, key, label in game_log_stat_cols %}<span class="n">{{ label }}</span>{% endfor -%}
+    </div>
+    {% for game in game_log %}
+    <details class="dt-row"
+       hx-get="/player/{{ player_id }}/game/{{ game.season }}/{{ game.week }}?theme={{ theme }}{% if league %}&league={{ league }}{% endif %}"
+       hx-trigger="toggle once" hx-target="find .dt-detail" hx-swap="innerHTML">
+      <summary>
+        <span>{{ game.week }}</span>
+        <span>{% if game.opponent %}{{ idm.team_link(game.opponent) }}{% else %}&ndash;{% endif %}</span>
+        {%- for v in game.stat_values %}<span class="n">{% if v is not none %}{{ v }}{% else %}&ndash;{% endif %}</span>{% endfor -%}
+      </summary>
+      <div class="dt-detail"><p class="hint">Loading&hellip;</p></div>
+    </details>
+    {% endfor %}
+  </div>
+</div>
+{% else %}
+<p class="empty">No game log found for this player in {{ season_scope }}.</p>
+{% endif %}
+
+<h2>Real-NFL history <span class="hint">({{ season_scope }})</span></h2>
+{# `real_nfl[ds]["rows"]` is already scoped to `season_scope` (see
+   webapp.player_profile.scope_profile) -- no separate current/past split
+   or "past seasons" drilldown here any more; picking a different season
+   in the dropdown above re-renders this whole section for that season
+   directly, same as every other "follow-up section" on this page.
+   Jinja's {% for %} gives each iteration its own scope, so a plain
+   {% set %} inside the loop below would never be visible after it ends
+   (silently always False/empty outside) -- namespace() is the documented
+   workaround for a flag that must accumulate across iterations. #}
+{% set flags = namespace(any_real_nfl=false) %}
+{% for ds, label in [("player_stats", "Weekly stats"), ("ngs_passing", "Next Gen Stats: Passing"),
+                      ("ngs_receiving", "Next Gen Stats: Receiving"), ("ngs_rushing", "Next Gen Stats: Rushing"),
+                      ("injuries", "Injury reports"), ("snap_counts", "Snap counts"),
+                      ("pfr_pass", "PFR advanced: Passing"), ("pfr_rec", "PFR advanced: Receiving"),
+                      ("pfr_rush", "PFR advanced: Rushing"), ("pfr_def", "PFR advanced: Defense")] %}
+{% set d = real_nfl.get(ds) %}
+{% if d and d.rows %}
+{% set flags.any_real_nfl = true %}
+{% set cols = d.rows[0].keys() | list | reject("in", ("player_id", "pfr_player_id", "gsis_id", "player_gsis_id", "player_display_name", "pfr_player_name", "full_name", "player")) | list %}
+<p class="hint"><strong>{{ label }}</strong> ({{ d.rows|length }} rows){% if d.best_effort %} <span class="q">best-effort name match, not a verified id</span>{% endif %}</p>
+<div class="tablewrap">
+  <table class="dt-games">
+    <thead><tr>
+      {% for k in cols %}
+      <th>{{ k.replace("_", " ") }}</th>
+      {% endfor %}
+    </tr></thead>
+    <tbody>
+    {% for row in d.rows %}
+      <tr>
+        {% for k in cols %}
+        <td>{{ row[k] if row[k] is not none else "&ndash;" }}</td>
+        {% endfor %}
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+{% endfor %}
+{% if not flags.any_real_nfl %}
+<p class="empty">No real-NFL data found for this player in {{ season_scope }}.</p>
+{% endif %}
+
+<h2>Draft ADP history <span class="hint">({{ season_scope }})</span></h2>
+{# `adp_history` is already scoped to `season_scope` (see
+   webapp.player_profile.scope_profile) -- no separate current/past split
+   or "Past seasons" drilldown here any more, same as Real-NFL history
+   above. #}
+{% if adp_history %}
+<div class="tablewrap">
+  <table class="dt-games">
+    <thead><tr><th class="n">Consensus rank</th><th class="n">Final finish</th><th class="n">Diff</th></tr></thead>
+    <tbody>
+    {% for r in adp_history %}
+      <tr>
+        <td class="n">{{ r.consensus if r.consensus is not none else "&ndash;" }}</td>
+        <td class="n">{{ r.final if r.final is not none else "&ndash;" }}</td>
+        <td class="n {% if r.diff is not none and r.diff > 0 %}dv-pos{% elif r.diff is not none and r.diff < 0 %}dv-neg{% endif %}">
+          {{- r.diff if r.diff is not none else "&ndash;" -}}
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<p class="empty">No ADP data for {{ season_scope }}.</p>
+{% endif %}

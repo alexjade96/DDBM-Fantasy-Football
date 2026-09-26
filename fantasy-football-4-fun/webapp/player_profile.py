@@ -64,6 +64,22 @@ _GSIS_DATASETS = ["player_stats", "ngs_passing", "ngs_receiving",
 # Datasets only bridged by name + position (no id crosswalk exists).
 _PFR_DATASETS = ["snap_counts", "pfr_pass", "pfr_rec", "pfr_rush", "pfr_def"]
 
+# nflverse's three Next Gen Stats releases each carry a genuine `week == 0`
+# row per player -- confirmed live (2025/2026): its counting stats (e.g. a
+# real case, A.J. Brown 2025: 78 receptions/121 targets/1003 yards) are far
+# too large for one game and don't match any single real week's box score,
+# and it's the ONLY week nflverse marks a player absent from every other
+# real week for (e.g. Chase 2026 week 1 has no ngs_receiving row at all,
+# only week 0 and week 2) -- a SEASON-TO-DATE aggregate, not a game. Every
+# other real-NFL dataset here (player_stats/injuries/snap_counts/pfr_*) has
+# zero week-0 rows in the same live check. `team_profile.py` never hits
+# this: it slices a real per-team SCHEDULE by week rather than trusting
+# "which weeks exist in the raw data" the way `_game_log`'s week-detection
+# does -- filtered out at THIS boundary (not in `_game_log` itself) so
+# every downstream reader (the game log AND the flat "Real-NFL history"
+# section) sees the same, correct row set.
+_NGS_DATASETS = {"ngs_passing", "ngs_receiving", "ngs_rushing"}
+
 # Each dataset's own gsis-id column name differs (see the module docstring
 # in nflref/injuries.py vs nflref/nextgen_stats.py) -- this is the one place
 # that difference is normalised away.
@@ -86,14 +102,36 @@ _NAME_COL = {
     "pfr_rush": "pfr_player_name",
     "pfr_def": "pfr_player_name",
 }
+# Position column name differs per dataset too (ngs_* uses "player_position",
+# every other dataset uses plain "position") -- normalised here for the same
+# reason _GSIS_COL/_NAME_COL exist. A dataset absent from this map (PFR's
+# own four) has no position column at all; the name-fallback loop below
+# only filters by position when this map names a REAL column, same guard
+# style the rest of this module already uses.
+_POS_COL = {
+    "player_stats": "position", "injuries": "position",
+    "ngs_passing": "player_position", "ngs_receiving": "player_position",
+    "ngs_rushing": "player_position",
+}
 
 
 def _norm_name(name: str | None) -> str:
     """Loose name key, same normalisation ffadp.identity/_norm and
     nflref.summary._norm_name already use independently -- mirrored here
     rather than imported, since neither of those modules exports it as a
-    stable public helper."""
-    n = (name or "").lower().strip()
+    stable public helper.
+
+    `name` can arrive as a pandas NaN (a real float, not None) from a raw
+    DataFrame column with missing values -- `(name or "")` does NOT catch
+    that (NaN is truthy), and `.lower()` on a float raises. Confirmed live:
+    `player_stats`'s own `player_display_name` column has real nulls for
+    2025/2026 (18 and 3 rows respectively, an unresolved-player stub in
+    nflverse's newer release format), which crashed this function's own
+    name-fallback caller (`_real_nfl_history`) the first time that season
+    range was actually exercised end to end."""
+    if not isinstance(name, str):
+        name = ""
+    n = name.lower().strip()
     n = re.sub(r"[.’']", "", n)
     n = re.sub(r"\s+(jr|sr|ii|iii|iv|v)$", "", n)
     n = re.sub(r"[^a-z0-9 ]+", " ", n)
@@ -124,16 +162,15 @@ def _current_season() -> str:
     return _recent_seasons(1)[0]
 
 
-def _split_current(rows: list[dict], current_season: str) -> tuple[list[dict], list[dict]]:
-    """Partition `rows` (each carrying a `"season"` key, any type Sleeper/
-    nflverse happens to use -- int or str) into (this season's rows, every
-    other season's rows), comparing as strings so `2025 == "2025"`. Order
-    within each half is preserved from the input."""
-    current: list[dict] = []
-    past: list[dict] = []
-    for r in rows:
-        (current if str(r.get("season")) == str(current_season) else past).append(r)
-    return current, past
+def _scope_to_season(rows: list[dict], season: str) -> list[dict]:
+    """`rows` (each carrying a `"season"` key, any type Sleeper/nflverse
+    happens to use -- int or str) filtered to exactly ONE requested season,
+    comparing as strings so `2025 == "2025"`. Order preserved from the
+    input. The general form of what used to be a fixed current/past SPLIT
+    (`_split_current`, now removed) -- the page's whole "follow-up
+    sections" block is re-scoped to whichever season a shared dropdown
+    picks (see `scope_profile`), not just today's real NFL season."""
+    return [r for r in rows if str(r.get("season")) == str(season)]
 
 
 def _player_identity(player_id: str) -> dict:
@@ -159,9 +196,24 @@ def _player_identity(player_id: str) -> dict:
 def _real_nfl_history(gsis_id: str | None, name: str | None,
                        position: str | None, seasons: list[str]) -> dict:
     """Real-NFL data across `seasons`, keyed by dataset name -> list of row
-    dicts for this player only. gsis-bridged datasets match on the real id;
-    PFR-bridged ones fall back to normalised name + position (best-effort,
-    flagged as such in the returned shape)."""
+    dicts for this player only. gsis-bridged datasets match on the real id
+    when available; PFR-bridged ones always fall back to normalised name +
+    position (best-effort, flagged as such in the returned shape).
+
+    A GSIS-bridged dataset ALSO falls back to the same name+position match
+    when `gsis_id` itself is missing -- a real, confirmed gap: a MAJORITY
+    of Sleeper's own player dump has no `gsis_id` at all (verified live:
+    3893 of 12229 rows have one; even an active star, Ja'Marr Chase, had
+    none in this session's own snapshot), and without this fallback
+    `player_stats`/`ngs_*`/`injuries` were ALWAYS empty for any such
+    player -- silently dropping TDs/interceptions (neither PFR's datasets
+    nor Sleeper's own trimmed usage feed carry those) from the per-game
+    game log (`_game_log`) for a majority of players, even though
+    `team_profile.py` resolves the identical rows correctly for the same
+    player/game via a team+week filter that never needs a gsis_id at all.
+    A row found this way is marked `best_effort` too, same as the
+    PFR-bridged ones -- it's the identical lossy join, just applied one
+    tier higher, only engaged when the real id lookup found nothing."""
     try:
         from webapp.sources.nflref import board as nflref_board
     except Exception:
@@ -173,19 +225,41 @@ def _real_nfl_history(gsis_id: str | None, name: str | None,
 
     for ds in _GSIS_DATASETS:
         rows: list[dict] = []
+        best_effort = False
         if gsis_id:
             for season in seasons:
                 try:
                     df = nflref_board.load(ds, season)
                 except Exception:
                     continue
+                if ds in _NGS_DATASETS and "week" in df.columns:
+                    df = df[df["week"] != 0]
                 col = _GSIS_COL.get(ds)
                 if col not in df.columns:
                     continue
                 hit = df[df[col].astype(str) == str(gsis_id)]
                 if not hit.empty:
                     rows.extend(hit.to_dict("records"))
-        out[ds] = {"rows": rows, "best_effort": False}
+        if not rows and norm_target:
+            best_effort = True
+            for season in seasons:
+                try:
+                    df = nflref_board.load(ds, season)
+                except Exception:
+                    continue
+                if ds in _NGS_DATASETS and "week" in df.columns:
+                    df = df[df["week"] != 0]
+                name_col = _NAME_COL.get(ds)
+                if name_col not in df.columns:
+                    continue
+                cand = df[df[name_col].apply(
+                    lambda v: _norm_name(v) == norm_target)]
+                pos_col = _POS_COL.get(ds)
+                if pos_target and pos_col and pos_col in cand.columns:
+                    cand = cand[cand[pos_col].str.upper() == pos_target]
+                if not cand.empty:
+                    rows.extend(cand.to_dict("records"))
+        out[ds] = {"rows": rows, "best_effort": best_effort}
 
     for ds in _PFR_DATASETS:
         rows = []
@@ -208,6 +282,421 @@ def _real_nfl_history(gsis_id: str | None, name: str | None,
         # row here is a name+position guess, never an exact id match.
         out[ds] = {"rows": rows, "best_effort": True}
 
+    return out
+
+
+# Dataset -> (metric category, display label) for the game-log's raw
+# per-category breakdown (see `_game_log`). "injuries" has no metric
+# category (it's not a box-score stat) and is handled as its own top-level
+# section, same as the flat "Real-NFL history" section always has.
+_RAW_SOURCE_LABELS = {
+    "ngs_passing": "Next Gen Stats: Passing",
+    "ngs_receiving": "Next Gen Stats: Receiving",
+    "ngs_rushing": "Next Gen Stats: Rushing",
+    "pfr_pass": "PFR advanced: Passing",
+    "pfr_rec": "PFR advanced: Receiving",
+    "pfr_rush": "PFR advanced: Rushing",
+    "pfr_def": "PFR advanced: Defense",
+    "snap_counts": "Snap counts",
+}
+_RAW_SOURCE_CATEGORY = {
+    "ngs_passing": "passing", "pfr_pass": "passing",
+    "ngs_receiving": "receiving", "pfr_rec": "receiving",
+    "ngs_rushing": "rushing", "pfr_rush": "rushing",
+    "pfr_def": "defense", "snap_counts": "snap",
+}
+
+# A SELECT FEW position-relevant columns for the game log's own `.dt-head`
+# (user request) -- deliberately a small subset of team_profile's own full
+# `_OFF_POSITION_COLS`/`_DEF_PLAYER_COLS` (the game's expandable detail
+# already renders that full breakdown via the same `merged_row` -- see
+# `_player_game_detail.html`), just enough for a quick-glance row: (merged_
+# row category, key, header label). Reads straight off `game["merged_row"]`
+# (the SAME reconciled dict `_player_game_detail.html` already renders),
+# not a second data pull. A key absent from a game's own `merged_row` (the
+# player didn't play, or that source didn't resolve) shows a dash, same
+# convention as every other absent-stat cell on this page. Kickers/`K` and
+# any other position `_game_log` doesn't build a real `merged_row` for get
+# no extra columns at all -- Season/Week/Opp is all they show.
+#
+# Deliberately REAL box-score stats only, no fantasy-derived number
+# (points, PPG) -- a `ppr_pts` column (off player_stats' own
+# fantasy_points_ppr) briefly lived here and was removed on user request:
+# fantasy scoring is a SEPARATE concern (this section is "what actually
+# happened in the game"), and belongs in its own dedicated
+# fantasy-comparison section later, not folded into the real-stat game
+# log. Don't reintroduce a fantasy_points/fantasy_points_ppr column here.
+_LOG_STAT_COLS = {
+    "QB": [("passing", "completions", "Cmp"), ("passing", "attempts", "Att"),
+           ("passing", "passing_yards", "Yds"), ("passing", "passing_tds", "TD"),
+           ("passing", "interceptions", "INT")],
+    "RB": [("rushing", "carries", "Car"), ("rushing", "rushing_yards", "Rush Yds"),
+           ("rushing", "rushing_tds", "TD"), ("receiving", "targets", "Tgt"),
+           ("receiving", "receptions", "Rec"), ("receiving", "receiving_yards", "Rec Yds")],
+    "WR": [("receiving", "targets", "Tgt"), ("receiving", "receptions", "Rec"),
+           ("receiving", "receiving_yards", "Yds"), ("receiving", "receiving_tds", "TD")],
+    "TE": [("receiving", "targets", "Tgt"), ("receiving", "receptions", "Rec"),
+           ("receiving", "receiving_yards", "Yds"), ("receiving", "receiving_tds", "TD")],
+}
+# Defense (DL/LB/DB alike, same shared column set `team_profile._DEF_PLAYER_
+# COLS` uses -- PFR draws no line between "pass rush" and "coverage" stats
+# per position, see that constant's own comment) reads off `pfr_def`
+# instead of a passing/rushing/receiving category.
+_LOG_DEF_STAT_COLS = [
+    ("pfr_def", "def_sacks", "Sack"), ("pfr_def", "def_tackles_combined", "Tkl"),
+    ("pfr_def", "def_ints", "INT"),
+]
+
+
+def _log_stat_cols(position: str | None) -> list[tuple[str, str, str]]:
+    """The game log's own header-column spec for this player's position --
+    see `_LOG_STAT_COLS`/`_LOG_DEF_STAT_COLS` above. Empty for a position
+    with no spec (K, or anything `_game_log` doesn't build a real
+    `merged_row` for)."""
+    if position in ("DL", "LB", "DB", "DE", "DT", "CB", "S"):
+        return _LOG_DEF_STAT_COLS
+    return _LOG_STAT_COLS.get(position or "", [])
+
+
+def _log_stat_values(merged_row: dict, cols: list[tuple[str, str, str]]) -> list:
+    """Pull each `(category, key, label)` column's value out of a game's own
+    `merged_row` (see `_LOG_STAT_COLS`) -- `None` when that category never
+    resolved for this game (e.g. a QB's `passing` sub-dict is `None` on a
+    week he didn't play) or the specific key is absent from it."""
+    out = []
+    for cat, key, _label in cols:
+        src = merged_row.get(cat) if merged_row else None
+        out.append(src.get(key) if src else None)
+    return out
+
+
+# Sleeper's own team abbreviation diverges from nflverse's for exactly one
+# still-active franchise (verified live: Sleeper's player dump uses "LAR"
+# for the Rams, every nflverse dataset here -- player_stats/snap_counts/
+# schedules alike -- uses "LA"); Sleeper's legacy "OAK" (pre-Las-Vegas
+# Raiders) never appears in a current player's `team` field, only in old
+# roster history this module doesn't read. Only applied to `identity["team"
+# ]`, the LAST-resort fallback in `_game_opponent`'s team lookup below (see
+# that call site) -- player_stats'/snap_counts' own team columns are
+# already in nflverse's own format and need no translation.
+_SLEEPER_TEAM_ALIAS = {"LAR": "LA"}
+
+
+def _game_opponent(team: str | None, season: str, week: int) -> str | None:
+    """The real opposing team abbreviation for `team` in this (season,
+    week), off the actual NFL schedule (`nflref.schedule_grid`) -- NOT
+    `snap_counts`'/`pfr_*`'s own `opponent` column, which is only as
+    reliable as those two PFR-bridged, name-matched datasets themselves
+    (a real, confirmed gap: KC 2026 had zero snap_counts rows for the whole
+    season, see `team_profile._defense_position_groups`'s own docstring).
+    The real schedule resolves for ANY team/week regardless of which
+    per-player datasets happened to have rows, so this works even when
+    every other per-game stat is a dash. `team` should be the player's OWN
+    team for this specific week (a traded player's team can change
+    mid-season), not `identity["team"]` (that's only his CURRENT team).
+    None when the schedule doesn't resolve or `team` itself is unknown."""
+    if not team:
+        return None
+    try:
+        from webapp.sources.nflref import schedule_grid
+    except Exception:
+        return None
+    try:
+        grid = schedule_grid(season, week=week, team=team)
+    except Exception:
+        return None
+    if grid.empty:
+        return None
+    row = grid.iloc[0]
+    away, home = row.get("away_team"), row.get("home_team")
+    if away == team:
+        return home
+    if home == team:
+        return away
+    return None
+
+
+def _week_rows(rows: list[dict], season: str, week: int) -> list[dict]:
+    """`rows` filtered to one exact (season, week) -- both compared, not
+    week alone, since two different seasons share week numbers (a player's
+    real week-1-2024 and week-1-2025 rows would otherwise collide into one
+    bucket). Also scrubs pandas NaN to `None` (`_real_nfl_history`'s own
+    `.to_dict("records")` calls do NOT do this -- unlike `team_profile.
+    _clean_records`, which every row team_profile.py's own reconciliation
+    pipeline flows through -- so a row reaching THIS module's reconciliation
+    functions for the first time here would otherwise carry a raw NaN
+    straight into `stat_reconcile`/`_merge_offense_players`'s output,
+    confirmed live: PFR's `pfr_rec` rows carry `rushing_broken_tackles` as
+    NaN for a receiver with no rushing PFR line that game, which
+    `_attach_pfr_extra` flattens verbatim with no `is not None` guard of its
+    own to catch it. Scrubbing here, not in `_real_nfl_history` itself,
+    keeps the EXISTING raw tables' own display unchanged -- this function
+    is only used on the reconciliation path, not the raw-table path."""
+    def clean(v):
+        try:
+            return None if v is not None and pd.isna(v) else v
+        except (TypeError, ValueError):
+            return v
+    return [{k: clean(v) for k, v in r.items()} for r in rows
+           if str(r.get("season")) == str(season) and str(r.get("week")) == str(week)]
+
+
+def _player_week_role_rows(season: str, week: int, real_nfl: dict) -> dict[str, list[dict]]:
+    """This player's own already-pulled `real_nfl[ds]["rows"]` (see
+    `_real_nfl_history`), sliced down to ONE game and bucketed into the
+    `role_rows` shape `team_profile._grouped_metric_stats` expects
+    (`"player_stats_passing"`, `"ngs_passing"`, `"pfr_pass"`, ...) --
+    mirrors exactly how `team_profile._attach_week_stats` builds the same
+    shape for a whole team, just starting from this player's own
+    single-player rows instead of a team-wide pull.
+
+    `player_stats` is role-split via `team_profile._split_player_stats`
+    (it's ONE comprehensive box-score row per week covering all three
+    metric families, same as it is for a team); every other dataset in
+    `real_nfl` already IS one metric family (`ngs_passing` is only ever
+    passing, etc.), so those pass straight through under their own dataset
+    name -- the same "everything else passes through unchanged" rule
+    `_attach_week_stats`'s own `else: role_rows[ds] = hit` branch follows."""
+    from webapp import team_profile as tp
+
+    role_rows: dict[str, list[dict]] = {}
+    player_stats_rows = _week_rows(
+        (real_nfl.get("player_stats") or {}).get("rows", []), season, week)
+    if player_stats_rows:
+        for bucket, rows_b in tp._split_player_stats(player_stats_rows).items():
+            role_rows[f"player_stats_{bucket}"] = rows_b
+
+    for ds in ("ngs_passing", "ngs_receiving", "ngs_rushing",
+              "pfr_pass", "pfr_rec", "pfr_rush", "pfr_def"):
+        hit = _week_rows((real_nfl.get(ds) or {}).get("rows", []), season, week)
+        if hit:
+            role_rows[ds] = hit
+
+    snap_rows = _week_rows(
+        (real_nfl.get("snap_counts") or {}).get("rows", []), season, week)
+    if snap_rows:
+        for bucket, rows_b in tp._split_snap_counts(snap_rows).items():
+            role_rows[f"snap_counts_{bucket}"] = rows_b
+
+    return role_rows
+
+
+def _sleeper_player_weeks(player_id: str, name: str, seasons: list[str],
+                          verified_weeks: set[tuple[str, int]]) -> list[dict]:
+    """This ONE player's per-week stat lines from Sleeper's own weekly feed
+    (`sleepermetrics.nflstats.raw_week`), reshaped to the same
+    `{"player", "week", "season", <stat keys>}` row shape every other
+    source here uses -- the single-player sibling of
+    `team_profile._sleeper_week_rows`. Simpler than that team-wide version:
+    `raw_week` is already keyed by Sleeper `player_id`, so no roster-wide
+    name lookup is needed, just a direct dict `.get(player_id)` per week.
+
+    `verified_weeks` (the caller's own union of every OTHER dataset's real
+    (season, week) pairs for this player -- see `_game_log`) gates which
+    weeks Sleeper's line is trusted for -- same mid-season-accuracy guard
+    `team_profile._sleeper_week_rows` uses (a week Sleeper reports that no
+    other source corroborates has no independently-verified ground truth
+    this player actually took the field, so it's excluded rather than
+    trusted blind). Deliberately NOT scoped to `player_stats` alone (an
+    earlier version of this function was, and it silently produced ZERO
+    verified weeks -- and so an EMPTY game log -- for any player whose
+    Sleeper record has no `gsis_id`, which `player_stats`/`ngs_*` require
+    for that player to resolve at all; a real, confirmed gap affecting a
+    majority of Sleeper's own player dump, e.g. Ja'Marr Chase). Any
+    dataset this player's OWN rows resolved through (PFR name-matched
+    included) counts as corroboration. Degrades to `[]` on any failure."""
+    try:
+        from sleepermetrics.nflstats import raw_week
+    except Exception:
+        return []
+    if not verified_weeks:
+        return []
+
+    out: list[dict] = []
+    for season in seasons:
+        for wk in range(1, 19):
+            if (str(season), wk) not in verified_weeks:
+                continue
+            try:
+                lines = raw_week(season, wk)
+            except Exception:
+                continue
+            line = (lines or {}).get(str(player_id))
+            if not line:
+                continue
+            out.append({"player": name, "week": wk, "season": season, **line})
+    return out
+
+
+def _player_route_weeks(gsis_id: str | None,
+                        seasons: list[str]) -> tuple[list[dict], set[str]]:
+    """This ONE player's own rows from `route_participation`, plus which of
+    `seasons` had NOTHING at all in that dataset (see
+    `team_profile._team_route_rows`'s identical `unavailable_seasons`
+    concept) -- simpler than the team-wide version since route rows are
+    already keyed by `gsis_id`, no roster-gating needed.
+
+    The "is this season's data even published yet" check runs regardless
+    of whether `gsis_id` is known -- it's a fact about the SEASON
+    (nflverse hasn't released `pbp_participation` for it), not about this
+    player, so a player missing a gsis_id (a real, common gap -- see
+    `_real_nfl_history`'s own header comment) still gets the correct "not
+    yet available" note instead of silently showing nothing at all, which
+    an earlier version of this function did (it returned `([], set())`
+    outright for any player with no gsis_id, so `route_unavailable` was
+    always False for such a player even in a season where the dataset was
+    genuinely empty for EVERYONE). Only the per-player ROW lookup itself
+    is skipped without a gsis_id, since route_participation has no
+    name-matched fallback path (unlike the PFR-bridged datasets)."""
+    try:
+        from webapp.sources.nflref import board as nflref_board
+    except Exception:
+        return [], set()
+
+    from webapp import team_profile as tp
+
+    rows: list[dict] = []
+    unavailable: set[str] = set()
+    for season in seasons:
+        try:
+            df = nflref_board.load("route_participation", season)
+        except Exception:
+            df = None
+        if df is None or df.empty:
+            unavailable.add(str(season))
+            continue
+        if not gsis_id:
+            continue
+        hit = df[df["gsis_id"].astype(str) == str(gsis_id)]
+        if not hit.empty:
+            rows.extend(tp._clean_records(hit))
+    return rows, unavailable
+
+
+def _game_log(identity: dict, real_nfl: dict, seasons: list[str]) -> list[dict]:
+    """One entry per week this player has real box-score data for, each a
+    RECONCILED summary row -- the exact same shape/values
+    `team_profile._merge_offense_players`/`_merge_defense_players` already
+    produce for this player on the team page's own per-game drilldown,
+    reused here unmodified (see this module's own header: same source data,
+    same reconciliation code, just called for one player instead of one
+    team). This is the player page's new primary per-game view; the
+    existing flat `real_nfl` raw tables stay exactly as they are (see
+    `_build_profile`), now also grouped per-game/per-category as
+    `raw_by_category` on each entry here for the page's expandable detail.
+
+    A defensive player (position in `team_profile._DEF_GROUP_OF`'s target
+    set, i.e. resolves to DL/LB/DB) goes through `_merge_defense_players`
+    instead -- PFR is defense's only source (see `stat_reconcile`'s own
+    docstring: "Defense ... have no second source at all"), so there is no
+    reconciliation step for a defensive player's game log, only the merge.
+    """
+    from webapp import team_profile as tp
+
+    player_id = identity.get("player_id")
+    gsis_id = identity.get("gsis_id")
+    name = identity.get("player_name")
+    position = identity.get("position")
+    if not name:
+        return []
+
+    # Every (season, week) ANY of this player's own already-resolved
+    # datasets has a real row for -- the game log's own row set. Built
+    # from EVERY dataset in `real_nfl`, not just `player_stats`: a real,
+    # confirmed gap is that `player_stats`/`ngs_*`/`injuries` require a
+    # gsis_id to resolve at all, and a majority of Sleeper's own player
+    # dump has none (verified live: Ja'Marr Chase, an active star, has
+    # `gsis_id = None` in this session's own snapshot) -- for such a
+    # player only the PFR-bridged datasets (`snap_counts`/`pfr_*`, name+
+    # position matched) resolve anything, and an earlier version of this
+    # function that only trusted `player_stats` for week-detection silently
+    # produced an EMPTY game log for exactly these players. Same "union of
+    # every source's weeks" idea `team_profile._attach_week_stats` gets for
+    # free from iterating a team's SCHEDULE (no per-player schedule exists
+    # here, so it's built directly from the data instead).
+    weeks_seen: set[tuple[str, int]] = set()
+    for ds_data in real_nfl.values():
+        for r in ds_data.get("rows", []):
+            if r.get("week") is not None:
+                weeks_seen.add((str(r.get("season")), int(r["week"])))
+
+    sleeper_rows = _sleeper_player_weeks(player_id, name, seasons, weeks_seen)
+    weeks_seen |= {(str(r["season"]), r["week"]) for r in sleeper_rows}
+    route_rows, route_unavailable_seasons = _player_route_weeks(gsis_id, seasons)
+
+    is_defense = position in ("DL", "LB", "DB", "DE", "DT", "CB", "S")
+
+    out: list[dict] = []
+    for season, wk in sorted(weeks_seen, key=lambda sw: (sw[0], sw[1])):
+        role_rows = _player_week_role_rows(season, wk, real_nfl)
+        sleeper_hit = _week_rows(sleeper_rows, season, wk)
+        if sleeper_hit:
+            for bucket, rows_b in tp._split_sleeper_stats(sleeper_hit).items():
+                role_rows[f"sleeper_{bucket}"] = rows_b
+        route_hit = _week_rows(route_rows, season, wk)
+        if route_hit:
+            role_rows["route_participation"] = route_hit
+
+        if is_defense:
+            stats = {"pfr_def": role_rows.get("pfr_def") or [],
+                     "snap_counts_defense": role_rows.get("snap_counts_defense") or []}
+            players = tp._merge_defense_players(stats, [], abbr="")
+        else:
+            stats = tp._grouped_metric_stats(role_rows)
+            stats["snap_counts_offense"] = role_rows.get("snap_counts_offense") or []
+            stats["route_participation"] = role_rows.get("route_participation") or []
+            players = tp._merge_offense_players(
+                stats, [{"player": name, "position": position}] if position else [])
+        merged_row = players.get(tp._norm_name(name))
+        if not merged_row:
+            continue
+
+        raw_by_category: dict[str, list[tuple[str, list[dict]]]] = {}
+        for ds, label in _RAW_SOURCE_LABELS.items():
+            hit = _week_rows((real_nfl.get(ds) or {}).get("rows", []), season, wk)
+            if hit:
+                cat = _RAW_SOURCE_CATEGORY[ds]
+                raw_by_category.setdefault(cat, []).append((label, hit))
+        box_hit = _week_rows(
+            (real_nfl.get("player_stats") or {}).get("rows", []), season, wk)
+        if box_hit:
+            for bucket, rows_b in tp._split_player_stats(box_hit).items():
+                raw_by_category.setdefault(bucket, []).insert(0, ("Box score", rows_b))
+
+        # This player's OWN team for THIS week -- not identity["team"]
+        # (that's only his CURRENT team, wrong for a traded player's past
+        # games) -- read off whichever source resolved for this week,
+        # player_stats first (most reliably available, see the gsis-
+        # fallback fix above), falling back to the PFR-bridged snap_counts
+        # rows, and finally the player's current team as a last resort
+        # (still usually right -- most players never change teams).
+        team = None
+        if box_hit:
+            team = box_hit[0].get("recent_team")
+        if not team:
+            snap_hit = role_rows.get("snap_counts_offense") or role_rows.get("snap_counts_defense")
+            if snap_hit:
+                team = snap_hit[0].get("team")
+        if not team:
+            team = _SLEEPER_TEAM_ALIAS.get(identity.get("team"), identity.get("team"))
+        opponent = _game_opponent(team, season, wk)
+
+        stat_cols = _log_stat_cols(position)
+        stat_values = _log_stat_values(merged_row, stat_cols)
+
+        route_summary = None
+        if route_hit:
+            summarized = tp._route_summary_rows({"route_participation": route_hit})
+            route_summary = summarized[0] if summarized else None
+
+        out.append({
+            "season": season, "week": wk, "position": position,
+            "opponent": opponent,
+            "stat_cols": stat_cols, "stat_values": stat_values,
+            "merged_row": merged_row, "raw_by_category": raw_by_category,
+            "route_summary": route_summary,
+            "route_unavailable": season in route_unavailable_seasons,
+        })
     return out
 
 
@@ -372,59 +861,104 @@ def _build_profile(player_id: str, league_id: str | None = None) -> dict:
         identity.get("gsis_id"), identity.get("player_name"),
         identity.get("position"), real_nfl_seasons)
     adp = _adp_history(player_id, real_nfl_seasons)
-
-    # Split every season-tagged data source into "this season" (shown
-    # directly on the profile, no click needed) vs "past seasons" (behind a
-    # drilldown) -- the actual current NFL season, not just whichever season
-    # happens to have the most recent row (an offseason, or a since-retired
-    # player, would otherwise mislabel an old season as current).
-    current_season = _current_season()
-    for ds_data in real_nfl.values():
-        ds_data["current_rows"], ds_data["past_rows"] = _split_current(
-            ds_data["rows"], current_season)
-    adp_current, adp_past = _split_current(adp, current_season)
-
-    league_current = None
-    league_past = None
-    if league_section is not None:
-        dp_cur, dp_past = _split_current(league_section["draft_picks"], current_season)
-        tr_cur, tr_past = _split_current(league_section["trade_stints"], current_season)
-        wr_cur, wr_past = _split_current(league_section["waiver_rows"], current_season)
-        roster_cur = league_section["roster_splits"].get(current_season) or []
-        roster_past = {s: rows for s, rows in league_section["roster_splits"].items()
-                       if s != current_season}
-        league_current = {"draft_picks": dp_cur, "trade_stints": tr_cur,
-                          "waiver_rows": wr_cur, "roster": roster_cur}
-        league_past = {"draft_picks": dp_past, "trade_stints": tr_past,
-                       "waiver_rows": wr_past, "roster_splits": roster_past}
+    game_log = _game_log(identity, real_nfl, real_nfl_seasons)
 
     # Every season's full percentile profile, for the radar overlay -- the
     # chart itself defaults its focus to the most recent season with data
     # (same "most recent scoring season" convention already established for
-    # the playoff-splice chart's rank badges), overridable via a season pill
-    # on the page. `percentile_profile` stays as the focused (most recent)
-    # season's own dict, for the stat table rendered below the chart.
+    # the playoff-splice chart's rank badges), overridable via the page's
+    # shared season dropdown (see `scope_profile`). `percentile_profile`
+    # stays as the focused (most recent) season's own dict, for the stat
+    # table rendered below the chart.
     season_profiles = _all_season_profiles(
         player_id, identity.get("position"), real_nfl_seasons)
     available_seasons = sorted(season_profiles, reverse=True)
     focus_season = available_seasons[0] if available_seasons else None
     percentile_profile = season_profiles.get(focus_season) if focus_season else None
 
+    # This dict is the FULL, UNSCOPED aggregation -- cached as-is (see
+    # `player_profile()`), no season split baked in. `scope_profile()`
+    # (below) does the actual per-season filtering, called fresh on every
+    # request (a cheap in-memory filter, not a data pull) so the whole
+    # page's "follow-up sections" can re-scope to whatever season a single
+    # shared dropdown picks, not just today's real NFL season.
     return {
         "identity": identity,
         "seasons_covered": real_nfl_seasons,
         "real_nfl": real_nfl,
+        "game_log": game_log,
+        # This player's own header-column spec (see `_log_stat_cols`) --
+        # computed once here rather than read off `game_log[0]` per request,
+        # since an EMPTY game log would otherwise have nothing to read the
+        # spec from at all (and every entry carries the identical spec
+        # regardless, so re-deriving it per game would be redundant).
+        "game_log_stat_cols": _log_stat_cols(identity.get("position")),
         "adp_history": adp,
-        "adp_current": adp_current,
-        "adp_past": adp_past,
-        "current_season": current_season,
+        "current_season": _current_season(),
         "league": league_section,
-        "league_current": league_current,
-        "league_past": league_past,
         "percentile_profile": percentile_profile,
         "season_profiles": season_profiles,
         "available_seasons": available_seasons,
         "focus_season": focus_season,
+    }
+
+
+def scope_profile(profile: dict, season: str | None) -> dict:
+    """The `player_profile()` result, re-scoped to exactly ONE season for
+    display -- the season dropdown's own filter, run fresh per request
+    (cheap: this only filters already-fetched lists, no data pull) so
+    every "follow-up section" (game log, real-NFL history, league history,
+    ADP history) shows that one season's rows, all in lockstep, rather
+    than each defaulting independently to today's real NFL season.
+
+    `season=None` (or a season this player has no data for at all) falls
+    back to `profile["current_season"]` -- the page's own default on first
+    load, same as the old fixed "current season" split this replaced.
+    Returns the SAME KEYS `player_profile.html` reads as flat top-level
+    context (`real_nfl`, `game_log`, `adp_history`, `league_history`),
+    values replaced with this season's rows only -- the template's own
+    per-dataset "current_rows"/"past_rows" and *_current/*_past drilldown
+    reads are gone along with the drilldowns themselves (one dropdown now
+    covers every season, so there's no separate "past seasons" list to
+    render)."""
+    seasons_covered = profile.get("seasons_covered") or []
+    if not season or season not in seasons_covered:
+        season = profile.get("current_season")
+
+    real_nfl = {
+        ds: {**ds_data, "rows": _scope_to_season(ds_data.get("rows", []), season)}
+        for ds, ds_data in (profile.get("real_nfl") or {}).items()
+    }
+    game_log = _scope_to_season(profile.get("game_log") or [], season)
+    adp = _scope_to_season(profile.get("adp_history") or [], season)
+
+    league_section = profile.get("league")
+    league_scoped = None
+    if league_section is not None:
+        league_scoped = {
+            "draft_picks": _scope_to_season(league_section["draft_picks"], season),
+            "trade_stints": _scope_to_season(league_section["trade_stints"], season),
+            "waiver_rows": _scope_to_season(league_section["waiver_rows"], season),
+            "roster": league_section["roster_splits"].get(season) or [],
+        }
+
+    # The percentile radar's own per-season profile -- `available_seasons`
+    # (this dict's own key set) can be a SUBSET of `seasons_covered` (a
+    # season with real box-score/game-log data but no leaderboard row for
+    # this player, e.g. a rookie season or a position Sleeper's own
+    # leaderboard doesn't rank), so `season` here is simply whichever one
+    # the dropdown picked -- `.get()` degrades to None (no radar/table for
+    # that season, same as any other absent-data case) rather than forcing
+    # a fallback to a DIFFERENT season than every other section is showing.
+    percentile_profile = (profile.get("season_profiles") or {}).get(season)
+
+    return {
+        "season_scope": season,
+        "real_nfl": real_nfl,
+        "game_log": game_log,
+        "adp_history": adp,
+        "league_scoped": league_scoped,
+        "percentile_profile": percentile_profile,
     }
 
 

@@ -21,6 +21,21 @@ import time
 
 import pandas as pd
 
+
+def _norm_name(name: str | None) -> str:
+    """Shared join key for every name-based match in this module (PFR-
+    extra attachment, offense/defense position grouping): a thin wrapper
+    around nflref.summary._norm_name, the SAME normalised-name key
+    stat_reconcile.reconcile_metric already joins its own cross-source
+    rows on. One top-level definition so every caller in this file shares
+    it rather than each doing its own local import."""
+    try:
+        from webapp.sources.nflref.summary import _norm_name as _impl
+        return _impl(name)
+    except Exception:
+        return (name or "").strip().lower()
+
+
 # Canonical fantasy-position order, matching sleepermetrics.nflstats._POSITIONS
 # / ddbmFF.R's own sortPosition -- the roster section groups by this order
 # rather than one flat list, so a reader can scan "the QBs" then "the RBs"
@@ -58,6 +73,15 @@ _TEAM_COL = {
     "pfr_def": "team",
     "injuries": "team",
 }
+
+# "route_participation" is NOT in _TEAM_DATASETS/_TEAM_COL above -- unlike
+# every other nflref dataset, its rows (exploded from pbp_participation's
+# own offense_players list) carry no team column at all (a real play's
+# on-field list doesn't repeat which side of the ball it's for; that's
+# implicit in which team's schedule the game belongs to). Filtered
+# separately in `_team_datasets` below by cross-referencing `player_stats`
+# (already team-filtered, already fetched) on the shared gsis_id/player_id
+# space both datasets use -- see that function's own comment.
 
 # team_profile() calls nflref.summary.player_leaderboard/schedule_grid plus
 # up to 9 nflref.board.load() datasets and a multi-season schedule loop --
@@ -133,16 +157,95 @@ def _team_identity(abbr: str) -> dict:
 def _roster_leaderboard(abbr: str, season: str) -> list[dict]:
     """This team's real-NFL stat leaderboard for `season`, Sleeper-sourced
     (matches what `percentile_profile`/the player-profile radar already
-    assume, and DEF rows only exist on the Sleeper source) -- ranked among
-    the team's own players via `player_leaderboard`'s existing `team=`
-    filter, no new data code needed."""
+    assume). This pulls `pos="ALL"`, which -- confirmed live, a PRE-
+    EXISTING characteristic of `player_leaderboard` unrelated to this
+    function's own fix below -- never actually includes DEF rows at all
+    ("ALL" stays offense/kicker-only by design, see that function's own
+    docstring); the `is_def`/team-abbreviation branch below is therefore
+    presently dead code, kept only because it's cheap and correct IF a
+    caller ever passes a `pos` that includes DEF.
+
+    NOT ranked via `player_leaderboard`'s own `team=` filter -- a real,
+    confirmed bug: that filter reads Sleeper's own `team` column, which is
+    `sleepermetrics.players()`'s CURRENT-snapshot team assignment, not a
+    per-season historical one (`sleepermetrics.nflstats._leaderboard_pool`
+    builds it straight off that static dump). For a PAST season this is
+    wrong in both directions -- verified live, DET 2025: David Montgomery
+    (real 2025 DET RB, since traded to Houston) was excluded entirely,
+    while Isiah Pacheco (a real KC player, since traded TO Detroit) showed
+    up as a DET RB for a season he never played for that team. The team-
+    profile page's own Schedule drilldown never hits this (it reads
+    `player_stats`' own `recent_team`, a genuinely per-season/per-week
+    historical column -- see `_TEAM_COL`), which is exactly why the roster
+    section disagreed with it.
+
+    Fixed by pulling the FULL leaderboard unfiltered (`team="ALL"`) and
+    keeping only the players `player_stats` itself says were on this team
+    THAT season, matched primarily on `gsis_id` (the id both frames
+    actually share -- Sleeper's own `player_id` and nflverse's `player_id`
+    are different id spaces entirely) and falling back to normalised name
+    when `gsis_id` is missing on the Sleeper side -- a real, separately-
+    documented gap (see player_profile.py's own "majority of Sleeper's
+    dump has no gsis_id" finding): dropping those rows outright, rather
+    than falling back, left DET's real 2025 roster at 5 players instead
+    of ~55, since most of a real team's own skill players hit exactly this
+    gap. DEF rows have no `gsis_id` OR a real name to match on at all and
+    are kept by team abbreviation directly instead.
+    """
     try:
+        from webapp.sources.nflref import board as nflref_board
         from webapp.sources.nflref import summary as nflref_summary
-        lb = nflref_summary.player_leaderboard(
-            season, pos="ALL", source="sleeper", team=abbr, limit=100)
-        return _clean_records(lb) if not lb.empty else []
     except Exception:
         return []
+
+    try:
+        lb = nflref_summary.player_leaderboard(
+            season, pos="ALL", source="sleeper", team="ALL", limit=10_000)
+    except Exception:
+        return []
+    if lb.empty:
+        return []
+
+    try:
+        ps = nflref_board.load("player_stats", str(season))
+    except Exception:
+        ps = pd.DataFrame()
+    real_gsis: set[str] = set()
+    real_names: set[str] = set()
+    if not ps.empty and {"player_id", "recent_team"}.issubset(ps.columns):
+        team_rows = ps.loc[ps["recent_team"] == abbr]
+        # `.dropna()` before `.astype(str)` is required, not cosmetic -- a
+        # real, confirmed bug: DET's own 2025 player_stats has one genuine
+        # NaN `player_id` row (an unresolved-player stub, same class of gap
+        # player_profile.py's own `_norm_name` docstring documents for
+        # `player_display_name`). `str(nan)` is the literal string "nan"
+        # on EITHER side of this join, so without dropping it first,
+        # `real_gsis` contains "nan" and `.isin()` then matches every
+        # Sleeper leaderboard row with a missing `gsis_id` (the MAJORITY
+        # of them -- verified live, this alone pulled in ~500 players
+        # leaguewide instead of one team's real roster).
+        real_gsis = set(team_rows["player_id"].dropna().astype(str))
+        if "player_display_name" in team_rows.columns:
+            real_names = {_norm_name(n) for n in team_rows["player_display_name"].dropna()}
+
+    is_def = lb["position"] == "DEF" if "position" in lb.columns else pd.Series(False, index=lb.index)
+    # `.str.strip()` matters: ~22% of Sleeper's own `gsis_id` values carry a
+    # stray leading space (the same defect `player_profile._player_identity`
+    # already strips) -- confirmed live, David Montgomery's row here read
+    # " 00-0035685" against player_stats' clean "00-0035685", so without
+    # this the two never matched despite both genuinely being his id.
+    gsis_hit = lb["gsis_id"].dropna().astype(str).str.strip().isin(real_gsis) if "gsis_id" in lb.columns \
+        else pd.Series(dtype=bool)
+    gsis_hit = gsis_hit.reindex(lb.index, fill_value=False)
+    no_gsis = lb["gsis_id"].isna() if "gsis_id" in lb.columns else pd.Series(True, index=lb.index)
+    name_hit = lb["player"].apply(_norm_name).isin(real_names) if "player" in lb.columns \
+        else pd.Series(False, index=lb.index)
+    on_team = gsis_hit | (no_gsis & name_hit)
+    keep = on_team | (is_def & (lb["team"] == abbr)) if "team" in lb.columns else on_team
+    out = lb[keep].reset_index(drop=True)
+    if "rank" in out.columns:
+        out["rank"] = range(1, len(out) + 1)
+    return _clean_records(out) if not out.empty else []
 
 
 def _roster_by_position(roster: list[dict]) -> list[dict]:
@@ -308,9 +411,44 @@ def _split_sleeper_stats(rows: list[dict]) -> dict[str, list[dict]]:
 # -- see stat_reconcile's own docstring), so they are never fed into
 # reconcile_metric(); they still belong under the same metric heading
 # (per user request: "next gen stats: passing and pfr advanced: passing
-# should lay strictly under Passing"), just as PFR's own labelled,
-# un-reconciled table alongside the reconciled one.
+# should lay strictly under Passing"). Originally shown as PFR's own
+# separate, un-reconciled table under the reconciled one; per a later user
+# request ("i don't want multiple tables, i prefer the source table with
+# the flyout" -- prompted by a real example: DET 2026 wk1, Jahmyr Gibbs'
+# reconciled Rushing row read 29 Car/156 Yds/2 TD with the yardage
+# breakdown, 112 before contact + 44 after contact, sitting in a second
+# table below it) PFR's extra columns are now JOINED ONTO the reconciled
+# row itself (`_attach_pfr_extra`, below) instead.
 _PFR_METRIC_DS = {"passing": "pfr_pass", "rushing": "pfr_rush", "receiving": "pfr_rec"}
+
+# PFR's join key on its own passing/receiving/rushing rows is
+# "pfr_player_name" (see _NAME_COL's own PFR entries in stat_reconcile.py);
+# the reconciled row's own key is "player". Same normalised-name join key
+# stat_reconcile.reconcile_metric() itself already uses to fold multiple
+# sources' rows into one player -- safe here for the identical reason that
+# module's own docstring gives: both sides are already scoped to one
+# team's one metric's one game/season slice, a handful of players, not a
+# whole-league pool where a name collision is a real risk.
+def _attach_pfr_extra(reconciled: list[dict], pfr_rows: list[dict] | None) -> None:
+    """Mutates `reconciled` in place, adding `row["_pfr_extra"] = {stat: value,
+    ...}` (PFR's own raw columns, minus identity/game-scope columns) to
+    whichever rows have a matching PFR row for this game/season. A player
+    PFR didn't cover simply gets no `_pfr_extra` key at all (the template's
+    own per-column lookup already treats a missing key as "no data" --
+    same convention every other stat here follows)."""
+    if not pfr_rows:
+        return
+    drop = {"season", "week", "game_type", "team", "opponent",
+            "pfr_player_name", "pfr_player_id"}
+    pfr_by_name = {}
+    for pr in pfr_rows:
+        key = _norm_name(pr.get("pfr_player_name"))
+        if key:
+            pfr_by_name[key] = {k: v for k, v in pr.items() if k not in drop}
+    for row in reconciled:
+        extra = pfr_by_name.get(_norm_name(row.get("player")))
+        if extra:
+            row["_pfr_extra"] = extra
 
 
 def _grouped_metric_stats(role_rows: dict[str, list[dict]],
@@ -381,11 +519,541 @@ def _grouped_metric_stats(role_rows: dict[str, list[dict]],
         pfr_rows = role_rows.get(_PFR_METRIC_DS[metric])
         if pfr_rows:
             entry["pfr"] = pfr_rows
+            # Per-game only: `_attach_pfr_extra` joins PFR's raw rows onto
+            # the reconciled ones by player name assuming ONE row per
+            # player (true at a single game's grain). The season-wide
+            # caller's own `pfr_rows` here is a whole season's UN-SUMMED
+            # weekly rows (several per player), which this join was never
+            # built to aggregate -- see team_profile.html's per-game vs.
+            # season-wide sections; the season-wide one keeps rendering
+            # `entry.pfr` as its own separate table, unchanged, per
+            # standing user direction to leave that section as raw output.
+            if not multi_week:
+                _attach_pfr_extra(reconciled, pfr_rows)
         out[metric] = entry
     return out
 
 
-def _attach_week_stats(schedule: list[dict], team_datasets: dict) -> list[dict]:
+# Kicker and team-defense stats are Sleeper-ONLY in this app's data
+# pipeline -- verified live: nflverse's player_stats/ngs_*/pfr_* datasets
+# have zero FG/XP columns and no team-level defensive stat line at all
+# (this codebase's other sources are built around individual skill-
+# position players). There is nothing to reconcile against, so both
+# `_sleeper_kicker_rows`/`_sleeper_def_rows` (below, near the other
+# `_sleeper_*` data-pull functions) read Sleeper's raw weekly feed
+# directly (`sleepermetrics.scoring.nfl_stats`, the UNTRIMMED stat line --
+# deliberately NOT `nflstats.raw_week`, whose own `_USAGE_KEYS` filter
+# drops every kicking/team-defense key, built as it is for skill-position
+# usage tracking) rather than going through `_sleeper_week_rows`'s own
+# player_stats cross-check, which would drop every row here (player_stats
+# has no kicker/DEF rows to verify against in the first place). Column
+# specs live here, ahead of the pull functions, since `_OFF_POSITION_COLS`/
+# `_DEF_TEAM_COLS` (below) reference them.
+_KICKER_KEYS = [
+    ("fgm", "FGM"), ("fga", "FGA"), ("fgm_pct", "FG%"),
+    ("fgm_20_29", "20-29"), ("fgm_30_39", "30-39"), ("fgm_40_49", "40-49"),
+    ("fgm_50_59", "50-59"), ("fgm_60p", "60+"), ("fgm_lng", "Long"),
+    ("fg_blkd", "Blocked"), ("xpm", "XPM"), ("xpa", "XPA"),
+]
+_DEF_TEAM_KEYS = [
+    ("sack", "Sack"), ("qb_hit", "QB hit"), ("int", "INT"), ("ff", "FF"),
+    ("fum_rec", "FR"), ("td", "TD"), ("safe", "Safety"),
+    ("tkl", "Tkl"), ("tkl_solo", "Solo"), ("tkl_ast", "Ast"),
+    ("tkl_loss", "TFL"), ("def_pass_def", "Pass def"),
+    ("def_3_and_out", "3-and-out"), ("def_forced_punts", "Forced punts"),
+    ("pts_allow", "Pts allowed"), ("yds_allow", "Yds allowed"),
+]
+
+
+# Real defensive position values seen in snap_counts across several teams
+# (verified live: CB, DB, DE, DL, DT, LB, S) collapse to three groups per
+# user request ("dl, lb, db (cb & s)") -- DE/DT are both a flavor of
+# defensive lineman, CB/S are both a flavor of defensive back. A position
+# outside this map (a data-quality gap -- not seen in practice) falls into
+# a trailing "Other" group rather than being dropped. "DEF" (Sleeper's own
+# team-defense stat line -- see `_sleeper_def_rows`) is a FOURTH group,
+# user-requested, added alongside DL/LB/DB and placed FIRST (user's own
+# follow-up: "shift the sleeper DEF group to be the first subsection in
+# the defense section") -- it is a team-level row, not a per-player one,
+# so it is built and rendered separately (see `_defense_position_groups`'s
+# own handling), never fed through `_DEF_GROUP_OF`/`_merge_defense_players`.
+_DEF_GROUP_OF = {
+    "DL": "DL", "DE": "DL", "DT": "DL",
+    "LB": "LB",
+    "DB": "DB", "CB": "DB", "S": "DB",
+}
+_DEF_GROUP_ORDER = ("DEF", "DL", "LB", "DB")
+
+# Offense position groups, in display order (user's own example). OL was
+# DROPPED per user request (2026-09 follow-up -- linemen only ever had
+# snap-share data, no box-score stats at all, and were judged not worth
+# their own section). K was ALSO dropped from here in the very next
+# follow-up: kicker stats moved to replace the Special-teams pill's own
+# snap-share table (_team_game_detail.html) rather than living as a
+# separate offense group, so it is not double-shown -- see
+# `_sleeper_kicker_rows`/`_KICKER_KEYS` for the data itself, still built
+# here in team_profile.py, just consumed by the Special-teams panel now.
+_OFF_GROUP_ORDER = ("QB", "RB", "WR", "TE")
+
+# FIXED column sets per offense position group (user's own choice: same
+# shape every week regardless of whether a given player actually used
+# every category, e.g. a WR who never ran the ball this game still gets
+# rushing columns, all dashes -- predictable table shape over tightest
+# possible table). Each entry is (category, cols) where `cols` is the
+# SAME (key, label) shape `reconciled_cols`/`pfr_extra_cols` already use in
+# _teamstat_macros.html; `category` says which of a merged player's
+# `passing`/`rushing`/`receiving`/`snap`/`kicker` sub-dicts to read `key`
+# from.
+_OFF_POSITION_COLS = {
+    "QB": [
+        ("passing", [("attempts", "Att"), ("completions", "Cmp"),
+                     ("passing_yards", "Yds"), ("passing_tds", "TD"),
+                     ("interceptions", "INT"), ("times_pressured", "Prss"),
+                     ("times_sacked", "Sack"), ("passing_bad_throws", "Bad thr")]),
+        ("rushing", [("carries", "Car"), ("rushing_yards", "Yds"), ("rushing_tds", "TD")]),
+        ("snap", [("offense_snaps", "Snaps"), ("offense_pct", "Snap%")]),
+    ],
+    "RB": [
+        ("rushing", [("carries", "Car"), ("rushing_yards", "Yds"),
+                     ("rushing_tds", "TD"), ("rushing_yards_before_contact", "YBC"),
+                     ("rushing_yards_after_contact", "YAC"),
+                     ("rushing_broken_tackles", "Broken tkl")]),
+        ("receiving", [("targets", "Tgt"), ("receptions", "Rec"),
+                       ("receiving_yards", "Yds"), ("receiving_tds", "TD")]),
+        ("snap", [("offense_snaps", "Snaps"), ("offense_pct", "Snap%")]),
+        ("route", [("routes_run", "Routes")]),
+    ],
+    "WR": [
+        ("receiving", [("targets", "Tgt"), ("receptions", "Rec"),
+                       ("receiving_yards", "Yds"), ("receiving_tds", "TD"),
+                       ("receiving_drop", "Drop"), ("receiving_broken_tackles", "Broken tkl")]),
+        ("rushing", [("carries", "Car"), ("rushing_yards", "Yds"), ("rushing_tds", "TD")]),
+        ("snap", [("offense_snaps", "Snaps"), ("offense_pct", "Snap%")]),
+        ("route", [("routes_run", "Routes")]),
+    ],
+    "TE": [
+        ("receiving", [("targets", "Tgt"), ("receptions", "Rec"),
+                       ("receiving_yards", "Yds"), ("receiving_tds", "TD"),
+                       ("receiving_drop", "Drop"), ("receiving_broken_tackles", "Broken tkl")]),
+        ("snap", [("offense_snaps", "Snaps"), ("offense_pct", "Snap%")]),
+        ("route", [("routes_run", "Routes")]),
+    ],
+}
+
+# `("route", [("routes_run", "Routes")])` above is deliberately ONE column,
+# not all 14 fields `route_participation` actually carries (targets +
+# 13 route-type counts, see nflref.route_participation._ROUTE_TYPES) --
+# the fixed-column convention this table already follows (every group gets
+# the SAME columns every week) means adding all 13 route-type breakdowns
+# would repeat mostly-zero columns on every single row (a player who ran a
+# SLANT once this game still gets 12 other "0" cells). `routes_run` is the
+# one number that answers "how much of this game did they play as a
+# route-runner" at a glance, matching the compact-headline convention every
+# other category here follows (e.g. `receiving`'s own Tgt/Rec/Yds/TD over
+# its dataset's full column list). The full per-route-type breakdown (and
+# `targets` from route_participation itself, distinct from the reconciled
+# `receiving.targets` above -- see `_route_summary_rows` for how the two are
+# cross-checked) is exposed via `_route_summary_rows`'s own single-game
+# summary card instead, not this per-player table.
+
+
+def _off_position_cols_for_game(stats: dict) -> dict:
+    """`_OFF_POSITION_COLS`, trimmed of the "route" category for THIS game
+    when `route_participation` has nothing for it at all (2026-09 fix, real
+    user-reported bug: the "Routes" column rendered on every RB/WR/TE table
+    for every week of the current 2026 season, always blank -- upstream
+    nflverse doesn't publish `pbp_participation` for an in-progress season
+    yet, see nflref.route_participation's own EARLIEST/gap note, so
+    `stats["route_participation"]` is genuinely `[]` for every 2026 game,
+    not a data-quality miss for one player).
+
+    The fixed-column convention (`_OFF_POSITION_COLS` itself, a static
+    module-level dict, same shape every week -- see that dict's own header
+    comment) is preserved at the PLAYER level: a player who didn't run a
+    route still shows a dash in the Routes column when OTHER players that
+    game did. This only drops the column when NO player on this team has
+    ANY route_participation row for this game, i.e. the whole dataset is
+    empty for this game -- the same "nothing to report" bar
+    `_route_summary_rows` already uses for its own card (`stats.get(
+    "route_participation") or []`, identical check, so the column and the
+    card disappear together rather than one outliving the other).
+
+    Returns a fresh dict (never mutates the shared `_OFF_POSITION_COLS`
+    module constant) so every OTHER game's render -- most of which DO have
+    route data -- is unaffected."""
+    if stats.get("route_participation"):
+        return _OFF_POSITION_COLS
+    return {
+        group: [(cat, cols) for cat, cols in spec if cat != "route"]
+        for group, spec in _OFF_POSITION_COLS.items()
+    }
+
+# Kicker stats -- a plain column spec (Sleeper's the only source, nothing
+# to reconcile -- see `_KICKER_KEYS`'s own header comment), used by
+# `_team_game_detail.html` for the Special-teams pill's replacement table,
+# NOT part of `_OFF_POSITION_COLS` (kicker stats moved OUT of Offense's
+# own K group in the very next follow-up after first landing there -- see
+# `_OFF_GROUP_ORDER`'s own comment for the full history).
+_KICKER_COLS = [("kicker", _KICKER_KEYS)]
+
+# FIXED column set for the three PER-PLAYER defensive groups (DL/LB/DB
+# alike) -- PFR's defensive stat line is ONE dataset covering both
+# pass-rush/tackle stats (relevant mostly to DL/LB) and coverage stats
+# (relevant mostly to DB), so rather than hand-splitting which columns
+# "belong" to which group (PFR itself draws no such line -- a coverage LB
+# or a blitzing DB are both real), every group gets the same full set; a
+# player with nothing in a given column shows a dash, same as any other
+# absent-stat cell elsewhere in this module. The "DEF" group (Sleeper's
+# team-level stat line) is NOT part of this dict -- it has its own single
+# "player" (the team itself) and its own column spec, handled separately
+# by `_defense_position_groups`.
+_DEF_PLAYER_COLS = [
+    ("pfr_def", [("def_sacks", "Sack"), ("def_pressures", "Prss"),
+                 ("def_tackles_combined", "Tkl"), ("def_missed_tackles", "Missed tkl"),
+                 ("def_times_blitzed", "Blitz"), ("def_times_hurried", "Hrd"),
+                 ("def_ints", "INT"), ("def_targets", "Tgt"),
+                 ("def_completions_allowed", "Cmp allowed"),
+                 ("def_yards_allowed", "Yds allowed"),
+                 ("def_receiving_td_allowed", "TD allowed"),
+                 ("def_passer_rating_allowed", "Rtg allowed")]),
+    ("snap", [("defense_snaps", "Snaps"), ("defense_pct", "Snap%")]),
+]
+
+# The "DEF" group (Sleeper's own team-defense stat line -- see
+# _sleeper_def_rows/_DEF_TEAM_KEYS) reads from a merged player's own
+# "team_def" sub-dict, a shape unique to that one group (a team-level row,
+# not a per-player one -- see _defense_position_groups's own docstring).
+_DEF_TEAM_COLS = [("team_def", _DEF_TEAM_KEYS)]
+
+# DEF_COLS (the Jinja global registered in app.py, fed to
+# _teamstat_macros.position_group_table as `cols_by_group`) is a dict
+# keyed by group name -- DEF gets its own team-level column spec, DL/LB/DB
+# all share the identical per-player one (`_DEF_PLAYER_COLS`, see that
+# constant's own comment for why one shared set covers all three).
+_DEF_COLS = {"DEF": _DEF_TEAM_COLS, "DL": _DEF_PLAYER_COLS,
+            "LB": _DEF_PLAYER_COLS, "DB": _DEF_PLAYER_COLS}
+
+
+def _position_of(name: str, roster_pos: dict[str, str],
+                 snap_pos: dict[str, str]) -> str:
+    """A player's position for grouping: snap_counts' own value first (the
+    most granular real-position source, and the only one that distinguishes
+    OL/T from a skill position), falling back to the Sleeper roster
+    leaderboard (fantasy positions only -- QB/RB/WR/TE/K, no OL/defensive
+    granularity, but covers a player snap_counts might have missed), then
+    "Other" if neither resolves (not expected in practice)."""
+    key = _norm_name(name)
+    return snap_pos.get(key) or roster_pos.get(key) or "Other"
+
+
+def _merge_offense_players(stats: dict, roster: list[dict]) -> dict[str, dict]:
+    """One entry per offensive player who appears in ANY of passing/
+    rushing/receiving/offensive-snaps/routes this game: `{name: {"position":...,
+    "passing": row|None, "rushing": row|None, "receiving": row|None,
+    "snap": row|None, "route": row|None}}`. A player in more than one
+    metric (a QB who rushed, a RB who caught passes -- both real and
+    common, verified live) correctly ends up as ONE entry with more than
+    one sub-key filled, not duplicated across several -- this is the whole
+    point of the rework.
+
+    `stats["route_participation"]` (see `nflref.route_participation` +
+    `_team_route_rows`) is matched by NORMALISED NAME, not gsis_id, unlike
+    every other join in this module's data layer -- the merge dict here is
+    already keyed by `_norm_name` (every other source's rows carry a plain
+    `player` name column, no id), so joining route rows the same way keeps
+    ONE join convention throughout `_merge_offense_players` rather than
+    mixing name- and id-based lookups inside a single function. A QB never
+    gets a "route" entry (`_OFF_POSITION_COLS["QB"]` has no route category
+    to read it into) even if he happened to be a receiver on a trick play --
+    real but rare enough not to warrant its own display column.
+
+    Kicker stats do NOT go through this merge (a kicker never shares a
+    row with a QB/RB/WR/TE metric anyway) -- they replace the
+    Special-teams pill's own content directly in `_team_game_detail.html`,
+    see `_KICKER_COLS`/`_sleeper_kicker_rows`."""
+    roster_pos = {_norm_name(r["player"]): r["position"] for r in roster}
+    snap_rows = stats.get("snap_counts_offense") or []
+    snap_pos = {_norm_name(r.get("player")): r.get("position") for r in snap_rows}
+
+    players: dict[str, dict] = {}
+    def slot(name: str) -> dict:
+        key = _norm_name(name)
+        if key not in players:
+            players[key] = {"name": name,
+                            "position": _position_of(name, roster_pos, snap_pos),
+                            "passing": None, "rushing": None,
+                            "receiving": None, "snap": None, "route": None}
+        return players[key]
+
+    for metric in ("passing", "rushing", "receiving"):
+        for row in stats.get(metric, {}).get("reconciled", []) or []:
+            p = slot(row["player"])
+            merged = dict(row)
+            extra = merged.pop("_pfr_extra", None) or {}
+            merged.update(extra)
+            p[metric] = merged
+    for row in snap_rows:
+        p = slot(row.get("player"))
+        p["snap"] = row
+    for row in stats.get("route_participation") or []:
+        p = slot(row.get("name"))
+        p["route"] = row
+    return players
+
+
+def _sleeper_position_map(abbr: str) -> dict[str, str]:
+    """{normalised_name: real_position} for every player on `abbr`'s
+    CURRENT Sleeper roster (sleepermetrics.players(), the same pool
+    `_sleeper_week_rows` already reads elsewhere in this module) -- the
+    fallback position source for defense (see `_merge_defense_players`).
+    Real, live-verified gap this exists for: KC 2026 had ZERO
+    `snap_counts` rows for the entire season so far (not just one game),
+    which used to put all 15+ of a team's real defensive players into an
+    unmappable "Other" bucket with no column spec -- silently dropping
+    real PFR defensive-stat data from view entirely, not just mislabeling
+    it. Sleeper's own player pool has no such gap (it's not sourced from
+    nflverse's per-game snap tracking at all) and already carries real
+    non-fantasy positions (DL/DE/DT/LB/CB/S/DB), unlike the Sleeper
+    ROSTER LEADERBOARD (`_roster_leaderboard`) used for offense, which
+    only ever returns fantasy positions (QB/RB/WR/TE/K) and would be
+    useless here. Keyed on the player's CURRENT team, not the team as of
+    this specific game -- a mid-season trade could misattribute a
+    fallback lookup, an accepted tradeoff since this is fallback-only
+    (snap_counts, when present, is still tried first and is real-game
+    accurate). Degrades to `{}` on any failure (no sleepermetrics import,
+    no network, no snapshot)."""
+    try:
+        from sleepermetrics.players import players as _players
+        pool = _players()
+        team_rows = pool[pool["team"] == abbr]
+        return {_norm_name(n): p for n, p in
+               zip(team_rows["player_name"], team_rows["position"])}
+    except Exception:
+        return {}
+
+
+def _merge_defense_players(stats: dict, roster: list[dict], abbr: str = "") -> dict[str, dict]:
+    """Same idea as `_merge_offense_players`, scoped to defense: one entry
+    per player appearing in PFR's defensive stat line OR the defensive
+    snap-share table. `roster` is passed through for signature symmetry
+    with the offense function but UNUSED here -- the Sleeper roster
+    LEADERBOARD only carries fantasy positions (QB/RB/WR/TE/K), never real
+    defensive ones (verified live: zero LB/CB/S/DL values in it).
+
+    Position resolution: `snap_counts_defense`'s own `position` column
+    first (real-game accurate when present), falling back to
+    `_sleeper_position_map(abbr)` (Sleeper's current-roster player pool --
+    see that function's own docstring for the real gap this fallback
+    fixes: a team can have zero snap_counts rows for a whole season), then
+    "Other" if neither resolves (a genuinely unmappable name, not expected
+    in practice with both sources tried)."""
+    snap_rows = stats.get("snap_counts_defense") or []
+    snap_pos = {_norm_name(r.get("player")): r.get("position") for r in snap_rows}
+    fallback_pos = _sleeper_position_map(abbr) if abbr else {}
+
+    by_player: dict[str, dict] = {}
+    def slot(name: str) -> dict:
+        key = _norm_name(name)
+        if key not in by_player:
+            raw_pos = snap_pos.get(key) or fallback_pos.get(key) or "Other"
+            by_player[key] = {"name": name,
+                              "position": _DEF_GROUP_OF.get(raw_pos, "Other"),
+                              "pfr_def": None, "snap": None}
+        return by_player[key]
+
+    for row in stats.get("pfr_def") or []:
+        p = slot(row.get("pfr_player_name"))
+        p["pfr_def"] = row
+    for row in snap_rows:
+        p = slot(row.get("player"))
+        p["snap"] = row
+    return by_player
+
+
+def _build_position_groups(players: dict[str, dict], group_order: tuple[str, ...],
+                           group_of: dict[str, str] | None = None) -> list[dict]:
+    """Bucket `players` (from `_merge_offense_players`/`_merge_defense_players`)
+    into `[{"group": "QB", "players": [...]}]`, `group_order` first, any
+    other position value found appended after (data-quality edge case, not
+    expected from real snap_counts/roster data). `group_of`, when given
+    (offense only -- OL's several real positions, T/G/C/etc., all fold to
+    one "OL" bucket), maps a raw position to its display group; absent
+    means the player's own `position` field IS already the group (defense
+    -- `_merge_defense_players` already resolved DL/LB/DB via
+    `_DEF_GROUP_OF`). A group with no players this game is simply absent,
+    not rendered empty, same convention every other section here follows."""
+    by_group: dict[str, list[dict]] = {}
+    for p in players.values():
+        raw = p["position"]
+        grp = (group_of.get(raw, "Other") if group_of and raw not in group_order
+               else raw)
+        by_group.setdefault(grp, []).append(p)
+    ordered = [g for g in group_order if g in by_group]
+    extra = sorted(g for g in by_group if g not in group_order)
+    out = []
+    for g in ordered + extra:
+        rows = sorted(by_group[g], key=lambda p: p["name"])
+        out.append({"group": g, "players": rows})
+    return out
+
+
+def _offense_position_groups(stats: dict, roster: list[dict]) -> list[dict]:
+    """The Offense panel's position-grouped view: QB/RB/WR/TE/K, one row
+    per player with everything they did this game merged onto it (see
+    `_merge_offense_players`) -- replaces the earlier Passing/Rushing/
+    Receiving-as-separate-tables layout, where a player active in more than
+    one metric (common: a rushing QB, a pass-catching RB) appeared split
+    across several tables instead of once. `[]` if there is nothing to
+    group (no offensive data this game).
+
+    Every real offensive-line position (OL/T/G/C/LT/RT/LG/RG -- linemen
+    only ever have snap data, no box-score or kicker stats) is explicitly
+    folded into one shared "Other" bucket via `group_of`, rather than
+    passing no mapping at all: `_build_position_groups`'s own default
+    (raw position IS the group) would otherwise surface T/G/C/etc as
+    SEPARATE named groups of their own (a real bug caught while verifying
+    this change -- "OL" and "T" both showed up as their own sections after
+    OL was dropped from `_OFF_GROUP_ORDER`). "Other" has no entry in
+    `_OFF_POSITION_COLS`, so `position_group_table` silently skips
+    rendering it -- the net effect is what "remove the OL section" asked
+    for, without linemen leaking back out as several smaller ones."""
+    players = _merge_offense_players(stats, roster)
+    if not players:
+        return []
+    ol_positions = {"OL", "T", "G", "C", "LT", "RT", "LG", "RG"}
+    raw_positions = {p["position"] for p in players.values()}
+    group_of = {pos: ("Other" if pos in ol_positions else pos) for pos in raw_positions}
+    return _build_position_groups(players, _OFF_GROUP_ORDER, group_of)
+
+
+def _defense_position_groups(stats: dict, roster: list[dict], abbr: str = "") -> list[dict]:
+    """The Defense panel's position-grouped view: DEF/DL/LB/DB. DL/LB/DB
+    are one row per PLAYER, their PFR stat line + defensive snap share
+    merged (see `_merge_defense_players`); "DEF" is a DIFFERENT SHAPE
+    entirely -- one row for the TEAM itself (Sleeper's own team-defense
+    stat line, `stats["sleeper_def"]` -- see `_sleeper_def_rows`), single
+    source, nothing to merge across metrics. Built separately and
+    PREPENDED (user request: "shift the sleeper DEF group to be the first
+    subsection in the defense section") rather than folded into
+    `_merge_defense_players`'s per-player dict, which has no concept of a
+    team-level row.
+
+    `abbr` feeds `_merge_defense_players`'s Sleeper-roster position
+    fallback (see `_sleeper_position_map`) -- required whenever
+    `snap_counts_defense` is thin or entirely absent for this game/season,
+    or every defensive player falls into an unmappable "Other" group.
+    `[]` if there is nothing to group at all (no DEF row and no players)."""
+    out: list[dict] = []
+    def_rows = stats.get("sleeper_def") or []
+    if def_rows:
+        out.append({"group": "DEF", "players": [
+            {"name": abbr or "DEF", "position": "DEF", "team_def": def_rows[0]}]})
+
+    players = _merge_defense_players(stats, roster, abbr)
+    if players:
+        out.extend(_build_position_groups(players, _DEF_GROUP_ORDER[1:]))
+    return out
+
+
+def _kicker_groups(stats: dict) -> list[dict]:
+    """The Special-teams pill's replacement content (2026-09 follow-up,
+    user request: "replace special teams subsections with kicker stats
+    (e.g. remove the snap shares)"): one row per kicker, Sleeper's own
+    weekly stat line (`stats["sleeper_kicker"]` -- see
+    `_sleeper_kicker_rows`), shaped as a single `[{"group": "Kickers",
+    "players": [...]}]` list so `_teamstat_macros.position_group_table`
+    (already built to render a list of groups) can render this without a
+    second, parallel table macro. `[]` if this team had no kicker activity
+    this game (a bye, or a kicker who didn't attempt anything)."""
+    rows = stats.get("sleeper_kicker") or []
+    if not rows:
+        return []
+    players = [{"name": r.get("player"), "position": "K", "kicker": r} for r in rows]
+    return [{"group": "Kickers", "players": sorted(players, key=lambda p: p["name"])}]
+
+
+# Display label per `route_participation` raw column -- readable route
+# names, matching the same `(key, label)` shape every other column spec in
+# this module uses, so this table renders through `_teamstat_macros.
+# stat_table`'s own generic id_cols-exclusion path rather than a bespoke
+# template loop. Order is roughly short-to-deep (screens/quick game first,
+# verticals last), not alphabetical, matching how a reader would actually
+# scan "what did this player's game look like."
+_ROUTE_TYPE_LABELS = [
+    ("route_screen", "Screen"), ("route_swing", "Swing"),
+    ("route_slant", "Slant"), ("route_quick_out", "Quick out"),
+    ("route_hitch_curl", "Hitch/curl"), ("route_shallow_cross_drag", "Shallow cross/drag"),
+    ("route_texas_angle", "Texas/angle"), ("route_in_dig", "In/dig"),
+    ("route_deep_out", "Deep out"), ("route_corner", "Corner"),
+    ("route_post", "Post"), ("route_wheel", "Wheel"), ("route_go", "Go"),
+]
+
+
+def _route_summary_rows(stats: dict) -> list[dict]:
+    """Single-game route-participation summary: one row per offensive skill
+    player (WR/RB/TE) who ran a real route this game -- `routes_run` (every
+    qualifying pass-play snap, see `nflref.route_participation`'s own
+    docstring for exactly what counts), `targets` (from route_participation
+    itself -- see the cross-check note below), `tgt_per_route` (targets per
+    route, a real efficiency read distinct from raw target share -- two
+    players can share the same target COUNT while running a very different
+    number of routes to get there), and the route-TYPE breakdown for
+    whichever of his own targets were charted (see `_ROUTE_TYPE_LABELS`).
+
+    Route-type columns with ZERO across every row THIS GAME are dropped for
+    the whole table (most games only see a handful of the 13 real types
+    actually charted at all), but kept UNIFORMLY across every row that
+    remains -- `_teamstat_macros.stat_table` derives its column list from
+    `rows[0].keys()` alone and reads `row[k]` for every other row
+    unconditionally, so a per-ROW sparse key set (an earlier version of
+    this function) would KeyError the moment two rows disagreed on which
+    columns they carried. Trimming by COLUMN instead of by row keeps every
+    row's key set identical, which is what that macro actually requires.
+
+    `targets` here is route_participation's OWN count (targeted plays with
+    a charted route), deliberately kept SEPARATE from the reconciled
+    `receiving.targets` cross-source vote elsewhere on this same player's
+    row in `_OFF_POSITION_COLS` -- the two datasets don't always agree
+    (route_participation only counts a target when `route` was actually
+    charted; a target can exist in the box score with no charted route,
+    e.g. a badly-thrown-away pass). Not reconciled against each other here;
+    both numbers are real, just answering slightly different questions,
+    same "different sources, different questions" precedent this module's
+    `roster_detail`/`bench_pts` split already established (see CLAUDE.md)."""
+    rows = stats.get("route_participation") or []
+    played = [r for r in rows if r.get("routes_run")]
+    if not played:
+        return []
+
+    used_cols = [(key, label) for key, label in _ROUTE_TYPE_LABELS
+                 if any(r.get(key) for r in played)]
+
+    # Dict keys here double as this table's column HEADERS -- stat_table()
+    # renders any non-id_cols key verbatim (only "_".join()->" " replaced),
+    # so "player"/"routes" (below) is the actual header text, not a raw
+    # snake_case field name like _teamstat_macros.stat_table's other
+    # callers show (e.g. an injuries row's own `report_primary_injury`).
+    # "player" itself is the one exception that CANNOT be renamed -- the
+    # macro's own <td> reads row.get("player") by that literal key to
+    # render the name cell at all (see stat_table's own template code).
+    out = []
+    for r in played:
+        routes_run = r["routes_run"]
+        targets = r.get("targets") or 0
+        row = {
+            "player": r.get("name"), "Pos": r.get("pos"),
+            "Routes": routes_run, "Targets": targets,
+            "Tgt/route": round(targets / routes_run, 2) if routes_run else 0,
+        }
+        for key, label in used_cols:
+            row[label] = r.get(key) or 0
+        out.append(row)
+    return sorted(out, key=lambda r: r["Routes"], reverse=True)
+
+
+def _attach_week_stats(schedule: list[dict], team_datasets: dict,
+                       roster: list[dict] | None = None, abbr: str = "",
+                       season: str = "") -> list[dict]:
     """Attach `game["stats"]` to each schedule row, for the "advanced stats
     for this game" dropdown. Also attaches `game["game_type"]` (REG/WC/DIV/
     CON/SB, nflverse's own convention) pulled out of whichever advanced-stat
@@ -394,7 +1062,16 @@ def _attach_week_stats(schedule: list[dict], team_datasets: dict) -> list[dict]:
 
     `team_datasets` is already loaded team-wide for the season (see
     `_team_datasets`) -- this only SLICES those already-fetched rows by
-    `week`, no additional dataset loads.
+    `week`, no additional dataset loads. `roster` is the season's own
+    `_roster_leaderboard(abbr, season)` result, already fetched once by
+    `_build_profile` -- passed through rather than re-fetched, purely to
+    resolve an offensive player's fantasy position as a fallback (see
+    `_offense_position_groups`). `abbr` feeds `_defense_position_groups`'
+    own Sleeper-roster position fallback (`_sleeper_position_map`) --
+    needed for a team/season where `snap_counts` is thin or absent
+    entirely (a real, verified case: KC 2026 had zero snap_counts rows
+    for the whole season, which without this fallback put every real
+    defensive player into an unmappable "Other" group).
 
     `game["stats"]` is grouped BY METRIC, not by source (2026-09 redesign,
     user request: "unify the stat categories by metric measured instead of
@@ -414,11 +1091,49 @@ def _attach_week_stats(schedule: list[dict], team_datasets: dict) -> list[dict]:
       - `stats["pfr_def"]` -- unchanged, PFR is the only defense-advanced
         source, so there is nothing to reconcile.
       - `stats["injuries"]` -- unchanged, single source.
+      - `stats["offense_by_position"]` / `stats["defense_by_position"]`
+        (2026-09, THIRD pass at this template's Offense/Defense panels --
+        superseding the metric-per-card layout above, which is now used
+        only to FEED this grouping, not rendered directly on the per-game
+        drilldown any more): `[{"group": "QB", "players": [...]}, ...]`,
+        one row per player with everything they did this game merged onto
+        it (a rushing QB, a pass-catching RB) -- see
+        `_offense_position_groups`/`_defense_position_groups`.
+      - `stats["route_summary"]` -- see `_route_summary_rows`: one row per
+        offensive skill player who ran a real route this game (routes run,
+        targets, targets-per-route, route-type breakdown). `stats["route_
+        participation"]` itself (the raw per-player rows, same key every
+        other `extra_key` above uses) stays attached too, for anything that
+        wants gsis-level detail rather than the display-ready summary.
+      - `stats["off_position_cols"]` -- see `_off_position_cols_for_game`:
+        `_OFF_POSITION_COLS` with the "route" category dropped for THIS
+        game when `route_participation` has nothing at all for it (a real,
+        user-reported bug otherwise: the current 2026 season's Routes
+        column rendered on every offense table every week, always blank,
+        since nflverse doesn't publish `pbp_participation` for an
+        in-progress season yet). The TEMPLATE reads this per-game value
+        for the Offense panel, not the static `OFF_POSITION_COLS` Jinja
+        global (still used as-is for Defense/Special-teams, which have no
+        such gap).
+      - `stats["route_unavailable"]` -- True when THIS WHOLE SEASON's
+        `route_participation` dataset came back empty (see
+        `_team_route_rows`'s own `unavailable_seasons` return), distinct
+        from a plain "no data this game" -- lets the template show an
+        explicit "not yet available" note (2026-09 follow-up: silently
+        omitting the column/card read as broken, not as "nothing to show
+        yet" -- real user report: "routes are blank / listing '-'").
+        `season` (this function's own new param) selects which entry of
+        `team_datasets["route_participation_unavailable_seasons"]`
+        applies; every game in one `_attach_week_stats` call shares the
+        SAME season (see `_build_profile`'s one call site), so this is
+        computed once before the loop, not per game.
     A dataset/week combination with no rows for this team simply leaves
     that key/sub-key absent (or, for `reconciled`, an empty list -- see
     `_grouped_metric_stats`), so the template can render "no advanced
     stats" once rather than once per dataset.
     """
+    route_unavailable = str(season) in (
+        team_datasets.get("route_participation_unavailable_seasons") or set())
     out = []
     for g in schedule:
         wk = g.get("week")
@@ -426,6 +1141,8 @@ def _attach_week_stats(schedule: list[dict], team_datasets: dict) -> list[dict]:
         game_type = None
         if wk is not None:
             for ds, rows in team_datasets.items():
+                if ds == "route_participation_unavailable_seasons":
+                    continue
                 hit = [r for r in rows if r.get("week") == wk]
                 if not hit:
                     continue
@@ -445,9 +1162,16 @@ def _attach_week_stats(schedule: list[dict], team_datasets: dict) -> list[dict]:
                     role_rows[ds] = hit
         stats = _grouped_metric_stats(role_rows)
         for extra_key in ("snap_counts_offense", "snap_counts_defense",
-                         "snap_counts_special_teams", "pfr_def", "injuries"):
+                         "snap_counts_special_teams", "pfr_def", "injuries",
+                         "sleeper_kicker", "sleeper_def", "route_participation"):
             if extra_key in role_rows:
                 stats[extra_key] = role_rows[extra_key]
+        stats["offense_by_position"] = _offense_position_groups(stats, roster or [])
+        stats["defense_by_position"] = _defense_position_groups(stats, roster or [], abbr)
+        stats["kicker_groups"] = _kicker_groups(stats)
+        stats["route_summary"] = _route_summary_rows(stats)
+        stats["route_unavailable"] = route_unavailable
+        stats["off_position_cols"] = _off_position_cols_for_game(stats)
         out.append({**g, "stats": stats, "game_type": game_type})
     return out
 
@@ -574,6 +1298,71 @@ def _sleeper_week_rows(abbr: str, seasons: list[str],
     return out
 
 
+def _sleeper_kicker_rows(abbr: str, seasons: list[str]) -> list[dict]:
+    """This team's kicker(s), Sleeper's own weekly stat line (FG made/
+    attempted, FG% by distance bucket, XP made/attempted -- see
+    `_KICKER_KEYS`), one row per kicker per week. Kickers are matched by
+    their CURRENT roster team (sleepermetrics.players()) same as
+    `_sleeper_week_rows`, without that function's player_stats cross-check
+    (there is no player_stats row for a kicker to verify against -- see
+    this section's own header comment). Degrades to `[]` on any failure."""
+    try:
+        from sleepermetrics import scoring
+        from sleepermetrics.players import players as _players
+    except Exception:
+        return []
+    try:
+        pool = _players()
+        kickers = pool[(pool["team"] == abbr) & (pool["position"] == "K")]
+        name_by_pid = dict(zip(kickers["player_id"].astype(str), kickers["player_name"]))
+    except Exception:
+        return []
+    if not name_by_pid:
+        return []
+
+    out: list[dict] = []
+    for season in seasons:
+        for wk in range(1, 19):
+            try:
+                lines = scoring.nfl_stats(season, wk)
+            except Exception:
+                continue
+            for pid, name in name_by_pid.items():
+                line = (lines or {}).get(pid)
+                if not line or not any(k in line for k, _ in _KICKER_KEYS):
+                    continue
+                out.append({"player": name, "week": wk, "season": season,
+                           "team": abbr, **line})
+    return out
+
+
+def _sleeper_def_rows(abbr: str, seasons: list[str]) -> list[dict]:
+    """This team's own team-defense stat line, Sleeper's own weekly feed --
+    keyed on the team ABBREVIATION itself as the "player_id" (Sleeper's own
+    convention for a DST entry, verified live: `nfl_stats(season, week)`
+    returns a row under the literal key "DET"/"KC"/etc, not any individual
+    player id). One row per week; see `_DEF_TEAM_KEYS` for the columns
+    kept. Degrades to `[]` on any failure."""
+    try:
+        from sleepermetrics import scoring
+    except Exception:
+        return []
+
+    out: list[dict] = []
+    for season in seasons:
+        for wk in range(1, 19):
+            try:
+                lines = scoring.nfl_stats(season, wk)
+            except Exception:
+                continue
+            line = (lines or {}).get(abbr)
+            if not line or not any(k in line for k, _ in _DEF_TEAM_KEYS):
+                continue
+            out.append({"player": abbr, "week": wk, "season": season,
+                       "team": abbr, **line})
+    return out
+
+
 def _team_datasets(abbr: str, seasons: list[str]) -> dict:
     """Real-NFL advanced/usage data for this team's roster, keyed by
     dataset name -> list of row dicts, across `seasons`. Filtered by each
@@ -585,7 +1374,19 @@ def _team_datasets(abbr: str, seasons: list[str]) -> dict:
     Also includes `"sleeper"` (see `_sleeper_week_rows`) -- a genuine 4th
     real-NFL data source, added specifically to feed the passing/rushing/
     receiving reconciliation (`stat_reconcile.reconcile_metric`) a
-    non-nflverse, non-PFR data point to vote alongside the others."""
+    non-nflverse, non-PFR data point to vote alongside the others. Also
+    `"sleeper_kicker"`/`"sleeper_def"` (see `_sleeper_kicker_rows`/
+    `_sleeper_def_rows`) -- Sleeper is the ONLY source in this pipeline for
+    kicking/team-defense stats at all, so these two are single-source, not
+    reconciliation inputs. Also `"route_participation"` (see
+    `nflref.route_participation`) -- filtered SEPARATELY from every other
+    `_TEAM_DATASETS` entry below, since its own rows carry no team column
+    to filter on at all (see that dict's own header comment); instead kept
+    to whichever `gsis_id`s already surfaced in THIS team's own
+    `player_stats` rows (same gsis_id/player_id space, already
+    team-filtered a few lines above) for the same season -- a player who
+    only ever suited up for a DIFFERENT team that season is excluded by
+    construction, not by re-checking his team per row."""
     try:
         from webapp.sources.nflref import board as nflref_board
     except Exception:
@@ -607,7 +1408,64 @@ def _team_datasets(abbr: str, seasons: list[str]) -> dict:
                 rows.extend(_clean_records(hit))
         out[ds] = rows
     out["sleeper"] = _sleeper_week_rows(abbr, seasons, out.get("player_stats", []))
+    out["sleeper_kicker"] = _sleeper_kicker_rows(abbr, seasons)
+    out["sleeper_def"] = _sleeper_def_rows(abbr, seasons)
+    route_rows, unavailable_seasons = _team_route_rows(
+        abbr, seasons, out.get("player_stats", []), nflref_board)
+    out["route_participation"] = route_rows
+    out["route_participation_unavailable_seasons"] = unavailable_seasons
     return out
+
+
+def _team_route_rows(abbr: str, seasons: list[str], player_stats_rows: list[dict],
+                     nflref_board) -> tuple[list[dict], set[str]]:
+    """This team's own slice of `route_participation` -- see
+    `_team_datasets`'s own comment for why this can't just be another
+    `_TEAM_DATASETS`/`_TEAM_COL` entry (no team column on the source rows
+    at all). `gsis_id`s already known to be on `abbr`'s roster for a given
+    season (from `player_stats_rows`, already team-filtered) gate which
+    route_participation rows are kept for that season -- cheap, since
+    `player_stats_rows` is already in hand, and correct against a
+    mid-season trade the same way `_sleeper_week_rows` already guards for
+    (a player who only played for a DIFFERENT team a given week has no
+    `player_stats` row for `abbr` that week and is excluded).
+
+    Also returns `unavailable_seasons`: the subset of `seasons` where the
+    WHOLE `route_participation` dataset came back empty for the SEASON
+    (`nflref_board.load` returning an empty frame), not just "this team had
+    no hits" -- distinguishes "nflverse hasn't published `pbp_participation`
+    for this season yet" (the real, structural, current-2026-season gap;
+    see `nflref.route_participation`'s own EARLIEST/degrade note, confirmed
+    live: 0 rows for 2026 as of this writing since nflverse doesn't publish
+    that release until after the postseason) from "this specific team
+    genuinely had zero qualifying route rows this season" (would be
+    unusual, but real for a team with no player_stats matches at all).
+    `_off_position_cols_for_game`/`_route_summary_rows`'s callers use this
+    to show an explicit "not yet available" note instead of just quietly
+    omitting the section, which is what shipped here before and read as
+    broken rather than "nothing to show yet" (real user report: "routes
+    are blank / listing '-'")."""
+    by_season: dict[str, set[str]] = {}
+    for r in player_stats_rows:
+        by_season.setdefault(str(r.get("season")), set()).add(r.get("player_id"))
+
+    rows: list[dict] = []
+    unavailable: set[str] = set()
+    for season in seasons:
+        try:
+            df = nflref_board.load("route_participation", season)
+        except Exception:
+            df = None
+        if df is None or df.empty:
+            unavailable.add(str(season))
+            continue
+        ids = by_season.get(str(season))
+        if not ids or "gsis_id" not in df.columns:
+            continue
+        hit = df[df["gsis_id"].isin(ids)]
+        if not hit.empty:
+            rows.extend(_clean_records(hit))
+    return rows, unavailable
 
 
 def _season_grouped_stats(team_datasets: dict) -> dict:
@@ -620,6 +1478,13 @@ def _season_grouped_stats(team_datasets: dict) -> dict:
     (single source, nothing to group by metric)."""
     role_rows: dict[str, list[dict]] = {}
     for ds, rows in team_datasets.items():
+        # "route_participation_unavailable_seasons" is metadata (a set of
+        # season strings, see _team_route_rows), not a rows list -- every
+        # OTHER team_datasets value is a list[dict] this loop's branches
+        # assume, so this one key must be skipped explicitly rather than
+        # falling into the generic else-branch below with the wrong shape.
+        if ds == "route_participation_unavailable_seasons":
+            continue
         if not rows:
             continue
         if ds == "snap_counts":
@@ -639,6 +1504,16 @@ def _season_grouped_stats(team_datasets: dict) -> dict:
                      "snap_counts_special_teams", "pfr_def", "injuries"):
         if extra_key in role_rows:
             stats[extra_key] = role_rows[extra_key]
+    # "route_participation" DOES land in role_rows (the else-branch
+    # fallback above copies every team_datasets key), but is deliberately
+    # NOT added to the extra_key passthrough here -- the season-wide
+    # "Advanced & usage stats" section is off-limits per standing user
+    # instruction (see CLAUDE.md), and team_profile.html's own
+    # single_source_labels list (the only thing that renders a
+    # team_stats_grouped key on that section) never names it, so it's
+    # already inert there without needing a second exclusion mechanism.
+    # The per-game route summary lives ONLY in the schedule drilldown --
+    # see _route_summary_rows / _attach_week_stats.
     return stats
 
 
@@ -663,7 +1538,8 @@ def _build_profile(abbr: str, season: str | None) -> dict:
         "seasons_covered": seasons,
         "roster": roster,
         "roster_by_position": _roster_by_position(roster),
-        "schedule": _attach_week_stats(schedule, team_datasets),
+        "schedule": _attach_week_stats(schedule, team_datasets, roster, tm,
+                                      season=current_season),
         "season_history": _season_history(tm, seasons),
         "team_datasets": team_datasets,
         "team_stats_grouped": _season_grouped_stats(team_datasets),

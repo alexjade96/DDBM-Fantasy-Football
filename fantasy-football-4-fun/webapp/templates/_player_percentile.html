@@ -1,30 +1,75 @@
-{# The player-profile page's "Percentile profile" section: season pills +
-   the radar overlay chart + the focus season's stat table. Factored out of
-   player_profile.html so a season-pill click can htmx-swap just this block
-   (`hx-get` to app.py's player_percentile_part(), `hx-target="#percentile-
-   section"`) instead of reloading the whole page -- see the container div
-   in player_profile.html and the click wiring at the bottom of this file.
+{# The player-profile page's "Percentile profile" section: the shared
+   season dropdown + the radar overlay chart + the focus season's stat
+   table. Factored out of player_profile.html so this block renders both
+   inline (as part of the full page) and inside the shared htmx fragment
+   (_player_season_sections.html) that the dropdown swaps.
 
-   Needs in context: player_id, league, season, theme, bust, percentile_profile,
-   available_seasons, focus_season. Imports `ch` ("_chartmacro.html" as ch)
-   itself (rather than assuming the caller already did) so this partial also
-   renders standalone from the htmx fragment route, which has no other
-   template around it. #}
+   The dropdown here is NOT scoped to just this section any more (user
+   request) -- picking a season re-renders EVERY "follow-up section" on
+   the page (this one, {league} history, Game log, Real-NFL history, Draft
+   ADP history) in lockstep, via `hx-target="#player-season-sections"`
+   (the shared container in player_profile.html) and
+   `webapp.app.player_season_sections()` -- see that container's own
+   comment. This section's own "focus season" (which season the radar
+   overlay draws bold/filled, others ghosted behind it) is simply the SAME
+   value as the shared `season_scope`, so the radar always matches
+   whatever season every other section is showing; there is no longer a
+   separate, narrower "focus" concept independent of the page's season.
+
+   Needs in context: player_id, league, season, theme, bust,
+   percentile_profile, seasons_covered, season_scope. Imports `ch`
+   ("_chartmacro.html" as ch) itself (rather than assuming the caller
+   already did) so this partial also renders standalone from the htmx
+   fragment route, which has no other template around it. #}
 {% import "_chartmacro.html" as ch with context %}
+<h2 id="percentile-profile">Percentile profile <span class="hint">({{ season_scope }})</span></h2>
+{# The dropdown's OPTION LIST is `seasons_covered` -- every season ANY
+   section on the page has data for -- not `available_seasons` (the
+   percentile leaderboard's own, possibly SMALLER set, e.g. a rookie
+   season with real box-score/game-log data but no leaderboard row yet).
+   The dropdown must stay usable (and keep showing every real season) even
+   on a season the percentile chart itself has nothing for -- that's a
+   property of THIS section, degraded below, not a reason to hide the
+   control other sections still need. #}
+{% if seasons_covered|length > 1 %}
+{# A plain <select>, not the .rail/.year pill row every OTHER season picker
+   on this page/app uses -- swapped on user request once the season list
+   here can run long (a career-spanning player). `hx-trigger="change"`
+   fires the swap immediately on pick, matching the pill's own one-click
+   behaviour (this app's usual submit/Load-button dropdowns -- e.g.
+   _adp_compare.html's Season <select> -- are for a genuinely heavier board
+   reload; this is the same lightweight single-section swap the pill
+   already was, so there's no reason to add a second click here). The
+   `<select name="season_scope">` supplies its OWN query param via
+   `hx-include` ("this") -- `hx-get`'s own querystring only needs the FIXED
+   params (league/theme), never the season value itself, which changes per
+   pick and would otherwise go stale the moment a different option is
+   already selected in the DOM but the attribute still names the old one.
+   Named `season_scope`, NOT `season` -- a real, shipped bug: `season` is
+   ALREADY claimed by a completely different existing query param on this
+   route (the league's own season, threaded through from `pick()`), so a
+   `name="season"` <select> silently fed the picked year into the wrong
+   FastAPI parameter and `season_scope` stayed None on every change,
+   which is why the dropdown appeared to do nothing -- it swapped, but
+   every section fell back to today's real NFL season regardless of what
+   was picked. #}
+<label class="rail">
+  <span class="k">Season</span>
+  <select name="season_scope"
+     hx-get="/player/{{ player_id }}/season?theme={{ theme }}{% if league %}&league={{ league }}{% endif %}"
+     hx-trigger="change" hx-target="#player-season-sections" hx-swap="innerHTML"
+     hx-include="this">
+    {% for s in seasons_covered %}
+    <option value="{{ s }}" {% if s == season_scope %}selected{% endif %}>{{ s }}</option>
+    {% endfor %}
+  </select>
+</label>
 {% if percentile_profile %}
-<h2 id="percentile-profile">Percentile profile <span class="hint">({{ percentile_profile.season }})</span></h2>
-{% if available_seasons|length > 1 %}
-<nav class="rail">
-  <span class="k">Focus season</span>
-  {% for s in available_seasons %}
-  <button type="button" class="year{% if s == focus_season %} on{% endif %}"
-     hx-get="/player/{{ player_id }}/percentile?focus={{ s }}{% if league %}&league={{ league }}&season={{ season }}{% endif %}&theme={{ theme }}"
-     hx-target="#percentile-section" hx-swap="innerHTML">{{ s }}</button>
-  {% endfor %}
-</nav>
-<p class="hint">Every other season is ghosted behind {{ focus_season }} on the same chart.</p>
+<p class="hint">Every other season is ghosted behind {{ season_scope }} on the same chart.</p>
 {% endif %}
-{{ ch.chart("player_radar", player_id=player_id, season_override=focus_season) }}
+{% endif %}
+{% if percentile_profile %}
+{{ ch.chart("player_radar", player_id=player_id, season_override=season_scope) }}
 <div class="tablewrap">
   <table class="dt-games">
     <thead><tr><th>Stat</th><th class="n">Value</th><th class="n">Percentile</th></tr></thead>
@@ -42,4 +87,6 @@
   </table>
 </div>
 <p class="hint">Against {{ percentile_profile.n_population }} real NFL {{ percentile_profile.position }}s that season.</p>
+{% else %}
+<p class="empty">No percentile data found for this player in {{ season_scope }}.</p>
 {% endif %}

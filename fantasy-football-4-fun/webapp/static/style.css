@@ -1991,21 +1991,35 @@ footer code { font-family: ui-monospace, Consolas, monospace; }
    .viewswitch's own fixed-position-set comment already gives. Purely
    structural (radio position order == panel position order); no per-dataset
    class names are referenced here, so a future dataset addition needs no
-   matching CSS change, only another (dataset, label) tuple in the template. */
-.dt-stat-mode .vs-radio:nth-of-type(1):checked ~ .vs-panel:nth-of-type(1),
-.dt-stat-mode .vs-radio:nth-of-type(2):checked ~ .vs-panel:nth-of-type(2),
-.dt-stat-mode .vs-radio:nth-of-type(3):checked ~ .vs-panel:nth-of-type(3),
-.dt-stat-mode .vs-radio:nth-of-type(4):checked ~ .vs-panel:nth-of-type(4),
-.dt-stat-mode .vs-radio:nth-of-type(5):checked ~ .vs-panel:nth-of-type(5),
-.dt-stat-mode .vs-radio:nth-of-type(6):checked ~ .vs-panel:nth-of-type(6),
-.dt-stat-mode .vs-radio:nth-of-type(7):checked ~ .vs-panel:nth-of-type(7),
-.dt-stat-mode .vs-radio:nth-of-type(8):checked ~ .vs-panel:nth-of-type(8),
-.dt-stat-mode .vs-radio:nth-of-type(9):checked ~ .vs-panel:nth-of-type(9),
-.dt-stat-mode .vs-radio:nth-of-type(10):checked ~ .vs-panel:nth-of-type(10),
-.dt-stat-mode .vs-radio:nth-of-type(11):checked ~ .vs-panel:nth-of-type(11),
-.dt-stat-mode .vs-radio:nth-of-type(12):checked ~ .vs-panel:nth-of-type(12),
-.dt-stat-mode .vs-radio:nth-of-type(13):checked ~ .vs-panel:nth-of-type(13),
-.dt-stat-mode .vs-radio:nth-of-type(14):checked ~ .vs-panel:nth-of-type(14) { display: block; }
+   matching CSS change, only another (dataset, label) tuple in the template.
+
+   The panel side targets `.vs-panels .vs-panel:nth-of-type(N)`, NOT a bare
+   `.vs-panel:nth-of-type(N)` (real bug, fixed 2026-09, present since this
+   class's introduction): `:nth-of-type` counts an element's position among
+   ALL sibling elements of the same TAG, not just same-class ones. The
+   template's `.rail.vs-tabs` label bar is also a bare `<div>` sibling of
+   the radios, sitting BEFORE the panels -- so `.vs-panel:nth-of-type(1)`
+   was really asking "the 1st div child of .dt-stat-mode, AND it has class
+   vs-panel", which the 1st div child (.rail.vs-tabs) never satisfies; it
+   matched nothing, and every real panel after it was one position off from
+   its own radio (clicking pill 2 showed panel 1's content, etc). Scoping
+   `:nth-of-type` to `.vs-panels`' own children (a wrapper div holding ONLY
+   the `.vs-panel` divs, nothing else) removes .rail.vs-tabs from that
+   counting pool entirely, so position 1 really is the first real panel. */
+.dt-stat-mode .vs-radio:nth-of-type(1):checked ~ .vs-panels .vs-panel:nth-of-type(1),
+.dt-stat-mode .vs-radio:nth-of-type(2):checked ~ .vs-panels .vs-panel:nth-of-type(2),
+.dt-stat-mode .vs-radio:nth-of-type(3):checked ~ .vs-panels .vs-panel:nth-of-type(3),
+.dt-stat-mode .vs-radio:nth-of-type(4):checked ~ .vs-panels .vs-panel:nth-of-type(4),
+.dt-stat-mode .vs-radio:nth-of-type(5):checked ~ .vs-panels .vs-panel:nth-of-type(5),
+.dt-stat-mode .vs-radio:nth-of-type(6):checked ~ .vs-panels .vs-panel:nth-of-type(6),
+.dt-stat-mode .vs-radio:nth-of-type(7):checked ~ .vs-panels .vs-panel:nth-of-type(7),
+.dt-stat-mode .vs-radio:nth-of-type(8):checked ~ .vs-panels .vs-panel:nth-of-type(8),
+.dt-stat-mode .vs-radio:nth-of-type(9):checked ~ .vs-panels .vs-panel:nth-of-type(9),
+.dt-stat-mode .vs-radio:nth-of-type(10):checked ~ .vs-panels .vs-panel:nth-of-type(10),
+.dt-stat-mode .vs-radio:nth-of-type(11):checked ~ .vs-panels .vs-panel:nth-of-type(11),
+.dt-stat-mode .vs-radio:nth-of-type(12):checked ~ .vs-panels .vs-panel:nth-of-type(12),
+.dt-stat-mode .vs-radio:nth-of-type(13):checked ~ .vs-panels .vs-panel:nth-of-type(13),
+.dt-stat-mode .vs-radio:nth-of-type(14):checked ~ .vs-panels .vs-panel:nth-of-type(14) { display: block; }
 .dt-stat-mode:has(.vs-radio:nth-of-type(1):checked) .vs-tabs label:nth-of-type(1),
 .dt-stat-mode:has(.vs-radio:nth-of-type(2):checked) .vs-tabs label:nth-of-type(2),
 .dt-stat-mode:has(.vs-radio:nth-of-type(3):checked) .vs-tabs label:nth-of-type(3),
@@ -2384,6 +2398,101 @@ tr.bench-impact td { background: color-mix(in srgb, #d9a441 8%, transparent); }
 .metric-card table.dt-games { margin-top: 4px; }
 /* A second (PFR) table under the reconciled one in the same card gets a
    little breathing room above it, since there's no caption between them
-   any more to supply that gap on its own. */
+   any more to supply that gap on its own. Now only used by the FALLBACK
+   path (a player PFR covered that no other source saw at all, so there
+   is no reconciled row to merge onto -- see _team_game_detail.html); the
+   normal case merges PFR's extra columns onto the reconciled table's own
+   row instead (.pfr-extra, below), so this rule is mostly dormant now but
+   kept for that fallback. */
 .metric-card table.dt-games + table.dt-games,
 .metric-card .tablewrap + .tablewrap { margin-top: 10px; }
+
+/* PFR's extra advanced columns (pressure rate, yards before/after contact,
+   broken tackles, drops, ...), joined onto a reconciled row rather than
+   shown in a second table (team_profile._attach_pfr_extra /
+   _teamstat_macros.reconciled_table's own `extra` columns). A muted left
+   border on the FIRST .pfr-extra cell in each row marks where the
+   reconciled, multi-source, flyout-bearing columns end and the single-
+   source PFR-only ones begin -- these never get a .stat-cell flyout (PFR
+   is the only source for them, nothing to break down), so the border is
+   the one visual cue distinguishing the two column groups within one
+   table. */
+table.dt-games td.pfr-extra:first-of-type,
+table.dt-games th.pfr-extra:first-of-type { border-left: 1px solid var(--line); padding-left: 14px; }
+table.dt-games td.pfr-extra, table.dt-games th.pfr-extra { color: var(--muted); }
+
+/* Position-group tables (_teamstat_macros.position_group_table, the
+   per-game Offense/Defense panels): a vertical divider before the first
+   column of every stat CATEGORY after the first -- e.g. a QB row's Att/
+   Cmp/Yds/TD/INT/Prss/Sack/Bad thr (passing) is followed by a divider,
+   then Car/Yds/TD (rushing), another divider, then Snaps/Snap% (snap).
+   Same border-left visual language `.pfr-extra` already established
+   above, generalised to every category boundary rather than just the
+   reconciled-vs-PFR-extra one -- per user request, VISIBLE SEPARATORS
+   ONLY, no repeated category label row above the columns (the group
+   heading, e.g. "QB", already names the group; see position_group_table's
+   own comment for the full rationale). Deliberately NOT `color: muted`
+   the way `.pfr-extra` is -- a divider here can fall in front of either a
+   flyout-bearing reconciled column OR a plain one depending on the
+   category, so it carries no implied "single source" meaning the way
+   `.pfr-extra` does. */
+table.dt-games td.grp-divider, table.dt-games th.grp-divider {
+  border-left: 1px solid var(--line); padding-left: 14px; }
+
+/* team_profile.html: Roster's per-position groups (QB/RB/WR/TE/K/DEF) as a
+   wrapping grid of bordered cards, instead of a flat h3+table stream. With
+   5-6 groups on one page, same-weight h3 headings plus the page's generic
+   22px sibling gap didn't read as separate subsections -- the card border
+   is what actually separates "QB" from "RB" at a glance. .roster-pos-grid
+   reuses the site's existing .grid.two two-up layout (already phone-width
+   responsive); .roster-pos-card only adjusts the spacing inside a .card for
+   this context (h3 sits flush at the card's own top rather than carrying
+   its usual page-level top margin, and the table below it wants less gap
+   than a full h2-to-content gap would give). */
+.roster-pos-grid { align-items: start; }
+.roster-pos-card > h3 { margin: 0 0 8px; }
+.roster-pos-card > .tablewrap { margin-top: 0; }
+
+/* Originally team_profile.html's Advanced & usage stats per-metric
+   <details> blocks (Passing/Rushing/Receiving/Snap counts/Defense/
+   Injuries); now shared by any standalone collapsible <details> section
+   that isn't a row-of-a-shared-grid -- each its own bordered card rather
+   than .dt-row's thin-top-border-only look, since several of those
+   sitting back to back read as one continuous list, not clearly separate
+   topics. Not the shared .dt-row/.drilltable treatment (that assumes a
+   shared grid of rows with one common border-radius from a .drilltable
+   parent; these are independent standalone sections). Layered on top of
+   .dt-row (kept for the existing open/closed arrow + summary cursor
+   behaviour) rather than replacing it. Also used by player_profile.html's
+   Game log (one card per game) and its "Past seasons"/nested
+   Real-NFL-history drilldowns -- same "several stacked, thin-bordered
+   .dt-rows read as one undifferentiated list" problem, one player away
+   from a whole team. */
+.adv-stat-card { border: 1px solid var(--line); border-radius: 10px;
+  background: var(--surface); padding: 4px 16px; }
+.adv-stat-card + .adv-stat-card { margin-top: 14px; }
+.adv-stat-card > summary { padding: 11px 30px 11px 0; }
+.adv-stat-card[open] > summary { background: none; border-bottom: 1px solid var(--line);
+  margin: 0 -16px 10px; padding-left: 16px; padding-right: 46px; }
+.adv-stat-card > .hint:first-of-type { margin-top: -2px; }
+.adv-stat-card > .tablewrap:last-child,
+.adv-stat-card > .hint:last-child { margin-bottom: 6px; }
+/* A game card's own detail (player_profile.html's Game log) can contain
+   FURTHER nested <details> (the raw per-source-category breakdown,
+   _player_game_detail.html) -- giving those the same .adv-stat-card
+   bordered-card treatment would read as two competing card borders one
+   inside the other. .quiet-toggle is the lighter-weight nested version:
+   a small leading triangle + muted label, no border/background of its
+   own, matching the existing .dt-row-players convention (a "quiet inline
+   toggle rather than a second full drilltable row") without that class's
+   roster-specific selectors. */
+.quiet-toggle { margin-top: 10px; }
+.quiet-toggle > summary { cursor: pointer; list-style: none;
+  font-size: 12.5px; color: var(--muted); }
+.quiet-toggle > summary::-webkit-details-marker { display: none; }
+.quiet-toggle > summary::before { content: '\25B8'; display: inline-block;
+  margin-right: 6px; color: var(--faint); font-size: 10px; }
+.quiet-toggle[open] > summary::before { content: '\25BE'; }
+.quiet-toggle > summary:hover { color: var(--ink); }
+.quiet-toggle > .quiet-toggle-body { margin-top: 8px; }
+.quiet-toggle + .quiet-toggle { margin-top: 6px; }

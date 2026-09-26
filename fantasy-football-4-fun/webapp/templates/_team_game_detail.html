@@ -2,89 +2,174 @@
    drilldown (team_profile.html). Lazy-loaded: the parent <summary> carries
    `hx-get`/`hx-trigger="toggle once"` so this partial is only fetched the
    first time a reader actually expands that game row, rather than every
-   game's full detail (up to 8 stacked tables) shipping inline for the
-   whole season on page load -- a real, measured cost (~900KB of HTML for
-   one team-season) confirmed before this change. `webapp.app.
-   team_game_detail()` renders this directly from the same cached
-   `team_profile()` call the parent page already made, so there is no
-   second data pull, only a second render.
+   game's full detail shipping inline for the whole season on page load --
+   a real, measured cost (~900KB of HTML for one team-season) confirmed
+   before this change. `webapp.app.team_game_detail()` renders this
+   directly from the same cached `team_profile()` call the parent page
+   already made, so there is no second data pull, only a second render.
 
-   Sub-tab grouping (2026-09, replacing a flat stack of every table with
-   nothing but a bold label between them): the up to 8 tables one game can
-   carry (Passing/Rushing/Receiving reconciled + PFR, 3 snap-count roles,
-   PFR defense, injuries) are grouped into 4 pills -- Box score / Snap
-   counts / Defense / Injuries -- using .dt-stat-mode, the same structural
-   viewswitch CSS (style.css) a since-shipped Testing-tab mockup already
-   established for this exact "variable number of stat-dataset panels"
-   shape. Only a pill with real data for THIS game is shown; a pill with
-   nothing renders no radio/label pair at all, so the tab list itself
-   already tells a reader what this game actually has.
+   Pill grouping (2026-09, three earlier passes, all superseded except the
+   TOP-LEVEL split): grouping BY DATA PIPELINE ("Box score / Snap counts /
+   Defense / Injuries", then a flattened variant of the same idea) was
+   dropped for being arbitrary -- a reader experiences a box score as
+   "what happened on offense/defense/special teams/who's hurt", not "which
+   nflverse/PFR file did this come from". Four top-level pills, side-of-
+   ball / health: Offense / Defense / Special teams / Injuries. Only a
+   pill with real data for THIS game is shown.
 
-   Rendered as its own TemplateResponse (webapp.app.team_game_detail),
-   not a Jinja {% include %} from team_profile.html, so `tsm` is imported
-   fresh here rather than relying on the parent template's own import
-   carrying over -- it wouldn't. #}
+   Offense/Defense panel CONTENT (2026-09, position-group rework -- user
+   request: "breakdown the subsections by player position groups (e.g.
+   offense => qbs, rbs, wrs, tes) and include all player data in this new
+   setup in singular rows instead of splitting by further subsections"):
+   superseded the prior Passing/Rushing/Receiving-as-separate-.metric-
+   cards layout (which itself had already merged PFR's extra columns onto
+   each reconciled row -- see _teamstat_macros.reconciled_table's own
+   history). That layout's real remaining flaw: a player active in more
+   than one metric (a rushing QB, a pass-catching RB -- both common,
+   verified live on real 2026 games) still appeared as a SEPARATE row in
+   each metric's OWN table, rather than once. `stats["offense_by_position"]`/
+   `stats["defense_by_position"]` (team_profile._offense_position_groups/
+   _defense_position_groups) now do that merge in Python: one row per
+   player, grouped QB/RB/WR/TE (offense) or DEF/DL/LB/DB (defense, CB/S
+   folded into DB per user request), fixed column sets per group (user's
+   own choice over a tighter-but-inconsistent "only show columns this
+   group actually used" alternative -- see the position_group_table macro
+   for the full rationale). Rendered via `tsm.position_group_table`, which
+   replaces the per-metric `.metric-card` loop entirely for these two
+   panels.
+
+   Follow-up changes (same session): OL was dropped from Offense entirely
+   (linemen only ever had snap-share data, no box-score stats). "DEF"
+   (Sleeper's own team-defense stat line, `stats["sleeper_def"]` -- see
+   `_sleeper_def_rows`) was added as a FOURTH defense group and placed
+   FIRST (user request: "shift the sleeper DEF group to be the first
+   subsection in the defense section") -- a team-level row, not a
+   per-player one, built separately in `_defense_position_groups` and
+   prepended. Special teams' own snap-share table was REPLACED with
+   kicker stats (user request: "replace special teams subsections with
+   kicker stats (e.g. remove the snap shares)") -- `stats["kicker_groups"]`
+   (`team_profile._kicker_groups`), Sleeper's own weekly kicker line (FG
+   made/attempted by distance, XP made/attempted -- the ONLY source for
+   kicking data in this pipeline, verified live: nflverse's datasets carry
+   zero FG/XP columns), rendered through the SAME `position_group_table`
+   macro (it already renders any list of `{group, players}` groups, not
+   just the offense/defense ones) rather than a parallel table helper.
+   Kicker stats briefly lived as Offense's own "K" group before this final
+   placement -- moved here since "replace special teams" was explicit
+   about WHERE, not just WHAT.
+
+   Uses .dt-stat-mode (style.css), the same structural viewswitch CSS a
+   since-shipped Testing-tab mockup established for this "variable number
+   of panels" shape. All panels live inside ONE wrapper div (`.vs-panels`)
+   rather than as bare siblings of the radios/`.rail.vs-tabs` -- see
+   style.css's own comment on `.dt-stat-mode` for the real, pre-existing
+   `:nth-of-type` counting bug this wrapper fixes (a `<div>`'s position was
+   counted among ALL its parent's `<div>` children, not just `.vs-panel`-
+   classed ones, so every panel was one position off from its own radio
+   until this wrapper scoped the counting to just the real panels). #}
 {% import "_teamstat_macros.html" as tsm %}
-{% set _metric_has_data = stats.passing.reconciled or stats.passing.pfr
-                          or stats.rushing.reconciled or stats.rushing.pfr
-                          or stats.receiving.reconciled or stats.receiving.pfr %}
-{% set _snap_labels = [
-  ("snap_counts_offense", "Offense"),
-  ("snap_counts_defense", "Defense"),
-  ("snap_counts_special_teams", "Special teams")] %}
-{% set _any_snap = _snap_labels | selectattr("0", "in", stats.keys()) | list %}
-{% set _has_def = "pfr_def" in stats %}
+{% set _has_offense = stats.offense_by_position %}
+{% set _has_defense = stats.defense_by_position %}
+{% set _has_special = stats.kicker_groups %}
 {% set _has_injuries = "injuries" in stats %}
-{% if _metric_has_data or _any_snap or _has_def or _has_injuries %}
+{# One (present, id, label) tuple per pill, side-of-ball order (Offense,
+   Defense, Special teams, Injuries) -- a single list so the radios/
+   labels/checked-state loop below stays in lockstep by construction
+   rather than four separately hand-written blocks that could drift out of
+   the same order. #}
+{% set _pills = [
+  (_has_offense, "off", "Offense"),
+  (_has_defense, "def", "Defense"),
+  (_has_special, "st", "Special teams"),
+  (_has_injuries, "inj", "Injuries")] %}
+{% set _any_pill = _pills | selectattr("0") | list %}
+{% if _any_pill %}
 {# Exactly one radio starts checked: whichever pill is FIRST among the ones
-   actually rendered (Box score > Snap counts > Defense > Injuries) -- a
-   namespace flag rather than a growing "and not X and not Y..." chain per
-   radio, so a future 5th pill only needs one more {% if %} block, not an
-   edit to every earlier one's condition. #}
+   actually rendered -- a namespace flag rather than a growing "and not X
+   and not Y..." chain per radio, so a future pill only needs one more
+   entry in `_pills`, not an edit to every earlier one's condition. #}
 {% set _checked = namespace(done=false) %}
-<div class="viewswitch dt-stat-mode">
-  {% for present, gid in ((_metric_has_data, "box"), (_any_snap, "snaps"), (_has_def, "def"), (_has_injuries, "inj")) %}
+<div class="viewswitch dt-stat-mode" id="gs-panels-{{ game_key }}">
+  {% for present, gid, label in _pills %}
   {% if present %}
   <input type="radio" name="gamestat{{ game_key }}" id="gs-{{ game_key }}-{{ gid }}" class="vs-radio"{% if not _checked.done %} checked{% set _checked.done = true %}{% endif %}>
   {% endif %}
   {% endfor %}
   <div class="rail vs-tabs">
-    {% if _metric_has_data %}<label class="year" for="gs-{{ game_key }}-box">Box score</label>{% endif %}
-    {% if _any_snap %}<label class="year" for="gs-{{ game_key }}-snaps">Snap counts</label>{% endif %}
-    {% if _has_def %}<label class="year" for="gs-{{ game_key }}-def">Defense</label>{% endif %}
-    {% if _has_injuries %}<label class="year" for="gs-{{ game_key }}-inj">Injuries</label>{% endif %}
-  </div>
-  {% if _metric_has_data %}
-  <div class="vs-panel">
-    {% for metric, label in METRIC_LABELS %}
-    {% set entry = stats.get(metric) %}
-    {% if entry and (entry.reconciled or entry.pfr) %}
-    <p class="hint"><strong>{{ label }}</strong></p>
-    {{ tsm.metric_sources_note(entry, metric, source_labels) }}
-    {% if entry.reconciled %}
-    {{ tsm.reconciled_table(entry.reconciled, metric, source_labels) }}
-    {% endif %}
-    {% if entry.pfr %}
-    {{ tsm.stat_table(entry.pfr, game_scoped=true) }}
-    {% endif %}
-    {% endif %}
+    {% for present, gid, label in _pills %}
+    {% if present %}<label class="year" for="gs-{{ game_key }}-{{ gid }}">{{ label }}</label>{% endif %}
     {% endfor %}
   </div>
-  {% endif %}
-  {% if _any_snap %}
+  <div class="vs-panels">
+  {% if _has_offense %}
   <div class="vs-panel">
-    {% for ds, label in _snap_labels %}
-    {% set rows = stats.get(ds) %}
-    {% if rows %}
-    <p class="hint"><strong>{{ label }}</strong></p>
-    {{ tsm.stat_table(rows, game_scoped=true) }}
+    {# stats.off_position_cols, NOT the static OFF_POSITION_COLS global --
+       see team_profile._off_position_cols_for_game: drops the "Routes"
+       column for THIS game when route_participation has nothing for it at
+       all (real bug this fixed: the current 2026 season showed a Routes
+       column on every offense table, always blank, since nflverse hasn't
+       published pbp_participation for the in-progress season yet). #}
+    {{ tsm.position_group_table(stats.offense_by_position, stats.off_position_cols, source_labels) }}
+    {# Route participation: real routes-run/targets/route-type breakdown
+       (2026-09, team_profile._route_summary_rows + nflref.
+       route_participation) -- see that module's own header comment for why
+       this needed a whole new play-level data pipeline (no pre-aggregated
+       nflverse release gives "routes run", unlike every other stat on this
+       page). A SEPARATE small table below the position-group ones rather
+       than folded into OFF_POSITION_COLS's own fixed columns: the route-
+       type breakdown is naturally sparse (13 possible types, a player
+       usually shows a handful) and varies game to game, which doesn't fit
+       that table's fixed-column-every-week convention -- see
+       _route_summary_rows's own docstring for why it trims by COLUMN
+       (uniformly, so every row keeps the same key set) rather than
+       assuming a fixed shape. Uses stat_table() (id_cols already excludes
+       "player"; "position" renders as its own column, e.g. "WR"/"RB"/"TE")
+       since this is a flat one-row-per-player shape, not the grouped-by-
+       position shape position_group_table expects. #}
+    {% if stats.route_summary %}
+    <div class="metric-card">
+      <p class="hint"><strong>Route participation</strong></p>
+      {{ tsm.stat_table(stats.route_summary) }}
+    </div>
+    {% elif stats.route_unavailable %}
+    {# Explicit "not yet available" note, not just a silently missing
+       section (2026-09 fix, real user report: "routes are blank / listing
+       '-'") -- team_profile._attach_week_stats sets stats.route_unavailable
+       when the WHOLE SEASON's route_participation dataset came back empty
+       (nflverse doesn't publish the pbp_participation release an
+       in-progress season needs until after the postseason ends -- see
+       nflref.route_participation's own header comment), as opposed to a
+       genuine "nothing to show this specific game" case, which still shows
+       nothing here (no note) since that's a normal, expected outcome for a
+       bye/unplayed week, not a data gap worth calling out. #}
+    <div class="metric-card">
+      <p class="hint"><strong>Route participation</strong></p>
+      <p class="empty">Not yet available for {{ current_season }} &mdash;
+        nflverse doesn&rsquo;t publish this data until after the season
+        ends. Route stats will appear here once it&rsquo;s released.</p>
+    </div>
     {% endif %}
-    {% endfor %}
   </div>
   {% endif %}
-  {% if _has_def %}
+  {% if _has_defense %}
   <div class="vs-panel">
-    {{ tsm.stat_table(stats.pfr_def, game_scoped=true) }}
+    {{ tsm.position_group_table(stats.defense_by_position, DEF_COLS, source_labels) }}
+  </div>
+  {% endif %}
+  {# Special teams: kicker stats (Sleeper's own weekly kicker line --
+     FG made/attempted by distance, XP made/attempted), REPLACING this
+     panel's earlier snap-share table entirely (user request: "replace
+     special teams subsections with kicker stats (e.g. remove the snap
+     shares)"). Uses the SAME position_group_table macro offense/defense
+     already use -- stats.kicker_groups is shaped identically (a list of
+     {group, players}), just one group ("Kickers") built by
+     team_profile._kicker_groups rather than several. Plain values, no
+     .stat-cell flyout (Sleeper is the only source for kicking data in
+     this pipeline -- see team_profile._KICKER_KEYS's own header
+     comment). #}
+  {% if _has_special %}
+  <div class="vs-panel">
+    {{ tsm.position_group_table(stats.kicker_groups, KICKER_COLS, source_labels) }}
   </div>
   {% endif %}
   {% if _has_injuries %}
@@ -92,7 +177,27 @@
     {{ tsm.stat_table(stats.injuries, game_scoped=true) }}
   </div>
   {% endif %}
+  </div>
 </div>
+<script>
+  (function () {
+    // Sortable column headers on every stat table this partial just rendered
+    // (position-group offense/defense/kicker tables + the injuries table).
+    // NOT document.currentScript -- htmx's allowScriptTags re-execution
+    // (how this <script> runs at all, since it arrives via the .dt-detail
+    // innerHTML swap rather than the initial page parse) does not reliably
+    // set document.currentScript (confirmed elsewhere in this codebase, see
+    // _playercompare_charts.html's own identical note) -- #gs-panels-{{ game_key }}
+    // is a stable id unique to THIS game's swap (team_profile.html has one
+    // independently-lazy-loaded row per schedule week), so scope off that
+    // instead. table-sort.js's own SMTableSort.makeSortable(table) has no
+    // #panel dependency (only its prepTables() convenience wrapper does),
+    // so it works unmodified on this standalone page, which has no #panel.
+    var root = document.getElementById('gs-panels-{{ game_key }}');
+    if (!root || !window.SMTableSort) return;
+    root.querySelectorAll('table').forEach(window.SMTableSort.makeSortable);
+  })();
+</script>
 {% else %}
 <p class="hint">No advanced stats found for this game.</p>
 {% endif %}
