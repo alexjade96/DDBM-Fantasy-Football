@@ -2320,12 +2320,14 @@ tr.bench-impact td { background: color-mix(in srgb, #d9a441 8%, transparent); }
 #panel > h3 + * { margin-top: 8px; }
 
 /* --- team-profile (/team/{abbr}) reconciled-stat cell styling -----------
-   Started as a Testing-tab mockup, both changes fully shipped since:
-   (1) a per-metric .metric-card wrap and a dropped redundant PFR caption
-   (see the .metric-card rules below), (2) the .stat-flag/.stat-cell/
-   .stat-flyout rules here. History, for context: .stat-flag (the
-   reconciled-table disagreement ⚠) originally had ZERO CSS anywhere --
-   bare inline text, no color, no hover affordance. */
+   Started as a Testing-tab mockup: a per-metric card wrap (a dropped
+   redundant PFR caption) plus the .stat-flag/.stat-cell/.stat-flyout
+   rules here. The card wrap itself (.metric-card) was later dropped
+   app-wide in favor of a plain h3 heading (2026-09, user request, see
+   .gd-block/.pg-wrap/.adv-stat-plain's own comments) -- only the flyout
+   styling below survives from that original pass. History, for context:
+   .stat-flag (the reconciled-table disagreement ⚠) originally had ZERO
+   CSS anywhere -- bare inline text, no color, no hover affordance. */
 
 /* The disagreement flag: small amber chip (reuses --gold, the same token
    .bkr-msg.warn already uses for "pay attention here"). Purely a visual
@@ -2381,32 +2383,6 @@ tr.bench-impact td { background: color-mix(in srgb, #d9a441 8%, transparent); }
    should still read as mostly-agreeing at a glance). */
 .stat-flyout-diff .stat-flyout-val { color: var(--gold); }
 
-/* One card per metric (Passing/Rushing/Receiving), replacing the flat
-   <p><strong>Label</strong> + table + table stream -- each metric now reads
-   as its own bounded section, matching the .facts-card treatment already
-   used elsewhere in .reportpanel rather than inventing a new component. */
-.metric-card { border: 1px solid var(--line); border-radius: 10px;
-  background: var(--surface); padding: 12px 14px 14px; }
-.metric-card + .metric-card { margin-top: 10px; }
-.metric-card > .metric-card-head { display: flex; align-items: baseline;
-  justify-content: space-between; gap: 10px; margin-bottom: 2px; }
-.metric-card > .metric-card-head > strong { font-size: 13.5px; color: var(--ink); }
-/* Provenance ("Source: X, Y") stays a quiet .hint, unchanged -- it is
-   metadata about the table above it. */
-.metric-card .hint { margin-bottom: 8px; }
-.metric-card .hint:last-child { margin-bottom: 0; }
-.metric-card table.dt-games { margin-top: 4px; }
-/* A second (PFR) table under the reconciled one in the same card gets a
-   little breathing room above it, since there's no caption between them
-   any more to supply that gap on its own. Now only used by the FALLBACK
-   path (a player PFR covered that no other source saw at all, so there
-   is no reconciled row to merge onto -- see _team_game_detail.html); the
-   normal case merges PFR's extra columns onto the reconciled table's own
-   row instead (.pfr-extra, below), so this rule is mostly dormant now but
-   kept for that fallback. */
-.metric-card table.dt-games + table.dt-games,
-.metric-card .tablewrap + .tablewrap { margin-top: 10px; }
-
 /* PFR's extra advanced columns (pressure rate, yards before/after contact,
    broken tackles, drops, ...), joined onto a reconciled row rather than
    shown in a second table (team_profile._attach_pfr_extra /
@@ -2439,59 +2415,40 @@ table.dt-games td.pfr-extra, table.dt-games th.pfr-extra { color: var(--muted); 
 table.dt-games td.grp-divider, table.dt-games th.grp-divider {
   border-left: 1px solid var(--line); padding-left: 14px; }
 
-/* Originally team_profile.html's Advanced & usage stats per-metric
-   <details> blocks (Passing/Rushing/Receiving/Snap counts/Defense/
-   Injuries); now shared by any standalone collapsible <details> section
-   that isn't a row-of-a-shared-grid -- each its own bordered card rather
-   than .dt-row's thin-top-border-only look, since several of those
-   sitting back to back read as one continuous list, not clearly separate
-   topics. Not the shared .dt-row/.drilltable treatment (that assumes a
-   shared grid of rows with one common border-radius from a .drilltable
-   parent; these are independent standalone sections). Layered on top of
-   .dt-row (kept for the existing open/closed arrow + summary cursor
-   behaviour) rather than replacing it. Also used by player_profile.html's
-   Game log (one card per game) and its "Past seasons"/nested
-   Real-NFL-history drilldowns -- same "several stacked, thin-bordered
-   .dt-rows read as one undifferentiated list" problem, one player away
-   from a whole team. team_profile.html's own Roster section deliberately
-   does NOT use this class (see .roster-pos-table below) -- a card frame,
-   and later the collapsible toggle itself, were both rejected on user
-   request. */
-.adv-stat-card { border: 1px solid var(--line); border-radius: 10px;
-  background: var(--surface); padding: 4px 16px; }
-.adv-stat-card + .adv-stat-card { margin-top: 14px; }
-.adv-stat-card > summary { padding: 11px 30px 11px 0; }
-.adv-stat-card[open] > summary { background: none; border-bottom: 1px solid var(--line);
-  margin: 0 -16px 10px; padding-left: 16px; padding-right: 46px; }
-.adv-stat-card > .hint:first-of-type { margin-top: -2px; }
-.adv-stat-card > .tablewrap:last-child,
-.adv-stat-card > .hint:last-child { margin-bottom: 6px; }
-/* A game card's own detail (player_profile.html's Game log) can contain
-   FURTHER nested <details> (the raw per-source-category breakdown,
-   _player_game_detail.html) -- giving those the same .adv-stat-card
-   bordered-card treatment would read as two competing card borders one
-   inside the other. .quiet-toggle is the lighter-weight nested version:
-   a small leading triangle + muted label, no border/background of its
-   own, matching the existing .dt-row-players convention (a "quiet inline
-   toggle rather than a second full drilltable row") without that class's
-   roster-specific selectors. */
-.quiet-toggle { margin-top: 10px; }
-.quiet-toggle > summary { cursor: pointer; list-style: none;
-  font-size: 12.5px; color: var(--muted); }
-.quiet-toggle > summary::-webkit-details-marker { display: none; }
-.quiet-toggle > summary::before { content: '\25B8'; display: inline-block;
-  margin-right: 6px; color: var(--faint); font-size: 10px; }
-.quiet-toggle[open] > summary::before { content: '\25BE'; }
-.quiet-toggle > summary:hover { color: var(--ink); }
-.quiet-toggle > .quiet-toggle-body { margin-top: 8px; }
-.quiet-toggle + .quiet-toggle { margin-top: 6px; }
+/* team_profile.html's Advanced & usage stats per-metric <details> blocks
+   (Passing/Rushing/Receiving/Snap counts/Defense/Injuries) -- a borderless
+   collapsible section. Originally a bordered/backgrounded card
+   (.adv-stat-card, since REMOVED -- it read as a stack of separate boxes,
+   the same complaint that, in earlier sessions, had already moved
+   player_profile.html's Game log to `.drilltable`/`.dt-row`, and, in this
+   same 2026-09 pass, dropped the card look from team_profile.html's
+   Roster section and the per-game "Route participation"/"raw source
+   data" blocks on both pages too -- see .roster-pos-table/.gd-block/
+   .pg-wrap's own comments for those). This section keeps its
+   <details>/<summary> COLLAPSE though, unlike Roster (which dropped that
+   too) -- a deliberate, separate user answer for this one section, so
+   it's still layered on `.dt-row` (kept for the existing open/closed
+   arrow + summary cursor behaviour) rather than a plain heading. Spacing
+   between sections matches Roster's own 24px gap (`.tablewrap.scrolltable
+   + h3`) rather than a bordered card's old, tighter gap -- an open,
+   borderless collapsible needs the extra air a card's own edge used to
+   supply for free. */
+.adv-stat-plain { padding: 4px 0; }
+.adv-stat-plain + .adv-stat-plain { margin-top: 24px; }
+.adv-stat-plain > summary { padding: 11px 30px 11px 0; }
+.adv-stat-plain[open] > summary { background: none; border-bottom: 1px solid var(--line);
+  margin: 0 0 10px; padding-right: 30px; }
+.adv-stat-plain > .hint:first-of-type { margin-top: -2px; }
+.adv-stat-plain > .tablewrap:last-child,
+.adv-stat-plain > .hint:last-child { margin-bottom: 6px; }
 
 /* team_profile.html: Roster's per-position groups (QB/RB/WR/TE/K/DEF) --
    a plain h3 + table, always visible, no card frame and no collapse.
    Two things were tried and rejected here on user request: a bordered/
-   backgrounded card (matching .adv-stat-card, used one section down for
-   Advanced & usage stats) and, after that, a borderless but still
-   COLLAPSIBLE <details> toggle -- the toggle itself was judged
+   backgrounded card (matching .adv-stat-card, the pattern Advanced &
+   usage stats itself USED TO use one section down, before it too dropped
+   the card frame -- see .adv-stat-plain) and, after that, a borderless
+   but still COLLAPSIBLE <details> toggle -- the toggle itself was judged
    unnecessary, not just its styling, so there's no <details>/<summary>
    left at all. table.dt-games is width:auto by default (shrinks to its
    own content), which left a position's table narrower than the panel;
@@ -2501,3 +2458,45 @@ table.dt-games td.grp-divider, table.dt-games th.grp-divider {
    for the same reason. */
 .roster-pos-table { width: 100%; }
 h3 + .tablewrap.scrolltable { margin-top: 6px; }
+/* Space BETWEEN one position group's table and the next group's heading
+   (QB's table to the RB heading, etc) -- these elements sit inside
+   #team-season-sections, one level below .reportpanel's own direct
+   children, so .reportpanel > * + * (this page's general 22px sibling
+   rhythm) never reaches them, the same "wrapped an extra div deep" trap
+   documented elsewhere on this page. Scoped to `.tablewrap.scrolltable +
+   h3` specifically (not a blanket `h3 { margin-top }`) so it only adds
+   space BETWEEN position groups, not above the very first one (h2 already
+   supplies that) and not inside the Schedule/Advanced-stats sections
+   below, which already have their own spacing (.adv-stat-plain + .adv-
+   stat-plain, the .drilltable/.dt-row treatment). */
+.tablewrap.scrolltable + h3 { margin-top: 24px; }
+
+/* position_group_table's own plain heading + full-width table (2026-09,
+   user request: "mimic the position group table styling & spacing" for
+   the Schedule drilldown's per-pill panels and player_profile.html's own
+   per-game detail) -- same idea as .roster-pos-table/`.tablewrap.
+   scrolltable + h3` above, just under this macro's own class names since
+   its wrapping <div> isn't a .scrolltable (no fixed max-height/scrollbar;
+   these tables are short, position-group-sized, not a whole roster). A
+   game-detail caller with only ONE group (player_profile.html's
+   hide_player=true case) never renders a second `.pg-wrap + h3` pair, so
+   this rule is inert there -- harmless, not something that needs its own
+   guard. */
+.pg-table { width: 100%; }
+.pg-wrap + h3 { margin-top: 24px; }
+
+/* Game-log detail blocks (Route participation, "<Category>: raw source
+   data") on both team_profile.html's Schedule drilldown and
+   player_profile.html's own Game log -- plain h3 + whatever stat_table()/
+   source_stat_table() rendered, same "no card frame" treatment (2026-09,
+   user request), extended from position_group_table's own groups to
+   these standalone blocks that used to sit in a .metric-card box.
+   `.gd-block` is a marker class on each such <h3> (see
+   _player_game_detail.html/_team_game_detail.html) -- NOT a bare `h3 +
+   .tablewrap`/`p.empty + h3`, which would also catch unrelated headings
+   elsewhere in the app that happen to share the same adjacency by
+   coincidence (a real one found and avoided: _week_transactions.html's
+   "no trades this week" <p class="empty"> sits directly before its own
+   unrelated "Waivers & free agent pickups" <h3>). */
+h3.gd-block + .tablewrap, h3.gd-block + p.empty { margin-top: 6px; }
+.tablewrap + h3.gd-block, p.empty + h3.gd-block { margin-top: 24px; }

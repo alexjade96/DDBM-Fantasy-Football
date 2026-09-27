@@ -1,7 +1,9 @@
 {# Every season-DEPENDENT section on the player-profile page (player_profile.
    html), in one file so it can be re-rendered as a single htmx fragment
    when the season dropdown changes: Percentile profile, {league} history,
-   Game log, Real-NFL history, Draft ADP history. Factored out specifically
+   Game log, Advanced & usage stats (renamed from "Real-NFL history" to
+   match team_profile.html's identical section, 2026-09, user request),
+   Draft ADP history. Factored out specifically
    so a season switch re-renders ALL of these in lockstep (user request --
    previously only the Percentile chart followed the dropdown, while the
    other four sections stayed fixed on today's real NFL season via their
@@ -134,7 +136,7 @@
    breakdown each) before this fix, the same shape of cost that already
    prompted team_profile.html's own identical lazy-load treatment. Each
    row's detail, once expanded, includes the SAME raw, unreconciled
-   per-source tables the flat "Real-NFL history" section below still
+   per-source tables the flat "Advanced & usage stats" section below still
    shows in full (per standing direction to keep the player page's
    underlying data inspectable), just scoped to that one game and grouped
    by metric category instead of by source across the whole page. #}
@@ -196,7 +198,7 @@
 <p class="empty">No game log found for this player in {{ season_scope }}.</p>
 {% endif %}
 
-<h2>Real-NFL history <span class="hint">({{ season_scope }})</span></h2>
+<h2>Advanced &amp; usage stats <span class="hint">({{ season_scope }})</span></h2>
 {# `real_nfl[ds]["rows"]`/`real_nfl_categories` are already scoped to
    `season_scope` (see webapp.player_profile.scope_profile) -- no separate
    current/past split or "past seasons" drilldown here any more; picking a
@@ -270,8 +272,8 @@
 <h2>Draft ADP history <span class="hint">({{ season_scope }})</span></h2>
 {# `adp_history` is already scoped to `season_scope` (see
    webapp.player_profile.scope_profile) -- no separate current/past split
-   or "Past seasons" drilldown here any more, same as Real-NFL history
-   above. #}
+   or "Past seasons" drilldown here any more, same as Advanced & usage
+   stats above. #}
 {% if adp_history %}
 <div class="tablewrap">
   <table class="dt-games">

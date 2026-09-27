@@ -6,8 +6,9 @@
 
    The dropdown here is NOT scoped to just this section any more (user
    request) -- picking a season re-renders EVERY "follow-up section" on
-   the page (this one, {league} history, Game log, Real-NFL history, Draft
-   ADP history) in lockstep, via `hx-target="#player-season-sections"`
+   the page (this one, {league} history, Game log, Advanced & usage
+   stats, Draft ADP history) in lockstep, via
+   `hx-target="#player-season-sections"`
    (the shared container in player_profile.html) and
    `webapp.app.player_season_sections()` -- see that container's own
    comment. This section's own "focus season" (which season the radar

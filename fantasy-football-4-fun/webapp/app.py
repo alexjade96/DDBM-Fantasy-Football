@@ -5369,8 +5369,10 @@ def player_season_sections(request: Request, player_id: str,
                            league: str | None = None, season: str | None = None,
                            season_scope: str | None = None, theme: str = "light"):
     """The player-profile page's shared "follow-up sections" container
-    (Percentile profile, {league} history, Game log, Real-NFL history,
-    Draft ADP history), as an htmx fragment -- the season dropdown
+    (Percentile profile, {league} history, Game log, Advanced & usage
+    stats -- renamed from "Real-NFL history" to match team_profile.html's
+    identical section, 2026-09, user request --, Draft ADP history), as an
+    htmx fragment -- the season dropdown
     (`_player_percentile.html`) hx-gets this instead of a plain link, so
     picking a different season re-renders every one of those sections in
     lockstep, in place, rather than reloading the whole page (user

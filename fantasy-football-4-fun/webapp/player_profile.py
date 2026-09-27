@@ -76,8 +76,10 @@ _PFR_DATASETS = ["snap_counts", "pfr_pass", "pfr_rec", "pfr_rush", "pfr_def"]
 # this: it slices a real per-team SCHEDULE by week rather than trusting
 # "which weeks exist in the raw data" the way `_game_log`'s week-detection
 # does -- filtered out at THIS boundary (not in `_game_log` itself) so
-# every downstream reader (the game log AND the flat "Real-NFL history"
-# section) sees the same, correct row set.
+# every downstream reader (the game log AND the flat "Advanced & usage
+# stats" section -- renamed from "Real-NFL history" to match
+# team_profile.html's identical section, 2026-09, user request) sees the
+# same, correct row set.
 _NGS_DATASETS = {"ngs_passing", "ngs_receiving", "ngs_rushing"}
 
 # Each dataset's own gsis-id column name differs (see the module docstring
@@ -288,7 +290,9 @@ def _real_nfl_history(gsis_id: str | None, name: str | None,
 # Dataset -> (metric category, display label) for the game-log's raw
 # per-category breakdown (see `_game_log`). "injuries" has no metric
 # category (it's not a box-score stat) and is handled as its own top-level
-# section, same as the flat "Real-NFL history" section always has.
+# section, same as the flat "Advanced & usage stats" section (renamed
+# from "Real-NFL history" to match team_profile.html's identical section,
+# 2026-09, user request) always has.
 _RAW_SOURCE_LABELS = {
     "ngs_passing": "Next Gen Stats: Passing",
     "ngs_receiving": "Next Gen Stats: Receiving",
@@ -391,8 +395,10 @@ def _canonicalize_raw_row(ds: str, row: dict) -> dict:
 
 
 # Which raw categories share real cross-source overlap, for the season-wide
-# "Real-NFL history" section's own reconciliation (see
-# `real_nfl_by_category`) -- the SAME split `_RAW_SOURCE_CATEGORY` already
+# "Advanced & usage stats" section's own reconciliation (renamed from
+# "Real-NFL history" to match team_profile.html's identical section,
+# 2026-09, user request; see `real_nfl_by_category`) -- the SAME split
+# `_RAW_SOURCE_CATEGORY` already
 # encodes per dataset, grouped the other way round (category -> its
 # datasets) since this function builds one merged table PER CATEGORY rather
 # than iterating per dataset. `injuries` and `snap_counts` are deliberately
@@ -410,8 +416,10 @@ _REAL_NFL_CATEGORY_DATASETS = {
 
 def real_nfl_by_category(real_nfl: dict) -> dict[str, list[dict]]:
     """The season-scoped `real_nfl` dict (see `scope_profile`), regrouped
-    for the "Real-NFL history" section into ONE table per overlapping
-    category (passing/rushing/receiving -- see `_REAL_NFL_CATEGORY_DATASETS`)
+    for the "Advanced & usage stats" section (renamed from "Real-NFL
+    history" to match team_profile.html's identical section, 2026-09,
+    user request) into ONE table per overlapping category (passing/
+    rushing/receiving -- see `_REAL_NFL_CATEGORY_DATASETS`)
     instead of one table per SOURCE, matching what `_game_log`'s own
     `raw_by_category` already does for a single game, just at the whole-
     season, multiple-week grain instead of one week. User request: the same
@@ -1113,10 +1121,12 @@ def scope_profile(profile: dict, season: str | None) -> dict:
     Returns the SAME KEYS `player_profile.html` reads as flat top-level
     context (`real_nfl`, `real_nfl_categories`, `game_log`, `adp_history`,
     `league_history`), values replaced with this season's rows only --
-    `real_nfl_categories` (see `real_nfl_by_category`) is the "Real-NFL
-    history" section's own per-category reconciliation, built fresh here
-    from the just-scoped `real_nfl` rather than cached on the unscoped
-    profile, since it depends on the season filter having already run. The
+    `real_nfl_categories` (see `real_nfl_by_category`) is the "Advanced &
+    usage stats" section's own per-category reconciliation (renamed from
+    "Real-NFL history" to match team_profile.html's identical section,
+    2026-09, user request), built fresh here from the just-scoped
+    `real_nfl` rather than cached on the unscoped profile, since it
+    depends on the season filter having already run. The
     template's own per-dataset "current_rows"/"past_rows" and *_current/
     *_past drilldown reads are gone along with the drilldowns themselves
     (one dropdown now covers every season, so there's no separate "past
@@ -1129,7 +1139,9 @@ def scope_profile(profile: dict, season: str | None) -> dict:
         ds: {**ds_data, "rows": _scope_to_season(ds_data.get("rows", []), season)}
         for ds, ds_data in (profile.get("real_nfl") or {}).items()
     }
-    # The "Real-NFL history" section's own per-category reconciliation (see
+    # The "Advanced & usage stats" section's own per-category
+    # reconciliation (renamed from "Real-NFL history" to match
+    # team_profile.html's identical section, 2026-09, user request; see
     # `real_nfl_by_category`'s own docstring) -- built fresh here, same as
     # everything else in this function, since it depends on `real_nfl`
     # already being scoped to this one season.

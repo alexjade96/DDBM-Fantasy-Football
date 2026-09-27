@@ -183,8 +183,10 @@
 </div>
 {% endmacro %}
 
-{# ONE row per (week, source) for the whole "Real-NFL history" section
-   (player_profile.html, season-wide, not per-game) -- the flat-row
+{# ONE row per (week, source) for the whole "Advanced & usage stats"
+   section (player_profile.html, season-wide, not per-game -- renamed from
+   "Real-NFL history" to match team_profile.html's identical section,
+   2026-09, user request) -- the flat-row
    sibling of `source_stat_table` above, for `webapp.player_profile.
    real_nfl_by_category`'s own output shape: a plain list of already-
    merged `{"week": w, "source": label, "best_effort": bool,
@@ -487,10 +489,20 @@
 {% for grp in groups %}
 {% set cols = cols_by_group.get(grp.group) if cols_by_group is mapping else cols_by_group %}
 {% if cols %}
-<div class="metric-card">
-  {% if not hide_player %}<p class="hint"><strong>{{ grp.group }}</strong></p>{% endif %}
-  <div class="tablewrap">
-    <table class="dt-games">
+{# Plain heading + full-width table, no card frame -- matches
+   team_profile.html's Roster section (h3 + .roster-pos-table, see that
+   template's own header comment for why the earlier bordered/backgrounded
+   .metric-card box was dropped there; this macro's every OTHER caller
+   inherited the same change, per user request, rather than special-casing
+   Roster alone). `.pg-table` (style.css) gives the table the same
+   full-width rule .roster-pos-table already has; `.pg-wrap` on its
+   surrounding .tablewrap is the sibling-selector hook the group-to-group
+   spacing rule (`.pg-wrap + h3`) needs (mirrors Roster's own
+   `.tablewrap.scrolltable + h3` rule -- .pg-wrap is this macro's own
+   equivalent marker class, since these tables aren't scrolltables). #}
+{% if not hide_player %}<h3>{{ grp.group }}</h3>{% endif %}
+  <div class="tablewrap pg-wrap">
+    <table class="dt-games pg-table">
       <thead><tr>{% if not hide_player %}<th>Player</th>{% endif %}
         {%- for category, category_cols in cols -%}
           {% set cat_first = loop.first %}
@@ -546,7 +558,6 @@
       </tbody>
     </table>
   </div>
-</div>
 {% endif %}
 {% endfor %}
 {% endmacro %}

@@ -126,11 +126,17 @@
        "player"; "position" renders as its own column, e.g. "WR"/"RB"/"TE")
        since this is a flat one-row-per-player shape, not the grouped-by-
        position shape position_group_table expects. #}
+    {# Plain h3 + table, no card frame -- matches team_profile.html's Roster
+       section and this same panel's own position_group_table output above
+       (2026-09, user request: drop the .metric-card box these Route
+       participation blocks used to sit in). stat_table() already produces
+       its own <div class="tablewrap">, so no extra wrapper div here.
+       `.gd-block` is the marker class the spacing rule (style.css) keys
+       off, matching player_profile.html's own identical game-detail
+       blocks. #}
     {% if stats.route_summary %}
-    <div class="metric-card">
-      <p class="hint"><strong>Route participation</strong></p>
-      {{ tsm.stat_table(stats.route_summary, roster_index=roster_index) }}
-    </div>
+    <h3 class="gd-block">Route participation</h3>
+    {{ tsm.stat_table(stats.route_summary, roster_index=roster_index) }}
     {% elif stats.route_unavailable %}
     {# Explicit "not yet available" note, not just a silently missing
        section (2026-09 fix, real user report: "routes are blank / listing
@@ -142,12 +148,10 @@
        genuine "nothing to show this specific game" case, which still shows
        nothing here (no note) since that's a normal, expected outcome for a
        bye/unplayed week, not a data gap worth calling out. #}
-    <div class="metric-card">
-      <p class="hint"><strong>Route participation</strong></p>
-      <p class="empty">Not yet available for {{ current_season }} &mdash;
-        nflverse doesn&rsquo;t publish this data until after the season
-        ends. Route stats will appear here once it&rsquo;s released.</p>
-    </div>
+    <h3 class="gd-block">Route participation</h3>
+    <p class="empty">Not yet available for {{ current_season }} &mdash;
+      nflverse doesn&rsquo;t publish this data until after the season
+      ends. Route stats will appear here once it&rsquo;s released.</p>
     {% endif %}
   </div>
   {% endif %}

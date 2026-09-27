@@ -18,11 +18,13 @@
    team) -- rendered through the identical `position_group_table` macro so
    the two pages show byte-identical numbers/columns/flyouts for the same
    game. `raw_by_category` groups the SAME raw, unreconciled per-source
-   rows the page's own "Real-NFL history" section shows in full elsewhere,
-   just scoped to this one game and grouped by metric category instead of
-   by source across the whole page -- kept for a reader to inspect what
-   each individual source actually reported, per standing direction to
-   keep the player page's underlying data inspectable. #}
+   rows the page's own "Advanced & usage stats" section shows in full
+   elsewhere (renamed from "Real-NFL history" to match team_profile.
+   html's identical section, 2026-09, user request), just scoped to this
+   one game and grouped by metric category instead of by source across
+   the whole page -- kept for a reader to inspect what each individual
+   source actually reported, per standing direction to keep the player
+   page's underlying data inspectable. #}
 {# hide_player=true on every call below: this whole partial is already
    scoped to the one player whose row was just expanded (the parent
    .dt-row's own summary states season/week/opponent), so re-printing
@@ -38,11 +40,17 @@
 {% else %}
 {{ tsm.position_group_table(group, {identity.position: OFF_POSITION_COLS.get(identity.position, [])}, source_labels, hide_player=true) }}
 {% endif %}
+{# Plain h3 + table, no card frame -- matches team_profile.html's Roster
+   section and this same game-detail's own position_group_table output
+   above (2026-09, user request: apply the same "no card" treatment here
+   too, dropping the .metric-card box these blocks used to sit in).
+   stat_table() already produces its own <div class="tablewrap">, so no
+   extra wrapper div is added here. `.gd-block` is the marker class
+   `h3.gd-block + .tablewrap`/`.tablewrap + h3.gd-block` (style.css) key
+   off, scoping the spacing to just these game-detail headings. #}
 {% if game.route_summary %}
-<div class="metric-card">
-  <p class="hint"><strong>Route participation</strong></p>
-  {{ tsm.stat_table([game.route_summary], hide_player=true) }}
-</div>
+<h3 class="gd-block">Route participation</h3>
+{{ tsm.stat_table([game.route_summary], hide_player=true) }}
 {% elif game.route_unavailable %}
 {# No "for {{ game.season }}" here -- the parent row's own summary already
    states the season, right above this expanded detail. #}
@@ -72,9 +80,7 @@
                                 ("receiving", "Receiving"), ("snap", "Snap counts"),
                                 ("defense", "Defense (raw)")] %}
 {% if game.raw_by_category.get(category) %}
-<div class="metric-card">
-  <p class="hint"><strong>{{ cat_label }}: raw source data</strong></p>
-  {{ tsm.source_stat_table(game.raw_by_category[category], game_scoped=true) }}
-</div>
+<h3 class="gd-block">{{ cat_label }}: raw source data</h3>
+{{ tsm.source_stat_table(game.raw_by_category[category], game_scoped=true) }}
 {% endif %}
 {% endfor %}

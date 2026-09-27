@@ -167,21 +167,21 @@
 
 {# --- advanced / usage stats, grouped by metric (see team_profile.html's
      own header comment block for the full rationale) ---------------------
-   Each metric is its own bordered .card (via .adv-stat-card, layered on
-   the plain <details> rather than the .dt-row/.drilltable treatment --
-   these aren't rows of a shared grid, they're independent collapsible
-   sections, and .dt-row's thin top-border-only look reads as one
-   continuous list once several sit back to back). Explicit margin-top
-   between them (.adv-stat-card + .adv-stat-card) on top of the page's
-   usual 22px sibling gap, since a heavier bordered block wants a little
-   more air than a plain heading did. #}
+   Borderless collapsible sections (.adv-stat-plain, style.css) -- dropped
+   the bordered/backgrounded .adv-stat-card box (2026-09, user request:
+   "mimic the position group table styling & spacing"), keeping the
+   <details>/<summary> collapse itself (unlike Roster, which also dropped
+   the collapse entirely -- a deliberate, separate answer for this
+   section). See .adv-stat-plain's own CSS comment for why this is a
+   dedicated class rather than a modifier on .adv-stat-card (that class's
+   bordered look is still used elsewhere on other pages). #}
 <h2>Advanced &amp; usage stats <span class="hint">({{ current_season }})</span></h2>
 {% set flags = namespace(any=false) %}
 {% for metric, label in metric_labels %}
 {% set entry = team_stats_grouped.get(metric) %}
 {% if entry and (entry.reconciled or entry.pfr) %}
 {% set flags.any = true %}
-<details class="dt-row adv-stat-card">
+<details class="dt-row adv-stat-plain">
   <summary>{{ label }}{% if entry.reconciled %} ({{ entry.reconciled|length }} players){% endif %}</summary>
   {{ tsm.metric_sources_note(entry, metric, source_labels) }}
   {% if entry.reconciled %}
@@ -197,7 +197,7 @@
 {% set rows = team_stats_grouped.get(ds) %}
 {% if rows %}
 {% set flags.any = true %}
-<details class="dt-row adv-stat-card">
+<details class="dt-row adv-stat-plain">
   <summary>{{ label }} ({{ rows|length }} rows)</summary>
   {{ tsm.stat_table(rows, scroll=true, roster_index=roster_index) }}
 </details>
