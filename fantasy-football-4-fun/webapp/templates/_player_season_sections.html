@@ -18,8 +18,9 @@
 
    Needs in context: player_id, league, season, theme, league_history,
    league_name, league_scoped, season_scope, seasons_covered, game_log,
-   game_log_stat_cols, real_nfl, adp_history, percentile_profile, plus
-   whatever _player_percentile.html itself needs (bust). Served two ways:
+   game_log_stat_cols, real_nfl, real_nfl_categories, adp_history,
+   percentile_profile, plus whatever _player_percentile.html itself needs
+   (bust). Served two ways:
    inline (`{% include %}` from player_profile.
    html's own full-page render) and as the dropdown's own htmx fragment
    (`webapp.app.player_season_sections()`, GET /player/{id}/season/
@@ -31,6 +32,7 @@
    reasoning _player_percentile.html/_player_game_detail.html already
    give for their own local imports. #}
 {% import "_ident.html" as idm with context %}
+{% import "_teamstat_macros.html" as tsm %}
 {% include "_player_percentile.html" %}
 
 {% if league_history %}
@@ -195,21 +197,39 @@
 {% endif %}
 
 <h2>Real-NFL history <span class="hint">({{ season_scope }})</span></h2>
-{# `real_nfl[ds]["rows"]` is already scoped to `season_scope` (see
-   webapp.player_profile.scope_profile) -- no separate current/past split
-   or "past seasons" drilldown here any more; picking a different season
-   in the dropdown above re-renders this whole section for that season
-   directly, same as every other "follow-up section" on this page.
+{# `real_nfl[ds]["rows"]`/`real_nfl_categories` are already scoped to
+   `season_scope` (see webapp.player_profile.scope_profile) -- no separate
+   current/past split or "past seasons" drilldown here any more; picking a
+   different season in the dropdown above re-renders this whole section
+   for that season directly, same as every other "follow-up section" on
+   this page.
+
+   Passing/Rushing/Receiving are ONE merged table each (`real_nfl_
+   categories`, webapp.player_profile.real_nfl_by_category), one row per
+   (week, source), rather than a separate full table per DATASET -- the
+   same "integrate all major metrics into a single table... add a column
+   stating the data source" treatment already applied to the per-game
+   drilldown (_player_game_detail.html), extended here to this season-wide
+   section (user request). Injury reports / Snap counts / PFR advanced:
+   Defense are UNCHANGED, still one table per dataset: none of the three
+   has a second source in this pipeline to merge against (see
+   stat_reconcile's own docstring), so there is nothing to reconcile.
+
    Jinja's {% for %} gives each iteration its own scope, so a plain
    {% set %} inside the loop below would never be visible after it ends
    (silently always False/empty outside) -- namespace() is the documented
    workaround for a flag that must accumulate across iterations. #}
 {% set flags = namespace(any_real_nfl=false) %}
-{% for ds, label in [("player_stats", "Weekly stats"), ("ngs_passing", "Next Gen Stats: Passing"),
-                      ("ngs_receiving", "Next Gen Stats: Receiving"), ("ngs_rushing", "Next Gen Stats: Rushing"),
-                      ("injuries", "Injury reports"), ("snap_counts", "Snap counts"),
-                      ("pfr_pass", "PFR advanced: Passing"), ("pfr_rec", "PFR advanced: Receiving"),
-                      ("pfr_rush", "PFR advanced: Rushing"), ("pfr_def", "PFR advanced: Defense")] %}
+{% for category, label in [("passing", "Passing"), ("rushing", "Rushing"), ("receiving", "Receiving")] %}
+{% set rows = real_nfl_categories.get(category) %}
+{% if rows %}
+{% set flags.any_real_nfl = true %}
+<p class="hint"><strong>{{ label }}</strong> ({{ rows|length }} rows across every contributing source)</p>
+{{ tsm.season_source_table(rows) }}
+{% endif %}
+{% endfor %}
+{% for ds, label in [("injuries", "Injury reports"), ("snap_counts", "Snap counts"),
+                      ("pfr_def", "PFR advanced: Defense")] %}
 {% set d = real_nfl.get(ds) %}
 {% if d and d.rows %}
 {% set flags.any_real_nfl = true %}
@@ -223,10 +243,18 @@
       {% endfor %}
     </tr></thead>
     <tbody>
+    {# tsm.cell() (not a bare `row[k] if ... is not none`) -- these rows
+       are NOT run through player_profile._canonicalize_raw_row (no rename
+       needed for a single-source category), so they still carry raw
+       pandas NaN in whatever cell a source didn't record that week (a
+       real, confirmed case in both pfr_def and injuries -- see cell()'s
+       own comment on why `is not none` alone doesn't catch it); cell()
+       also gets these tables the same 1dp-rounding convention every other
+       stat table on the page already has, which this loop lacked before. #}
     {% for row in d.rows %}
       <tr>
         {% for k in cols %}
-        <td>{{ row[k] if row[k] is not none else "&ndash;" }}</td>
+        <td>{{ tsm.cell(row[k]) }}</td>
         {% endfor %}
       </tr>
     {% endfor %}

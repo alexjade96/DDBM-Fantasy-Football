@@ -306,6 +306,188 @@ _RAW_SOURCE_CATEGORY = {
     "pfr_def": "defense", "snap_counts": "snap",
 }
 
+# Per-dataset raw-column-name -> canonical-stat-name, derived from
+# `stat_reconcile._METRIC_MAPS` (the SAME map that already tells the
+# reconciled `merged_row` table which raw columns are the same real fact --
+# see that module's own docstring) rather than a second, hand-maintained
+# alias list that could silently drift from it. Real, confirmed case this
+# fixes: `ngs_receiving`'s own raw column for receiving yards is bare
+# "yards" (not "receiving_yards"), so before this rename the game log's raw
+# "Receiving: raw source data" table showed BOTH a "receiving yards" column
+# (Box score's row) AND a separate "yards" column (Next Gen Stats' row),
+# each blank for the other source, when they are the identical stat.
+# `ngs_passing`/`ngs_rushing` have the same problem (`pass_yards`/
+# `pass_touchdowns`, `rush_attempts`/`rush_yards`/`rush_touchdowns`).
+# `pfr_*`'s own raw columns (pressure rate, broken tackles, yards before/
+# after contact) have no equivalent in any other source at all (see
+# stat_reconcile's own docstring: "PFR ... carry mostly PFR-EXCLUSIVE
+# advanced stats"), so PFR contributes no aliases here -- only `ngs_*` does.
+# Built once at import time, not hardcoded, so a future edit to
+# `_METRIC_MAPS` (e.g. a new source column) is picked up automatically
+# rather than needing a second manual update here.
+def _build_raw_col_aliases() -> dict[str, dict[str, str]]:
+    from webapp.stat_reconcile import _METRIC_MAPS
+    out: dict[str, dict[str, str]] = {}
+    for stats in _METRIC_MAPS.values():
+        for canonical, src_cols in stats.items():
+            for src, col in src_cols.items():
+                if col != canonical:
+                    out.setdefault(src, {})[col] = canonical
+    return out
+
+
+_RAW_COL_ALIASES = _build_raw_col_aliases()
+
+# Columns that are pure player IDENTITY (not a stat to compare across
+# sources) but use a DIFFERENT key name per dataset, so they don't land in
+# `_teamstat_macros.id_cols`/`name_cols` (which key on the exact string
+# "position") and so leak through as a second, redundant column -- e.g.
+# `player_stats`/`snap_counts` both call it "position" while `ngs_*` calls
+# it "player_position", so a game with both a Box-score row and an NGS row
+# showed TWO position columns, each blank for the other source, even though
+# this whole panel is already scoped to one known player whose position is
+# shown in the page header (same repetition `hide_player=true` already
+# exists to avoid for the Player name column, immediately above this
+# table -- see `_player_game_detail.html`). Renamed to "position" (not
+# dropped outright) so it still shows once, since a game log entry can span
+# a position change and there's no other single place on this panel stating
+# it per-game.
+_RAW_IDENTITY_ALIASES = {"player_position": "position"}
+
+
+def _canonicalize_raw_row(ds: str, row: dict) -> dict:
+    """`row` (one dataset's raw columns) with any column this dataset names
+    differently from its canonical stat (`_RAW_COL_ALIASES`) or from its
+    canonical identity field (`_RAW_IDENTITY_ALIASES`) renamed to that
+    canonical key -- so `source_stat_table`/`season_source_table`'s own
+    union-of-columns render (_teamstat_macros.html) lines up the same real
+    fact under ONE column regardless of which source's row is naming it. A
+    row already using the canonical name for a given stat is untouched
+    (nothing to rename).
+
+    Also scrubs pandas NaN to `None`, same fix `_week_rows` already applies
+    on the per-game reconciliation path -- real, confirmed case: PFR's
+    `pfr_rush`/`pfr_rec` rows carry the OTHER role's own broken-tackle
+    column (`receiving_broken_tackles` on a rushing row, `rushing_broken_
+    tackles` on a receiving row) as NaN when a player has no line in that
+    other role, and `_teamstat_macros.cell()`'s own `v is none` guard does
+    NOT catch a pandas NaN float (`nan is not None` is True), rendering the
+    literal text "nan". `_game_log`'s own per-game path happened to dodge
+    this by calling `_week_rows` (which already scrubs) BEFORE this
+    function, but `real_nfl_by_category`'s season-wide path canonicalizes
+    directly off `real_nfl`'s raw, un-scrubbed rows with no such step first
+    -- scrubbing HERE instead of relying on caller order fixes both paths
+    at their one shared choke point rather than duplicating the scrub in
+    two places (and fixes a real, pre-existing bug in the OLD flat
+    per-dataset "Real-NFL history" table too, which read this exact NaN
+    unguarded before this function's rename step even existed)."""
+    def clean(v):
+        try:
+            return None if v is not None and pd.isna(v) else v
+        except (TypeError, ValueError):
+            return v
+    aliases = {**_RAW_IDENTITY_ALIASES, **_RAW_COL_ALIASES.get(ds, {})}
+    return {aliases.get(k, k): clean(v) for k, v in row.items()}
+
+
+# Which raw categories share real cross-source overlap, for the season-wide
+# "Real-NFL history" section's own reconciliation (see
+# `real_nfl_by_category`) -- the SAME split `_RAW_SOURCE_CATEGORY` already
+# encodes per dataset, grouped the other way round (category -> its
+# datasets) since this function builds one merged table PER CATEGORY rather
+# than iterating per dataset. `injuries` and `snap_counts` are deliberately
+# absent: `injuries` has exactly one source in this pipeline (nothing to
+# merge against) and `snap_counts` likewise (see `stat_reconcile`'s own
+# docstring: "Defense (pfr_def) and Snap counts (snap_counts) have no
+# second source at all") -- both stay as their own single, un-merged
+# section, unchanged from before this function existed.
+_REAL_NFL_CATEGORY_DATASETS = {
+    "passing": ["player_stats", "ngs_passing", "pfr_pass"],
+    "rushing": ["player_stats", "ngs_rushing", "pfr_rush"],
+    "receiving": ["player_stats", "ngs_receiving", "pfr_rec"],
+}
+
+
+def real_nfl_by_category(real_nfl: dict) -> dict[str, list[dict]]:
+    """The season-scoped `real_nfl` dict (see `scope_profile`), regrouped
+    for the "Real-NFL history" section into ONE table per overlapping
+    category (passing/rushing/receiving -- see `_REAL_NFL_CATEGORY_DATASETS`)
+    instead of one table per SOURCE, matching what `_game_log`'s own
+    `raw_by_category` already does for a single game, just at the whole-
+    season, multiple-week grain instead of one week. User request: the same
+    "integrate all major metrics into a single table... add a column
+    stating the data source... leave blank for non-comparable columns"
+    treatment already applied to the per-game drilldown, extended to this
+    flat season-wide section.
+
+    Returns `{category: [{"week": w, "source": label, "best_effort": bool,
+    **canonicalized_row}, ...]}`, sorted by week then by each category's own
+    dataset declaration order (`_REAL_NFL_CATEGORY_DATASETS[category]`, so
+    "Box score" always leads a given week's group, matching the per-game
+    table's own "Box score" first convention) -- a flat list of rows rather
+    than nested per-week groups, since the template's own `season_source_
+    table` macro (_teamstat_macros.html) already knows how to union columns
+    and render one row per entry; the "week" key rides along as an ordinary
+    column so it appears in the rendered table (unlike the per-game
+    version, where the week is stated once by the parent game row and so is
+    dropped via `game_scoped`). `best_effort` carries over PER ROW from
+    that row's own source dataset (`real_nfl[ds]["best_effort"]`, see
+    `_real_nfl_history`'s own docstring) -- a category can genuinely mix
+    id-verified rows (player_stats/ngs_*, when this player has a gsis_id)
+    with name-matched ones (pfr_*, always best-effort; or any dataset when
+    this player has no gsis_id at all), so the flag is a per-row fact here,
+    not a whole-category one, unlike the old per-dataset table's single
+    caption note.
+
+    `player_stats` rows are split into passing/rushing/receiving buckets
+    first (`team_profile._split_player_stats`, the SAME function
+    `_game_log` already uses for this) since one `player_stats` row spans
+    all three metric families -- a receiving table must not show a
+    passing-only player's zeroed-out targets/receptions row, the same
+    "bucket by nonzero value" rule that function already documents.
+
+    Each dataset's own columns are renamed to their canonical name first
+    (`_canonicalize_raw_row`) -- the exact fix this function exists for:
+    without it, Next Gen Stats' `rush_yards`/`yards`/`pass_yards` and its
+    own `player_position` would each render as a SEPARATE, mostly-blank
+    column instead of lining up under `player_stats`'s "rushing_yards"/
+    "receiving_yards"/"passing_yards"/"position"."""
+    from webapp import team_profile as tp
+
+    player_stats_by_bucket: dict[str, dict[int, dict]] = {}
+    ps_data = real_nfl.get("player_stats") or {}
+    ps_rows = ps_data.get("rows", [])
+    ps_best_effort = bool(ps_data.get("best_effort"))
+    if ps_rows:
+        canon_rows = [_canonicalize_raw_row("player_stats", r) for r in ps_rows]
+        for bucket, rows_b in tp._split_player_stats(canon_rows).items():
+            player_stats_by_bucket[bucket] = {r["week"]: r for r in rows_b if r.get("week") is not None}
+
+    out: dict[str, list[dict]] = {}
+    for category, datasets in _REAL_NFL_CATEGORY_DATASETS.items():
+        # (source_rank, week, row) so the final sort (below) can order by
+        # week first and then by each dataset's OWN declared position in
+        # `datasets` (Box score always leads a given week's group) without
+        # a second reverse lookup from label back to dataset name.
+        tagged: list[tuple[int, int, dict]] = []
+        for rank, ds in enumerate(datasets):
+            if ds == "player_stats":
+                by_week = player_stats_by_bucket.get(category, {})
+                label, best_effort = "Box score", ps_best_effort
+            else:
+                d = real_nfl.get(ds) or {}
+                rows = [_canonicalize_raw_row(ds, r) for r in d.get("rows", [])]
+                by_week = {r["week"]: r for r in rows if r.get("week") is not None}
+                label, best_effort = _RAW_SOURCE_LABELS.get(ds, ds), bool(d.get("best_effort"))
+            for week, row in by_week.items():
+                tagged.append((rank, week, {"week": week, "source": label,
+                                            "best_effort": best_effort, **row}))
+        if tagged:
+            tagged.sort(key=lambda t: (t[1], t[0]))
+            out[category] = [entry for _rank, _week, entry in tagged]
+    return out
+
+
 # A SELECT FEW position-relevant columns for the game log's own `.dt-head`
 # (user request) -- deliberately a small subset of team_profile's own full
 # `_OFF_POSITION_COLS`/`_DEF_PLAYER_COLS` (the game's expandable detail
@@ -651,15 +833,29 @@ def _game_log(identity: dict, real_nfl: dict, seasons: list[str]) -> list[dict]:
         if not merged_row:
             continue
 
+        # Each dataset's own rows are renamed to their CANONICAL column names
+        # (`_canonicalize_raw_row`) before being stored here -- so
+        # `source_stat_table`'s union-of-columns render
+        # (_teamstat_macros.html) lines up e.g. Next Gen Stats' bare "yards"
+        # under the same "receiving yards" column Box score's row uses,
+        # instead of showing both as separate, half-blank columns. "Box
+        # score" (player_stats) is already the canonical naming (see
+        # `stat_reconcile._METRIC_MAPS`'s own "player_stats" columns, which
+        # match every canonical key 1:1), so it needs no renaming, but is
+        # still routed through the SAME function for the identity-column
+        # alias (`player_position` -> `position` has no player_stats side to
+        # rename, this is just "no-op for this dataset").
         raw_by_category: dict[str, list[tuple[str, list[dict]]]] = {}
         for ds, label in _RAW_SOURCE_LABELS.items():
             hit = _week_rows((real_nfl.get(ds) or {}).get("rows", []), season, wk)
             if hit:
                 cat = _RAW_SOURCE_CATEGORY[ds]
+                hit = [_canonicalize_raw_row(ds, r) for r in hit]
                 raw_by_category.setdefault(cat, []).append((label, hit))
         box_hit = _week_rows(
             (real_nfl.get("player_stats") or {}).get("rows", []), season, wk)
         if box_hit:
+            box_hit = [_canonicalize_raw_row("player_stats", r) for r in box_hit]
             for bucket, rows_b in tp._split_player_stats(box_hit).items():
                 raw_by_category.setdefault(bucket, []).insert(0, ("Box score", rows_b))
 
@@ -915,12 +1111,16 @@ def scope_profile(profile: dict, season: str | None) -> dict:
     back to `profile["current_season"]` -- the page's own default on first
     load, same as the old fixed "current season" split this replaced.
     Returns the SAME KEYS `player_profile.html` reads as flat top-level
-    context (`real_nfl`, `game_log`, `adp_history`, `league_history`),
-    values replaced with this season's rows only -- the template's own
-    per-dataset "current_rows"/"past_rows" and *_current/*_past drilldown
-    reads are gone along with the drilldowns themselves (one dropdown now
-    covers every season, so there's no separate "past seasons" list to
-    render)."""
+    context (`real_nfl`, `real_nfl_categories`, `game_log`, `adp_history`,
+    `league_history`), values replaced with this season's rows only --
+    `real_nfl_categories` (see `real_nfl_by_category`) is the "Real-NFL
+    history" section's own per-category reconciliation, built fresh here
+    from the just-scoped `real_nfl` rather than cached on the unscoped
+    profile, since it depends on the season filter having already run. The
+    template's own per-dataset "current_rows"/"past_rows" and *_current/
+    *_past drilldown reads are gone along with the drilldowns themselves
+    (one dropdown now covers every season, so there's no separate "past
+    seasons" list to render)."""
     seasons_covered = profile.get("seasons_covered") or []
     if not season or season not in seasons_covered:
         season = profile.get("current_season")
@@ -929,6 +1129,11 @@ def scope_profile(profile: dict, season: str | None) -> dict:
         ds: {**ds_data, "rows": _scope_to_season(ds_data.get("rows", []), season)}
         for ds, ds_data in (profile.get("real_nfl") or {}).items()
     }
+    # The "Real-NFL history" section's own per-category reconciliation (see
+    # `real_nfl_by_category`'s own docstring) -- built fresh here, same as
+    # everything else in this function, since it depends on `real_nfl`
+    # already being scoped to this one season.
+    real_nfl_categories = real_nfl_by_category(real_nfl)
     game_log = _scope_to_season(profile.get("game_log") or [], season)
     adp = _scope_to_season(profile.get("adp_history") or [], season)
 
@@ -956,6 +1161,7 @@ def scope_profile(profile: dict, season: str | None) -> dict:
         "season_scope": season,
         "real_nfl": real_nfl,
         "game_log": game_log,
+        "real_nfl_categories": real_nfl_categories,
         "adp_history": adp,
         "league_scoped": league_scoped,
         "percentile_profile": percentile_profile,

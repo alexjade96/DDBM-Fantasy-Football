@@ -1062,6 +1062,23 @@ tpl.env.globals["OFF_GROUP_ORDER"] = _team_profile._OFF_GROUP_ORDER
 tpl.env.globals["DEF_COLS"] = _team_profile._DEF_COLS
 tpl.env.globals["DEF_GROUP_ORDER"] = _team_profile._DEF_GROUP_ORDER
 tpl.env.globals["KICKER_COLS"] = _team_profile._KICKER_COLS
+# A plain callable (not a static dict, unlike the four above) -- the
+# Roster section's per-position column spec (real cumulative stats, not
+# PPR points) is a simple per-position lookup, not worth precomputing into
+# a dict keyed by every possible position value. See
+# team_profile._roster_position_columns's own docstring.
+tpl.env.globals["roster_position_columns"] = _team_profile._roster_position_columns
+# Best-effort Sleeper player_id for a row of any Advanced-stats/Schedule
+# table (see team_profile.resolve_row_player_id's own docstring) -- lets
+# _teamstat_macros.html's stat_table/reconciled_table/position_group_table
+# hyperlink a player name the same way the Roster section already does,
+# without those nflverse/PFR-keyed rows carrying a Sleeper id natively.
+tpl.env.globals["resolve_row_player_id"] = _team_profile.resolve_row_player_id
+# Builds the `roster_index` those same three macros pass into the call
+# above -- see team_profile.roster_name_index's own docstring for why this
+# is built once per render (from profile["roster"]) rather than recomputed
+# per table row.
+tpl.env.globals["roster_name_index"] = _team_profile.roster_name_index
 
 # Testing tab: a holding area for prototypes under review. Nothing is
 # currently active there (tab_testing.html just shows the standing shell),
@@ -5189,8 +5206,25 @@ def report(league: str = DEFAULT_LEAGUE, season: str | None = None,
         '<nav class="mbar"><span class="lbl">Report</span>'
         f'<div class="mtabs">{"".join(tabs)}</div>'
         f'<a class="mdl" href="{dl}">&#8595; Download</a></nav>')
+    # `?render=1` is how this route tells a cold request "this is the real
+    # render, not the loader" (see _report_loader's own docstring, same
+    # pattern player_profile.html/team_profile.html's own copy of this
+    # script explains in full) -- strips it from the visible address bar
+    # once this real page has loaded. INLINE VIEW ONLY: `doc` itself (the
+    # baked report) is shared with the download=1 path above, which
+    # returns before this point, so a script meaningless outside a real
+    # address bar never ends up in the saved file, same guard the bar
+    # injection right above it already follows for the same reason.
+    strip_render = (
+        "<script>(function(){"
+        'var u=new URL(location.href);'
+        'if(u.searchParams.has("render")){'
+        'u.searchParams.delete("render");'
+        'history.replaceState(null,"",u.pathname+u.search+u.hash);}'
+        "})();</script>")
     # Inject at the top of the flow so `position:sticky` anchors to the viewport.
-    return HTMLResponse(doc.replace('<div class="wrap">', bar + '<div class="wrap">', 1))
+    return HTMLResponse(
+        doc.replace('<div class="wrap">', strip_render + bar + '<div class="wrap">', 1))
 
 
 # --- player profile ---------------------------------------------------------
@@ -5252,6 +5286,7 @@ def _player_season_ctx(profile: dict, season_scope: str | None) -> dict:
     scoped = pp.scope_profile(profile, season_scope)
     return {
         "real_nfl": scoped["real_nfl"],
+        "real_nfl_categories": scoped["real_nfl_categories"],
         "game_log": scoped["game_log"],
         "game_log_stat_cols": profile.get("game_log_stat_cols") or [],
         "adp_history": scoped["adp_history"],
@@ -5470,6 +5505,12 @@ def _team_season_ctx(profile: dict) -> dict:
         "roster_by_position": profile["roster_by_position"],
         "schedule": profile["schedule"],
         "team_stats_grouped": profile["team_stats_grouped"],
+        # This season's own roster, name -> real Sleeper id (see
+        # team_profile.roster_name_index's own docstring) -- threaded into
+        # every _teamstat_macros.html table call in this template so a
+        # player's name links to their profile page the same way the
+        # Roster section already does.
+        "roster_index": _team_profile.roster_name_index(profile["roster"]),
     }
 
 
@@ -5572,6 +5613,10 @@ def team_game_detail(request: Request, abbr: str, week: int, season: str | None 
         "theme": theme, "game_key": week, "stats": game.get("stats") or {},
         "source_labels": stat_reconcile.SOURCE_LABELS,
         "current_season": profile.get("current_season"),
+        # See _team_season_ctx's identical line -- same "name -> real
+        # Sleeper id" lookup, threaded here too so the Schedule
+        # drilldown's per-game tables link player names the same way.
+        "roster_index": tp.roster_name_index(profile["roster"]),
     }
     return tpl.TemplateResponse(request, "_team_game_detail.html", ctx)
 

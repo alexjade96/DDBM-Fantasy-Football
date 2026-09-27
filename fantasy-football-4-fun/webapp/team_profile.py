@@ -36,6 +36,103 @@ def _norm_name(name: str | None) -> str:
         return (name or "").strip().lower()
 
 
+def roster_name_index(roster: list[dict]) -> dict[str, str]:
+    """`{normalised_name: player_id}` for this season's own roster leaderboard
+    (`profile["roster"]`, already carries a real Sleeper `player_id` for
+    every row -- `_roster_leaderboard`'s own Sleeper-sourced pull, see that
+    function's docstring) -- the FIRST thing `resolve_row_player_id` tries,
+    ahead of the generic cross-source `ffadp.identity` index.
+
+    Built once per page render (a Jinja global function, called by
+    `webapp.app` with `profile["roster"]`) rather than inside
+    `resolve_row_player_id` itself, since that function is called once per
+    TABLE ROW and rebuilding this map every call would be real, needless
+    per-row work across a whole season's tables."""
+    out: dict[str, str] = {}
+    for r in roster:
+        pid = r.get("player_id")
+        name = r.get("player")
+        if pid and name:
+            out[_norm_name(name)] = pid
+    return out
+
+
+def resolve_row_player_id(row: dict, roster_index: dict[str, str] | None = None) -> str | None:
+    """Best-effort Sleeper `player_id` for one row of ANY of this module's
+    per-stat tables (Advanced & usage stats' reconciled/single-source
+    tables, the Schedule drilldown's per-game position groups) -- the id
+    `_ident.html`'s `player_link()`/`headshot()` need to hyperlink a name,
+    which none of these rows carry natively (they come from nflverse/PFR,
+    keyed on `gsis_id`/`pfr_player_id`/plain name, never a Sleeper id).
+
+    A Jinja global (see webapp.app's own `tpl.env.globals` registration)
+    rather than something attached to every row ahead of time at each of
+    this module's several call sites (`_grouped_metric_stats`,
+    `_merge_offense_players`/`_merge_defense_players`, both per-game and
+    season-wide) -- one shared resolver called from the three template
+    macros themselves (`_teamstat_macros.html`) is less to keep in sync
+    than four separate attach-points, and `ffadp.identity`'s own in-process
+    index makes a per-row call cheap after the first.
+
+    Priority:
+    1. `roster_index` (see `roster_name_index`'s own docstring) -- this
+       team's own current-season roster, matched by normalised name. Tried
+       FIRST and unconditionally (even when the row has a gsis_id) because
+       it's the one path that resolves `reconciled_table`'s rows at all:
+       those carry ONLY a plain name, no position (`stat_reconcile.
+       reconcile_metric` never attaches one -- see this module's own
+       header comment on that function), and `ffadp.identity.resolve`'s
+       name-only branch is keyed `f"{name}|{position or ''}"` -- with no
+       position it degrades to a `"name|"` key that essentially never
+       matches (confirmed live: even "Jared Goff" resolved to None through
+       that path alone). A team's own roster reliably has a name+id for
+       most of its skill-position players regardless of which stat table
+       is asking, which is exactly the gap this closes.
+    2. `gsis_id` (nflverse-derived rows -- injuries, player_stats/ngs_*
+       buckets) -- a real id match via `ffadp.identity`, which bridges
+       Sleeper's own `gsis_id` column. Falls through here only when the
+       roster lookup missed (a player who left the roster, a defense/
+       special-teams player the offense-scoped roster never carried).
+    3. name + position (PFR-derived rows -- snap_counts/pfr_*, which carry
+       no gsis_id at all, plus `position_group_table`'s merged rows, which
+       always compute a `position` even when the raw source didn't -- see
+       `_merge_offense_players`'s own docstring) -- no cross-id exists for
+       PFR, so this is the only path for those.
+    4. name alone, no position -- kept as a final attempt (matches
+       `ffadp.identity`'s own signature) but rarely resolves anything per
+       the explanation in (1); real coverage for `reconciled_table` comes
+       from the roster lookup, not this tier.
+
+    Returns None (never raises) on any resolution failure -- the caller
+    macro already renders plain text for a None id, same "best-effort,
+    degrades to no link" contract `idm.player_link` always had.
+    """
+    name = row.get("player") or row.get("pfr_player_name") or row.get("name")
+    if roster_index and name:
+        hit = roster_index.get(_norm_name(name))
+        if hit:
+            return hit
+
+    try:
+        from webapp.sources.ffadp import identity
+    except Exception:
+        return None
+
+    gsis_id = row.get("gsis_id")
+    position = row.get("position")
+
+    try:
+        if gsis_id:
+            sid = identity.resolve("nflref", gsis_id=gsis_id)
+            if sid:
+                return sid
+        if name:
+            return identity.resolve("nflref", name=name, position=position)
+    except Exception:
+        pass
+    return None
+
+
 # Canonical fantasy-position order, matching sleepermetrics.nflstats._POSITIONS
 # / ddbmFF.R's own sortPosition -- the roster section groups by this order
 # rather than one flat list, so a reader can scan "the QBs" then "the RBs"
@@ -265,6 +362,76 @@ def _roster_by_position(roster: list[dict]) -> list[dict]:
     ordered = [p for p in _ROSTER_POSITIONS if p in by_pos]
     extra = sorted(p for p in by_pos if p not in _ROSTER_POSITIONS)
     return [{"position": p, "players": by_pos[p]} for p in ordered + extra]
+
+
+# Roster-leaderboard columns are cumulative REAL production (games/attempts/
+# yards/TDs/etc), not fantasy scoring (user request: the Roster section used
+# to show every position's table with the same "PPR pts"/"PPR/G" columns
+# regardless of position, which said nothing about WHAT that player actually
+# did on the field). `_roster_leaderboard` is hardcoded to
+# `source="sleeper"` (see that function's own docstring), so this always
+# reads `nflref.summary.leaderboard_columns(pos, "sleeper")` -- the SAME
+# per-position column spec (`_SLEEPER_QB_COLS`/`_SLEEPER_SKILL_COLS`/
+# `_SLEEPER_DEF_COLS`) already used elsewhere in the app (the NFL Stats
+# tab's own leaderboard table), rather than a second, hand-maintained column
+# list that could drift from it -- just with the trailing fantasy pair
+# (`fpts_ppr`/`ppg_ppr`) dropped. `games` is KEPT (unlike the radar's own
+# `_RADAR_EXCLUDED_KEYS`, which also drops it): it's real context for
+# reading a cumulative total, not a derived score, and this table has no
+# per-game rate column of its own the way the radar's percentile axis does.
+_ROSTER_EXCLUDED_KEYS = {"fpts_ppr", "ppg_ppr"}
+
+
+def _roster_position_columns(position: str) -> list[tuple[str, str]]:
+    """The (df_key, header) column spec for ONE roster position group --
+    see `_ROSTER_EXCLUDED_KEYS`'s own comment for why this exists instead
+    of the flat "PPR pts"/"PPR/G" pair every group used to show.
+
+    "K" gets its own real spec, `_KICKER_KEYS` (FGM/FGA/FG%/distance
+    buckets/Long/Blocked/XPM/XPA) -- the roster LEADERBOARD row itself
+    carries no kicking columns at all (Sleeper's `player_leaderboard`
+    pool is built for skill positions, see `nflstats`'s own docstring), so
+    falling through to `leaderboard_columns("K", ...)` used to hand a
+    kicker's row the WR/RB "Tgt/Rec/Car/..." column set, every cell
+    correctly reading zero -- a real, previously-shipped gap (user
+    request: "adjust k to relevant stats"), now fixed by giving K its own
+    column set AND (see `_kicker_season_totals`/`_build_profile`) real
+    aggregated values to fill it with.
+
+    "DEF" gets its own real spec too, `_DEF_TEAM_KEYS` (Sack/QB hit/INT/
+    FF/FR/TD/Safety/Tkl/.../Pts allowed/Yds allowed) -- NOT `nflref.
+    summary.leaderboard_columns("DEF", ...)`'s own `_SLEEPER_DEF_COLS`,
+    which is a DIFFERENT column-naming convention (`sacks`/`ints`/
+    `forced_fumbles`/...) built for a completely separate data pull
+    (`sleepermetrics.nflstats.player_leaderboard`, not this module's own
+    `_sleeper_def_rows`/`team_datasets["sleeper_def"]`, which
+    `_def_season_totals`/`_build_profile` actually populate this group
+    from). `_roster_leaderboard`'s own `pos="ALL"` pull never returns a
+    real DEF row at all (see that function's own docstring), so there is
+    no leaderboard row to key columns off in the first place -- the DEF
+    group's one row is synthesized entirely in `_build_profile`, this
+    spec just says what to show on it. The "TD" column still appears in
+    the header (the spec is unchanged, matching the existing per-game
+    drilldown panel's own columns) but always reads a dash here --
+    `_def_season_totals` deliberately excludes it from the season sum
+    pending confirmation of what the raw stat actually measures, see that
+    function's own docstring.
+
+    Every other position still falls through to `nflref.summary.
+    leaderboard_columns`, unchanged; the rare "Other" bucket
+    `_roster_by_position` can produce also falls through there, same as
+    before."""
+    p = (position or "").upper()
+    if p == "K":
+        return list(_KICKER_KEYS)
+    if p == "DEF":
+        return list(_DEF_TEAM_KEYS)
+    try:
+        from webapp.sources.nflref import summary as nflref_summary
+        cols = nflref_summary.leaderboard_columns(position, "sleeper")
+    except Exception:
+        return []
+    return [(k, label) for k, label in cols if k not in _ROSTER_EXCLUDED_KEYS]
 
 
 def _schedule(abbr: str, season: str) -> list[dict]:
@@ -1305,7 +1472,15 @@ def _sleeper_kicker_rows(abbr: str, seasons: list[str]) -> list[dict]:
     their CURRENT roster team (sleepermetrics.players()) same as
     `_sleeper_week_rows`, without that function's player_stats cross-check
     (there is no player_stats row for a kicker to verify against -- see
-    this section's own header comment). Degrades to `[]` on any failure."""
+    this section's own header comment). Each row carries `player_id` (the
+    Sleeper id, same value the roster leaderboard's own K rows carry) so
+    `_kicker_roster_totals` can join a season's worth of these weekly rows
+    back onto the Roster section's kicker rows by EXACT id, not name --
+    added alongside the existing `player` name, not in place of it (the
+    per-game drilldown's own `_kicker_groups`/`position_group_table` path
+    reads named keys off `_KICKER_KEYS` and ignores anything extra, so this
+    is a purely additive change for that existing consumer). Degrades to
+    `[]` on any failure."""
     try:
         from sleepermetrics import scoring
         from sleepermetrics.players import players as _players
@@ -1331,9 +1506,99 @@ def _sleeper_kicker_rows(abbr: str, seasons: list[str]) -> list[dict]:
                 line = (lines or {}).get(pid)
                 if not line or not any(k in line for k, _ in _KICKER_KEYS):
                     continue
-                out.append({"player": name, "week": wk, "season": season,
-                           "team": abbr, **line})
+                out.append({"player": name, "player_id": pid, "week": wk,
+                           "season": season, "team": abbr, **line})
     return out
+
+
+# `_KICKER_KEYS` itself already carries only real production (no fantasy
+# points) -- reused directly as the Roster section's K column spec (see
+# `_roster_position_columns`). Of those keys, only `fgm_lng` is NOT a
+# counting stat: a season's "long" is the single BEST make, not a sum of
+# weekly bests (summing would double/triple count the same real distance).
+# Every other key sums across weeks; `fgm_pct` is then RECOMPUTED from the
+# summed fgm/fga rather than averaged (averaging weekly percentages would
+# weight a 1-attempt week the same as a 5-attempt week).
+_KICKER_MAX_KEYS = {"fgm_lng"}
+
+
+def _kicker_season_totals(kicker_rows: list[dict]) -> dict[str, dict]:
+    """`_sleeper_kicker_rows`' weekly rows (already scoped to one season by
+    the caller -- see `_build_profile`) collapsed to ONE row per kicker,
+    keyed by Sleeper `player_id` -- the Roster section's own season-
+    cumulative counterpart to the per-game drilldown's weekly rows (which
+    stay exactly as they are; this is a NEW aggregation, not a replacement).
+    `games` counts real weeks with a row (mirrors every other position
+    group's own `games` column, from `player_leaderboard`'s `nunique` week
+    count). A kicker with zero real weekly rows this season simply has no
+    entry here -- the caller degrades that the same way an absent stat
+    degrades everywhere else on this page."""
+    totals: dict[str, dict] = {}
+    for row in kicker_rows:
+        pid = str(row.get("player_id") or "")
+        if not pid:
+            continue
+        slot = totals.setdefault(pid, {"games": 0})
+        slot["games"] += 1
+        for key, _label in _KICKER_KEYS:
+            v = row.get(key)
+            if v is None:
+                continue
+            if key in _KICKER_MAX_KEYS:
+                slot[key] = max(slot.get(key, v), v)
+            elif key != "fgm_pct":
+                slot[key] = slot.get(key, 0) + v
+    for slot in totals.values():
+        fga = slot.get("fga") or 0
+        slot["fgm_pct"] = round(100 * (slot.get("fgm") or 0) / fga, 1) if fga else None
+    return totals
+
+
+#: `_DEF_TEAM_KEYS`'s own raw "td" field is EXCLUDED from the season total
+#: -- confirmed live (2025 wk2), its per-week values (DET 7, KC 2, BUF 3,
+#: SF 3, no correlation to `pts_allow`) are far too high and inconsistent
+#: to be real defensive/special-teams touchdowns (which would almost
+#: always read 0, rarely 1, essentially never above 2 in a single week);
+#: `def_td` (a DIFFERENT key, not in `_DEF_TEAM_KEYS`) is the one Sleeper
+#: actually scores 6 points for in `data/sources/default_scoring.json`.
+#: Whatever raw "td" measures is not yet confirmed, so summing 17 weeks of
+#: an unverified figure into a season "TD" total would very likely display
+#: a wrong, embarrassingly-large number with no source to check it against
+#: -- left out of the total per explicit direction, pending that
+#: confirmation. The pre-existing per-game drilldown panel is UNCHANGED
+#: and still shows this field labelled "TD" -- only this NEW season-total
+#: aggregation omits it.
+_DEF_SEASON_EXCLUDED_KEYS = {"td"}
+
+
+def _def_season_totals(def_rows: list[dict]) -> dict | None:
+    """`_sleeper_def_rows`' weekly rows (already scoped to one season and
+    one team by the caller -- see `_build_profile`) collapsed to ONE
+    season-total row, the Roster section's DEF-group counterpart to
+    `_kicker_season_totals`. Every `_DEF_TEAM_KEYS` field EXCEPT `td` (see
+    `_DEF_SEASON_EXCLUDED_KEYS`) is a genuine straight sum -- `pts_allow`/
+    `yds_allow` are season TOTALS by the same real-NFL convention a box
+    score reports them (e.g. "allowed 411 points on the season"), not an
+    average, confirmed against `nflref.summary.player_leaderboard(pos=
+    "DEF")`'s own independently-computed season total for the same team
+    (DET 2025: 411 pts / 5642 yds allowed, matched exactly). `games`
+    counts real weeks with a row. Returns `None` (not an empty dict) when
+    `def_rows` has nothing -- there is at most ONE team-defense entry
+    (unlike kickers, never more than one per team), so the caller doesn't
+    need a dict keyed by id, just "is there a real total or not"."""
+    if not def_rows:
+        return None
+    totals: dict = {"games": 0}
+    for row in def_rows:
+        totals["games"] += 1
+        for key, _label in _DEF_TEAM_KEYS:
+            if key in _DEF_SEASON_EXCLUDED_KEYS:
+                continue
+            v = row.get(key)
+            if v is None:
+                continue
+            totals[key] = totals.get(key, 0) + v
+    return totals
 
 
 def _sleeper_def_rows(abbr: str, seasons: list[str]) -> list[dict]:
@@ -1531,6 +1796,51 @@ def _build_profile(abbr: str, season: str | None) -> dict:
     roster = _roster_leaderboard(tm, current_season)
     team_datasets = _team_datasets(tm, [current_season])
     schedule = _schedule(tm, current_season)
+
+    # The Roster section's K group needs REAL kicking stats (FGM/FGA/XPM/
+    # XPA/...), which `_roster_leaderboard`'s own row shape simply doesn't
+    # carry (see `_roster_position_columns`'s own docstring) -- merged in
+    # here from `team_datasets["sleeper_kicker"]`, which `_team_datasets`
+    # already fetched for this season regardless (the per-game drilldown's
+    # Special-teams panel needs it too), so this is a free aggregation, not
+    # a second data pull. Joined by Sleeper `player_id` (exact, not a
+    # name-normalised match -- see `_sleeper_kicker_rows`'s own docstring
+    # for why the id was added there specifically for this join). A K row
+    # with no matching totals (a kicker who never actually recorded a
+    # weekly stat line) is left as-is -- its real columns simply render as
+    # dashes, same "absent means nothing to show" convention every other
+    # stat here follows.
+    kicker_totals = _kicker_season_totals(team_datasets.get("sleeper_kicker") or [])
+    if kicker_totals:
+        for r in roster:
+            if r.get("position") == "K":
+                totals = kicker_totals.get(str(r.get("player_id") or ""))
+                if totals:
+                    r.update(totals)
+
+    # The Roster section has NO "DEF" group at all today -- `_roster_
+    # leaderboard`'s own `pos="ALL"` pull never returns a real team-defense
+    # row (see that function's own docstring: "a PRE-EXISTING
+    # characteristic... `pos="ALL"` stays offense/kicker-only"), so unlike
+    # K (a real row that just needed real columns merged onto it), DEF
+    # needs a whole row SYNTHESIZED from `team_datasets["sleeper_def"]`
+    # (user request: "add a def to the roster to represent the sleeper def
+    # position"). No `player_id` -- a team defense is not a Sleeper player
+    # id, and setting it to the team abbreviation would build a broken
+    # `/player/<abbr>` link / a 404 headshot url (see `_ident.html`'s
+    # `headshot`/`player_link`, which need a REAL Sleeper pid); leaving it
+    # unset lets those macros degrade to plain text, the same "no id known"
+    # path every other caller without one already falls into. No `rank`
+    # either -- there is no leaguewide DEF ranking this pull produces (see
+    # `_roster_position_columns`'s own docstring on why this isn't the
+    # SAME `pos="DEF"` leaderboard nflref's own NFL Stats tab uses), so the
+    # template's own rank cell shows a dash rather than a fabricated
+    # number. Omitted entirely (not appended as an empty row) when this
+    # team genuinely had no scored defensive week yet.
+    def_totals = _def_season_totals(team_datasets.get("sleeper_def") or [])
+    if def_totals:
+        roster = roster + [{"player_id": None, "player": tm, "position": "DEF",
+                            "team": tm, "rank": None, **def_totals}]
 
     return {
         "identity": identity,

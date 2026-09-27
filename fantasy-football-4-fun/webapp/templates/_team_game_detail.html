@@ -109,7 +109,7 @@
        all (real bug this fixed: the current 2026 season showed a Routes
        column on every offense table, always blank, since nflverse hasn't
        published pbp_participation for the in-progress season yet). #}
-    {{ tsm.position_group_table(stats.offense_by_position, stats.off_position_cols, source_labels) }}
+    {{ tsm.position_group_table(stats.offense_by_position, stats.off_position_cols, source_labels, roster_index=roster_index) }}
     {# Route participation: real routes-run/targets/route-type breakdown
        (2026-09, team_profile._route_summary_rows + nflref.
        route_participation) -- see that module's own header comment for why
@@ -129,7 +129,7 @@
     {% if stats.route_summary %}
     <div class="metric-card">
       <p class="hint"><strong>Route participation</strong></p>
-      {{ tsm.stat_table(stats.route_summary) }}
+      {{ tsm.stat_table(stats.route_summary, roster_index=roster_index) }}
     </div>
     {% elif stats.route_unavailable %}
     {# Explicit "not yet available" note, not just a silently missing
@@ -153,7 +153,7 @@
   {% endif %}
   {% if _has_defense %}
   <div class="vs-panel">
-    {{ tsm.position_group_table(stats.defense_by_position, DEF_COLS, source_labels) }}
+    {{ tsm.position_group_table(stats.defense_by_position, DEF_COLS, source_labels, roster_index=roster_index) }}
   </div>
   {% endif %}
   {# Special teams: kicker stats (Sleeper's own weekly kicker line --
@@ -169,12 +169,12 @@
      comment). #}
   {% if _has_special %}
   <div class="vs-panel">
-    {{ tsm.position_group_table(stats.kicker_groups, KICKER_COLS, source_labels) }}
+    {{ tsm.position_group_table(stats.kicker_groups, KICKER_COLS, source_labels, roster_index=roster_index) }}
   </div>
   {% endif %}
   {% if _has_injuries %}
   <div class="vs-panel">
-    {{ tsm.stat_table(stats.injuries, game_scoped=true) }}
+    {{ tsm.stat_table(stats.injuries, game_scoped=true, roster_index=roster_index) }}
   </div>
   {% endif %}
   </div>

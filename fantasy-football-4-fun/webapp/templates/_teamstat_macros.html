@@ -12,6 +12,31 @@
    id_cols/name_cols/game_extra_cols are plain top-level assignments (not
    macros) -- Jinja's {% import %} pulls those in too, so a caller doesn't
    need to redefine the exclusion lists to use stat_table(). #}
+{# Imported WITHOUT `with context` (unlike every other _ident.html import in
+   this app) -- deliberately: this file stays context-independent (see the
+   paragraph above), and _ident.html's own player_link()/headshot() already
+   degrade to a bare `/player/<id>` link with no query string when `league`/
+   `season` aren't in scope (its own docstring: "a page with neither still
+   links, just without that context"), which is exactly the "same profile
+   page regardless of which team-profile season you're looking at" behavior
+   asked for here -- so the missing context is a feature, not a gap to
+   route around. Only `player_link`/`headshot` are used below, neither of
+   which touches `avatars` (only `who()` does, which this file never
+   calls), so nothing here actually needs the caller's context. #}
+{% import "_ident.html" as idm %}
+{# `resolve_row_player_id` is a Jinja GLOBAL (webapp.app's own tpl.env.
+   globals registration, see webapp.team_profile.resolve_row_player_id's
+   docstring) -- present on the real app environment, but NOT guaranteed
+   on every environment that might import this macros file (e.g. a bare
+   `jinja2.Environment` a test builds directly, or a future Testing-tab
+   mockup). `is defined` guards every call site below so a missing global
+   degrades to "no link" (same as a row that simply fails to resolve),
+   rather than an UndefinedError killing the whole table. #}
+{% macro _resolve_pid(row, roster_index=none) %}
+{%- if resolve_row_player_id is defined -%}
+{{- resolve_row_player_id(row, roster_index) -}}
+{%- endif -%}
+{% endmacro %}
 {% set name_cols = ("player", "player_display_name", "pfr_player_name", "full_name") %}
 {% set id_cols = ("player_id", "pfr_player_id", "gsis_id", "player_gsis_id",
   "team", "team_abbr", "recent_team", "week", "season") + name_cols %}
@@ -24,9 +49,17 @@
    existing convention for figures like PPR pts/PPG elsewhere in this app.
    An integer-valued float (e.g. a snap count, "57.0") also gets this
    treatment -- 1dp is harmless there and keeps the rule uniform rather
-   than special-casing "does this float happen to be a whole number." #}
+   than special-casing "does this float happen to be a whole number."
+
+   A pandas NaN is a real float too (`nan is not None` is True), so `v is
+   none` alone does NOT catch it -- confirmed live: PFR's `pfr_def` and
+   nflverse's `injuries` datasets both carry genuine NaN cells (a stat that
+   simply wasn't recorded that week), and without this guard `"%.1f"|
+   format(nan)` renders the literal text "nan" onto the page. Checked
+   FIRST, before the `is number` branch, since NaN also satisfies
+   `is number`. #}
 {% macro cell(v) %}
-{%- if v is none -%}&ndash;
+{%- if v is none or (v is number and v != v) -%}&ndash;
 {%- elif v is number and v is not integer -%}{{ "%.1f"|format(v) }}
 {%- else -%}{{ v }}
 {%- endif -%}
@@ -42,7 +75,7 @@
    table branches to this macro instead of `cell()` when a column's own
    key is in that set. #}
 {% macro pct_cell(v) %}
-{%- if v is none -%}&ndash;
+{%- if v is none or (v is number and v != v) -%}&ndash;
 {%- elif v is number -%}{{ "%.0f"|format(v * 100) }}%
 {%- else -%}{{ v }}
 {%- endif -%}
@@ -64,8 +97,20 @@
    caller already scoped to exactly one known player (player_profile.html's
    per-game detail, see _player_game_detail.html), repeating that same name
    on every row of every table on the page added nothing; team_profile.html
-   (a whole team's roster per table) keeps the default `false`. #}
-{% macro stat_table(rows, scroll=false, game_scoped=false, hide_player=false) %}
+   (a whole team's roster per table) keeps the default `false`. The Player
+   cell links to that row's profile page via `resolve_row_player_id` (a
+   Jinja global, webapp.team_profile.resolve_row_player_id) whenever it
+   resolves a Sleeper id from the row's own gsis_id/name/position --
+   best-effort, same "falls back to plain text" contract idm.player_link
+   always had. `roster_index` (default none) is `team_profile.
+   roster_name_index(profile["roster"])`, threaded in explicitly by each
+   team_profile.html caller (a plain macro PARAMETER, not ambient context,
+   since player_profile.html's own callers of this same macro have no
+   team/roster concept at all and must keep working with none supplied --
+   resolve_row_player_id already treats a missing roster_index as "skip
+   straight to the generic identity fallback", so this is optional, not a
+   second required threading burden on every caller). #}
+{% macro stat_table(rows, scroll=false, game_scoped=false, hide_player=false, roster_index=none) %}
 {% set drop = id_cols + game_extra_cols if game_scoped else id_cols %}
 {% set cols = rows[0].keys() | list | reject("in", drop) | list %}
 <div class="tablewrap{% if scroll %} scrolltable{% endif %}">
@@ -74,8 +119,117 @@
     <tbody>
     {% for row in rows %}
       <tr>
-        {% if not hide_player %}<td>{% set nm = row.get("player") or row.get("player_display_name") or row.get("pfr_player_name") or row.get("full_name") %}{% if nm %}{{ nm }}{% else %}&ndash;{% endif %}</td>{% endif %}
+        {% if not hide_player %}<td>{% set nm = row.get("player") or row.get("player_display_name") or row.get("pfr_player_name") or row.get("full_name") %}{% if nm %}{{ idm.player_link(_resolve_pid(row, roster_index), nm) }}{% else %}&ndash;{% endif %}</td>{% endif %}
         {% for k in cols %}<td>{{ cell(row[k]) }}</td>{% endfor %}
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endmacro %}
+
+{# One-row-per-SOURCE table for a single game's raw, un-reconciled stat
+   lines (player_profile.html's per-game detail -- see
+   _player_game_detail.html) -- replaces what used to be a SEPARATE
+   stat_table() per source (e.g. "Next Gen Stats: Rushing" then "PFR
+   advanced: Rushing" as two stacked mini-tables, each with its own header
+   row) with ONE table per category whose leading column names which
+   source that row came from. User request: "integrate all major metrics
+   into a single table and simply add a column stating the data source...
+   for any columns that are not comparable/similar... leave blank for the
+   respective source".
+
+   `entries` is `[(source_label, rows), ...]` -- the exact shape
+   `raw_by_category[category]` already is in player_profile._game_log (one
+   entry per dataset that had a row for this game, `rows` holding exactly
+   one row at this per-game, per-player grain -- see `_week_rows`'s own
+   docstring). Only `rows[0]` from each entry is used: a second row would
+   mean two rows for the same player in the same game from the same
+   source, which does not happen at this scope.
+
+   Columns are the UNION of every entry's own real (non-id) keys, in
+   FIRST-SEEN order across entries (so a source with richer columns simply
+   extends the table rather than reordering it) -- a column a given
+   source's row doesn't carry renders as a dash, same "absent means
+   nothing to show" convention every other stat cell on this page follows.
+   `game_scoped` behaves exactly as it does on `stat_table` (excludes
+   `game_extra_cols` too, e.g. `opponent`/`game_type`, which are already
+   stated by the parent game row and would otherwise repeat on every
+   source's line here). #}
+{% macro source_stat_table(entries, game_scoped=false) %}
+{% set drop = id_cols + game_extra_cols if game_scoped else id_cols %}
+{% set cols = namespace(list=[]) %}
+{% for source_label, rows in entries %}
+  {% if rows %}
+    {% for k in rows[0].keys() | reject("in", drop) %}
+      {% if k not in cols.list %}{% set cols.list = cols.list + [k] %}{% endif %}
+    {% endfor %}
+  {% endif %}
+{% endfor %}
+<div class="tablewrap">
+  <table class="dt-games">
+    <thead><tr><th>Source</th>{% for k in cols.list %}<th>{{ k.replace("_", " ") }}</th>{% endfor %}</tr></thead>
+    <tbody>
+    {% for source_label, rows in entries %}
+      {% if rows %}
+      <tr>
+        <td>{{ source_label }}</td>
+        {% for k in cols.list %}<td>{{ cell(rows[0][k]) if k in rows[0] else "–" }}</td>{% endfor %}
+      </tr>
+      {% endif %}
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endmacro %}
+
+{# ONE row per (week, source) for the whole "Real-NFL history" section
+   (player_profile.html, season-wide, not per-game) -- the flat-row
+   sibling of `source_stat_table` above, for `webapp.player_profile.
+   real_nfl_by_category`'s own output shape: a plain list of already-
+   merged `{"week": w, "source": label, "best_effort": bool,
+   **canonicalized_stat_cols}` dicts (that function does its own
+   week+source-order sorting in Python), rather than `source_stat_table`'s
+   `[(source_label, rows)]` pairing built for a single game's one-row-per-
+   source case. Same union-of-columns/blank-cell convention as
+   `source_stat_table` -- see that macro's own docstring for the full "why
+   merge sources at all" rationale (user request: "integrate all major
+   metrics into a single table and simply add a column stating the data
+   source... leave blank for the respective source", extended here to the
+   season-wide section).
+
+   `rows[0]` no longer stands in for the whole entry's columns (there IS no
+   nested `rows` list here, each entry already IS one row) -- `drop` here
+   only needs `id_cols` (no `game_extra_cols` exclusion: `opponent`/
+   `game_type`/etc are real, varying, per-week facts at this grain, unlike
+   the per-game table where they're already stated by the parent row), plus
+   `"week"`/`"source"`/`"best_effort"` themselves: week/source render as
+   their own leading columns, and best_effort as a small muted inline note
+   right after Source (matching the `.q` "muted annotation" convention
+   already used throughout this app -- see e.g. _draft_finds.html's own
+   `<span class="q">`), rather than a whole extra column of "yes"/"no" --
+   it's a per-ROW fact here (unlike the old per-DATASET table, which had
+   one caption note for its one source; a season table can genuinely mix
+   id-verified Box-score/NGS rows with name-matched PFR ones in the very
+   same column, so the flag has to live on each row, not the table as a
+   whole). #}
+{% macro season_source_table(rows) %}
+{% set drop = id_cols + ("week", "source", "best_effort") %}
+{% set cols = namespace(list=[]) %}
+{% for row in rows %}
+  {% for k in row.keys() | reject("in", drop) %}
+    {% if k not in cols.list %}{% set cols.list = cols.list + [k] %}{% endif %}
+  {% endfor %}
+{% endfor %}
+<div class="tablewrap scrolltable">
+  <table class="dt-games">
+    <thead><tr><th>Week</th><th>Source</th>{% for k in cols.list %}<th>{{ k.replace("_", " ") }}</th>{% endfor %}</tr></thead>
+    <tbody>
+    {% for row in rows %}
+      <tr>
+        <td>{{ row.week }}</td>
+        <td>{{ row.source }}{% if row.best_effort %} <span class="q">(name match)</span>{% endif %}</td>
+        {% for k in cols.list %}<td>{{ cell(row[k]) if k in row else "–" }}</td>{% endfor %}
       </tr>
     {% endfor %}
     </tbody>
@@ -166,7 +320,7 @@
    players, not a whole-league pool where a name collision is a real risk).
    A player PFR didn't cover that game (or metric) simply shows a dash in
    every PFR column, same as any other absent-stat cell. #}
-{% macro reconciled_table(rows, metric, source_labels=none, scroll=false, flyout=true) %}
+{% macro reconciled_table(rows, metric, source_labels=none, scroll=false, flyout=true, roster_index=none) %}
 {% set cols = reconciled_cols[metric] %}
 {# PFR's own extra advanced columns (pfr_extra_cols) are pre-joined onto
    each row by team_profile.py's own _grouped_metric_stats -- see that
@@ -187,7 +341,14 @@
     <tbody>
     {% for row in rows %}
       <tr>
-        <td>{{ row.player }}</td>
+        {# `row` here carries only `{"player": name, ...stats}` --
+           reconcile_metric never attaches a position (see this module's
+           header comment) -- so resolve_row_player_id's generic identity
+           fallback for a bare name essentially never matches (see that
+           function's own docstring). `roster_index` (this team's own
+           roster, name -> real Sleeper id) is what actually resolves
+           these rows in practice. #}
+        <td>{{ idm.player_link(_resolve_pid(row, roster_index), row.player) }}</td>
         {% for key, label in cols %}
         <td>
           {%- if key not in row -%}&ndash;
@@ -322,7 +483,7 @@
    team_profile.html (a whole team's roster grouped by position) keeps the
    default `false`, where the group name is the only thing saying which
    position a table's rows belong to. #}
-{% macro position_group_table(groups, cols_by_group, source_labels=none, hide_player=false) %}
+{% macro position_group_table(groups, cols_by_group, source_labels=none, hide_player=false, roster_index=none) %}
 {% for grp in groups %}
 {% set cols = cols_by_group.get(grp.group) if cols_by_group is mapping else cols_by_group %}
 {% if cols %}
@@ -341,7 +502,14 @@
       <tbody>
       {% for p in grp.players %}
         <tr>
-          {% if not hide_player %}<td>{{ p.name }}</td>{% endif %}
+          {# `p` always carries both `name` and `position` (see
+             _merge_offense_players/_merge_defense_players's own
+             docstrings -- position is computed even when the raw source
+             row didn't have one), so resolve_row_player_id's name+
+             position identity fallback tier can match here even without
+             roster_index -- still passed through when the caller has it,
+             since the roster lookup is tried first regardless. #}
+          {% if not hide_player %}<td>{{ idm.player_link(_resolve_pid(p, roster_index), p.name) }}</td>{% endif %}
           {% for category, category_cols in cols %}
           {% set cat_first = loop.first %}
           {% set src = p.get(category) %}

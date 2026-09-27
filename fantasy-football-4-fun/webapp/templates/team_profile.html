@@ -15,6 +15,21 @@
   <title>{{ abbr }} team profile{% if current_season %} ({{ current_season }}){% endif %}</title>
   <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
   <link rel="stylesheet" href="/static/style.css?v={{ asset_v }}">
+  {# `?render=1` is how webapp.app.team_page() tells a cold request "this
+     is the real render, not the loader" (see _team_loader's own
+     docstring, same pattern player_profile.html's own copy of this script
+     explains in full) -- strips it from the visible address bar once this
+     real page has loaded, via history.replaceState (a no-op if it's
+     already absent). Doesn't touch browser history. #}
+  <script>
+    (function () {
+      var u = new URL(location.href);
+      if (u.searchParams.has("render")) {
+        u.searchParams.delete("render");
+        history.replaceState(null, "", u.pathname + u.search + u.hash);
+      }
+    })();
+  </script>
   {# Used to lazy-load each schedule row's per-game detail on first expand
      (`hx-get`/`hx-trigger="toggle once"` on each <details class="dt-row">
      below), and to swap the whole #team-season-sections container when

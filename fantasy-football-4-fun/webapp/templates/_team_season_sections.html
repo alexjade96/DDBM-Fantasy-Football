@@ -40,40 +40,80 @@
   ("injuries", "Injury reports")] %}
 
 {# --- roster / season leaderboard, grouped by position ------------------
-   Each position is its own bordered .card (the same framed-block look
-   .facts-card already establishes elsewhere on this page) laid out in a
-   wrapping grid, rather than a flat stream of h3+table pairs -- with 5-6
-   groups on one page, same-weight h3 headings and a bare 22px sibling gap
-   read as one long undifferentiated scroll. The card border is what
-   actually separates "QB" from "RB" at a glance; the heading alone
-   wasn't doing that job. #}
+   Each position is a plain, ALWAYS-VISIBLE section: a heading (h3) plus
+   its table, no collapse/toggle and no card frame. Two earlier versions
+   were tried and rejected on user request: .adv-stat-card (a bordered,
+   backgrounded card matching the Advanced & usage stats section below)
+   and .pos-toggle (a borderless but still COLLAPSIBLE <details> section)
+   -- the user considered the collapsible toggle itself unnecessary here,
+   not just its card styling, so this is now a static heading with no
+   <details>/<summary> at all. Each table spans the full row width
+   (.roster-pos-table, style.css) rather than shrinking to its own
+   content width, which is table.dt-games's normal default.
+
+   Columns are CUMULATIVE REAL PRODUCTION per position (games/attempts/
+   yards/TDs/shares/etc), not fantasy scoring -- every group used to show
+   the same flat "PPR pts"/"PPR/G" pair regardless of position, which said
+   nothing about what that player actually did on the field (user
+   request). `roster_position_columns(position)` (a Jinja global,
+   `webapp.team_profile._roster_position_columns`) returns the SAME
+   per-position `(key, header)` spec the NFL Stats tab's own leaderboard
+   table already uses (`nflref.summary.leaderboard_columns`, source=
+   "sleeper" -- see `_roster_leaderboard`'s own docstring for why this
+   section is always Sleeper-sourced), minus the trailing PPR pair --
+   EXCEPT "K", which gets its own real kicking spec (`_KICKER_KEYS`:
+   FGM/FGA/FG%/distance buckets/Long/Blocked/XPM/XPA), since that
+   leaderboard row shape has no kicking columns at all (a kicker's row
+   used to fall through to the WR/RB "Tgt/Rec/Car/..." set, every cell
+   correctly reading zero -- see `_roster_position_columns`'s own
+   docstring). The K group's values themselves come from a SEPARATE
+   season aggregation (`_kicker_season_totals`, merged onto the roster's K
+   rows in `_build_profile`) since the leaderboard pull never had kicking
+   stats to hand back in the first place.
+
+   Cell formatting mirrors the NFL Stats tab's own leaderboard table
+   (_nflstats_table.html): a share/rate column (tgt_share/air_yards_share/
+   wopr/racr/pacr/snap_share) gets 3 decimals, adot/fgm_pct (both already
+   a 0-100 scale, not a 0-1 fraction) get 1 decimal, everything else (a
+   real counting stat -- games, attempts, yards, TDs, FGM, XPA) is a plain
+   integer. #}
 <h2>Roster &middot; {{ current_season }} leaderboard</h2>
 {% if roster_by_position %}
-<div class="grid two roster-pos-grid">
 {% for grp in roster_by_position %}
-<div class="card roster-pos-card">
-  <h3>{{ grp.position }} <span class="hint">({{ grp.players|length }})</span></h3>
-  <div class="tablewrap scrolltable">
-    <table class="dt-games">
-      <thead><tr>
-        <th class="n">#</th><th>Player</th>
-        <th class="n">PPR pts</th><th class="n">PPR/G</th>
-      </tr></thead>
-      <tbody>
-      {% for r in grp.players %}
-        <tr>
-          <td class="n">{{ r.rank }}</td>
-          <td>{{ idm.headshot(r.player_id, link=True) }}{{ idm.player_link(r.player_id, r.player) }}</td>
-          <td class="n">{% if r.fpts_ppr is not none %}{{ "%.1f"|format(r.fpts_ppr) }}{% else %}&ndash;{% endif %}</td>
-          <td class="n">{% if r.ppg_ppr is not none %}{{ "%.1f"|format(r.ppg_ppr) }}{% else %}&ndash;{% endif %}</td>
-        </tr>
-      {% endfor %}
-      </tbody>
-    </table>
-  </div>
+{% set cols = roster_position_columns(grp.position) %}
+<h3>{{ grp.position }} <span class="hint">({{ grp.players|length }})</span></h3>
+<div class="tablewrap scrolltable">
+  <table class="dt-games roster-pos-table">
+    <thead><tr>
+      <th class="n">#</th><th>Player</th>
+      {% for key, hdr in cols %}<th class="n">{{ hdr }}</th>{% endfor %}
+    </tr></thead>
+    <tbody>
+    {% for r in grp.players %}
+      <tr>
+        {# `{{ ... else "&ndash;" }}` double-escapes under this app's Jinja
+           autoescape (renders the literal text "&amp;ndash;", not a dash --
+           a documented, repeat-offender bug elsewhere on this site), so the
+           fallback lives in its own {% if %} block instead, where the
+           entity sits in raw template text rather than inside {{ }}. #}
+        <td class="n">{% if r.rank is not none %}{{ r.rank }}{% else %}&ndash;{% endif %}</td>
+        <td>{{ idm.headshot(r.player_id, link=True) }}{{ idm.player_link(r.player_id, r.player) }}</td>
+        {% for key, hdr in cols %}
+        {%- set v = r.get(key) -%}
+        <td class="n">
+          {%- if v is none -%}&ndash;
+          {%- elif key in ("tgt_share", "air_yards_share", "wopr", "racr", "pacr", "snap_share") -%}
+            {{ "%.3f"|format(v) }}
+          {%- elif key in ("adot", "fgm_pct") -%}{{ "%.1f"|format(v) }}
+          {%- else -%}{{ v | int }}{%- endif -%}
+        </td>
+        {% endfor %}
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
 </div>
 {% endfor %}
-</div>
 {% else %}
 <p class="empty">No roster data found for {{ abbr }} in {{ current_season }}.</p>
 {% endif %}
@@ -145,10 +185,10 @@
   <summary>{{ label }}{% if entry.reconciled %} ({{ entry.reconciled|length }} players){% endif %}</summary>
   {{ tsm.metric_sources_note(entry, metric, source_labels) }}
   {% if entry.reconciled %}
-  {{ tsm.reconciled_table(entry.reconciled, metric, source_labels, scroll=true, flyout=true) }}
+  {{ tsm.reconciled_table(entry.reconciled, metric, source_labels, scroll=true, flyout=true, roster_index=roster_index) }}
   {% endif %}
   {% if entry.pfr %}
-  {{ tsm.stat_table(entry.pfr, scroll=true) }}
+  {{ tsm.stat_table(entry.pfr, scroll=true, roster_index=roster_index) }}
   {% endif %}
 </details>
 {% endif %}
@@ -159,7 +199,7 @@
 {% set flags.any = true %}
 <details class="dt-row adv-stat-card">
   <summary>{{ label }} ({{ rows|length }} rows)</summary>
-  {{ tsm.stat_table(rows, scroll=true) }}
+  {{ tsm.stat_table(rows, scroll=true, roster_index=roster_index) }}
 </details>
 {% endif %}
 {% endfor %}

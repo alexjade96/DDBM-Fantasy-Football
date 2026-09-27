@@ -2439,20 +2439,6 @@ table.dt-games td.pfr-extra, table.dt-games th.pfr-extra { color: var(--muted); 
 table.dt-games td.grp-divider, table.dt-games th.grp-divider {
   border-left: 1px solid var(--line); padding-left: 14px; }
 
-/* team_profile.html: Roster's per-position groups (QB/RB/WR/TE/K/DEF) as a
-   wrapping grid of bordered cards, instead of a flat h3+table stream. With
-   5-6 groups on one page, same-weight h3 headings plus the page's generic
-   22px sibling gap didn't read as separate subsections -- the card border
-   is what actually separates "QB" from "RB" at a glance. .roster-pos-grid
-   reuses the site's existing .grid.two two-up layout (already phone-width
-   responsive); .roster-pos-card only adjusts the spacing inside a .card for
-   this context (h3 sits flush at the card's own top rather than carrying
-   its usual page-level top margin, and the table below it wants less gap
-   than a full h2-to-content gap would give). */
-.roster-pos-grid { align-items: start; }
-.roster-pos-card > h3 { margin: 0 0 8px; }
-.roster-pos-card > .tablewrap { margin-top: 0; }
-
 /* Originally team_profile.html's Advanced & usage stats per-metric
    <details> blocks (Passing/Rushing/Receiving/Snap counts/Defense/
    Injuries); now shared by any standalone collapsible <details> section
@@ -2467,7 +2453,10 @@ table.dt-games td.grp-divider, table.dt-games th.grp-divider {
    Game log (one card per game) and its "Past seasons"/nested
    Real-NFL-history drilldowns -- same "several stacked, thin-bordered
    .dt-rows read as one undifferentiated list" problem, one player away
-   from a whole team. */
+   from a whole team. team_profile.html's own Roster section deliberately
+   does NOT use this class (see .roster-pos-table below) -- a card frame,
+   and later the collapsible toggle itself, were both rejected on user
+   request. */
 .adv-stat-card { border: 1px solid var(--line); border-radius: 10px;
   background: var(--surface); padding: 4px 16px; }
 .adv-stat-card + .adv-stat-card { margin-top: 14px; }
@@ -2496,3 +2485,19 @@ table.dt-games td.grp-divider, table.dt-games th.grp-divider {
 .quiet-toggle > summary:hover { color: var(--ink); }
 .quiet-toggle > .quiet-toggle-body { margin-top: 8px; }
 .quiet-toggle + .quiet-toggle { margin-top: 6px; }
+
+/* team_profile.html: Roster's per-position groups (QB/RB/WR/TE/K/DEF) --
+   a plain h3 + table, always visible, no card frame and no collapse.
+   Two things were tried and rejected here on user request: a bordered/
+   backgrounded card (matching .adv-stat-card, used one section down for
+   Advanced & usage stats) and, after that, a borderless but still
+   COLLAPSIBLE <details> toggle -- the toggle itself was judged
+   unnecessary, not just its styling, so there's no <details>/<summary>
+   left at all. table.dt-games is width:auto by default (shrinks to its
+   own content), which left a position's table narrower than the panel;
+   .roster-pos-table forces it to the full row width instead, matching
+   how other width:auto contexts on this page (.roster-scroll,
+   #panel .dt-detail > table.dt-games) already override the same default
+   for the same reason. */
+.roster-pos-table { width: 100%; }
+h3 + .tablewrap.scrolltable { margin-top: 6px; }

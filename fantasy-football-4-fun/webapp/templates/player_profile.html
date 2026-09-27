@@ -15,6 +15,26 @@
   <title>{{ identity.player_name or "Player " ~ player_id }}{% if identity.position %} ({{ identity.position }}){% endif %}</title>
   <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
   <link rel="stylesheet" href="/static/style.css?v={{ asset_v }}">
+  {# `?render=1` is how webapp.app.player_page() tells a cold request "this
+     is the real render, not the loader" (see _player_loader's own
+     docstring) -- it has to stay in the URL the loader's own
+     location.replace() navigates to, since that's what flips the route
+     past its `not render and ...` cold-loader check server-side. Once
+     THIS page (the real render) has loaded, the param has done its job,
+     so this strips it from the visible address bar via history.
+     replaceState -- a no-op if it's already absent (a warm hit that
+     skipped the loader entirely never had it). Doesn't touch browser
+     history (replaceState, not pushState/a new entry), so back/forward
+     behave exactly as before. #}
+  <script>
+    (function () {
+      var u = new URL(location.href);
+      if (u.searchParams.has("render")) {
+        u.searchParams.delete("render");
+        history.replaceState(null, "", u.pathname + u.search + u.hash);
+      }
+    })();
+  </script>
   {# Used to swap the WHOLE #player-season-sections container (Percentile
      profile, {league} history, Game log, Real-NFL history, Draft ADP
      history) when the shared season dropdown changes (_player_percentile.

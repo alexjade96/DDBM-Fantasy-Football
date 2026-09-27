@@ -4100,7 +4100,9 @@ def plot_week_power(s: Season, week: int):
 # token usage (T["ink"]/T["muted"]/T["grid"]) without its spine/grid-axis
 # logic.
 
-_RADAR_FILL = "#2c7fb8"  # the focused season's accent colour.
+_RADAR_FILL = "#2c7fb8"  # the focused (currently selected) season's accent.
+_RADAR_LATEST = "#1baf7a"  # the most recent season on record, when not focused.
+_RADAR_EARLIEST = "#eda100"  # the first season on record, when not focused.
 _RADAR_GHOST = "#9aa5ad"  # every other season, dimmed behind the focus.
 
 # Stat keys formatted as a share (0-1, three decimals) or a one-decimal
@@ -4384,12 +4386,47 @@ def plot_player_radar(season_profiles: dict | None, focus_season: str | None,
     season for the same position shares the same columns in practice; a
     ghost season simply missing one of those keys draws that one spoke at 0
     rather than erroring (see the per-season lookup below).
+
+    Three roles get their own colour (`_RADAR_FILL`/`_RADAR_LATEST`/
+    `_RADAR_EARLIEST`), every other season stays the plain dimmed
+    `_RADAR_GHOST`: the FOCUSED season (bold, filled -- whichever season
+    the caller/dropdown currently has selected), the LATEST season on
+    record (`seasons[-1]`), and the EARLIEST (`seasons[0]`), so a reader
+    can spot "this year" and "the first year on record" at a glance even
+    while looking at some other, unrelated focused season. When a role
+    coincides with the focus (a common case -- the default focus IS the
+    latest season), the FOCUS colour wins outright (user's own choice over
+    a combined/dual-colour treatment) -- `_role_color` below resolves this
+    by checking focus first, so latest/earliest's own colour only ever
+    shows on a line that ISN'T the one currently in focus.
+
+    All lines -- ghost, latest, earliest, AND the focused one -- are drawn
+    inside ONE loop over `seasons` (ASCENDING -- earliest first), in the
+    SAME fixed order regardless of which season is focused, so the legend
+    reads left-to-right earliest-to-latest (user request) and never
+    reshuffles on a focus change. Both properties come from the same
+    design: matplotlib builds a legend in artist-creation order, so
+    drawing the focused line in its own separate call (as an earlier
+    version of this function did, after the ghost loop) put it LAST in the
+    legend every time regardless of its actual season -- confirmed live,
+    switching focus from the latest season to an older one moved that
+    season's own legend entry to the end. Looping in one fixed
+    CHRONOLOGICAL order keeps each season's legend position and colour-
+    role assignment (other than the FOCUS role itself) stable across a
+    focus switch, in the order a reader actually expects; only the
+    currently-focused line's own colour/weight changes.
     """
     if not season_profiles:
         return _no_data(f"No percentile data available for {player_name}.")
 
-    seasons = sorted(season_profiles, reverse=True)
-    focus = focus_season if focus_season in season_profiles else seasons[0]
+    # Ascending (earliest first) -- both the draw/legend order below AND
+    # the default focus fallback. The legend reads left-to-right in this
+    # same order (earliest to latest, user request), so it has to be the
+    # chronological order itself, not just "whichever order happens to be
+    # fixed" -- see the loop below for why a FIXED order (any order) was
+    # already required regardless of direction.
+    seasons = sorted(season_profiles)
+    focus = focus_season if focus_season in season_profiles else seasons[-1]
     focus_profile = season_profiles[focus]
     if not focus_profile or not focus_profile.get("columns"):
         return _no_data(f"No percentile data available for {player_name}.")
@@ -4398,24 +4435,39 @@ def plot_player_radar(season_profiles: dict | None, focus_season: str | None,
     keys = [c["key"] for c in cols]
     labels = [c["label"] for c in cols]
 
+    earliest, latest = seasons[0], seasons[-1]
+
+    def _role_color(season: str) -> str:
+        """Colour for a NON-focused season's line -- the caller (below)
+        handles the focused season's own colour directly, so this never
+        needs to check `season == focus` itself."""
+        if season == latest:
+            return _RADAR_LATEST
+        if season == earliest:
+            return _RADAR_EARLIEST
+        return _RADAR_GHOST
+
     fig = plt.figure(figsize=(7, 7))
     ax, angles = _radar_axes(fig, labels, pizza=True)
 
-    # Ghost seasons first, so the focused polygon draws on top of them.
+    # One fixed-order loop for every season's LINE (see this function's own
+    # docstring for why the focused line must NOT be drawn separately/last)
+    # -- the focused polygon's FILL is a second, unlabelled draw afterward
+    # so it layers on top without adding a duplicate legend entry.
+    focus_vals = None
     for season in seasons:
-        if season == focus:
-            continue
         prof = season_profiles.get(season) or {}
         by_key = {c["key"]: c["percentile"] for c in prof.get("columns", [])}
         values = [by_key.get(k, 0) for k in keys]
         vals = values + values[:1]
-        ax.plot(angles, vals, color=_RADAR_GHOST, linewidth=1, alpha=0.6,
-                linestyle="--", label=season)
-
-    focus_values = [c["percentile"] for c in cols]
-    vals = focus_values + focus_values[:1]
-    ax.plot(angles, vals, color=_RADAR_FILL, linewidth=2.5, label=focus)
-    ax.fill(angles, vals, color=_RADAR_FILL, alpha=0.25)
+        if season == focus:
+            focus_vals = vals
+            ax.plot(angles, vals, color=_RADAR_FILL, linewidth=2.5, label=season,
+                    zorder=3)
+        else:
+            ax.plot(angles, vals, color=_role_color(season), linewidth=1,
+                    alpha=0.6, linestyle="--", label=season, zorder=2)
+    ax.fill(angles, focus_vals, color=_RADAR_FILL, alpha=0.25, zorder=1)
     # Pizza-chart per-spoke real-value ring labels (see _draw_pizza_ticks) --
     # replaces the old plain "72 (percentile)" point badges: with a real
     # value scale printed on every spoke, a reader no longer needs the point
@@ -4426,9 +4478,15 @@ def plot_player_radar(season_profiles: dict | None, focus_season: str | None,
         # Legend BELOW the radar, centered and horizontal -- see the matching
         # comment in plot_player_overlay for why (an off-to-the-side legend
         # pushes the whole polar axes off-center within its own figure).
+        # labelcolor="linecolor" (not a fixed T["ink2"]) so each season's
+        # legend TEXT matches its own line's role colour (focus/latest/
+        # earliest/ghost, see `_role_color` above) -- the colour highlight
+        # this function exists to add would otherwise only show on the
+        # radar lines themselves, not the legend a reader actually reads
+        # the season labels from.
         ax.legend(loc="upper center", bbox_to_anchor=(0.5, -0.06),
                   ncol=min(len(seasons), 4), fontsize=8.5,
-                  frameon=False, labelcolor=T["ink2"])
+                  frameon=False, labelcolor="linecolor")
 
     pos = focus_profile["position"]
     n = focus_profile["n_population"]

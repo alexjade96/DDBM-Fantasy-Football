@@ -50,26 +50,31 @@
   this data until after the season ends. Route stats will appear here
   once it&rsquo;s released.</p>
 {% endif %}
-{# Raw source data now mirrors team_profile.html/_team_game_detail.html's
-   own "nested card" look (the route-participation block just above, and
-   that page's identical treatment) -- one .metric-card per category, each
-   source's table inside it under a plain "Source label" heading, rather
-   than hidden behind a .quiet-toggle triangle. Each category's own card is
-   small (typically one or two one-row tables -- a single game's worth of
-   data, never a whole season), so there's no payload reason to collapse
-   it the way the game ROW itself is collapsed/lazy-loaded; showing it
-   directly also matches how route participation (above) and every other
-   per-game block on the team page's own drilldown already render. #}
+{# Raw source data: ONE table per category, one row per source (2026-09,
+   user request -- "instead of splitting data by source, integrate all
+   major metrics into a single table and simply add a column stating the
+   data source... for any columns that are not comparable/similar... leave
+   blank for the respective source"). Used to be a SEPARATE stat_table()
+   per source stacked inside the category's .metric-card (e.g. "Next Gen
+   Stats: Rushing" then "PFR advanced: Rushing" as two mini-tables each
+   with their own header row); source_stat_table() (_teamstat_macros.html)
+   instead unions every source's real columns into one header row and
+   labels each data row by which source it came from, so overlapping
+   figures (attempts, carries, targets, ...) line up in the same column
+   across sources and a source-exclusive column (PFR's pressure rate, NGS's
+   separation) simply shows a dash for every OTHER source's row. Each
+   category's own card is small (one row per source, a single game's worth
+   of data), so there's no payload reason to collapse it the way the game
+   ROW itself is collapsed/lazy-loaded; showing it directly also matches
+   how route participation (above) and every other per-game block on the
+   team page's own drilldown already render. #}
 {% for category, cat_label in [("passing", "Passing"), ("rushing", "Rushing"),
                                 ("receiving", "Receiving"), ("snap", "Snap counts"),
                                 ("defense", "Defense (raw)")] %}
 {% if game.raw_by_category.get(category) %}
 <div class="metric-card">
   <p class="hint"><strong>{{ cat_label }}: raw source data</strong></p>
-  {% for ds_label, rows in game.raw_by_category[category] %}
-  <p class="hint">{{ ds_label }}</p>
-  {{ tsm.stat_table(rows, game_scoped=true, hide_player=true) }}
-  {% endfor %}
+  {{ tsm.source_stat_table(game.raw_by_category[category], game_scoped=true) }}
 </div>
 {% endif %}
 {% endfor %}
