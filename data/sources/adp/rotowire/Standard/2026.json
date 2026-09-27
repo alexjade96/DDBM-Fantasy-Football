@@ -7,560 +7,567 @@
     "team": "DET"
   },
   {
-    "average": 2.4,
+    "average": 2.1,
     "name": "Bijan Robinson",
     "position": "RB",
     "rotowire_id": "16739",
     "team": "ATL"
   },
   {
-    "average": 4.6,
-    "name": "Ja'Marr Chase",
-    "position": "WR",
-    "rotowire_id": "15183",
-    "team": "CIN"
-  },
-  {
-    "average": 4.6,
+    "average": 3.9,
     "name": "Jonathan Taylor",
     "position": "RB",
     "rotowire_id": "14455",
     "team": "IND"
   },
   {
-    "average": 6.8,
+    "average": 4.7,
+    "name": "Ja'Marr Chase",
+    "position": "WR",
+    "rotowire_id": "15183",
+    "team": "CIN"
+  },
+  {
+    "average": 5.3,
     "name": "Christian McCaffrey",
     "position": "RB",
     "rotowire_id": "11690",
     "team": "SF"
   },
   {
-    "average": 8.2,
-    "name": "Puka Nacua",
-    "position": "WR",
-    "rotowire_id": "16790",
-    "team": "LAR"
-  },
-  {
-    "average": 7.3,
+    "average": 7.0,
     "name": "James Cook",
     "position": "RB",
     "rotowire_id": "15876",
     "team": "BUF"
   },
   {
-    "average": 9.3,
+    "average": 7.8,
+    "name": "Puka Nacua",
+    "position": "WR",
+    "rotowire_id": "16790",
+    "team": "LAR"
+  },
+  {
+    "average": 9.0,
     "name": "Jaxon Smith-Njigba",
     "position": "WR",
     "rotowire_id": "16654",
     "team": "SEA"
   },
   {
-    "average": 12.1,
-    "name": "Amon-Ra St. Brown",
-    "position": "WR",
-    "rotowire_id": "15332",
-    "team": "DET"
-  },
-  {
-    "average": 11.8,
-    "name": "Saquon Barkley",
-    "position": "RB",
-    "rotowire_id": "12507",
-    "team": "PHI"
-  },
-  {
-    "average": 10.8,
+    "average": 9.8,
     "name": "Derrick Henry",
     "position": "RB",
     "rotowire_id": "10819",
     "team": "BAL"
   },
   {
-    "average": 15.1,
-    "name": "CeeDee Lamb",
-    "position": "WR",
-    "rotowire_id": "14411",
-    "team": "DAL"
-  },
-  {
-    "average": 16.9,
-    "name": "Chase Brown",
+    "average": 12.0,
+    "name": "Saquon Barkley",
     "position": "RB",
-    "rotowire_id": "16934",
-    "team": "CIN"
+    "rotowire_id": "12507",
+    "team": "PHI"
   },
   {
-    "average": 13.8,
+    "average": 12.2,
+    "name": "Amon-Ra St. Brown",
+    "position": "WR",
+    "rotowire_id": "15332",
+    "team": "DET"
+  },
+  {
+    "average": 12.8,
     "name": "De'Von Achane",
     "position": "RB",
     "rotowire_id": "16661",
     "team": "MIA"
   },
   {
-    "average": 18.6,
-    "name": "Kenneth Walker",
-    "position": "RB",
-    "rotowire_id": "15909",
-    "team": "KC"
+    "average": 14.1,
+    "name": "CeeDee Lamb",
+    "position": "WR",
+    "rotowire_id": "14411",
+    "team": "DAL"
   },
   {
-    "average": 16.2,
+    "average": 14.7,
     "name": "Omarion Hampton",
     "position": "RB",
     "rotowire_id": "18445",
     "team": "LAC"
   },
   {
-    "average": 17.9,
-    "name": "Justin Jefferson",
-    "position": "WR",
-    "rotowire_id": "14509",
-    "team": "MIN"
+    "average": 16.1,
+    "name": "Chase Brown",
+    "position": "RB",
+    "rotowire_id": "16934",
+    "team": "CIN"
   },
   {
-    "average": 13.2,
+    "average": 16.8,
     "name": "Josh Allen",
     "position": "QB",
     "rotowire_id": "12483",
     "team": "BUF"
   },
   {
-    "average": 22.9,
-    "name": "A.J. Brown",
-    "position": "WR",
-    "rotowire_id": "13432",
-    "team": "NE"
+    "average": 18.1,
+    "name": "Kenneth Walker",
+    "position": "RB",
+    "rotowire_id": "15909",
+    "team": "KC"
   },
   {
-    "average": 19.6,
+    "average": 18.1,
+    "name": "Justin Jefferson",
+    "position": "WR",
+    "rotowire_id": "14509",
+    "team": "MIN"
+  },
+  {
+    "average": 18.4,
     "name": "Ashton Jeanty",
     "position": "RB",
     "rotowire_id": "18487",
     "team": "LV"
   },
   {
-    "average": 20.4,
+    "average": 20.1,
     "name": "Kyren Williams",
     "position": "RB",
     "rotowire_id": "15807",
     "team": "LAR"
   },
   {
-    "average": 27.8,
-    "name": "Brock Bowers",
-    "position": "TE",
-    "rotowire_id": "17693",
-    "team": "LV"
-  },
-  {
-    "average": 28.1,
-    "name": "Javonte Williams",
-    "position": "RB",
-    "rotowire_id": "15306",
-    "team": "DAL"
-  },
-  {
-    "average": 32.4,
-    "name": "Chris Olave",
+    "average": 21.7,
+    "name": "A.J. Brown",
     "position": "WR",
-    "rotowire_id": "15895",
-    "team": "NO"
+    "rotowire_id": "13432",
+    "team": "NE"
   },
   {
-    "average": 31.9,
-    "name": "Malik Nabers",
-    "position": "WR",
-    "rotowire_id": "17704",
-    "team": "NYG"
-  },
-  {
-    "average": 26.6,
+    "average": 25.0,
     "name": "Nico Collins",
     "position": "WR",
     "rotowire_id": "15200",
     "team": "HOU"
   },
   {
-    "average": 26.7,
+    "average": 25.5,
     "name": "Drake London",
     "position": "WR",
     "rotowire_id": "15868",
     "team": "ATL"
   },
   {
-    "average": 27.9,
+    "average": 26.1,
+    "name": "Brock Bowers",
+    "position": "TE",
+    "rotowire_id": "17693",
+    "team": "LV"
+  },
+  {
+    "average": 26.2,
+    "name": "Javonte Williams",
+    "position": "RB",
+    "rotowire_id": "15306",
+    "team": "DAL"
+  },
+  {
+    "average": 27.4,
     "name": "George Pickens",
     "position": "WR",
     "rotowire_id": "15853",
     "team": "DAL"
   },
   {
-    "average": 28.9,
-    "name": "Trey McBride",
-    "position": "TE",
-    "rotowire_id": "15902",
-    "team": "ARI"
-  },
-  {
-    "average": 35.3,
-    "name": "Breece Hall",
-    "position": "RB",
-    "rotowire_id": "15810",
-    "team": "NYJ"
-  },
-  {
-    "average": 39.7,
-    "name": "D'Andre Swift",
-    "position": "RB",
-    "rotowire_id": "14394",
-    "team": "CHI"
-  },
-  {
-    "average": 29.6,
+    "average": 27.9,
     "name": "Jeremiyah Love",
     "position": "RB",
     "rotowire_id": "19235",
     "team": "ARI"
   },
   {
-    "average": 35.3,
-    "name": "Rashee Rice",
-    "position": "WR",
-    "rotowire_id": "16963",
-    "team": "KC"
+    "average": 28.4,
+    "name": "Trey McBride",
+    "position": "TE",
+    "rotowire_id": "15902",
+    "team": "ARI"
   },
   {
-    "average": 36.0,
+    "average": 28.7,
+    "name": "Malik Nabers",
+    "position": "WR",
+    "rotowire_id": "17704",
+    "team": "NYG"
+  },
+  {
+    "average": 29.0,
+    "name": "Chris Olave",
+    "position": "WR",
+    "rotowire_id": "15895",
+    "team": "NO"
+  },
+  {
+    "average": 31.8,
+    "name": "Breece Hall",
+    "position": "RB",
+    "rotowire_id": "15810",
+    "team": "NYJ"
+  },
+  {
+    "average": 34.8,
     "name": "Travis Etienne",
     "position": "RB",
     "rotowire_id": "15385",
     "team": "NO"
   },
   {
-    "average": 42.0,
-    "name": "DeVonta Smith",
+    "average": 34.9,
+    "name": "Rashee Rice",
     "position": "WR",
-    "rotowire_id": "15406",
-    "team": "PHI"
+    "rotowire_id": "16963",
+    "team": "KC"
   },
   {
-    "average": 39.2,
-    "name": "Tee Higgins",
-    "position": "WR",
-    "rotowire_id": "14506",
-    "team": "CIN"
-  },
-  {
-    "average": 47.3,
-    "name": "Quinshon Judkins",
-    "position": "RB",
-    "rotowire_id": "18516",
-    "team": "CLE"
-  },
-  {
-    "average": 32.8,
+    "average": 35.0,
     "name": "Lamar Jackson",
     "position": "QB",
     "rotowire_id": "12561",
     "team": "BAL"
   },
   {
-    "average": 44.5,
+    "average": 38.4,
+    "name": "Tee Higgins",
+    "position": "WR",
+    "rotowire_id": "14506",
+    "team": "CIN"
+  },
+  {
+    "average": 38.6,
+    "name": "D'Andre Swift",
+    "position": "RB",
+    "rotowire_id": "14394",
+    "team": "CHI"
+  },
+  {
+    "average": 41.1,
     "name": "Tetairoa McMillan",
     "position": "WR",
     "rotowire_id": "18547",
     "team": "CAR"
   },
   {
-    "average": 46.6,
-    "name": "Zay Flowers",
-    "position": "WR",
-    "rotowire_id": "16919",
-    "team": "BAL"
-  },
-  {
-    "average": 46.9,
-    "name": "Colston Loveland",
-    "position": "TE",
-    "rotowire_id": "18460",
-    "team": "CHI"
-  },
-  {
-    "average": 46.8,
-    "name": "David Montgomery",
-    "position": "RB",
-    "rotowire_id": "13556",
-    "team": "HOU"
-  },
-  {
-    "average": 47.1,
-    "name": "Davante Adams",
-    "position": "WR",
-    "rotowire_id": "9455",
-    "team": "LAR"
-  },
-  {
-    "average": 41.9,
+    "average": 42.0,
     "name": "Cam Skattebo",
     "position": "RB",
     "rotowire_id": "18514",
     "team": "NYG"
   },
   {
-    "average": 51.5,
-    "name": "Emeka Egbuka",
+    "average": 42.7,
+    "name": "DeVonta Smith",
     "position": "WR",
-    "rotowire_id": "18549",
-    "team": "TB"
+    "rotowire_id": "15406",
+    "team": "PHI"
   },
   {
-    "average": 44.0,
-    "name": "Joe Burrow",
-    "position": "QB",
-    "rotowire_id": "14442",
-    "team": "CIN"
+    "average": 43.3,
+    "name": "David Montgomery",
+    "position": "RB",
+    "rotowire_id": "13556",
+    "team": "HOU"
   },
   {
-    "average": 61.1,
-    "name": "Luther Burden",
-    "position": "WR",
-    "rotowire_id": "18548",
-    "team": "CHI"
+    "average": 43.4,
+    "name": "Quinshon Judkins",
+    "position": "RB",
+    "rotowire_id": "18516",
+    "team": "CLE"
   },
   {
-    "average": 50.0,
-    "name": "Garrett Wilson",
-    "position": "WR",
-    "rotowire_id": "15829",
-    "team": "NYJ"
-  },
-  {
-    "average": 49.1,
+    "average": 44.4,
     "name": "Jaylen Waddle",
     "position": "WR",
     "rotowire_id": "15404",
     "team": "DEN"
   },
   {
-    "average": 68.3,
-    "name": "Parker Washington",
-    "position": "WR",
-    "rotowire_id": "16690",
-    "team": "JAX"
-  },
-  {
-    "average": 56.5,
-    "name": "DJ Moore",
-    "position": "WR",
-    "rotowire_id": "12477",
-    "team": "BUF"
-  },
-  {
-    "average": 50.4,
-    "name": "Ladd McConkey",
-    "position": "WR",
-    "rotowire_id": "17724",
-    "team": "LAC"
-  },
-  {
-    "average": 57.9,
-    "name": "Terry McLaurin",
-    "position": "WR",
-    "rotowire_id": "13536",
-    "team": "WAS"
-  },
-  {
-    "average": 60.2,
-    "name": "Tyler Warren",
+    "average": 44.5,
+    "name": "Colston Loveland",
     "position": "TE",
-    "rotowire_id": "18534",
-    "team": "IND"
+    "rotowire_id": "18460",
+    "team": "CHI"
   },
   {
-    "average": 46.8,
-    "name": "Drake Maye",
-    "position": "QB",
-    "rotowire_id": "17673",
-    "team": "NE"
-  },
-  {
-    "average": 47.5,
+    "average": 45.4,
     "name": "Bucky Irving",
     "position": "RB",
     "rotowire_id": "17784",
     "team": "TB"
   },
   {
-    "average": 55.2,
+    "average": 45.9,
+    "name": "Zay Flowers",
+    "position": "WR",
+    "rotowire_id": "16919",
+    "team": "BAL"
+  },
+  {
+    "average": 47.0,
+    "name": "Davante Adams",
+    "position": "WR",
+    "rotowire_id": "9455",
+    "team": "LAR"
+  },
+  {
+    "average": 47.3,
+    "name": "Garrett Wilson",
+    "position": "WR",
+    "rotowire_id": "15829",
+    "team": "NYJ"
+  },
+  {
+    "average": 50.0,
+    "name": "Joe Burrow",
+    "position": "QB",
+    "rotowire_id": "14442",
+    "team": "CIN"
+  },
+  {
+    "average": 50.1,
+    "name": "Ladd McConkey",
+    "position": "WR",
+    "rotowire_id": "17724",
+    "team": "LAC"
+  },
+  {
+    "average": 51.4,
+    "name": "Luther Burden",
+    "position": "WR",
+    "rotowire_id": "18548",
+    "team": "CHI"
+  },
+  {
+    "average": 52.2,
+    "name": "Drake Maye",
+    "position": "QB",
+    "rotowire_id": "17673",
+    "team": "NE"
+  },
+  {
+    "average": 52.2,
+    "name": "Emeka Egbuka",
+    "position": "WR",
+    "rotowire_id": "18549",
+    "team": "TB"
+  },
+  {
+    "average": 54.5,
     "name": "Bhayshul Tuten",
     "position": "RB",
     "rotowire_id": "18524",
     "team": "JAX"
   },
   {
-    "average": 59.5,
+    "average": 55.8,
+    "name": "DJ Moore",
+    "position": "WR",
+    "rotowire_id": "12477",
+    "team": "BUF"
+  },
+  {
+    "average": 56.2,
+    "name": "Tyler Warren",
+    "position": "TE",
+    "rotowire_id": "18534",
+    "team": "IND"
+  },
+  {
+    "average": 58.1,
+    "name": "Terry McLaurin",
+    "position": "WR",
+    "rotowire_id": "13536",
+    "team": "WAS"
+  },
+  {
+    "average": 59.6,
     "name": "Jadarian Price",
     "position": "RB",
     "rotowire_id": "19299",
     "team": "SEA"
   },
   {
-    "average": 62.4,
-    "name": "Jayden Daniels",
-    "position": "QB",
-    "rotowire_id": "17692",
-    "team": "WAS"
-  },
-  {
-    "average": 59.0,
+    "average": 59.6,
     "name": "Jameson Williams",
     "position": "WR",
     "rotowire_id": "15849",
     "team": "DET"
   },
   {
-    "average": 67.1,
-    "name": "Rome Odunze",
-    "position": "WR",
-    "rotowire_id": "17020",
-    "team": "CHI"
-  },
-  {
-    "average": 66.2,
-    "name": "Christian Watson",
-    "position": "WR",
-    "rotowire_id": "15946",
-    "team": "GB"
-  },
-  {
-    "average": 57.9,
+    "average": 63.0,
     "name": "Jalen Hurts",
     "position": "QB",
     "rotowire_id": "14416",
     "team": "PHI"
   },
   {
-    "average": 68.0,
-    "name": "Caleb Williams",
-    "position": "QB",
-    "rotowire_id": "17695",
-    "team": "CHI"
-  },
-  {
-    "average": 88.8,
-    "name": "Jonathon Brooks",
-    "position": "RB",
-    "rotowire_id": "17747",
-    "team": "CAR"
-  },
-  {
-    "average": 66.6,
-    "name": "Rhamondre Stevenson",
-    "position": "RB",
-    "rotowire_id": "15372",
-    "team": "NE"
-  },
-  {
-    "average": 68.9,
-    "name": "Mike Evans",
+    "average": 63.9,
+    "name": "Parker Washington",
     "position": "WR",
-    "rotowire_id": "9253",
-    "team": "SF"
+    "rotowire_id": "16690",
+    "team": "JAX"
   },
   {
-    "average": 70.5,
-    "name": "Jaylen Warren",
-    "position": "RB",
-    "rotowire_id": "15984",
-    "team": "PIT"
-  },
-  {
-    "average": 73.0,
-    "name": "Dak Prescott",
-    "position": "QB",
-    "rotowire_id": "11008",
-    "team": "DAL"
-  },
-  {
-    "average": 75.5,
-    "name": "Tucker Kraft",
-    "position": "TE",
-    "rotowire_id": "16649",
-    "team": "GB"
-  },
-  {
-    "average": 64.0,
+    "average": 64.2,
     "name": "TreVeyon Henderson",
     "position": "RB",
     "rotowire_id": "18517",
     "team": "NE"
   },
   {
-    "average": 105.4,
-    "name": "MarShawn Lloyd",
-    "position": "RB",
-    "rotowire_id": "17795",
+    "average": 64.2,
+    "name": "Jayden Daniels",
+    "position": "QB",
+    "rotowire_id": "17692",
+    "team": "WAS"
+  },
+  {
+    "average": 64.7,
+    "name": "Christian Watson",
+    "position": "WR",
+    "rotowire_id": "15946",
     "team": "GB"
   },
   {
-    "average": 77.5,
+    "average": 66.2,
+    "name": "Jaylen Warren",
+    "position": "RB",
+    "rotowire_id": "15984",
+    "team": "PIT"
+  },
+  {
+    "average": 67.4,
+    "name": "Rhamondre Stevenson",
+    "position": "RB",
+    "rotowire_id": "15372",
+    "team": "NE"
+  },
+  {
+    "average": 67.7,
+    "name": "Rome Odunze",
+    "position": "WR",
+    "rotowire_id": "17020",
+    "team": "CHI"
+  },
+  {
+    "average": 68.3,
+    "name": "Mike Evans",
+    "position": "WR",
+    "rotowire_id": "9253",
+    "team": "SF"
+  },
+  {
+    "average": 71.7,
+    "name": "Tucker Kraft",
+    "position": "TE",
+    "rotowire_id": "16649",
+    "team": "GB"
+  },
+  {
+    "average": 72.2,
+    "name": "Josh Jacobs",
+    "position": "RB",
+    "rotowire_id": "13582",
+    "team": "GB"
+  },
+  {
+    "average": 72.5,
     "name": "Tony Pollard",
     "position": "RB",
     "rotowire_id": "13590",
     "team": "TEN"
   },
   {
-    "average": 112.5,
-    "name": "De'Zhaun Stribling",
-    "position": "WR",
-    "rotowire_id": "19330",
-    "team": "SF"
-  },
-  {
-    "average": 83.5,
-    "name": "Harold Fannin",
-    "position": "TE",
-    "rotowire_id": "18472",
-    "team": "CLE"
-  },
-  {
-    "average": 81.8,
-    "name": "Rico Dowdle",
-    "position": "RB",
-    "rotowire_id": "14657",
-    "team": "PIT"
-  },
-  {
-    "average": 88.9,
-    "name": "Michael Wilson",
-    "position": "WR",
-    "rotowire_id": "16957",
-    "team": "ARI"
-  },
-  {
-    "average": 79.2,
-    "name": "Matthew Stafford",
+    "average": 74.0,
+    "name": "Caleb Williams",
     "position": "QB",
-    "rotowire_id": "5971",
-    "team": "LAR"
+    "rotowire_id": "17695",
+    "team": "CHI"
   },
   {
-    "average": 81.3,
+    "average": 77.4,
     "name": "Carnell Tate",
     "position": "WR",
     "rotowire_id": "19268",
     "team": "TEN"
   },
   {
-    "average": 79.8,
+    "average": 77.4,
+    "name": "Rico Dowdle",
+    "position": "RB",
+    "rotowire_id": "14657",
+    "team": "PIT"
+  },
+  {
+    "average": 77.6,
     "name": "Kyle Pitts",
     "position": "TE",
     "rotowire_id": "15265",
     "team": "ATL"
   },
   {
-    "average": 79.4,
+    "average": 77.7,
+    "name": "Harold Fannin",
+    "position": "TE",
+    "rotowire_id": "18472",
+    "team": "CLE"
+  },
+  {
+    "average": 78.3,
+    "name": "Sam LaPorta",
+    "position": "TE",
+    "rotowire_id": "17033",
+    "team": "DET"
+  },
+  {
+    "average": 79.7,
+    "name": "DK Metcalf",
+    "position": "WR",
+    "rotowire_id": "13424",
+    "team": "PIT"
+  },
+  {
+    "average": 79.9,
+    "name": "J.K. Dobbins",
+    "position": "RB",
+    "rotowire_id": "14418",
+    "team": "DEN"
+  },
+  {
+    "average": 80.3,
+    "name": "Dak Prescott",
+    "position": "QB",
+    "rotowire_id": "11008",
+    "team": "DAL"
+  },
+  {
+    "average": 81.0,
+    "name": "RJ Harvey",
+    "position": "RB",
+    "rotowire_id": "18522",
+    "team": "DEN"
+  },
+  {
+    "average": 81.9,
+    "name": "Justin Herbert",
+    "position": "QB",
+    "rotowire_id": "14446",
+    "team": "LAC"
+  },
+  {
+    "average": 82.8,
     "name": "Courtland Sutton",
     "position": "WR",
     "rotowire_id": "12586",
@@ -568,150 +575,192 @@
   },
   {
     "average": 83.5,
-    "name": "DK Metcalf",
+    "name": "Michael Wilson",
     "position": "WR",
-    "rotowire_id": "13424",
-    "team": "PIT"
+    "rotowire_id": "16957",
+    "team": "ARI"
   },
   {
-    "average": 80.8,
-    "name": "Sam LaPorta",
-    "position": "TE",
-    "rotowire_id": "17033",
-    "team": "DET"
-  },
-  {
-    "average": 79.3,
-    "name": "Justin Herbert",
-    "position": "QB",
-    "rotowire_id": "14446",
-    "team": "LAC"
-  },
-  {
-    "average": 82.6,
-    "name": "J.K. Dobbins",
-    "position": "RB",
-    "rotowire_id": "14418",
-    "team": "DEN"
-  },
-  {
-    "average": 86.4,
+    "average": 85.2,
     "name": "Marvin Harrison",
     "position": "WR",
     "rotowire_id": "17674",
     "team": "ARI"
   },
   {
-    "average": 89.5,
+    "average": 86.6,
+    "name": "Jonathon Brooks",
+    "position": "RB",
+    "rotowire_id": "17747",
+    "team": "CAR"
+  },
+  {
+    "average": 88.7,
     "name": "Brian Thomas",
     "position": "WR",
     "rotowire_id": "17716",
     "team": "JAX"
   },
   {
-    "average": 90.5,
-    "name": "George Kittle",
-    "position": "TE",
-    "rotowire_id": "11892",
-    "team": "SF"
-  },
-  {
-    "average": 96.5,
-    "name": "Jordan Mason",
-    "position": "RB",
-    "rotowire_id": "16163",
-    "team": "MIN"
-  },
-  {
-    "average": 82.7,
-    "name": "RJ Harvey",
-    "position": "RB",
-    "rotowire_id": "18522",
-    "team": "DEN"
-  },
-  {
-    "average": 86.7,
-    "name": "Trevor Lawrence",
-    "position": "QB",
-    "rotowire_id": "15357",
-    "team": "JAX"
-  },
-  {
-    "average": 104.2,
-    "name": "Travis Kelce",
-    "position": "TE",
-    "rotowire_id": "8783",
-    "team": "KC"
-  },
-  {
-    "average": 105.7,
-    "name": "Quentin Johnston",
-    "position": "WR",
-    "rotowire_id": "16899",
-    "team": "LAC"
-  },
-  {
-    "average": 95.7,
+    "average": 92.2,
     "name": "Blake Corum",
     "position": "RB",
     "rotowire_id": "17690",
     "team": "LAR"
   },
   {
-    "average": 88.6,
-    "name": "Brandon Aubrey",
-    "position": "K",
-    "rotowire_id": "17649",
-    "team": "DAL"
-  },
-  {
-    "average": 95.7,
-    "name": "Chris Godwin",
-    "position": "WR",
-    "rotowire_id": "11718",
-    "team": "TB"
-  },
-  {
-    "average": 96.7,
-    "name": "Patrick Mahomes",
-    "position": "QB",
-    "rotowire_id": "11839",
-    "team": "KC"
-  },
-  {
-    "average": 98.3,
-    "name": "Alec Pierce",
-    "position": "WR",
-    "rotowire_id": "16022",
-    "team": "IND"
-  },
-  {
-    "average": 93.5,
+    "average": 92.2,
     "name": "Chuba Hubbard",
     "position": "RB",
     "rotowire_id": "15242",
     "team": "CAR"
   },
   {
-    "average": 129.7,
-    "name": "Rachaad White",
+    "average": 92.7,
+    "name": "Matthew Stafford",
+    "position": "QB",
+    "rotowire_id": "5971",
+    "team": "LAR"
+  },
+  {
+    "average": 93.4,
+    "name": "Jordan Mason",
     "position": "RB",
-    "rotowire_id": "15802",
+    "rotowire_id": "16163",
+    "team": "MIN"
+  },
+  {
+    "average": 95.0,
+    "name": "Trevor Lawrence",
+    "position": "QB",
+    "rotowire_id": "15357",
+    "team": "JAX"
+  },
+  {
+    "average": 95.1,
+    "name": "George Kittle",
+    "position": "TE",
+    "rotowire_id": "11892",
+    "team": "SF"
+  },
+  {
+    "average": 96.1,
+    "name": "Brandon Aubrey",
+    "position": "K",
+    "rotowire_id": "17649",
+    "team": "DAL"
+  },
+  {
+    "average": 97.2,
+    "name": "Kyle Monangai",
+    "position": "RB",
+    "rotowire_id": "18520",
+    "team": "CHI"
+  },
+  {
+    "average": 97.5,
+    "name": "Chris Godwin",
+    "position": "WR",
+    "rotowire_id": "11718",
+    "team": "TB"
+  },
+  {
+    "average": 98.9,
+    "name": "Alec Pierce",
+    "position": "WR",
+    "rotowire_id": "16022",
+    "team": "IND"
+  },
+  {
+    "average": 100.7,
+    "name": "Jaxson Dart",
+    "position": "QB",
+    "rotowire_id": "18574",
+    "team": "NYG"
+  },
+  {
+    "average": 101.7,
+    "name": "Patrick Mahomes",
+    "position": "QB",
+    "rotowire_id": "11839",
+    "team": "KC"
+  },
+  {
+    "average": 101.9,
+    "name": "Jacory Croskey-Merritt",
+    "position": "RB",
+    "rotowire_id": "18811",
     "team": "WAS"
   },
   {
-    "average": 65.5,
-    "name": "Josh Jacobs",
+    "average": 103.7,
+    "name": "Quentin Johnston",
+    "position": "WR",
+    "rotowire_id": "16899",
+    "team": "LAC"
+  },
+  {
+    "average": 104.6,
+    "name": "MarShawn Lloyd",
     "position": "RB",
-    "rotowire_id": "13582",
+    "rotowire_id": "17795",
     "team": "GB"
   },
   {
-    "average": 99.8,
+    "average": 107.3,
+    "name": "Kenny Gainwell",
+    "position": "RB",
+    "rotowire_id": "15222",
+    "team": "TB"
+  },
+  {
+    "average": 107.5,
+    "name": "Travis Kelce",
+    "position": "TE",
+    "rotowire_id": "8783",
+    "team": "KC"
+  },
+  {
+    "average": 107.6,
+    "name": "Aaron Jones",
+    "position": "RB",
+    "rotowire_id": "11763",
+    "team": "MIN"
+  },
+  {
+    "average": 108.3,
+    "name": "De'Zhaun Stribling",
+    "position": "WR",
+    "rotowire_id": "19330",
+    "team": "SF"
+  },
+  {
+    "average": 108.8,
+    "name": "Dalton Kincaid",
+    "position": "TE",
+    "rotowire_id": "16697",
+    "team": "BUF"
+  },
+  {
+    "average": 109.8,
     "name": "Bo Nix",
     "position": "QB",
     "rotowire_id": "16995",
     "team": "DEN"
+  },
+  {
+    "average": 110.2,
+    "name": "Dallas Goedert",
+    "position": "TE",
+    "rotowire_id": "12860",
+    "team": "PHI"
+  },
+  {
+    "average": 111.7,
+    "name": "Jordan Addison",
+    "position": "WR",
+    "rotowire_id": "16895",
+    "team": "MIN"
   },
   {
     "average": 113.5,
@@ -721,427 +770,308 @@
     "team": "WAS"
   },
   {
-    "average": 103.9,
-    "name": "Jacory Croskey-Merritt",
-    "position": "RB",
-    "rotowire_id": "18811",
-    "team": "WAS"
-  },
-  {
-    "average": 126.5,
-    "name": "Mike Washington",
-    "position": "RB",
-    "rotowire_id": "19300",
-    "team": "LV"
-  },
-  {
-    "average": 101.2,
-    "name": "Dallas Goedert",
-    "position": "TE",
-    "rotowire_id": "12860",
-    "team": "PHI"
-  },
-  {
-    "average": 106.5,
+    "average": 113.5,
     "name": "Brock Purdy",
     "position": "QB",
     "rotowire_id": "15834",
     "team": "SF"
   },
   {
-    "average": 123.2,
-    "name": "Josh Downs",
-    "position": "WR",
-    "rotowire_id": "16689",
-    "team": "IND"
-  },
-  {
-    "average": 101.1,
-    "name": "Kyle Monangai",
-    "position": "RB",
-    "rotowire_id": "18520",
-    "team": "CHI"
-  },
-  {
-    "average": 98.0,
-    "name": "Jaxson Dart",
-    "position": "QB",
-    "rotowire_id": "18574",
-    "team": "NYG"
-  },
-  {
-    "average": 108.1,
-    "name": "Kenny Gainwell",
-    "position": "RB",
-    "rotowire_id": "15222",
-    "team": "TB"
-  },
-  {
-    "average": 108.9,
-    "name": "Aaron Jones",
-    "position": "RB",
-    "rotowire_id": "11763",
-    "team": "MIN"
-  },
-  {
-    "average": 119.4,
-    "name": "Michael Pittman",
-    "position": "WR",
-    "rotowire_id": "14378",
-    "team": "PIT"
-  },
-  {
-    "average": 136.0,
-    "name": "Makai Lemon",
-    "position": "WR",
-    "rotowire_id": "19231",
-    "team": "PHI"
-  },
-  {
-    "average": 114.7,
-    "name": "Jordan Addison",
-    "position": "WR",
-    "rotowire_id": "16895",
-    "team": "MIN"
-  },
-  {
-    "average": 124.0,
-    "name": "Isaiah Likely",
-    "position": "TE",
-    "rotowire_id": "16033",
-    "team": "NYG"
-  },
-  {
-    "average": 114.3,
-    "name": "Jared Goff",
-    "position": "QB",
-    "rotowire_id": "10729",
-    "team": "DET"
-  },
-  {
-    "average": 121.4,
-    "name": "Jayden Reed",
-    "position": "WR",
-    "rotowire_id": "16977",
-    "team": "GB"
-  },
-  {
-    "average": 123.6,
+    "average": 117.4,
     "name": "Jakobi Meyers",
     "position": "WR",
     "rotowire_id": "13517",
     "team": "JAX"
   },
   {
-    "average": 131.8,
-    "name": "KC Concepcion",
+    "average": 118.8,
+    "name": "Jayden Reed",
     "position": "WR",
-    "rotowire_id": "19242",
-    "team": "CLE"
-  },
-  {
-    "average": 133.1,
-    "name": "Matthew Golden",
-    "position": "WR",
-    "rotowire_id": "18500",
+    "rotowire_id": "16977",
     "team": "GB"
   },
   {
-    "average": 137.0,
-    "name": "Chris Rodriguez",
-    "position": "RB",
-    "rotowire_id": "16933",
-    "team": "JAX"
-  },
-  {
-    "average": 128.6,
-    "name": "Jordan Love",
-    "position": "QB",
-    "rotowire_id": "14371",
-    "team": "GB"
-  },
-  {
-    "average": 119.8,
-    "name": "Ka'imi Fairbairn",
-    "position": "K",
-    "rotowire_id": "11031",
-    "team": "HOU"
-  },
-  {
-    "average": 131.1,
-    "name": "Wan'Dale Robinson",
+    "average": 120.1,
+    "name": "Michael Pittman",
     "position": "WR",
-    "rotowire_id": "15838",
-    "team": "TEN"
+    "rotowire_id": "14378",
+    "team": "PIT"
   },
   {
-    "average": 136.0,
-    "name": "Romeo Doubs",
-    "position": "WR",
-    "rotowire_id": "16027",
-    "team": "NE"
-  },
-  {
-    "average": 112.3,
-    "name": "Dalton Kincaid",
-    "position": "TE",
-    "rotowire_id": "16697",
-    "team": "BUF"
-  },
-  {
-    "average": 135.9,
-    "name": "Kyler Murray",
-    "position": "QB",
-    "rotowire_id": "13613",
-    "team": "MIN"
-  },
-  {
-    "average": 136.0,
-    "name": "Baker Mayfield",
-    "position": "QB",
-    "rotowire_id": "12619",
-    "team": "TB"
-  },
-  {
-    "average": 129.5,
-    "name": "Tyler Allgeier",
-    "position": "RB",
-    "rotowire_id": "15976",
-    "team": "ARI"
-  },
-  {
-    "average": 135.9,
-    "name": "Xavier Worthy",
-    "position": "WR",
-    "rotowire_id": "17687",
-    "team": "KC"
-  },
-  {
-    "average": 119.1,
-    "name": "Mark Andrews",
-    "position": "TE",
-    "rotowire_id": "12559",
-    "team": "BAL"
-  },
-  {
-    "average": 137.9,
-    "name": "Deebo Samuel",
-    "position": "WR",
-    "rotowire_id": "13429",
-    "team": "SF"
-  },
-  {
-    "average": 131.6,
-    "name": "Zach Charbonnet",
-    "position": "RB",
-    "rotowire_id": "16897",
-    "team": "SEA"
-  },
-  {
-    "average": 129.8,
-    "name": "Cam Little",
-    "position": "K",
-    "rotowire_id": "17926",
-    "team": "JAX"
-  },
-  {
-    "average": 130.6,
+    "average": 123.5,
     "name": "Jordyn Tyson",
     "position": "WR",
     "rotowire_id": "19233",
     "team": "NO"
   },
   {
-    "average": 133.3,
+    "average": 123.8,
+    "name": "Tyler Allgeier",
+    "position": "RB",
+    "rotowire_id": "15976",
+    "team": "ARI"
+  },
+  {
+    "average": 124.6,
+    "name": "Rachaad White",
+    "position": "RB",
+    "rotowire_id": "15802",
+    "team": "WAS"
+  },
+  {
+    "average": 125.0,
+    "name": "Mike Washington",
+    "position": "RB",
+    "rotowire_id": "19300",
+    "team": "LV"
+  },
+  {
+    "average": 125.1,
+    "name": "Josh Downs",
+    "position": "WR",
+    "rotowire_id": "16689",
+    "team": "IND"
+  },
+  {
+    "average": 125.3,
+    "name": "Mark Andrews",
+    "position": "TE",
+    "rotowire_id": "12559",
+    "team": "BAL"
+  },
+  {
+    "average": 125.8,
+    "name": "Isaiah Likely",
+    "position": "TE",
+    "rotowire_id": "16033",
+    "team": "NYG"
+  },
+  {
+    "average": 126.7,
+    "name": "KC Concepcion",
+    "position": "WR",
+    "rotowire_id": "19242",
+    "team": "CLE"
+  },
+  {
+    "average": 127.9,
+    "name": "Jared Goff",
+    "position": "QB",
+    "rotowire_id": "10729",
+    "team": "DET"
+  },
+  {
+    "average": 130.0,
+    "name": "Wan'Dale Robinson",
+    "position": "WR",
+    "rotowire_id": "15838",
+    "team": "TEN"
+  },
+  {
+    "average": 130.8,
+    "name": "Ka'imi Fairbairn",
+    "position": "K",
+    "rotowire_id": "11031",
+    "team": "HOU"
+  },
+  {
+    "average": 133.5,
     "name": "Woody Marks",
     "position": "RB",
     "rotowire_id": "18449",
     "team": "HOU"
   },
   {
-    "average": 151.2,
-    "name": "Khalil Shakir",
-    "position": "WR",
-    "rotowire_id": "15892",
-    "team": "BUF"
-  },
-  {
-    "average": 153.0,
-    "name": "Tyjae Spears",
+    "average": 136.0,
+    "name": "Chris Rodriguez",
     "position": "RB",
-    "rotowire_id": "16941",
-    "team": "TEN"
-  },
-  {
-    "average": 133.0,
-    "name": "Jake Ferguson",
-    "position": "TE",
-    "rotowire_id": "15947",
-    "team": "DAL"
-  },
-  {
-    "average": 185.6,
-    "name": "Cyrus Allen",
-    "position": "WR",
-    "rotowire_id": "19631",
-    "team": "KC"
-  },
-  {
-    "average": 165.6,
-    "name": "Keaton Mitchell",
-    "position": "RB",
-    "rotowire_id": "16810",
-    "team": "LAC"
-  },
-  {
-    "average": 151.3,
-    "name": "Juwan Johnson",
-    "position": "TE",
-    "rotowire_id": "14630",
-    "team": "NO"
-  },
-  {
-    "average": 158.5,
-    "name": "Rashid Shaheed",
-    "position": "WR",
-    "rotowire_id": "16560",
-    "team": "SEA"
-  },
-  {
-    "average": 154.8,
-    "name": "Tyler Shough",
-    "position": "QB",
-    "rotowire_id": "17037",
-    "team": "NO"
-  },
-  {
-    "average": 159.4,
-    "name": "Jalen Coker",
-    "position": "WR",
-    "rotowire_id": "17976",
-    "team": "CAR"
-  },
-  {
-    "average": 129.9,
-    "name": "Jason Myers",
-    "position": "K",
-    "rotowire_id": "10157",
-    "team": "SEA"
-  },
-  {
-    "average": 150.8,
-    "name": "Tyrone Tracy",
-    "position": "RB",
-    "rotowire_id": "17967",
-    "team": "NYG"
-  },
-  {
-    "average": 171.6,
-    "name": "Kayshon Boutte",
-    "position": "WR",
-    "rotowire_id": "16795",
-    "team": "HOU"
-  },
-  {
-    "average": 129.4,
-    "name": "Cameron Dicker",
-    "position": "K",
-    "rotowire_id": "16226",
-    "team": "LAC"
-  },
-  {
-    "average": 181.0,
-    "name": "Keenan Allen",
-    "position": "WR",
-    "rotowire_id": "8627",
-    "team": "IND"
-  },
-  {
-    "average": 158.0,
-    "name": "Alvin Kamara",
-    "position": "RB",
-    "rotowire_id": "11732",
-    "team": "NO"
-  },
-  {
-    "average": 168.3,
-    "name": "Jauan Jennings",
-    "position": "WR",
-    "rotowire_id": "14376",
-    "team": "MIN"
-  },
-  {
-    "average": 163.4,
-    "name": "Brenton Strange",
-    "position": "TE",
-    "rotowire_id": "17017",
+    "rotowire_id": "16933",
     "team": "JAX"
   },
   {
-    "average": 177.2,
-    "name": "Tre Tucker",
+    "average": 136.4,
+    "name": "Romeo Doubs",
     "position": "WR",
-    "rotowire_id": "16694",
-    "team": "LV"
+    "rotowire_id": "16027",
+    "team": "NE"
   },
   {
-    "average": 166.2,
-    "name": "Tank Bigsby",
-    "position": "RB",
-    "rotowire_id": "16705",
-    "team": "PHI"
-  },
-  {
-    "average": 164.4,
-    "name": "Malik Willis",
-    "position": "QB",
-    "rotowire_id": "15872",
-    "team": "MIA"
-  },
-  {
-    "average": 155.8,
-    "name": "Jake Bates",
+    "average": 136.7,
+    "name": "Cam Little",
     "position": "K",
-    "rotowire_id": "17376",
-    "team": "DET"
+    "rotowire_id": "17926",
+    "team": "JAX"
   },
   {
-    "average": 176.8,
-    "name": "Dylan Sampson",
+    "average": 136.7,
+    "name": "Matthew Golden",
+    "position": "WR",
+    "rotowire_id": "18500",
+    "team": "GB"
+  },
+  {
+    "average": 137.6,
+    "name": "Jordan Love",
+    "position": "QB",
+    "rotowire_id": "14371",
+    "team": "GB"
+  },
+  {
+    "average": 138.2,
+    "name": "Xavier Worthy",
+    "position": "WR",
+    "rotowire_id": "17687",
+    "team": "KC"
+  },
+  {
+    "average": 138.5,
+    "name": "Zach Charbonnet",
     "position": "RB",
-    "rotowire_id": "18467",
-    "team": "CLE"
+    "rotowire_id": "16897",
+    "team": "SEA"
   },
   {
-    "average": 148.5,
+    "average": 139.6,
     "name": "Brian Robinson",
     "position": "RB",
     "rotowire_id": "15907",
     "team": "ATL"
   },
   {
-    "average": 180.5,
-    "name": "Terrance Ferguson",
-    "position": "TE",
-    "rotowire_id": "18497",
-    "team": "LAR"
+    "average": 141.0,
+    "name": "Jason Myers",
+    "position": "K",
+    "rotowire_id": "10157",
+    "team": "SEA"
   },
   {
-    "average": 177.9,
-    "name": "Denzel Boston",
+    "average": 141.1,
+    "name": "Cameron Dicker",
+    "position": "K",
+    "rotowire_id": "16226",
+    "team": "LAC"
+  },
+  {
+    "average": 141.5,
+    "name": "Makai Lemon",
     "position": "WR",
-    "rotowire_id": "19298",
-    "team": "CLE"
+    "rotowire_id": "19231",
+    "team": "PHI"
   },
   {
-    "average": 151.4,
+    "average": 141.8,
+    "name": "Jake Ferguson",
+    "position": "TE",
+    "rotowire_id": "15947",
+    "team": "DAL"
+  },
+  {
+    "average": 145.1,
+    "name": "Deebo Samuel",
+    "position": "WR",
+    "rotowire_id": "13429",
+    "team": "SF"
+  },
+  {
+    "average": 149.4,
+    "name": "Khalil Shakir",
+    "position": "WR",
+    "rotowire_id": "15892",
+    "team": "BUF"
+  },
+  {
+    "average": 149.5,
+    "name": "Kyler Murray",
+    "position": "QB",
+    "rotowire_id": "13613",
+    "team": "MIN"
+  },
+  {
+    "average": 150.2,
+    "name": "Baker Mayfield",
+    "position": "QB",
+    "rotowire_id": "12619",
+    "team": "TB"
+  },
+  {
+    "average": 150.3,
     "name": "Oronde Gadsden",
     "position": "TE",
     "rotowire_id": "18481",
     "team": "LAC"
   },
   {
-    "average": 157.1,
+    "average": 155.6,
+    "name": "Tyrone Tracy",
+    "position": "RB",
+    "rotowire_id": "17967",
+    "team": "NYG"
+  },
+  {
+    "average": 156.8,
+    "name": "Juwan Johnson",
+    "position": "TE",
+    "rotowire_id": "14630",
+    "team": "NO"
+  },
+  {
+    "average": 157.5,
+    "name": "Alvin Kamara",
+    "position": "RB",
+    "rotowire_id": "11732",
+    "team": "NO"
+  },
+  {
+    "average": 158.0,
+    "name": "Hunter Henry",
+    "position": "TE",
+    "rotowire_id": "10735",
+    "team": "NE"
+  },
+  {
+    "average": 158.8,
+    "name": "Tyjae Spears",
+    "position": "RB",
+    "rotowire_id": "16941",
+    "team": "TEN"
+  },
+  {
+    "average": 161.2,
+    "name": "Rashid Shaheed",
+    "position": "WR",
+    "rotowire_id": "16560",
+    "team": "SEA"
+  },
+  {
+    "average": 161.7,
+    "name": "Jonah Coleman",
+    "position": "RB",
+    "rotowire_id": "19241",
+    "team": "DEN"
+  },
+  {
+    "average": 161.8,
+    "name": "Jalen Coker",
+    "position": "WR",
+    "rotowire_id": "17976",
+    "team": "CAR"
+  },
+  {
+    "average": 163.2,
+    "name": "Brenton Strange",
+    "position": "TE",
+    "rotowire_id": "17017",
+    "team": "JAX"
+  },
+  {
+    "average": 163.9,
+    "name": "Keaton Mitchell",
+    "position": "RB",
+    "rotowire_id": "16810",
+    "team": "LAC"
+  },
+  {
+    "average": 165.8,
     "name": "Tyler Loop",
     "position": "K",
     "rotowire_id": "18742",
@@ -1149,829 +1079,1137 @@
   },
   {
     "average": 166.8,
-    "name": "Dalton Schultz",
-    "position": "TE",
-    "rotowire_id": "12514",
-    "team": "HOU"
+    "name": "Tyler Shough",
+    "position": "QB",
+    "rotowire_id": "17037",
+    "team": "NO"
   },
   {
-    "average": 169.8,
-    "name": "Kenyon Sadiq",
-    "position": "TE",
-    "rotowire_id": "19279",
-    "team": "NYJ"
-  },
-  {
-    "average": 174.6,
-    "name": "Braelon Allen",
-    "position": "RB",
-    "rotowire_id": "17702",
-    "team": "NYJ"
-  },
-  {
-    "average": 154.3,
-    "name": "Jonah Coleman",
-    "position": "RB",
-    "rotowire_id": "19241",
-    "team": "DEN"
-  },
-  {
-    "average": 155.4,
+    "average": 167.6,
     "name": "Harrison Mevis",
     "position": "K",
     "rotowire_id": "17921",
     "team": "LAR"
   },
   {
-    "average": 192.1,
-    "name": "Jalen Nailor",
-    "position": "WR",
-    "rotowire_id": "16025",
-    "team": "LV"
-  },
-  {
-    "average": 191.4,
-    "name": "Malik Washington",
-    "position": "WR",
-    "rotowire_id": "17863",
-    "team": "MIA"
-  },
-  {
-    "average": 191.5,
-    "name": "Omar Cooper",
-    "position": "WR",
-    "rotowire_id": "19314",
-    "team": "NYJ"
-  },
-  {
-    "average": 188.0,
-    "name": "Chig Okonkwo",
-    "position": "TE",
-    "rotowire_id": "16042",
-    "team": "WAS"
-  },
-  {
-    "average": 194.5,
-    "name": "Jalen McMillan",
-    "position": "WR",
-    "rotowire_id": "17763",
-    "team": "TB"
-  },
-  {
-    "average": 338.7,
-    "name": "Justice Hill",
+    "average": 169.3,
+    "name": "Tank Bigsby",
     "position": "RB",
-    "rotowire_id": "13427",
-    "team": "BAL"
-  },
-  {
-    "average": 176.3,
-    "name": "C.J. Stroud",
-    "position": "QB",
-    "rotowire_id": "16886",
-    "team": "HOU"
-  },
-  {
-    "average": 186.4,
-    "name": "Kaelon Black",
-    "position": "RB",
-    "rotowire_id": "19607",
-    "team": "SF"
-  },
-  {
-    "average": 183.5,
-    "name": "Daniel Jones",
-    "position": "QB",
-    "rotowire_id": "13491",
-    "team": "IND"
-  },
-  {
-    "average": 148.1,
-    "name": "Hunter Henry",
-    "position": "TE",
-    "rotowire_id": "10735",
-    "team": "NE"
-  },
-  {
-    "average": 197.5,
-    "name": "Cam Ward",
-    "position": "QB",
-    "rotowire_id": "16997",
-    "team": "TEN"
-  },
-  {
-    "average": 196.6,
-    "name": "Ray Davis",
-    "position": "RB",
-    "rotowire_id": "17792",
-    "team": "BUF"
-  },
-  {
-    "average": 332.4,
-    "name": "Dontayvion Wicks",
-    "position": "WR",
-    "rotowire_id": "16658",
+    "rotowire_id": "16705",
     "team": "PHI"
   },
   {
-    "average": 176.1,
-    "name": "Eddy Pineiro",
-    "position": "K",
-    "rotowire_id": "12582",
-    "team": "SF"
-  },
-  {
-    "average": 192.4,
-    "name": "Kimani Vidal",
-    "position": "RB",
-    "rotowire_id": "17821",
-    "team": "LAC"
-  },
-  {
-    "average": 186.8,
-    "name": "Jerry Jeudy",
+    "average": 169.8,
+    "name": "Jauan Jennings",
     "position": "WR",
-    "rotowire_id": "14458",
-    "team": "CLE"
-  },
-  {
-    "average": 182.0,
-    "name": "T.J. Hockenson",
-    "position": "TE",
-    "rotowire_id": "13610",
+    "rotowire_id": "14376",
     "team": "MIN"
   },
   {
-    "average": 335.6,
-    "name": "Bryce Young",
-    "position": "QB",
-    "rotowire_id": "16807",
-    "team": "CAR"
+    "average": 170.2,
+    "name": "Jake Bates",
+    "position": "K",
+    "rotowire_id": "17376",
+    "team": "DET"
   },
   {
-    "average": 175.0,
+    "average": 170.5,
+    "name": "Dalton Schultz",
+    "position": "TE",
+    "rotowire_id": "12514",
+    "team": "HOU"
+  },
+  {
+    "average": 171.6,
+    "name": "Malik Willis",
+    "position": "QB",
+    "rotowire_id": "15872",
+    "team": "MIA"
+  },
+  {
+    "average": 173.4,
+    "name": "Kayshon Boutte",
+    "position": "WR",
+    "rotowire_id": "16795",
+    "team": "HOU"
+  },
+  {
+    "average": 173.5,
+    "name": "Kenyon Sadiq",
+    "position": "TE",
+    "rotowire_id": "19279",
+    "team": "NYJ"
+  },
+  {
+    "average": 176.8,
     "name": "Emmett Johnson",
     "position": "RB",
     "rotowire_id": "19240",
     "team": "KC"
   },
   {
-    "average": 208.9,
-    "name": "Tank Dell",
+    "average": 178.8,
+    "name": "Denzel Boston",
     "position": "WR",
-    "rotowire_id": "16935",
-    "team": "HOU"
+    "rotowire_id": "19298",
+    "team": "CLE"
   },
   {
-    "average": 208.3,
-    "name": "Adonai Mitchell",
+    "average": 180.1,
+    "name": "Dylan Sampson",
+    "position": "RB",
+    "rotowire_id": "18467",
+    "team": "CLE"
+  },
+  {
+    "average": 186.0,
+    "name": "Tre Tucker",
     "position": "WR",
-    "rotowire_id": "17668",
+    "rotowire_id": "16694",
+    "team": "LV"
+  },
+  {
+    "average": 187.0,
+    "name": "Terrance Ferguson",
+    "position": "TE",
+    "rotowire_id": "18497",
+    "team": "LAR"
+  },
+  {
+    "average": 187.1,
+    "name": "Braelon Allen",
+    "position": "RB",
+    "rotowire_id": "17702",
     "team": "NYJ"
   },
   {
-    "average": 181.0,
-    "name": "Evan McPherson",
-    "position": "K",
-    "rotowire_id": "15383",
-    "team": "CIN"
-  },
-  {
-    "average": 218.0,
-    "name": "Antonio Williams",
-    "position": "RB",
-    "rotowire_id": "14884",
-    "team": "FA"
-  },
-  {
-    "average": 349.1,
-    "name": "Ryan Flournoy",
+    "average": 187.3,
+    "name": "Cyrus Allen",
     "position": "WR",
-    "rotowire_id": "17974",
-    "team": "DAL"
+    "rotowire_id": "19631",
+    "team": "KC"
   },
   {
-    "average": 170.8,
+    "average": 189.4,
     "name": "Harrison Butker",
     "position": "K",
     "rotowire_id": "11783",
     "team": "KC"
   },
   {
-    "average": 186.0,
+    "average": 196.8,
+    "name": "Omar Cooper",
+    "position": "WR",
+    "rotowire_id": "19314",
+    "team": "NYJ"
+  },
+  {
+    "average": 197.2,
+    "name": "Eddy Pineiro",
+    "position": "K",
+    "rotowire_id": "12582",
+    "team": "SF"
+  },
+  {
+    "average": 197.4,
     "name": "Ja'Kobi Lane",
     "position": "WR",
     "rotowire_id": "19230",
     "team": "BAL"
   },
   {
-    "average": 188.7,
-    "name": "Isiah Pacheco",
+    "average": 198.2,
+    "name": "Keenan Allen",
+    "position": "WR",
+    "rotowire_id": "8627",
+    "team": "IND"
+  },
+  {
+    "average": 198.4,
+    "name": "Kaelon Black",
     "position": "RB",
-    "rotowire_id": "16104",
-    "team": "DET"
+    "rotowire_id": "19607",
+    "team": "SF"
   },
   {
-    "average": 214.4,
-    "name": "Calvin Ridley",
-    "position": "WR",
-    "rotowire_id": "12616",
-    "team": "TEN"
-  },
-  {
-    "average": 330.6,
-    "name": "Cooper Kupp",
-    "position": "WR",
-    "rotowire_id": "11863",
-    "team": "SEA"
-  },
-  {
-    "average": 214.8,
-    "name": "Tre' Harris",
-    "position": "WR",
-    "rotowire_id": "18478",
-    "team": "LAC"
-  },
-  {
-    "average": 352.2,
-    "name": "Jacoby Brissett",
+    "average": 198.9,
+    "name": "C.J. Stroud",
     "position": "QB",
-    "rotowire_id": "10919",
-    "team": "ARI"
+    "rotowire_id": "16886",
+    "team": "HOU"
   },
   {
-    "average": 196.3,
-    "name": "AJ Barner",
+    "average": 199.1,
+    "name": "T.J. Hockenson",
     "position": "TE",
-    "rotowire_id": "17811",
-    "team": "SEA"
+    "rotowire_id": "13610",
+    "team": "MIN"
   },
   {
-    "average": 219.2,
-    "name": "Isaac TeSlaa",
-    "position": "WR",
-    "rotowire_id": "18642",
-    "team": "DET"
-  },
-  {
-    "average": 217.2,
-    "name": "Caleb Douglas",
-    "position": "WR",
-    "rotowire_id": "19343",
-    "team": "MIA"
-  },
-  {
-    "average": 207.5,
-    "name": "Greg Dulcich",
-    "position": "TE",
-    "rotowire_id": "15891",
-    "team": "MIA"
-  },
-  {
-    "average": 205.5,
-    "name": "Tyler Bass",
+    "average": 199.3,
+    "name": "Evan McPherson",
     "position": "K",
-    "rotowire_id": "14609",
+    "rotowire_id": "15383",
+    "team": "CIN"
+  },
+  {
+    "average": 201.9,
+    "name": "Justice Hill",
+    "position": "RB",
+    "rotowire_id": "13427",
+    "team": "BAL"
+  },
+  {
+    "average": 202.2,
+    "name": "Jalen Nailor",
+    "position": "WR",
+    "rotowire_id": "16025",
+    "team": "LV"
+  },
+  {
+    "average": 203.3,
+    "name": "Chig Okonkwo",
+    "position": "TE",
+    "rotowire_id": "16042",
+    "team": "WAS"
+  },
+  {
+    "average": 204.8,
+    "name": "Daniel Jones",
+    "position": "QB",
+    "rotowire_id": "13491",
+    "team": "IND"
+  },
+  {
+    "average": 204.8,
+    "name": "Dontayvion Wicks",
+    "position": "WR",
+    "rotowire_id": "16658",
+    "team": "PHI"
+  },
+  {
+    "average": 206.6,
+    "name": "Ray Davis",
+    "position": "RB",
+    "rotowire_id": "17792",
     "team": "BUF"
   },
   {
-    "average": 193.7,
+    "average": 206.6,
+    "name": "Kimani Vidal",
+    "position": "RB",
+    "rotowire_id": "17821",
+    "team": "LAC"
+  },
+  {
+    "average": 206.7,
     "name": "James Conner",
     "position": "RB",
     "rotowire_id": "11691",
     "team": "ARI"
   },
   {
-    "average": 197.8,
-    "name": "Travis Hunter",
-    "position": "WR",
-    "rotowire_id": "18578",
-    "team": "JAX"
-  },
-  {
-    "average": 227.7,
-    "name": "Jaydon Blue",
+    "average": 207.4,
+    "name": "Isiah Pacheco",
     "position": "RB",
-    "rotowire_id": "18499",
-    "team": "FA"
-  },
-  {
-    "average": 373.3,
-    "name": "George Holani",
-    "position": "RB",
-    "rotowire_id": "17968",
-    "team": "SEA"
-  },
-  {
-    "average": 341.2,
-    "name": "Aaron Rodgers",
-    "position": "QB",
-    "rotowire_id": "4307",
-    "team": "PIT"
-  },
-  {
-    "average": 212.6,
-    "name": "Cairo Santos",
-    "position": "K",
-    "rotowire_id": "9633",
-    "team": "CHI"
-  },
-  {
-    "average": 208.3,
-    "name": "Trey Smack",
-    "position": "K",
-    "rotowire_id": "19511",
-    "team": "GB"
-  },
-  {
-    "average": 349.0,
-    "name": "Geno Smith",
-    "position": "QB",
-    "rotowire_id": "8743",
-    "team": "NYJ"
-  },
-  {
-    "average": 229.6,
-    "name": "Sean Tucker",
-    "position": "RB",
-    "rotowire_id": "16728",
-    "team": "TB"
-  },
-  {
-    "average": 189.6,
-    "name": "Will Reichard",
-    "position": "K",
-    "rotowire_id": "17922",
-    "team": "MIN"
-  },
-  {
-    "average": 255.4,
-    "name": "Evan Engram",
-    "position": "TE",
-    "rotowire_id": "11805",
-    "team": "DEN"
-  },
-  {
-    "average": 227.0,
-    "name": "Jordan James",
-    "position": "RB",
-    "rotowire_id": "18485",
-    "team": "SF"
-  },
-  {
-    "average": 251.9,
-    "name": "Zachariah Branch",
-    "position": "WR",
-    "rotowire_id": "19262",
-    "team": "ATL"
-  },
-  {
-    "average": 258.4,
-    "name": "Darnell Mooney",
-    "position": "WR",
-    "rotowire_id": "14510",
-    "team": "NYG"
-  },
-  {
-    "average": 218.7,
-    "name": "Malachi Fields",
-    "position": "WR",
-    "rotowire_id": "19313",
-    "team": "NYG"
-  },
-  {
-    "average": 214.2,
-    "name": "Chris Bell",
-    "position": "WR",
-    "rotowire_id": "19309",
-    "team": "MIA"
-  },
-  {
-    "average": 370.1,
-    "name": "Pat Freiermuth",
-    "position": "TE",
-    "rotowire_id": "15267",
-    "team": "PIT"
-  },
-  {
-    "average": 232.9,
-    "name": "Troy Franklin",
-    "position": "WR",
-    "rotowire_id": "17719",
-    "team": "DEN"
+    "rotowire_id": "16104",
+    "team": "DET"
   },
   {
     "average": 208.5,
-    "name": "Colby Parkinson",
-    "position": "TE",
-    "rotowire_id": "14463",
-    "team": "LAR"
+    "name": "Jalen McMillan",
+    "position": "WR",
+    "rotowire_id": "17763",
+    "team": "TB"
   },
   {
-    "average": 373.4,
-    "name": "Samaje Perine",
-    "position": "RB",
-    "rotowire_id": "11698",
-    "team": "CIN"
-  },
-  {
-    "average": 225.0,
-    "name": "Tua Tagovailoa",
-    "position": "QB",
-    "rotowire_id": "14465",
-    "team": "ATL"
-  },
-  {
-    "average": 232.3,
-    "name": "Jaylen Wright",
-    "position": "RB",
-    "rotowire_id": "17800",
-    "team": "MIA"
-  },
-  {
-    "average": 188.8,
+    "average": 209.0,
     "name": "Chris Boswell",
     "position": "K",
     "rotowire_id": "9646",
     "team": "PIT"
   },
   {
-    "average": 206.0,
-    "name": "Chase McLaughlin",
-    "position": "K",
-    "rotowire_id": "14254",
-    "team": "TB"
-  },
-  {
-    "average": 223.7,
-    "name": "Kaytron Allen",
-    "position": "RB",
-    "rotowire_id": "18533",
-    "team": "WAS"
-  },
-  {
-    "average": 256.2,
-    "name": "Emanuel Wilson",
-    "position": "RB",
-    "rotowire_id": "17593",
+    "average": 210.6,
+    "name": "AJ Barner",
+    "position": "TE",
+    "rotowire_id": "17811",
     "team": "SEA"
   },
   {
-    "average": 265.6,
-    "name": "Mike Gesicki",
-    "position": "TE",
-    "rotowire_id": "12764",
-    "team": "CIN"
-  },
-  {
-    "average": 212.0,
-    "name": "Fernando Mendoza",
-    "position": "QB",
-    "rotowire_id": "19281",
-    "team": "LV"
-  },
-  {
-    "average": 206.0,
-    "name": "Andy Borregales",
-    "position": "K",
-    "rotowire_id": "18743",
-    "team": "NE"
-  },
-  {
-    "average": 472.6,
-    "name": "Ted Hurst",
+    "average": 211.7,
+    "name": "Jerry Jeudy",
     "position": "WR",
-    "rotowire_id": "19320",
-    "team": "TB"
-  },
-  {
-    "average": 251.4,
-    "name": "Pat Bryant",
-    "position": "WR",
-    "rotowire_id": "18562",
-    "team": "DEN"
-  },
-  {
-    "average": 363.0,
-    "name": "Cade Otton",
-    "position": "TE",
-    "rotowire_id": "16032",
-    "team": "TB"
-  },
-  {
-    "average": 215.4,
-    "name": "David Njoku",
-    "position": "TE",
-    "rotowire_id": "11734",
-    "team": "LAC"
-  },
-  {
-    "average": 221.6,
-    "name": "Nicholas Singleton",
-    "position": "RB",
-    "rotowire_id": "18518",
-    "team": "TEN"
-  },
-  {
-    "average": 380.6,
-    "name": "Rashod Bateman",
-    "position": "WR",
-    "rotowire_id": "15210",
-    "team": "BAL"
-  },
-  {
-    "average": 214.2,
-    "name": "Najee Harris",
-    "position": "RB",
-    "rotowire_id": "15468",
-    "team": "NYG"
-  },
-  {
-    "average": 269.9,
-    "name": "Emari Demercado",
-    "position": "RB",
-    "rotowire_id": "17091",
-    "team": "DAL"
-  },
-  {
-    "average": 400.2,
-    "name": "Chris Brooks",
-    "position": "RB",
-    "rotowire_id": "16741",
-    "team": "GB"
-  },
-  {
-    "average": 305.5,
-    "name": "Malik Davis",
-    "position": "RB",
-    "rotowire_id": "15828",
-    "team": "DAL"
-  },
-  {
-    "average": 463.9,
-    "name": "Germie Bernard",
-    "position": "WR",
-    "rotowire_id": "19263",
-    "team": "PIT"
-  },
-  {
-    "average": 322.5,
-    "name": "Deshaun Watson",
-    "position": "QB",
-    "rotowire_id": "11712",
+    "rotowire_id": "14458",
     "team": "CLE"
   },
   {
-    "average": 255.5,
-    "name": "Gunnar Helm",
-    "position": "TE",
-    "rotowire_id": "18503",
+    "average": 212.4,
+    "name": "Malik Washington",
+    "position": "WR",
+    "rotowire_id": "17863",
+    "team": "MIA"
+  },
+  {
+    "average": 214.2,
+    "name": "Travis Hunter",
+    "position": "WR",
+    "rotowire_id": "18578",
+    "team": "JAX"
+  },
+  {
+    "average": 214.6,
+    "name": "Bryce Young",
+    "position": "QB",
+    "rotowire_id": "16807",
+    "team": "CAR"
+  },
+  {
+    "average": 217.2,
+    "name": "Antonio Williams",
+    "position": "WR",
+    "rotowire_id": "19237",
+    "team": "WAS"
+  },
+  {
+    "average": 219.3,
+    "name": "Adonai Mitchell",
+    "position": "WR",
+    "rotowire_id": "17668",
+    "team": "NYJ"
+  },
+  {
+    "average": 220.1,
+    "name": "Trey Benson",
+    "position": "RB",
+    "rotowire_id": "17767",
+    "team": "ARI"
+  },
+  {
+    "average": 220.2,
+    "name": "Cam Ward",
+    "position": "QB",
+    "rotowire_id": "16997",
     "team": "TEN"
   },
   {
-    "average": 207.2,
-    "name": "Wil Lutz",
+    "average": 220.3,
+    "name": "Will Reichard",
     "position": "K",
-    "rotowire_id": "11309",
-    "team": "DEN"
+    "rotowire_id": "17922",
+    "team": "MIN"
   },
   {
-    "average": 470.5,
-    "name": "Devaughn Vele",
+    "average": 222.0,
+    "name": "Tank Dell",
     "position": "WR",
-    "rotowire_id": "17975",
-    "team": "NO"
+    "rotowire_id": "16935",
+    "team": "HOU"
   },
   {
-    "average": 346.9,
-    "name": "Kirk Cousins",
-    "position": "QB",
-    "rotowire_id": "8057",
-    "team": "LV"
-  },
-  {
-    "average": 211.8,
-    "name": "Kaleb Johnson",
-    "position": "RB",
-    "rotowire_id": "18515",
-    "team": "GB"
-  },
-  {
-    "average": 237.0,
-    "name": "Tyreek Hill",
+    "average": 224.3,
+    "name": "Ryan Flournoy",
     "position": "WR",
-    "rotowire_id": "11222",
-    "team": "FA"
+    "rotowire_id": "17974",
+    "team": "DAL"
   },
   {
-    "average": 372.3,
-    "name": "Michael Penix",
-    "position": "QB",
-    "rotowire_id": "17700",
-    "team": "ATL"
-  },
-  {
-    "average": 486.6,
-    "name": "Brandon Aiyuk",
-    "position": "WR",
-    "rotowire_id": "14386",
-    "team": "SF"
-  },
-  {
-    "average": 280.6,
-    "name": "Christian Kirk",
-    "position": "WR",
-    "rotowire_id": "12508",
-    "team": "SF"
-  },
-  {
-    "average": 371.3,
-    "name": "Keon Coleman",
-    "position": "WR",
-    "rotowire_id": "17732",
+    "average": 228.7,
+    "name": "Tyler Bass",
+    "position": "K",
+    "rotowire_id": "14609",
     "team": "BUF"
   },
   {
-    "average": 240.4,
-    "name": "Jake Tonges",
-    "position": "TE",
-    "rotowire_id": "16418",
-    "team": "SF"
+    "average": 229.9,
+    "name": "Cooper Kupp",
+    "position": "WR",
+    "rotowire_id": "11863",
+    "team": "SEA"
   },
   {
-    "average": 195.1,
+    "average": 229.9,
     "name": "Sam Darnold",
     "position": "QB",
     "rotowire_id": "12490",
     "team": "SEA"
   },
   {
-    "average": 414.9,
-    "name": "Ollie Gordon",
-    "position": "RB",
-    "rotowire_id": "18450",
+    "average": 230.1,
+    "name": "Jacoby Brissett",
+    "position": "QB",
+    "rotowire_id": "10919",
+    "team": "ARI"
+  },
+  {
+    "average": 231.4,
+    "name": "Andy Borregales",
+    "position": "K",
+    "rotowire_id": "18743",
+    "team": "NE"
+  },
+  {
+    "average": 231.6,
+    "name": "Caleb Douglas",
+    "position": "WR",
+    "rotowire_id": "19343",
     "team": "MIA"
   },
   {
-    "average": 337.8,
-    "name": "Jake Elliott",
-    "position": "K",
-    "rotowire_id": "12203",
-    "team": "PHI"
+    "average": 231.6,
+    "name": "Najee Harris",
+    "position": "RB",
+    "rotowire_id": "15468",
+    "team": "NYG"
   },
   {
-    "average": 264.8,
+    "average": 232.6,
+    "name": "Trey Smack",
+    "position": "K",
+    "rotowire_id": "19511",
+    "team": "GB"
+  },
+  {
+    "average": 234.1,
+    "name": "Fernando Mendoza",
+    "position": "QB",
+    "rotowire_id": "19281",
+    "team": "LV"
+  },
+  {
+    "average": 234.4,
+    "name": "Calvin Ridley",
+    "position": "WR",
+    "rotowire_id": "12616",
+    "team": "TEN"
+  },
+  {
+    "average": 234.7,
+    "name": "Kaleb Johnson",
+    "position": "RB",
+    "rotowire_id": "18515",
+    "team": "GB"
+  },
+  {
+    "average": 237.4,
+    "name": "David Njoku",
+    "position": "TE",
+    "rotowire_id": "11734",
+    "team": "LAC"
+  },
+  {
+    "average": 238.3,
+    "name": "Tyreek Hill",
+    "position": "WR",
+    "rotowire_id": "11222",
+    "team": "FA"
+  },
+  {
+    "average": 238.5,
+    "name": "Chris Bell",
+    "position": "WR",
+    "rotowire_id": "19309",
+    "team": "MIA"
+  },
+  {
+    "average": 238.8,
+    "name": "Wil Lutz",
+    "position": "K",
+    "rotowire_id": "11309",
+    "team": "DEN"
+  },
+  {
+    "average": 238.9,
+    "name": "Tre' Harris",
+    "position": "WR",
+    "rotowire_id": "18478",
+    "team": "LAC"
+  },
+  {
+    "average": 239.0,
+    "name": "Cairo Santos",
+    "position": "K",
+    "rotowire_id": "9633",
+    "team": "CHI"
+  },
+  {
+    "average": 242.3,
+    "name": "Malachi Fields",
+    "position": "WR",
+    "rotowire_id": "19313",
+    "team": "NYG"
+  },
+  {
+    "average": 242.7,
+    "name": "Kaytron Allen",
+    "position": "RB",
+    "rotowire_id": "18533",
+    "team": "WAS"
+  },
+  {
+    "average": 243.1,
+    "name": "Greg Dulcich",
+    "position": "TE",
+    "rotowire_id": "15891",
+    "team": "MIA"
+  },
+  {
+    "average": 243.1,
+    "name": "Nicholas Singleton",
+    "position": "RB",
+    "rotowire_id": "18518",
+    "team": "TEN"
+  },
+  {
+    "average": 243.5,
+    "name": "Isaac TeSlaa",
+    "position": "WR",
+    "rotowire_id": "18642",
+    "team": "DET"
+  },
+  {
+    "average": 243.8,
+    "name": "Malik Davis",
+    "position": "RB",
+    "rotowire_id": "15828",
+    "team": "DAL"
+  },
+  {
+    "average": 247.5,
+    "name": "Teddy Bridgewater",
+    "position": "QB",
+    "rotowire_id": "9245",
+    "team": "DET"
+  },
+  {
+    "average": 248.0,
+    "name": "Chase McLaughlin",
+    "position": "K",
+    "rotowire_id": "14254",
+    "team": "TB"
+  },
+  {
+    "average": 249.0,
+    "name": "Trevor Knight",
+    "position": "QB",
+    "rotowire_id": "11836",
+    "team": "FA"
+  },
+  {
+    "average": 249.2,
+    "name": "Aaron Rodgers",
+    "position": "QB",
+    "rotowire_id": "4307",
+    "team": "PIT"
+  },
+  {
+    "average": 249.8,
+    "name": "George Holani",
+    "position": "RB",
+    "rotowire_id": "17968",
+    "team": "SEA"
+  },
+  {
+    "average": 250.0,
+    "name": "Jonathan Garibay",
+    "position": "K",
+    "rotowire_id": "15856",
+    "team": "FA"
+  },
+  {
+    "average": 251.0,
+    "name": "Steven Scheu",
+    "position": "TE",
+    "rotowire_id": "11195",
+    "team": "FA"
+  },
+  {
+    "average": 251.3,
+    "name": "Sean Tucker",
+    "position": "RB",
+    "rotowire_id": "16728",
+    "team": "TB"
+  },
+  {
+    "average": 252.0,
+    "name": "Trevor Siemian",
+    "position": "QB",
+    "rotowire_id": "10483",
+    "team": "FA"
+  },
+  {
+    "average": 252.2,
+    "name": "Jaylen Wright",
+    "position": "RB",
+    "rotowire_id": "17800",
+    "team": "MIA"
+  },
+  {
+    "average": 252.7,
+    "name": "Colby Parkinson",
+    "position": "TE",
+    "rotowire_id": "14463",
+    "team": "LAR"
+  },
+  {
+    "average": 252.9,
+    "name": "Zachariah Branch",
+    "position": "WR",
+    "rotowire_id": "19262",
+    "team": "ATL"
+  },
+  {
+    "average": 253.0,
+    "name": "Tayon Fleet-Davis",
+    "position": "RB",
+    "rotowire_id": "16403",
+    "team": "FA"
+  },
+  {
+    "average": 253.9,
+    "name": "Pat Bryant",
+    "position": "WR",
+    "rotowire_id": "18562",
+    "team": "DEN"
+  },
+  {
+    "average": 254.0,
+    "name": "Xazavian Valladay",
+    "position": "RB",
+    "rotowire_id": "16789",
+    "team": "FA"
+  },
+  {
+    "average": 254.1,
+    "name": "Jaydon Blue",
+    "position": "RB",
+    "rotowire_id": "18499",
+    "team": "FA"
+  },
+  {
+    "average": 255.0,
+    "name": "Kalen Ballage",
+    "position": "RB",
+    "rotowire_id": "12786",
+    "team": "FA"
+  },
+  {
+    "average": 256.0,
+    "name": "Devon Allen",
+    "position": "WR",
+    "rotowire_id": "16178",
+    "team": "FA"
+  },
+  {
+    "average": 257.0,
+    "name": "Jaxon Janke",
+    "position": "WR",
+    "rotowire_id": "18116",
+    "team": "FA"
+  },
+  {
+    "average": 258.1,
+    "name": "Darnell Mooney",
+    "position": "WR",
+    "rotowire_id": "14510",
+    "team": "NYG"
+  },
+  {
+    "average": 258.4,
+    "name": "Evan Engram",
+    "position": "TE",
+    "rotowire_id": "11805",
+    "team": "DEN"
+  },
+  {
+    "average": 258.5,
+    "name": "Qualan Jones",
+    "position": "RB",
+    "rotowire_id": "18953",
+    "team": "FA"
+  },
+  {
+    "average": 259.8,
     "name": "Eli Stowers",
     "position": "TE",
     "rotowire_id": "18539",
     "team": "PHI"
   },
   {
-    "average": 481.9,
-    "name": "Mason Taylor",
-    "position": "TE",
-    "rotowire_id": "18535",
-    "team": "NYJ"
-  },
-  {
-    "average": 284.6,
-    "name": "Andrei Iosivas",
-    "position": "WR",
-    "rotowire_id": "16965",
+    "average": 260.0,
+    "name": "Samaje Perine",
+    "position": "RB",
+    "rotowire_id": "11698",
     "team": "CIN"
   },
   {
-    "average": 431.3,
+    "average": 260.0,
+    "name": "Charleston Rambo",
+    "position": "WR",
+    "rotowire_id": "16100",
+    "team": "FA"
+  },
+  {
+    "average": 261.0,
+    "name": "Jordan James",
+    "position": "RB",
+    "rotowire_id": "18485",
+    "team": "SF"
+  },
+  {
+    "average": 261.5,
+    "name": "Darren Sproles",
+    "position": "RB",
+    "rotowire_id": "4320",
+    "team": "FA"
+  },
+  {
+    "average": 261.6,
+    "name": "Tua Tagovailoa",
+    "position": "QB",
+    "rotowire_id": "14465",
+    "team": "ATL"
+  },
+  {
+    "average": 262.0,
+    "name": "Sal Cannella",
+    "position": "TE",
+    "rotowire_id": "14760",
+    "team": "FA"
+  },
+  {
+    "average": 264.0,
+    "name": "Pat Freiermuth",
+    "position": "TE",
+    "rotowire_id": "15267",
+    "team": "PIT"
+  },
+  {
+    "average": 264.8,
+    "name": "Gunnar Helm",
+    "position": "TE",
+    "rotowire_id": "18503",
+    "team": "TEN"
+  },
+  {
+    "average": 265.1,
+    "name": "Troy Franklin",
+    "position": "WR",
+    "rotowire_id": "17719",
+    "team": "DEN"
+  },
+  {
+    "average": 265.8,
+    "name": "J.J. Jones",
+    "position": "WR",
+    "rotowire_id": "18868",
+    "team": "FA"
+  },
+  {
+    "average": 266.0,
+    "name": "Peyton Hendershot",
+    "position": "TE",
+    "rotowire_id": "16041",
+    "team": "FA"
+  },
+  {
+    "average": 267.5,
+    "name": "Kevin Davidson",
+    "position": "QB",
+    "rotowire_id": "14635",
+    "team": "FA"
+  },
+  {
+    "average": 268.0,
+    "name": "Derius Davis",
+    "position": "WR",
+    "rotowire_id": "16939",
+    "team": "LAC"
+  },
+  {
+    "average": 268.3,
+    "name": "Mike Gesicki",
+    "position": "TE",
+    "rotowire_id": "12764",
+    "team": "CIN"
+  },
+  {
+    "average": 271.0,
+    "name": "Tanner Hudson",
+    "position": "TE",
+    "rotowire_id": "13286",
+    "team": "FA"
+  },
+  {
+    "average": 271.3,
+    "name": "Ted Hurst",
+    "position": "WR",
+    "rotowire_id": "19320",
+    "team": "TB"
+  },
+  {
+    "average": 271.5,
+    "name": "Emanuel Wilson",
+    "position": "RB",
+    "rotowire_id": "17593",
+    "team": "SEA"
+  },
+  {
+    "average": 271.9,
+    "name": "Chris Brooks",
+    "position": "RB",
+    "rotowire_id": "16741",
+    "team": "GB"
+  },
+  {
+    "average": 272.2,
+    "name": "Rashod Bateman",
+    "position": "WR",
+    "rotowire_id": "15210",
+    "team": "BAL"
+  },
+  {
+    "average": 272.5,
+    "name": "Richard Rodgers",
+    "position": "TE",
+    "rotowire_id": "9559",
+    "team": "FA"
+  },
+  {
+    "average": 272.5,
+    "name": "Anders Carlson",
+    "position": "K",
+    "rotowire_id": "17165",
+    "team": "FA"
+  },
+  {
+    "average": 273.2,
+    "name": "Cade Otton",
+    "position": "TE",
+    "rotowire_id": "16032",
+    "team": "TB"
+  },
+  {
+    "average": 273.7,
+    "name": "Emari Demercado",
+    "position": "RB",
+    "rotowire_id": "17091",
+    "team": "DAL"
+  },
+  {
+    "average": 274.0,
+    "name": "Aron Cruickshank",
+    "position": "WR",
+    "rotowire_id": "17439",
+    "team": "FA"
+  },
+  {
+    "average": 274.4,
+    "name": "Devaughn Vele",
+    "position": "WR",
+    "rotowire_id": "17975",
+    "team": "NO"
+  },
+  {
+    "average": 275.0,
+    "name": "Ja'Marcus Bradley",
+    "position": "WR",
+    "rotowire_id": "14571",
+    "team": "FA"
+  },
+  {
+    "average": 275.9,
+    "name": "Germie Bernard",
+    "position": "WR",
+    "rotowire_id": "19263",
+    "team": "PIT"
+  },
+  {
+    "average": 276.0,
+    "name": "Kameron Johnson",
+    "position": "WR",
+    "rotowire_id": "18307",
+    "team": "TB"
+  },
+  {
+    "average": 277.0,
+    "name": "Abram Smith",
+    "position": "RB",
+    "rotowire_id": "16109",
+    "team": "FA"
+  },
+  {
+    "average": 277.1,
+    "name": "Michael Penix",
+    "position": "QB",
+    "rotowire_id": "17700",
+    "team": "ATL"
+  },
+  {
+    "average": 277.6,
+    "name": "Shedeur Sanders",
+    "position": "QB",
+    "rotowire_id": "18479",
+    "team": "CLE"
+  },
+  {
+    "average": 278.0,
+    "name": "Nikko Remigio",
+    "position": "WR",
+    "rotowire_id": "16744",
+    "team": "KC"
+  },
+  {
+    "average": 279.0,
+    "name": "J.J. Taylor",
+    "position": "RB",
+    "rotowire_id": "14459",
+    "team": "FA"
+  },
+  {
+    "average": 279.1,
+    "name": "Brandon Aiyuk",
+    "position": "WR",
+    "rotowire_id": "14386",
+    "team": "SF"
+  },
+  {
+    "average": 280.0,
+    "name": "Donte Sylencieux",
+    "position": "WR",
+    "rotowire_id": "15706",
+    "team": "FA"
+  },
+  {
+    "average": 280.2,
+    "name": "Jack Bech",
+    "position": "WR",
+    "rotowire_id": "18457",
+    "team": "LV"
+  },
+  {
+    "average": 281.0,
+    "name": "Anthony Gould",
+    "position": "WR",
+    "rotowire_id": "17971",
+    "team": "FA"
+  },
+  {
+    "average": 281.1,
+    "name": "Jake Elliott",
+    "position": "K",
+    "rotowire_id": "12203",
+    "team": "PHI"
+  },
+  {
+    "average": 281.2,
     "name": "Seth McGowan",
     "position": "RB",
     "rotowire_id": "19303",
     "team": "IND"
   },
   {
-    "average": 284.9,
-    "name": "Tyquan Thornton",
+    "average": 281.7,
+    "name": "Keon Coleman",
     "position": "WR",
-    "rotowire_id": "15831",
-    "team": "KC"
+    "rotowire_id": "17732",
+    "team": "BUF"
   },
   {
-    "average": 238.2,
-    "name": "Devin Singletary",
+    "average": 281.8,
+    "name": "Jaylin Noel",
+    "position": "WR",
+    "rotowire_id": "18555",
+    "team": "HOU"
+  },
+  {
+    "average": 282.5,
+    "name": "Martavis Bryant",
+    "position": "WR",
+    "rotowire_id": "9456",
+    "team": "FA"
+  },
+  {
+    "average": 282.5,
+    "name": "Jake Tonges",
+    "position": "TE",
+    "rotowire_id": "16418",
+    "team": "SF"
+  },
+  {
+    "average": 283.2,
+    "name": "Christian Kirk",
+    "position": "WR",
+    "rotowire_id": "12508",
+    "team": "SF"
+  },
+  {
+    "average": 284.0,
+    "name": "Ollie Gordon",
     "position": "RB",
-    "rotowire_id": "13449",
-    "team": "NYG"
+    "rotowire_id": "18450",
+    "team": "MIA"
   },
   {
-    "average": 305.6,
-    "name": "Spencer Shrader",
-    "position": "K",
-    "rotowire_id": "18268",
-    "team": "IND"
-  },
-  {
-    "average": 285.6,
-    "name": "Devontez Walker",
-    "position": "WR",
-    "rotowire_id": "17728",
-    "team": "BAL"
-  },
-  {
-    "average": 463.2,
+    "average": 284.7,
     "name": "Darren Waller",
     "position": "TE",
     "rotowire_id": "10215",
     "team": "CAR"
   },
   {
-    "average": 362.7,
-    "name": "Jacob Saylors",
-    "position": "RB",
-    "rotowire_id": "17584",
-    "team": "DET"
+    "average": 284.8,
+    "name": "Mason Taylor",
+    "position": "TE",
+    "rotowire_id": "18535",
+    "team": "NYJ"
   },
   {
-    "average": 428.4,
-    "name": "J.J. McCarthy",
+    "average": 285.2,
+    "name": "Andrei Iosivas",
+    "position": "WR",
+    "rotowire_id": "16965",
+    "team": "CIN"
+  },
+  {
+    "average": 286.0,
+    "name": "Devin Singletary",
+    "position": "RB",
+    "rotowire_id": "13449",
+    "team": "NYG"
+  },
+  {
+    "average": 286.5,
+    "name": "Tyquan Thornton",
+    "position": "WR",
+    "rotowire_id": "15831",
+    "team": "KC"
+  },
+  {
+    "average": 286.9,
+    "name": "Carson Beck",
     "position": "QB",
-    "rotowire_id": "17689",
-    "team": "MIN"
+    "rotowire_id": "19287",
+    "team": "ARI"
   },
   {
-    "average": 487.1,
-    "name": "DJ Giddens",
-    "position": "RB",
-    "rotowire_id": "18443",
-    "team": "IND"
+    "average": 287.0,
+    "name": "Austin Hooper",
+    "position": "TE",
+    "rotowire_id": "10748",
+    "team": "ATL"
   },
   {
-    "average": 287.8,
-    "name": "Skyler Bell",
+    "average": 287.5,
+    "name": "Elic Ayomanor",
     "position": "WR",
-    "rotowire_id": "19251",
-    "team": "BUF"
+    "rotowire_id": "18552",
+    "team": "TEN"
   },
   {
-    "average": 287.8,
-    "name": "Joshua Palmer",
-    "position": "WR",
-    "rotowire_id": "15447",
-    "team": "BUF"
-  },
-  {
-    "average": 488.6,
-    "name": "Kyle Williams",
-    "position": "WR",
-    "rotowire_id": "19126",
-    "team": "NE"
-  },
-  {
-    "average": 361.1,
+    "average": 287.7,
     "name": "Nick Folk",
     "position": "K",
     "rotowire_id": "5365",
     "team": "ATL"
   },
   {
-    "average": 326.9,
-    "name": "Blake Grupe",
-    "position": "K",
-    "rotowire_id": "17595",
-    "team": "NYJ"
-  },
-  {
-    "average": 340.2,
-    "name": "Joe Flacco",
-    "position": "QB",
-    "rotowire_id": "5648",
-    "team": "CIN"
-  },
-  {
-    "average": 240.1,
-    "name": "Charlie Smyth",
-    "position": "K",
-    "rotowire_id": "18034",
+    "average": 288.0,
+    "name": "La'Mical Perine",
+    "position": "RB",
+    "rotowire_id": "14427",
     "team": "FA"
   },
   {
-    "average": 396.6,
-    "name": "Drew Stevens",
-    "position": "K",
-    "rotowire_id": "18511",
-    "team": "WAS"
+    "average": 288.1,
+    "name": "Darnell Washington",
+    "position": "TE",
+    "rotowire_id": "16889",
+    "team": "PIT"
   },
   {
-    "average": 349.2,
-    "name": "Joey Slye",
-    "position": "K",
-    "rotowire_id": "14172",
+    "average": 288.2,
+    "name": "Skyler Bell",
+    "position": "WR",
+    "rotowire_id": "19251",
+    "team": "BUF"
+  },
+  {
+    "average": 288.3,
+    "name": "J.J. McCarthy",
+    "position": "QB",
+    "rotowire_id": "17689",
+    "team": "MIN"
+  },
+  {
+    "average": 288.4,
+    "name": "Bam Knight",
+    "position": "RB",
+    "rotowire_id": "16105",
+    "team": "ARI"
+  },
+  {
+    "average": 288.4,
+    "name": "DJ Giddens",
+    "position": "RB",
+    "rotowire_id": "18443",
+    "team": "IND"
+  },
+  {
+    "average": 288.7,
+    "name": "Joshua Palmer",
+    "position": "WR",
+    "rotowire_id": "15447",
+    "team": "BUF"
+  },
+  {
+    "average": 289.0,
+    "name": "Easton Stick",
+    "position": "QB",
+    "rotowire_id": "13627",
+    "team": "FA"
+  },
+  {
+    "average": 289.1,
+    "name": "Chimere Dike",
+    "position": "WR",
+    "rotowire_id": "18641",
     "team": "TEN"
   },
   {
-    "average": 396.5,
-    "name": "Odell Beckham",
+    "average": 289.1,
+    "name": "Kyle Williams",
     "position": "WR",
-    "rotowire_id": "9255",
-    "team": "NYG"
+    "rotowire_id": "19126",
+    "team": "NE"
+  },
+  {
+    "average": 289.3,
+    "name": "DeMario Douglas",
+    "position": "WR",
+    "rotowire_id": "16751",
+    "team": "NE"
+  },
+  {
+    "average": 289.5,
+    "name": "Matt Gay",
+    "position": "K",
+    "rotowire_id": "13673",
+    "team": "LV"
+  },
+  {
+    "average": 289.6,
+    "name": "Justin Fields",
+    "position": "QB",
+    "rotowire_id": "15416",
+    "team": "KC"
+  },
+  {
+    "average": 289.6,
+    "name": "Tahj Brooks",
+    "position": "RB",
+    "rotowire_id": "18519",
+    "team": "CIN"
   },
   {
     "average": 289.9,
@@ -1981,35 +2219,56 @@
     "team": "BUF"
   },
   {
-    "average": 344.8,
-    "name": "Matt Gay",
-    "position": "K",
-    "rotowire_id": "13673",
-    "team": "LV"
+    "average": 290.1,
+    "name": "Joe Flacco",
+    "position": "QB",
+    "rotowire_id": "5648",
+    "team": "CIN"
   },
   {
-    "average": 442.7,
-    "name": "Kareem Hunt",
-    "position": "RB",
-    "rotowire_id": "11739",
+    "average": 290.2,
+    "name": "Ty Simpson",
+    "position": "QB",
+    "rotowire_id": "19275",
+    "team": "LAR"
+  },
+  {
+    "average": 290.3,
+    "name": "Charlie Smyth",
+    "position": "K",
+    "rotowire_id": "18034",
     "team": "FA"
+  },
+  {
+    "average": 290.4,
+    "name": "Jameis Winston",
+    "position": "QB",
+    "rotowire_id": "10037",
+    "team": "NYG"
+  },
+  {
+    "average": 290.4,
+    "name": "Kendrick Bourne",
+    "position": "WR",
+    "rotowire_id": "11847",
+    "team": "ARI"
   },
   {
     "average": 290.6,
-    "name": "Nick Westbrook-Ikhine",
-    "position": "WR",
-    "rotowire_id": "14750",
-    "team": "FA"
+    "name": "Mac Jones",
+    "position": "QB",
+    "rotowire_id": "15402",
+    "team": "SF"
   },
   {
     "average": 290.7,
-    "name": "Bryce Lance",
-    "position": "WR",
-    "rotowire_id": "19319",
-    "team": "NO"
+    "name": "Riley Patterson",
+    "position": "K",
+    "rotowire_id": "15512",
+    "team": "MIA"
   },
   {
-    "average": 386.2,
+    "average": 290.9,
     "name": "Ryan Fitzgerald",
     "position": "K",
     "rotowire_id": "18508",
@@ -2017,1319 +2276,1263 @@
   },
   {
     "average": 290.9,
+    "name": "Bryce Lance",
+    "position": "WR",
+    "rotowire_id": "19319",
+    "team": "NO"
+  },
+  {
+    "average": 290.9,
+    "name": "Nick Westbrook-Ikhine",
+    "position": "WR",
+    "rotowire_id": "14750",
+    "team": "FA"
+  },
+  {
+    "average": 291.0,
+    "name": "Theo Wease",
+    "position": "WR",
+    "rotowire_id": "18645",
+    "team": "FA"
+  },
+  {
+    "average": 291.2,
     "name": "Ben Sauls",
     "position": "K",
     "rotowire_id": "18744",
     "team": "FA"
   },
   {
-    "average": 291.2,
-    "name": "Nate Boerkircher",
-    "position": "TE",
-    "rotowire_id": "19448",
-    "team": "JAX"
-  },
-  {
-    "average": 291.2,
-    "name": "Jaleel McLaughlin",
-    "position": "RB",
-    "rotowire_id": "17319",
-    "team": "FA"
-  },
-  {
     "average": 291.3,
-    "name": "J'Mari Taylor",
-    "position": "RB",
-    "rotowire_id": "19245",
-    "team": "FA"
-  },
-  {
-    "average": 432.5,
-    "name": "Ty Simpson",
-    "position": "QB",
-    "rotowire_id": "19275",
-    "team": "LAR"
-  },
-  {
-    "average": 291.3,
-    "name": "Robert Tonyan",
-    "position": "TE",
-    "rotowire_id": "12389",
-    "team": "PIT"
-  },
-  {
-    "average": 308.7,
-    "name": "Elijah Higgins",
-    "position": "TE",
-    "rotowire_id": "16959",
-    "team": "ARI"
-  },
-  {
-    "average": 408.6,
-    "name": "Trent Sherfield",
-    "position": "WR",
-    "rotowire_id": "13061",
-    "team": "FA"
-  },
-  {
-    "average": 463.6,
-    "name": "Taysom Hill",
-    "position": "TE",
-    "rotowire_id": "12063",
-    "team": "FA"
-  },
-  {
-    "average": 610.3,
-    "name": "Jayden Higgins",
-    "position": "WR",
-    "rotowire_id": "18551",
-    "team": "HOU"
-  },
-  {
-    "average": 823.1,
-    "name": "Ricky Pearsall",
-    "position": "WR",
-    "rotowire_id": "17761",
-    "team": "SF"
-  },
-  {
-    "average": 313.0,
-    "name": "Easton Stick",
-    "position": "QB",
-    "rotowire_id": "13627",
-    "team": "FA"
-  },
-  {
-    "average": 314.0,
-    "name": "Jack Strand",
-    "position": "QB",
-    "rotowire_id": "19642",
-    "team": "ATL"
-  },
-  {
-    "average": 482.5,
-    "name": "Phillip Sims",
-    "position": "QB",
-    "rotowire_id": "10564",
-    "team": "FA"
-  },
-  {
-    "average": 328.0,
-    "name": "Kedon Slovis",
-    "position": "QB",
-    "rotowire_id": "17979",
-    "team": "FA"
-  },
-  {
-    "average": 267.5,
-    "name": "Trevor Siemian",
-    "position": "QB",
-    "rotowire_id": "10483",
-    "team": "FA"
-  },
-  {
-    "average": 250.0,
-    "name": "Nathan Rourke",
-    "position": "QB",
-    "rotowire_id": "14646",
-    "team": "FA"
-  },
-  {
-    "average": 433.0,
-    "name": "Shedeur Sanders",
-    "position": "QB",
-    "rotowire_id": "18479",
-    "team": "CLE"
-  },
-  {
-    "average": 662.5,
-    "name": "Bryce Perkins",
-    "position": "QB",
-    "rotowire_id": "14429",
-    "team": "FA"
-  },
-  {
-    "average": 598.5,
-    "name": "Nathan Peterman",
-    "position": "QB",
-    "rotowire_id": "11840",
-    "team": "FA"
-  },
-  {
-    "average": 554.0,
-    "name": "Drew Plitt",
-    "position": "QB",
-    "rotowire_id": "16636",
-    "team": "FA"
-  },
-  {
-    "average": 543.5,
-    "name": "Garrett Nussmeier",
-    "position": "QB",
-    "rotowire_id": "19283",
-    "team": "KC"
-  },
-  {
-    "average": 494.0,
-    "name": "Chris Oladokun",
-    "position": "QB",
-    "rotowire_id": "16291",
-    "team": "FA"
-  },
-  {
-    "average": 700.8,
-    "name": "Diego Pavia",
-    "position": "QB",
-    "rotowire_id": "19290",
-    "team": "FA"
-  },
-  {
-    "average": 351.0,
-    "name": "Cole Payton",
-    "position": "QB",
-    "rotowire_id": "19296",
-    "team": "PHI"
-  },
-  {
-    "average": 335.5,
-    "name": "Adrian Martinez",
-    "position": "QB",
-    "rotowire_id": "17266",
-    "team": "FA"
-  },
-  {
-    "average": 465.0,
-    "name": "Anthony Richardson",
-    "position": "QB",
-    "rotowire_id": "16653",
-    "team": "IND"
-  },
-  {
-    "average": 506.3,
-    "name": "Philip Rivers",
-    "position": "QB",
-    "rotowire_id": "3766",
-    "team": "FA"
-  },
-  {
-    "average": 682.0,
-    "name": "Hajj-Malik Williams",
-    "position": "QB",
-    "rotowire_id": "18910",
-    "team": "FA"
-  },
-  {
-    "average": 541.5,
-    "name": "Ryan Tannehill",
-    "position": "QB",
-    "rotowire_id": "8040",
-    "team": "FA"
-  },
-  {
-    "average": 508.0,
-    "name": "Tyrod Taylor",
-    "position": "QB",
-    "rotowire_id": "7357",
-    "team": "GB"
-  },
-  {
-    "average": 367.0,
-    "name": "Vincent Testaverde",
-    "position": "QB",
-    "rotowire_id": "14336",
-    "team": "FA"
-  },
-  {
-    "average": 443.0,
-    "name": "DJ Uiagalelei",
-    "position": "QB",
-    "rotowire_id": "18448",
-    "team": "FA"
-  },
-  {
-    "average": 462.0,
-    "name": "Bailey Zappe",
-    "position": "QB",
-    "rotowire_id": "15975",
-    "team": "FA"
-  },
-  {
-    "average": 447.4,
-    "name": "Israel Abanikanda",
-    "position": "RB",
-    "rotowire_id": "16735",
-    "team": "FA"
-  },
-  {
-    "average": 479.0,
-    "name": "Ameer Abdullah",
-    "position": "RB",
-    "rotowire_id": "10126",
-    "team": "JAX"
-  },
-  {
-    "average": 647.7,
-    "name": "Rasheen Ali",
-    "position": "RB",
-    "rotowire_id": "17026",
-    "team": "BAL"
-  },
-  {
-    "average": 418.0,
-    "name": "Ryan Willis",
-    "position": "QB",
-    "rotowire_id": "15812",
-    "team": "FA"
-  },
-  {
-    "average": 533.0,
-    "name": "Russell Wilson",
-    "position": "QB",
-    "rotowire_id": "8043",
-    "team": "FA"
-  },
-  {
-    "average": 589.0,
-    "name": "Jameis Winston",
-    "position": "QB",
-    "rotowire_id": "10037",
-    "team": "NYG"
-  },
-  {
-    "average": 271.0,
-    "name": "Kazmeir Allen",
-    "position": "RB",
-    "rotowire_id": "16775",
-    "team": "FA"
-  },
-  {
-    "average": 446.5,
-    "name": "Raheem Blackshear",
-    "position": "RB",
-    "rotowire_id": "16355",
-    "team": "FA"
-  },
-  {
-    "average": 553.0,
-    "name": "Khari Blasingame",
-    "position": "RB",
-    "rotowire_id": "13998",
-    "team": "FA"
-  },
-  {
-    "average": 402.0,
-    "name": "Isaiah Bowser",
-    "position": "RB",
-    "rotowire_id": "17320",
-    "team": "FA"
-  },
-  {
-    "average": 256.0,
-    "name": "Kalen Ballage",
-    "position": "RB",
-    "rotowire_id": "12786",
-    "team": "FA"
-  },
-  {
-    "average": 222.2,
-    "name": "Trey Benson",
-    "position": "RB",
-    "rotowire_id": "17767",
-    "team": "ARI"
-  },
-  {
-    "average": 427.0,
-    "name": "Blaine Gabbert",
-    "position": "QB",
-    "rotowire_id": "7248",
-    "team": "FA"
-  },
-  {
-    "average": 651.0,
-    "name": "Dillon Gabriel",
-    "position": "QB",
-    "rotowire_id": "18496",
-    "team": "CLE"
-  },
-  {
-    "average": 395.0,
-    "name": "Jimmy Garoppolo",
-    "position": "QB",
-    "rotowire_id": "9320",
-    "team": "FA"
-  },
-  {
-    "average": 353.5,
-    "name": "Jarrett Guarantano",
-    "position": "QB",
-    "rotowire_id": "16617",
-    "team": "FA"
-  },
-  {
-    "average": 369.5,
-    "name": "Jake Haener",
-    "position": "QB",
-    "rotowire_id": "16912",
-    "team": "FA"
-  },
-  {
-    "average": 513.0,
-    "name": "Gavin Hardison",
-    "position": "QB",
-    "rotowire_id": "18070",
-    "team": "FA"
-  },
-  {
-    "average": 478.8,
-    "name": "Taylor Heinicke",
-    "position": "QB",
-    "rotowire_id": "10179",
-    "team": "FA"
-  },
-  {
-    "average": 658.5,
-    "name": "Chad Henne",
-    "position": "QB",
-    "rotowire_id": "5685",
-    "team": "FA"
-  },
-  {
-    "average": 356.0,
-    "name": "Brady Cook",
-    "position": "QB",
-    "rotowire_id": "18482",
-    "team": "MIA"
-  },
-  {
-    "average": 316.0,
-    "name": "Tim DeMorat",
-    "position": "QB",
-    "rotowire_id": "17053",
-    "team": "FA"
-  },
-  {
-    "average": 627.5,
-    "name": "Sam Ehlinger",
-    "position": "QB",
-    "rotowire_id": "15328",
-    "team": "DEN"
-  },
-  {
-    "average": 668.9,
-    "name": "Justin Fields",
-    "position": "QB",
-    "rotowire_id": "15416",
-    "team": "KC"
-  },
-  {
-    "average": 571.0,
-    "name": "Colt McCoy",
-    "position": "QB",
-    "rotowire_id": "6444",
-    "team": "FA"
-  },
-  {
-    "average": 417.8,
-    "name": "Josh Love",
-    "position": "QB",
-    "rotowire_id": "14555",
-    "team": "FA"
-  },
-  {
-    "average": 473.3,
-    "name": "Peewee Jarrett",
-    "position": "QB",
-    "rotowire_id": "18203",
-    "team": "FA"
-  },
-  {
-    "average": 583.5,
-    "name": "Joe Milton",
-    "position": "QB",
-    "rotowire_id": "17830",
-    "team": "FA"
-  },
-  {
-    "average": 583.5,
-    "name": "Gardner Minshew",
-    "position": "QB",
-    "rotowire_id": "13741",
-    "team": "ARI"
-  },
-  {
-    "average": 606.5,
-    "name": "Miller Moss",
-    "position": "QB",
-    "rotowire_id": "19271",
-    "team": "FA"
-  },
-  {
-    "average": 578.3,
-    "name": "Mac Jones",
-    "position": "QB",
-    "rotowire_id": "15402",
-    "team": "SF"
-  },
-  {
-    "average": 626.0,
-    "name": "Case Keenum",
-    "position": "QB",
-    "rotowire_id": "8065",
-    "team": "CHI"
-  },
-  {
-    "average": 436.0,
-    "name": "Haynes King",
-    "position": "QB",
-    "rotowire_id": "19429",
-    "team": "CAR"
-  },
-  {
-    "average": 459.0,
-    "name": "DeShone Kizer",
-    "position": "QB",
-    "rotowire_id": "11692",
-    "team": "FA"
-  },
-  {
-    "average": 542.3,
     "name": "Cade Klubnik",
     "position": "QB",
     "rotowire_id": "19284",
     "team": "NYJ"
   },
   {
-    "average": 264.0,
-    "name": "Trevor Knight",
-    "position": "QB",
-    "rotowire_id": "11836",
+    "average": 291.4,
+    "name": "Nate Boerkircher",
+    "position": "TE",
+    "rotowire_id": "19448",
+    "team": "JAX"
+  },
+  {
+    "average": 291.4,
+    "name": "Jaleel McLaughlin",
+    "position": "RB",
+    "rotowire_id": "17319",
+    "team": "CLE"
+  },
+  {
+    "average": 291.4,
+    "name": "J'Mari Taylor",
+    "position": "RB",
+    "rotowire_id": "19245",
     "team": "FA"
   },
   {
-    "average": 421.0,
-    "name": "Hendon Hooker",
-    "position": "QB",
-    "rotowire_id": "16905",
-    "team": "FA"
-  },
-  {
-    "average": 637.0,
-    "name": "Will Howard",
-    "position": "QB",
-    "rotowire_id": "18512",
+    "average": 291.5,
+    "name": "Robert Tonyan",
+    "position": "TE",
+    "rotowire_id": "12389",
     "team": "PIT"
   },
   {
-    "average": 631.5,
-    "name": "Brett Hundley",
-    "position": "QB",
-    "rotowire_id": "9706",
-    "team": "FA"
-  },
-  {
-    "average": 454.3,
-    "name": "Tyler Huntley",
-    "position": "QB",
-    "rotowire_id": "14563",
-    "team": "BAL"
-  },
-  {
-    "average": 442.0,
+    "average": 291.6,
     "name": "Tyson Bagent",
     "position": "QB",
     "rotowire_id": "16946",
     "team": "CHI"
   },
   {
-    "average": 437.0,
-    "name": "Matt Barkley",
+    "average": 291.6,
+    "name": "Kansei Matsuzawa",
+    "position": "K",
+    "rotowire_id": "19867",
+    "team": "FA"
+  },
+  {
+    "average": 291.9,
+    "name": "Tanner McKee",
     "position": "QB",
-    "rotowire_id": "8004",
-    "team": "FA"
-  },
-  {
-    "average": 360.0,
-    "name": "Tim Boyle",
-    "position": "QB",
-    "rotowire_id": "13109",
-    "team": "FA"
-  },
-  {
-    "average": 697.5,
-    "name": "Holton Ahlers",
-    "position": "QB",
-    "rotowire_id": "17265",
-    "team": "FA"
-  },
-  {
-    "average": 261.0,
-    "name": "J.J. Taylor",
-    "position": "RB",
-    "rotowire_id": "14459",
-    "team": "FA"
-  },
-  {
-    "average": 620.4,
-    "name": "Sione Vaki",
-    "position": "RB",
-    "rotowire_id": "17760",
-    "team": "DET"
-  },
-  {
-    "average": 255.0,
-    "name": "Xazavian Valladay",
-    "position": "RB",
-    "rotowire_id": "16789",
-    "team": "FA"
-  },
-  {
-    "average": 423.0,
-    "name": "Deuce Vaughn",
-    "position": "RB",
-    "rotowire_id": "17003",
-    "team": "FA"
-  },
-  {
-    "average": 466.0,
-    "name": "Pierre Strong",
-    "position": "RB",
-    "rotowire_id": "16102",
-    "team": "FA"
-  },
-  {
-    "average": 477.0,
-    "name": "Master Teague",
-    "position": "RB",
-    "rotowire_id": "16000",
-    "team": "FA"
-  },
-  {
-    "average": 274.0,
-    "name": "SaRodorick Thompson",
-    "position": "RB",
-    "rotowire_id": "17052",
-    "team": "FA"
-  },
-  {
-    "average": 407.0,
-    "name": "De'Montre Tuggle",
-    "position": "RB",
-    "rotowire_id": "16462",
-    "team": "FA"
-  },
-  {
-    "average": 323.0,
-    "name": "Spencer Ware",
-    "position": "RB",
-    "rotowire_id": "8625",
-    "team": "FA"
-  },
-  {
-    "average": 518.3,
-    "name": "Zamir White",
-    "position": "RB",
-    "rotowire_id": "15852",
-    "team": "FA"
-  },
-  {
-    "average": 549.5,
-    "name": "Noah Whittington",
-    "position": "RB",
-    "rotowire_id": "19305",
-    "team": "FA"
-  },
-  {
-    "average": 380.0,
-    "name": "Boston Scott",
-    "position": "RB",
-    "rotowire_id": "12996",
-    "team": "FA"
-  },
-  {
-    "average": 435.0,
-    "name": "Aaron Shampklin",
-    "position": "RB",
-    "rotowire_id": "16367",
-    "team": "FA"
-  },
-  {
-    "average": 673.7,
-    "name": "Will Shipley",
-    "position": "RB",
-    "rotowire_id": "17802",
+    "rotowire_id": "16686",
     "team": "PHI"
   },
   {
-    "average": 288.0,
-    "name": "Darren Sproles",
-    "position": "RB",
-    "rotowire_id": "4320",
-    "team": "FA"
+    "average": 291.9,
+    "name": "Zach Ertz",
+    "position": "TE",
+    "rotowire_id": "8781",
+    "team": "PHI"
   },
   {
-    "average": 618.0,
-    "name": "Adam Randall",
-    "position": "RB",
-    "rotowire_id": "19301",
-    "team": "BAL"
-  },
-  {
-    "average": 463.0,
-    "name": "Clint Ratkovich",
-    "position": "RB",
-    "rotowire_id": "16180",
-    "team": "FA"
-  },
-  {
-    "average": 528.0,
-    "name": "Ronnie Rivers",
-    "position": "RB",
-    "rotowire_id": "16108",
-    "team": "LAR"
-  },
-  {
-    "average": 535.5,
-    "name": "D'Vonte Price",
-    "position": "RB",
-    "rotowire_id": "15981",
-    "team": "FA"
-  },
-  {
-    "average": 505.5,
-    "name": "A.J. Rose",
-    "position": "RB",
-    "rotowire_id": "15350",
-    "team": "FA"
-  },
-  {
-    "average": 591.5,
-    "name": "Jam Miller",
-    "position": "RB",
-    "rotowire_id": "19302",
-    "team": "FA"
-  },
-  {
-    "average": 623.5,
-    "name": "Kendre Miller",
-    "position": "RB",
-    "rotowire_id": "16898",
-    "team": "NO"
-  },
-  {
-    "average": 322.0,
-    "name": "Lamar Miller",
-    "position": "RB",
-    "rotowire_id": "8008",
-    "team": "FA"
-  },
-  {
-    "average": 377.0,
-    "name": "Elijah Mitchell",
-    "position": "RB",
-    "rotowire_id": "15379",
-    "team": "FA"
-  },
-  {
-    "average": 426.0,
-    "name": "John Lovett",
-    "position": "RB",
-    "rotowire_id": "16243",
-    "team": "FA"
-  },
-  {
-    "average": 649.5,
-    "name": "Kay'Ron Lynch-Adams",
-    "position": "RB",
-    "rotowire_id": "18933",
-    "team": "FA"
-  },
-  {
-    "average": 540.0,
-    "name": "Taj McGowan",
-    "position": "RB",
-    "rotowire_id": "14320",
-    "team": "FA"
-  },
-  {
-    "average": 332.2,
-    "name": "Kenny McIntosh",
-    "position": "RB",
-    "rotowire_id": "17002",
-    "team": "FA"
-  },
-  {
-    "average": 661.7,
-    "name": "Joe Mixon",
-    "position": "RB",
-    "rotowire_id": "11707",
-    "team": "FA"
-  },
-  {
-    "average": 297.0,
-    "name": "Camerun Peoples",
-    "position": "RB",
-    "rotowire_id": "16927",
-    "team": "FA"
-  },
-  {
-    "average": 312.0,
-    "name": "La'Mical Perine",
-    "position": "RB",
-    "rotowire_id": "14427",
-    "team": "FA"
-  },
-  {
-    "average": 623.5,
-    "name": "Raheem Mostert",
-    "position": "RB",
-    "rotowire_id": "10604",
-    "team": "FA"
-  },
-  {
-    "average": 286.8,
-    "name": "Kene Nwangwu",
-    "position": "RB",
-    "rotowire_id": "15579",
-    "team": "NYJ"
-  },
-  {
-    "average": 291.0,
-    "name": "Ja'Quinden Jackson",
-    "position": "RB",
-    "rotowire_id": "18527",
-    "team": "FA"
-  },
-  {
-    "average": 687.5,
-    "name": "Jermar Jefferson",
-    "position": "RB",
-    "rotowire_id": "15296",
-    "team": "MIN"
-  },
-  {
-    "average": 463.8,
-    "name": "Roschon Johnson",
-    "position": "RB",
-    "rotowire_id": "16772",
-    "team": "CHI"
-  },
-  {
-    "average": 420.0,
-    "name": "Taiwan Jones",
-    "position": "RB",
-    "rotowire_id": "7324",
-    "team": "FA"
-  },
-  {
-    "average": 306.0,
-    "name": "Khalan Laborn",
-    "position": "RB",
-    "rotowire_id": "17313",
-    "team": "FA"
-  },
-  {
-    "average": 526.8,
-    "name": "Dylan Laube",
-    "position": "RB",
-    "rotowire_id": "17818",
-    "team": "LV"
-  },
-  {
-    "average": 278.0,
-    "name": "Frank Gore",
-    "position": "RB",
-    "rotowire_id": "17853",
-    "team": "FA"
-  },
-  {
-    "average": 535.3,
-    "name": "Isaac Guerendo",
-    "position": "RB",
-    "rotowire_id": "17947",
-    "team": "SF"
-  },
-  {
-    "average": 615.5,
-    "name": "Jamal Haynes",
-    "position": "RB",
-    "rotowire_id": "19424",
-    "team": "FA"
-  },
-  {
-    "average": 357.0,
-    "name": "JaQuan Hardy",
-    "position": "RB",
-    "rotowire_id": "15660",
+    "average": 292.0,
+    "name": "Jonathan Brown",
+    "position": "K",
+    "rotowire_id": "11738",
     "team": "FA"
   },
   {
     "average": 294.0,
-    "name": "Kevin Harris",
-    "position": "RB",
-    "rotowire_id": "15991",
-    "team": "FA"
-  },
-  {
-    "average": 484.5,
-    "name": "AJ Dillon",
-    "position": "RB",
-    "rotowire_id": "14370",
-    "team": "CAR"
-  },
-  {
-    "average": 382.0,
-    "name": "Josh Ferguson",
-    "position": "RB",
-    "rotowire_id": "11005",
-    "team": "FA"
-  },
-  {
-    "average": 268.5,
-    "name": "Tayon Fleet-Davis",
-    "position": "RB",
-    "rotowire_id": "16403",
-    "team": "FA"
-  },
-  {
-    "average": 507.4,
-    "name": "Isaiah Davis",
-    "position": "RB",
-    "rotowire_id": "17057",
-    "team": "NYJ"
-  },
-  {
-    "average": 303.0,
-    "name": "Snoop Conner",
-    "position": "RB",
-    "rotowire_id": "15897",
-    "team": "FA"
-  },
-  {
-    "average": 511.5,
-    "name": "Mataeo Durant",
-    "position": "RB",
-    "rotowire_id": "16018",
-    "team": "FA"
-  },
-  {
-    "average": 428.8,
-    "name": "Austin Ekeler",
-    "position": "RB",
-    "rotowire_id": "12401",
-    "team": "FA"
-  },
-  {
-    "average": 690.0,
-    "name": "Audric Estime",
-    "position": "RB",
-    "rotowire_id": "17788",
-    "team": "NO"
-  },
-  {
-    "average": 302.0,
-    "name": "Kennedy Brooks",
-    "position": "RB",
-    "rotowire_id": "15978",
-    "team": "FA"
-  },
-  {
-    "average": 394.5,
-    "name": "Tahj Brooks",
-    "position": "RB",
-    "rotowire_id": "18519",
-    "team": "CIN"
-  },
-  {
-    "average": 331.0,
-    "name": "Tony Brooks-James",
-    "position": "RB",
-    "rotowire_id": "14237",
-    "team": "FA"
-  },
-  {
-    "average": 628.8,
-    "name": "Julius Chestnut",
-    "position": "RB",
-    "rotowire_id": "15921",
-    "team": "TEN"
-  },
-  {
-    "average": 527.8,
-    "name": "Nick Chubb",
-    "position": "RB",
-    "rotowire_id": "12886",
-    "team": "FA"
-  },
-  {
-    "average": 247.7,
-    "name": "Demond Claiborne",
-    "position": "RB",
-    "rotowire_id": "19234",
-    "team": "MIN"
-  },
-  {
-    "average": 370.0,
-    "name": "Ronnie Brown",
-    "position": "RB",
-    "rotowire_id": "17268",
-    "team": "FA"
-  },
-  {
-    "average": 372.5,
-    "name": "Raymond Calais",
-    "position": "RB",
-    "rotowire_id": "14625",
-    "team": "FA"
-  },
-  {
-    "average": 287.0,
-    "name": "Kadarius Calloway",
-    "position": "RB",
-    "rotowire_id": "20081",
-    "team": "FA"
-  },
-  {
-    "average": 575.0,
-    "name": "Ty Chandler",
-    "position": "RB",
-    "rotowire_id": "15979",
-    "team": "NO"
-  },
-  {
-    "average": 600.0,
-    "name": "Nick Sciba",
-    "position": "K",
-    "rotowire_id": "16613",
-    "team": "FA"
-  },
-  {
-    "average": 563.0,
-    "name": "Parker Romo",
-    "position": "K",
-    "rotowire_id": "16559",
-    "team": "FA"
-  },
-  {
-    "average": 304.0,
-    "name": "Taylor Russolino",
-    "position": "K",
-    "rotowire_id": "15225",
-    "team": "FA"
-  },
-  {
-    "average": 337.0,
-    "name": "Chad Ryland",
-    "position": "K",
-    "rotowire_id": "17107",
-    "team": "ARI"
-  },
-  {
-    "average": 383.5,
-    "name": "Jason Sanders",
-    "position": "K",
-    "rotowire_id": "13007",
-    "team": "FA"
-  },
-  {
-    "average": 579.8,
-    "name": "Matt Prater",
-    "position": "K",
-    "rotowire_id": "5051",
-    "team": "FA"
-  },
-  {
-    "average": 474.6,
-    "name": "Alex Quevedo",
-    "position": "K",
-    "rotowire_id": "16918",
-    "team": "FA"
-  },
-  {
-    "average": 451.6,
-    "name": "Andre Szmyt",
-    "position": "K",
-    "rotowire_id": "17132",
-    "team": "CLE"
-  },
-  {
-    "average": 408.0,
-    "name": "Matthew Trickett",
-    "position": "K",
-    "rotowire_id": "17385",
-    "team": "FA"
-  },
-  {
-    "average": 355.0,
-    "name": "Justin Tucker",
-    "position": "K",
-    "rotowire_id": "8398",
-    "team": "FA"
-  },
-  {
-    "average": 481.5,
-    "name": "Cade York",
-    "position": "K",
-    "rotowire_id": "16227",
-    "team": "FA"
-  },
-  {
-    "average": 476.2,
-    "name": "Dominic Zvada",
-    "position": "K",
-    "rotowire_id": "18509",
-    "team": "NYG"
-  },
-  {
-    "average": 582.0,
-    "name": "Zane Gonzalez",
-    "position": "K",
-    "rotowire_id": "11831",
-    "team": "FA"
-  },
-  {
-    "average": 453.3,
-    "name": "Brandon McManus",
-    "position": "K",
-    "rotowire_id": "9948",
-    "team": "FA"
-  },
-  {
-    "average": 411.0,
-    "name": "Andrew Mevis",
-    "position": "K",
-    "rotowire_id": "16349",
-    "team": "FA"
-  },
-  {
-    "average": 548.9,
-    "name": "Jake Moody",
-    "position": "K",
-    "rotowire_id": "17133",
-    "team": "FA"
-  },
-  {
-    "average": 394.6,
-    "name": "Riley Patterson",
-    "position": "K",
-    "rotowire_id": "15512",
-    "team": "MIA"
-  },
-  {
-    "average": 358.0,
-    "name": "Kai Forbath",
-    "position": "K",
-    "rotowire_id": "7544",
-    "team": "FA"
-  },
-  {
-    "average": 253.0,
-    "name": "Jonathan Garibay",
-    "position": "K",
-    "rotowire_id": "15856",
-    "team": "FA"
-  },
-  {
-    "average": 325.0,
-    "name": "David Marvin",
-    "position": "K",
-    "rotowire_id": "13093",
-    "team": "FA"
-  },
-  {
-    "average": 425.0,
-    "name": "Alex Kessman",
-    "position": "K",
-    "rotowire_id": "15534",
-    "team": "FA"
-  },
-  {
-    "average": 487.4,
-    "name": "Younghoe Koo",
-    "position": "K",
-    "rotowire_id": "12292",
-    "team": "FA"
-  },
-  {
-    "average": 551.0,
-    "name": "Tanner Brown",
-    "position": "K",
-    "rotowire_id": "17378",
-    "team": "FA"
-  },
-  {
-    "average": 419.2,
-    "name": "Randy Bullock",
-    "position": "K",
-    "rotowire_id": "8222",
-    "team": "FA"
-  },
-  {
-    "average": 272.6,
-    "name": "Daniel Carlson",
-    "position": "K",
-    "rotowire_id": "12842",
-    "team": "NO"
-  },
-  {
-    "average": 403.3,
-    "name": "Luke Drzewiecki",
-    "position": "K",
-    "rotowire_id": "19893",
-    "team": "FA"
-  },
-  {
-    "average": 586.0,
-    "name": "Michael Badgley",
-    "position": "K",
-    "rotowire_id": "12775",
-    "team": "FA"
-  },
-  {
-    "average": 327.0,
-    "name": "Donovan Peoples-Jones",
-    "position": "WR",
-    "rotowire_id": "14457",
-    "team": "FA"
-  },
-  {
-    "average": 272.0,
-    "name": "Gunner Olszewski",
-    "position": "WR",
-    "rotowire_id": "14318",
-    "team": "NYG"
-  },
-  {
-    "average": 538.5,
-    "name": "Coleman Owen",
-    "position": "WR",
-    "rotowire_id": "18877",
-    "team": "IND"
-  },
-  {
-    "average": 413.0,
-    "name": "Tim Patrick",
-    "position": "WR",
-    "rotowire_id": "12061",
-    "team": "NYJ"
-  },
-  {
-    "average": 293.5,
-    "name": "Nikko Remigio",
-    "position": "WR",
-    "rotowire_id": "16744",
-    "team": "KC"
-  },
-  {
-    "average": 292.5,
-    "name": "Xavier Restrepo",
-    "position": "WR",
-    "rotowire_id": "18466",
-    "team": "FA"
-  },
-  {
-    "average": 277.0,
-    "name": "Charleston Rambo",
-    "position": "WR",
-    "rotowire_id": "16100",
-    "team": "FA"
-  },
-  {
-    "average": 412.0,
-    "name": "Justin Shorter",
-    "position": "WR",
-    "rotowire_id": "16656",
-    "team": "LV"
-  },
-  {
-    "average": 543.5,
-    "name": "Ben Skowronek",
-    "position": "WR",
-    "rotowire_id": "15467",
-    "team": "PIT"
-  },
-  {
-    "average": 189.3,
-    "name": "Darius Slayton",
-    "position": "WR",
-    "rotowire_id": "13522",
-    "team": "NYG"
-  },
-  {
-    "average": 295.0,
-    "name": "Jared Smart",
-    "position": "WR",
-    "rotowire_id": "16619",
-    "team": "FA"
-  },
-  {
-    "average": 363.0,
-    "name": "Arian Smith",
-    "position": "WR",
-    "rotowire_id": "18646",
-    "team": "NYJ"
-  },
-  {
-    "average": 283.0,
-    "name": "Devin Smith",
-    "position": "WR",
-    "rotowire_id": "10209",
-    "team": "FA"
-  },
-  {
-    "average": 299.0,
-    "name": "Tyler Scott",
-    "position": "WR",
-    "rotowire_id": "16713",
-    "team": "FA"
-  },
-  {
-    "average": 550.0,
-    "name": "Demarcus Robinson",
-    "position": "WR",
-    "rotowire_id": "11163",
-    "team": "SF"
-  },
-  {
-    "average": 393.0,
-    "name": "Rashad Rochelle",
-    "position": "WR",
-    "rotowire_id": "20102",
-    "team": "FA"
-  },
-  {
-    "average": 338.0,
-    "name": "Marcus Rosemy-Jacksaint",
-    "position": "WR",
-    "rotowire_id": "17806",
-    "team": "FA"
-  },
-  {
-    "average": 318.5,
     "name": "Justyn Ross",
     "position": "WR",
     "rotowire_id": "15910",
     "team": "FA"
   },
   {
-    "average": 655.0,
-    "name": "Jalen Royals",
+    "average": 295.0,
+    "name": "Tyler Johnson",
     "position": "WR",
-    "rotowire_id": "18550",
-    "team": "KC"
-  },
-  {
-    "average": 431.8,
-    "name": "Henry Ruggs",
-    "position": "WR",
-    "rotowire_id": "14473",
+    "rotowire_id": "14432",
     "team": "FA"
   },
   {
-    "average": 349.0,
-    "name": "David Moore",
-    "position": "WR",
-    "rotowire_id": "12216",
+    "average": 299.0,
+    "name": "Anthony Landphere",
+    "position": "TE",
+    "rotowire_id": "19061",
     "team": "FA"
+  },
+  {
+    "average": 300.0,
+    "name": "Kazmeir Allen",
+    "position": "RB",
+    "rotowire_id": "16775",
+    "team": "FA"
+  },
+  {
+    "average": 303.0,
+    "name": "Rajion Neal",
+    "position": "RB",
+    "rotowire_id": "9527",
+    "team": "FA"
+  },
+  {
+    "average": 304.0,
+    "name": "Gunner Olszewski",
+    "position": "WR",
+    "rotowire_id": "14318",
+    "team": "NYG"
+  },
+  {
+    "average": 305.5,
+    "name": "Jack Podlesny",
+    "position": "K",
+    "rotowire_id": "16780",
+    "team": "FA"
+  },
+  {
+    "average": 306.5,
+    "name": "TJ Jones",
+    "position": "WR",
+    "rotowire_id": "9463",
+    "team": "FA"
+  },
+  {
+    "average": 308.0,
+    "name": "Michael Thomas",
+    "position": "WR",
+    "rotowire_id": "10759",
+    "team": "FA"
+  },
+  {
+    "average": 309.0,
+    "name": "Josh Imatorbhebhe",
+    "position": "WR",
+    "rotowire_id": "15389",
+    "team": "FA"
+  },
+  {
+    "average": 310.5,
+    "name": "Kene Nwangwu",
+    "position": "RB",
+    "rotowire_id": "15579",
+    "team": "NYJ"
+  },
+  {
+    "average": 311.0,
+    "name": "Jacob Hollister",
+    "position": "TE",
+    "rotowire_id": "12271",
+    "team": "FA"
+  },
+  {
+    "average": 312.0,
+    "name": "Adrian Martinez",
+    "position": "QB",
+    "rotowire_id": "17266",
+    "team": "FA"
+  },
+  {
+    "average": 314.0,
+    "name": "SaRodorick Thompson",
+    "position": "RB",
+    "rotowire_id": "17052",
+    "team": "FA"
+  },
+  {
+    "average": 315.0,
+    "name": "Auden Tate",
+    "position": "WR",
+    "rotowire_id": "12569",
+    "team": "FA"
+  },
+  {
+    "average": 316.5,
+    "name": "Ty Montgomery",
+    "position": "RB",
+    "rotowire_id": "10216",
+    "team": "FA"
+  },
+  {
+    "average": 317.0,
+    "name": "Temuchin Hodges",
+    "position": "TE",
+    "rotowire_id": "11694",
+    "team": "FA"
+  },
+  {
+    "average": 319.5,
+    "name": "Cooper Rush",
+    "position": "QB",
+    "rotowire_id": "11841",
+    "team": "ATL"
+  },
+  {
+    "average": 320.5,
+    "name": "Austin Allen",
+    "position": "TE",
+    "rotowire_id": "16101",
+    "team": "FA"
+  },
+  {
+    "average": 321.0,
+    "name": "Javon McKinley",
+    "position": "WR",
+    "rotowire_id": "15575",
+    "team": "FA"
+  },
+  {
+    "average": 324.0,
+    "name": "Josh Whyle",
+    "position": "TE",
+    "rotowire_id": "16866",
+    "team": "GB"
+  },
+  {
+    "average": 325.0,
+    "name": "John Hoyland",
+    "position": "K",
+    "rotowire_id": "19008",
+    "team": "FA"
+  },
+  {
+    "average": 327.0,
+    "name": "Nathan Rourke",
+    "position": "QB",
+    "rotowire_id": "14646",
+    "team": "FA"
+  },
+  {
+    "average": 328.0,
+    "name": "Leonard Fournette",
+    "position": "RB",
+    "rotowire_id": "11687",
+    "team": "FA"
+  },
+  {
+    "average": 329.0,
+    "name": "Frank Gore",
+    "position": "RB",
+    "rotowire_id": "17853",
+    "team": "FA"
+  },
+  {
+    "average": 330.5,
+    "name": "Mitchell Evans",
+    "position": "TE",
+    "rotowire_id": "18545",
+    "team": "CAR"
+  },
+  {
+    "average": 331.0,
+    "name": "T.Y. Hilton",
+    "position": "WR",
+    "rotowire_id": "8098",
+    "team": "FA"
+  },
+  {
+    "average": 333.0,
+    "name": "Ryan Willis",
+    "position": "QB",
+    "rotowire_id": "15812",
+    "team": "FA"
+  },
+  {
+    "average": 334.0,
+    "name": "Jake Haener",
+    "position": "QB",
+    "rotowire_id": "16912",
+    "team": "FA"
+  },
+  {
+    "average": 337.0,
+    "name": "Marcedes Lewis",
+    "position": "TE",
+    "rotowire_id": "4891",
+    "team": "FA"
+  },
+  {
+    "average": 338.0,
+    "name": "Emeka Emezie",
+    "position": "WR",
+    "rotowire_id": "15887",
+    "team": "FA"
+  },
+  {
+    "average": 339.0,
+    "name": "Garett Maag",
+    "position": "WR",
+    "rotowire_id": "17331",
+    "team": "FA"
+  },
+  {
+    "average": 340.5,
+    "name": "Mitchell Trubisky",
+    "position": "QB",
+    "rotowire_id": "11709",
+    "team": "TEN"
+  },
+  {
+    "average": 341.0,
+    "name": "B.T. Potter",
+    "position": "K",
+    "rotowire_id": "17209",
+    "team": "FA"
+  },
+  {
+    "average": 342.0,
+    "name": "Raymond Calais",
+    "position": "RB",
+    "rotowire_id": "14625",
+    "team": "FA"
+  },
+  {
+    "average": 344.5,
+    "name": "Jeremy McNichols",
+    "position": "RB",
+    "rotowire_id": "11767",
+    "team": "WAS"
+  },
+  {
+    "average": 346.5,
+    "name": "Charlie Woerner",
+    "position": "TE",
+    "rotowire_id": "14608",
+    "team": "ATL"
+  },
+  {
+    "average": 347.0,
+    "name": "Boston Scott",
+    "position": "RB",
+    "rotowire_id": "12996",
+    "team": "FA"
+  },
+  {
+    "average": 348.0,
+    "name": "Devin Smith",
+    "position": "WR",
+    "rotowire_id": "10209",
+    "team": "FA"
+  },
+  {
+    "average": 350.0,
+    "name": "Tyrie Cleveland",
+    "position": "WR",
+    "rotowire_id": "14621",
+    "team": "FA"
+  },
+  {
+    "average": 351.0,
+    "name": "Jason Sanders",
+    "position": "K",
+    "rotowire_id": "13007",
+    "team": "NYJ"
+  },
+  {
+    "average": 353.0,
+    "name": "Kelvin McKnight",
+    "position": "WR",
+    "rotowire_id": "13893",
+    "team": "FA"
+  },
+  {
+    "average": 354.0,
+    "name": "Kadarius Calloway",
+    "position": "RB",
+    "rotowire_id": "20081",
+    "team": "FA"
+  },
+  {
+    "average": 355.8,
+    "name": "Kenny McIntosh",
+    "position": "RB",
+    "rotowire_id": "17002",
+    "team": "FA"
+  },
+  {
+    "average": 356.5,
+    "name": "Tyler Ferguson",
+    "position": "QB",
+    "rotowire_id": "12866",
+    "team": "FA"
+  },
+  {
+    "average": 356.9,
+    "name": "Elijah Higgins",
+    "position": "TE",
+    "rotowire_id": "16959",
+    "team": "ARI"
+  },
+  {
+    "average": 357.0,
+    "name": "Jacob Warren",
+    "position": "TE",
+    "rotowire_id": "18126",
+    "team": "FA"
+  },
+  {
+    "average": 360.5,
+    "name": "Matthew Slater",
+    "position": "WR",
+    "rotowire_id": "5786",
+    "team": "FA"
+  },
+  {
+    "average": 362.0,
+    "name": "Kearis Jackson",
+    "position": "WR",
+    "rotowire_id": "16906",
+    "team": "FA"
+  },
+  {
+    "average": 363.5,
+    "name": "Dontario Drummond",
+    "position": "WR",
+    "rotowire_id": "16021",
+    "team": "FA"
+  },
+  {
+    "average": 365.5,
+    "name": "Camerun Peoples",
+    "position": "RB",
+    "rotowire_id": "16927",
+    "team": "FA"
+  },
+  {
+    "average": 366.0,
+    "name": "Sone Ntoh",
+    "position": "RB",
+    "rotowire_id": "18903",
+    "team": "FA"
+  },
+  {
+    "average": 368.0,
+    "name": "Jacob Cowing",
+    "position": "WR",
+    "rotowire_id": "17008",
+    "team": "SF"
+  },
+  {
+    "average": 369.0,
+    "name": "Ja'Quinden Jackson",
+    "position": "RB",
+    "rotowire_id": "18527",
+    "team": "FA"
+  },
+  {
+    "average": 370.4,
+    "name": "Randy Bullock",
+    "position": "K",
+    "rotowire_id": "8222",
+    "team": "FA"
+  },
+  {
+    "average": 370.5,
+    "name": "Xavier Restrepo",
+    "position": "WR",
+    "rotowire_id": "18466",
+    "team": "FA"
+  },
+  {
+    "average": 372.0,
+    "name": "Kevin Harris",
+    "position": "RB",
+    "rotowire_id": "15991",
+    "team": "FA"
+  },
+  {
+    "average": 374.4,
+    "name": "Alex Quevedo",
+    "position": "K",
+    "rotowire_id": "16918",
+    "team": "FA"
+  },
+  {
+    "average": 376.0,
+    "name": "Jared Smart",
+    "position": "WR",
+    "rotowire_id": "16619",
+    "team": "FA"
+  },
+  {
+    "average": 377.3,
+    "name": "Josh Cameron",
+    "position": "WR",
+    "rotowire_id": "19321",
+    "team": "JAX"
+  },
+  {
+    "average": 377.5,
+    "name": "Josh Love",
+    "position": "QB",
+    "rotowire_id": "14555",
+    "team": "FA"
+  },
+  {
+    "average": 379.0,
+    "name": "Marvin Jones",
+    "position": "WR",
+    "rotowire_id": "8223",
+    "team": "FA"
+  },
+  {
+    "average": 381.5,
+    "name": "Kerryon Johnson",
+    "position": "RB",
+    "rotowire_id": "12525",
+    "team": "FA"
+  },
+  {
+    "average": 382.7,
+    "name": "Cade York",
+    "position": "K",
+    "rotowire_id": "16227",
+    "team": "FA"
+  },
+  {
+    "average": 383.5,
+    "name": "Marquez Valdes-Scantling",
+    "position": "WR",
+    "rotowire_id": "12934",
+    "team": "LAC"
+  },
+  {
+    "average": 384.0,
+    "name": "Logan Kilgore",
+    "position": "QB",
+    "rotowire_id": "9900",
+    "team": "FA"
+  },
+  {
+    "average": 384.5,
+    "name": "D.J. Montgomery",
+    "position": "WR",
+    "rotowire_id": "14129",
+    "team": "IND"
+  },
+  {
+    "average": 386.0,
+    "name": "Travis Toivonen",
+    "position": "WR",
+    "rotowire_id": "15779",
+    "team": "FA"
+  },
+  {
+    "average": 387.3,
+    "name": "Roman Wilson",
+    "position": "WR",
+    "rotowire_id": "17043",
+    "team": "PIT"
+  },
+  {
+    "average": 388.5,
+    "name": "Moose Muhammad",
+    "position": "WR",
+    "rotowire_id": "17844",
+    "team": "FA"
+  },
+  {
+    "average": 390.0,
+    "name": "Tyler Scott",
+    "position": "WR",
+    "rotowire_id": "16713",
+    "team": "FA"
+  },
+  {
+    "average": 391.0,
+    "name": "Justin Watson",
+    "position": "WR",
+    "rotowire_id": "12746",
+    "team": "FA"
+  },
+  {
+    "average": 393.5,
+    "name": "Elijah Moore",
+    "position": "WR",
+    "rotowire_id": "15280",
+    "team": "PHI"
+  },
+  {
+    "average": 394.8,
+    "name": "Sammis Reyes",
+    "position": "TE",
+    "rotowire_id": "15586",
+    "team": "FA"
+  },
+  {
+    "average": 396.0,
+    "name": "Christopher Dunn",
+    "position": "K",
+    "rotowire_id": "17370",
+    "team": "FA"
+  },
+  {
+    "average": 398.0,
+    "name": "Snoop Conner",
+    "position": "RB",
+    "rotowire_id": "15897",
+    "team": "FA"
+  },
+  {
+    "average": 399.0,
+    "name": "Xavier Gipson",
+    "position": "WR",
+    "rotowire_id": "17045",
+    "team": "FA"
+  },
+  {
+    "average": 400.5,
+    "name": "Trey Wolff",
+    "position": "K",
+    "rotowire_id": "17567",
+    "team": "FA"
+  },
+  {
+    "average": 403.0,
+    "name": "Taylor Russolino",
+    "position": "K",
+    "rotowire_id": "15225",
+    "team": "FA"
+  },
+  {
+    "average": 404.8,
+    "name": "Will Kacmarek",
+    "position": "TE",
+    "rotowire_id": "19450",
+    "team": "MIA"
+  },
+  {
+    "average": 406.0,
+    "name": "Gavin Hardison",
+    "position": "QB",
+    "rotowire_id": "18070",
+    "team": "FA"
+  },
+  {
+    "average": 407.1,
+    "name": "Blake Grupe",
+    "position": "K",
+    "rotowire_id": "17595",
+    "team": "NYJ"
+  },
+  {
+    "average": 408.0,
+    "name": "CJ Williams",
+    "position": "WR",
+    "rotowire_id": "19898",
+    "team": "JAX"
+  },
+  {
+    "average": 409.0,
+    "name": "Gage Larvadain",
+    "position": "WR",
+    "rotowire_id": "18941",
+    "team": "FA"
+  },
+  {
+    "average": 410.5,
+    "name": "KeAndre Lambert-Smith",
+    "position": "WR",
+    "rotowire_id": "18650",
+    "team": "LAC"
+  },
+  {
+    "average": 412.5,
+    "name": "David Johnson",
+    "position": "RB",
+    "rotowire_id": "10148",
+    "team": "FA"
+  },
+  {
+    "average": 415.0,
+    "name": "Jimmy Horn",
+    "position": "WR",
+    "rotowire_id": "18569",
+    "team": "FA"
+  },
+  {
+    "average": 416.0,
+    "name": "Khalan Laborn",
+    "position": "RB",
+    "rotowire_id": "17313",
+    "team": "FA"
+  },
+  {
+    "average": 416.9,
+    "name": "Trent Sherfield",
+    "position": "WR",
+    "rotowire_id": "13061",
+    "team": "FA"
+  },
+  {
+    "average": 417.0,
+    "name": "DeMeer Blankumsee",
+    "position": "WR",
+    "rotowire_id": "18887",
+    "team": "FA"
+  },
+  {
+    "average": 418.2,
+    "name": "Deshaun Watson",
+    "position": "QB",
+    "rotowire_id": "11712",
+    "team": "CLE"
+  },
+  {
+    "average": 418.3,
+    "name": "Jordan Whittington",
+    "position": "WR",
+    "rotowire_id": "17688",
+    "team": "LAR"
+  },
+  {
+    "average": 419.0,
+    "name": "Thomas Hennigan",
+    "position": "WR",
+    "rotowire_id": "16301",
+    "team": "FA"
+  },
+  {
+    "average": 419.1,
+    "name": "Andre Szmyt",
+    "position": "K",
+    "rotowire_id": "17132",
+    "team": "CLE"
+  },
+  {
+    "average": 420.0,
+    "name": "Xavier Smith",
+    "position": "WR",
+    "rotowire_id": "17467",
+    "team": "LAR"
+  },
+  {
+    "average": 421.0,
+    "name": "Trayvon Rudolph",
+    "position": "WR",
+    "rotowire_id": "20103",
+    "team": "FA"
+  },
+  {
+    "average": 421.8,
+    "name": "Devontez Walker",
+    "position": "WR",
+    "rotowire_id": "17728",
+    "team": "BAL"
+  },
+  {
+    "average": 422.0,
+    "name": "Chad Ryland",
+    "position": "K",
+    "rotowire_id": "17107",
+    "team": "ARI"
+  },
+  {
+    "average": 423.0,
+    "name": "De'Angelo Hardy",
+    "position": "WR",
+    "rotowire_id": "18191",
+    "team": "FA"
+  },
+  {
+    "average": 424.0,
+    "name": "Isaiah Ford",
+    "position": "WR",
+    "rotowire_id": "11717",
+    "team": "FA"
+  },
+  {
+    "average": 425.0,
+    "name": "Kolbe Katsis",
+    "position": "WR",
+    "rotowire_id": "19670",
+    "team": "FA"
+  },
+  {
+    "average": 426.5,
+    "name": "Dareke Young",
+    "position": "WR",
+    "rotowire_id": "15922",
+    "team": "LV"
+  },
+  {
+    "average": 427.0,
+    "name": "DeShone Kizer",
+    "position": "QB",
+    "rotowire_id": "11692",
+    "team": "FA"
+  },
+  {
+    "average": 428.0,
+    "name": "Austin Trammell",
+    "position": "WR",
+    "rotowire_id": "15663",
+    "team": "FA"
+  },
+  {
+    "average": 429.0,
+    "name": "Nick Bowers",
+    "position": "TE",
+    "rotowire_id": "14869",
+    "team": "FA"
+  },
+  {
+    "average": 430.7,
+    "name": "Amari Cooper",
+    "position": "WR",
+    "rotowire_id": "10055",
+    "team": "FA"
+  },
+  {
+    "average": 431.4,
+    "name": "Ja'Corey Brooks",
+    "position": "WR",
+    "rotowire_id": "18561",
+    "team": "FA"
+  },
+  {
+    "average": 432.0,
+    "name": "Kai Locksley",
+    "position": "WR",
+    "rotowire_id": "15536",
+    "team": "FA"
+  },
+  {
+    "average": 433.0,
+    "name": "Kennedy Brooks",
+    "position": "RB",
+    "rotowire_id": "15978",
+    "team": "FA"
+  },
+  {
+    "average": 433.4,
+    "name": "Drew Stevens",
+    "position": "K",
+    "rotowire_id": "18511",
+    "team": "WAS"
+  },
+  {
+    "average": 434.0,
+    "name": "Pierre Strong",
+    "position": "RB",
+    "rotowire_id": "16102",
+    "team": "FA"
+  },
+  {
+    "average": 436.0,
+    "name": "Ronnie Rivers",
+    "position": "RB",
+    "rotowire_id": "16108",
+    "team": "LAR"
+  },
+  {
+    "average": 437.5,
+    "name": "Braxton Berrios",
+    "position": "WR",
+    "rotowire_id": "12771",
+    "team": "FA"
+  },
+  {
+    "average": 439.4,
+    "name": "Johnathan Lloyd",
+    "position": "WR",
+    "rotowire_id": "14050",
+    "team": "FA"
+  },
+  {
+    "average": 440.0,
+    "name": "Malachi Corley",
+    "position": "WR",
+    "rotowire_id": "17777",
+    "team": "CLE"
+  },
+  {
+    "average": 440.2,
+    "name": "Jalen Tolbert",
+    "position": "WR",
+    "rotowire_id": "16010",
+    "team": "MIA"
+  },
+  {
+    "average": 440.3,
+    "name": "Austin Ekeler",
+    "position": "RB",
+    "rotowire_id": "12401",
+    "team": "FA"
+  },
+  {
+    "average": 443.0,
+    "name": "Jared Scott",
+    "position": "TE",
+    "rotowire_id": "16586",
+    "team": "FA"
+  },
+  {
+    "average": 444.0,
+    "name": "Keilahn Harris",
+    "position": "WR",
+    "rotowire_id": "17087",
+    "team": "FA"
+  },
+  {
+    "average": 444.4,
+    "name": "Taysom Hill",
+    "position": "TE",
+    "rotowire_id": "12063",
+    "team": "FA"
+  },
+  {
+    "average": 445.0,
+    "name": "Derek Carr",
+    "position": "QB",
+    "rotowire_id": "9317",
+    "team": "NO"
+  },
+  {
+    "average": 446.0,
+    "name": "Rex Burkhead",
+    "position": "RB",
+    "rotowire_id": "8765",
+    "team": "FA"
+  },
+  {
+    "average": 447.7,
+    "name": "Cole Payton",
+    "position": "QB",
+    "rotowire_id": "19296",
+    "team": "PHI"
+  },
+  {
+    "average": 449.0,
+    "name": "Josh Ali",
+    "position": "WR",
+    "rotowire_id": "16645",
+    "team": "FA"
+  },
+  {
+    "average": 449.4,
+    "name": "Kirk Cousins",
+    "position": "QB",
+    "rotowire_id": "8057",
+    "team": "LV"
+  },
+  {
+    "average": 450.0,
+    "name": "Spencer Sanders",
+    "position": "QB",
+    "rotowire_id": "18099",
+    "team": "FA"
+  },
+  {
+    "average": 451.6,
+    "name": "Kevin Coleman",
+    "position": "WR",
+    "rotowire_id": "19322",
+    "team": "MIA"
+  },
+  {
+    "average": 452.0,
+    "name": "Zack Moss",
+    "position": "RB",
+    "rotowire_id": "14564",
+    "team": "FA"
+  },
+  {
+    "average": 453.5,
+    "name": "Max Duggan",
+    "position": "QB",
+    "rotowire_id": "16729",
+    "team": "FA"
+  },
+  {
+    "average": 454.2,
+    "name": "Tanner Brown",
+    "position": "K",
+    "rotowire_id": "17378",
+    "team": "FA"
+  },
+  {
+    "average": 454.5,
+    "name": "Dare Ogunbowale",
+    "position": "RB",
+    "rotowire_id": "11768",
+    "team": "FA"
+  },
+  {
+    "average": 456.0,
+    "name": "Britain Covey",
+    "position": "WR",
+    "rotowire_id": "16337",
+    "team": "PHI"
+  },
+  {
+    "average": 457.0,
+    "name": "Tim DeMorat",
+    "position": "QB",
+    "rotowire_id": "17053",
+    "team": "FA"
+  },
+  {
+    "average": 458.0,
+    "name": "Phillip Sims",
+    "position": "QB",
+    "rotowire_id": "10564",
+    "team": "FA"
+  },
+  {
+    "average": 459.5,
+    "name": "Scott Simonson",
+    "position": "TE",
+    "rotowire_id": "10016",
+    "team": "FA"
+  },
+  {
+    "average": 460.5,
+    "name": "Joshua Karty",
+    "position": "K",
+    "rotowire_id": "17923",
+    "team": "FA"
+  },
+  {
+    "average": 461.4,
+    "name": "Philip Rivers",
+    "position": "QB",
+    "rotowire_id": "3766",
+    "team": "FA"
+  },
+  {
+    "average": 461.5,
+    "name": "Tanner Arkin",
+    "position": "TE",
+    "rotowire_id": "19365",
+    "team": "NE"
+  },
+  {
+    "average": 464.0,
+    "name": "Deven Thompkins",
+    "position": "WR",
+    "rotowire_id": "16333",
+    "team": "FA"
+  },
+  {
+    "average": 465.0,
+    "name": "Taj McGowan",
+    "position": "RB",
+    "rotowire_id": "14320",
+    "team": "FA"
+  },
+  {
+    "average": 467.5,
+    "name": "Ryan Tannehill",
+    "position": "QB",
+    "rotowire_id": "8040",
+    "team": "FA"
+  },
+  {
+    "average": 468.0,
+    "name": "Lamar Miller",
+    "position": "RB",
+    "rotowire_id": "8008",
+    "team": "FA"
+  },
+  {
+    "average": 468.1,
+    "name": "Daniel Carlson",
+    "position": "K",
+    "rotowire_id": "12842",
+    "team": "NO"
+  },
+  {
+    "average": 469.0,
+    "name": "Dante Wright",
+    "position": "WR",
+    "rotowire_id": "18951",
+    "team": "FA"
+  },
+  {
+    "average": 469.3,
+    "name": "Odell Beckham",
+    "position": "WR",
+    "rotowire_id": "9255",
+    "team": "NYG"
+  },
+  {
+    "average": 470.3,
+    "name": "LaJohntay Wester",
+    "position": "WR",
+    "rotowire_id": "18567",
+    "team": "BAL"
+  },
+  {
+    "average": 472.0,
+    "name": "Spencer Ware",
+    "position": "RB",
+    "rotowire_id": "8625",
+    "team": "FA"
+  },
+  {
+    "average": 473.0,
+    "name": "Ihmir Smith-Marsette",
+    "position": "WR",
+    "rotowire_id": "15287",
+    "team": "FA"
+  },
+  {
+    "average": 474.0,
+    "name": "Spencer Shrader",
+    "position": "K",
+    "rotowire_id": "18268",
+    "team": "IND"
+  },
+  {
+    "average": 474.2,
+    "name": "Kareem Hunt",
+    "position": "RB",
+    "rotowire_id": "11739",
+    "team": "FA"
+  },
+  {
+    "average": 474.8,
+    "name": "Dillon Gabriel",
+    "position": "QB",
+    "rotowire_id": "18496",
+    "team": "CLE"
+  },
+  {
+    "average": 474.9,
+    "name": "Geno Smith",
+    "position": "QB",
+    "rotowire_id": "8743",
+    "team": "NYJ"
+  },
+  {
+    "average": 475.5,
+    "name": "Donovan Peoples-Jones",
+    "position": "WR",
+    "rotowire_id": "14457",
+    "team": "FA"
+  },
+  {
+    "average": 475.5,
+    "name": "John Lovett",
+    "position": "RB",
+    "rotowire_id": "16243",
+    "team": "FA"
+  },
+  {
+    "average": 477.3,
+    "name": "Colt McCoy",
+    "position": "QB",
+    "rotowire_id": "6444",
+    "team": "FA"
+  },
+  {
+    "average": 478.0,
+    "name": "Geor'quarius Spivey",
+    "position": "TE",
+    "rotowire_id": "18426",
+    "team": "FA"
+  },
+  {
+    "average": 479.0,
+    "name": "Adam Thielen",
+    "position": "WR",
+    "rotowire_id": "8986",
+    "team": "MIN"
+  },
+  {
+    "average": 479.6,
+    "name": "Tyler Huntley",
+    "position": "QB",
+    "rotowire_id": "14563",
+    "team": "BAL"
+  },
+  {
+    "average": 480.0,
+    "name": "Justin Johnson",
+    "position": "TE",
+    "rotowire_id": "14102",
+    "team": "FA"
+  },
+  {
+    "average": 481.1,
+    "name": "Rasheen Ali",
+    "position": "RB",
+    "rotowire_id": "17026",
+    "team": "BAL"
+  },
+  {
+    "average": 482.5,
+    "name": "Jelani Woods",
+    "position": "TE",
+    "rotowire_id": "15821",
+    "team": "NYJ"
+  },
+  {
+    "average": 482.8,
+    "name": "Matt Barkley",
+    "position": "QB",
+    "rotowire_id": "8004",
+    "team": "FA"
+  },
+  {
+    "average": 484.0,
+    "name": "Khari Blasingame",
+    "position": "RB",
+    "rotowire_id": "13998",
+    "team": "FA"
+  },
+  {
+    "average": 486.8,
+    "name": "Pat Conroy",
+    "position": "TE",
+    "rotowire_id": "19086",
+    "team": "FA"
+  },
+  {
+    "average": 488.0,
+    "name": "Tommy Mellott",
+    "position": "WR",
+    "rotowire_id": "18816",
+    "team": "FA"
+  },
+  {
+    "average": 489.5,
+    "name": "Drew Sample",
+    "position": "TE",
+    "rotowire_id": "13809",
+    "team": "CIN"
   },
   {
     "average": 490.0,
@@ -3339,584 +3542,101 @@
     "team": "FA"
   },
   {
-    "average": 308.0,
-    "name": "Elijah Moore",
-    "position": "WR",
-    "rotowire_id": "15280",
-    "team": "PHI"
-  },
-  {
-    "average": 337.8,
-    "name": "D.J. Montgomery",
-    "position": "WR",
-    "rotowire_id": "14129",
-    "team": "IND"
-  },
-  {
-    "average": 567.7,
-    "name": "Jonathan Mingo",
-    "position": "WR",
-    "rotowire_id": "16937",
-    "team": "DAL"
-  },
-  {
-    "average": 495.1,
-    "name": "Dohnte Meyers",
-    "position": "WR",
-    "rotowire_id": "19247",
-    "team": "CIN"
-  },
-  {
-    "average": 324.0,
-    "name": "Racey McMath",
-    "position": "WR",
-    "rotowire_id": "15454",
-    "team": "FA"
-  },
-  {
-    "average": 495.0,
-    "name": "Tommy Mellott",
-    "position": "WR",
-    "rotowire_id": "18816",
-    "team": "FA"
-  },
-  {
-    "average": 348.5,
-    "name": "Javon McKinley",
-    "position": "WR",
-    "rotowire_id": "15575",
-    "team": "FA"
-  },
-  {
-    "average": 388.0,
-    "name": "Kelvin McKnight",
-    "position": "WR",
-    "rotowire_id": "13893",
-    "team": "FA"
-  },
-  {
-    "average": 364.8,
-    "name": "Jaylin Lane",
-    "position": "WR",
-    "rotowire_id": "18643",
-    "team": "WAS"
-  },
-  {
-    "average": 447.0,
-    "name": "Gage Larvadain",
-    "position": "WR",
-    "rotowire_id": "18941",
-    "team": "FA"
-  },
-  {
-    "average": 320.0,
-    "name": "Johnathan Lloyd",
-    "position": "WR",
-    "rotowire_id": "14050",
-    "team": "FA"
-  },
-  {
-    "average": 461.5,
-    "name": "Kai Locksley",
-    "position": "WR",
-    "rotowire_id": "15536",
-    "team": "FA"
-  },
-  {
-    "average": 450.0,
-    "name": "Garett Maag",
-    "position": "WR",
-    "rotowire_id": "17331",
-    "team": "FA"
-  },
-  {
-    "average": 455.0,
-    "name": "Tyreik McAllister",
-    "position": "WR",
-    "rotowire_id": "16476",
-    "team": "FA"
-  },
-  {
-    "average": 500.5,
-    "name": "Ray-Ray McCloud",
-    "position": "WR",
-    "rotowire_id": "12570",
-    "team": "FA"
-  },
-  {
-    "average": 371.5,
-    "name": "LaJohntay Wester",
-    "position": "WR",
-    "rotowire_id": "18567",
-    "team": "BAL"
-  },
-  {
-    "average": 409.0,
-    "name": "Jordan Whittington",
-    "position": "WR",
-    "rotowire_id": "17688",
-    "team": "LAR"
-  },
-  {
-    "average": 270.0,
-    "name": "Theo Wease",
-    "position": "WR",
-    "rotowire_id": "18645",
-    "team": "FA"
-  },
-  {
-    "average": 557.5,
-    "name": "Xavier Weaver",
-    "position": "WR",
-    "rotowire_id": "18041",
-    "team": "FA"
-  },
-  {
-    "average": 368.0,
-    "name": "Jahdae Walker",
-    "position": "WR",
-    "rotowire_id": "18938",
-    "team": "CHI"
-  },
-  {
-    "average": 633.5,
+    "average": 490.1,
     "name": "KaVontae Turpin",
     "position": "WR",
     "rotowire_id": "13894",
     "team": "DAL"
   },
   {
-    "average": 298.0,
-    "name": "Travis Toivonen",
+    "average": 491.0,
+    "name": "Racey McMath",
     "position": "WR",
-    "rotowire_id": "15779",
+    "rotowire_id": "15454",
     "team": "FA"
   },
   {
-    "average": 460.0,
-    "name": "Austin Trammell",
+    "average": 491.1,
+    "name": "Jacob Saylors",
+    "position": "RB",
+    "rotowire_id": "17584",
+    "team": "DET"
+  },
+  {
+    "average": 491.4,
+    "name": "Dominic Zvada",
+    "position": "K",
+    "rotowire_id": "18509",
+    "team": "NYG"
+  },
+  {
+    "average": 492.5,
+    "name": "Golden Tate",
     "position": "WR",
-    "rotowire_id": "15663",
+    "rotowire_id": "6389",
     "team": "FA"
   },
   {
-    "average": 381.5,
-    "name": "Michael Thomas",
-    "position": "WR",
-    "rotowire_id": "10759",
-    "team": "FA"
-  },
-  {
-    "average": 483.0,
-    "name": "Deven Thompkins",
-    "position": "WR",
-    "rotowire_id": "16333",
-    "team": "FA"
-  },
-  {
-    "average": 671.0,
-    "name": "Cody Thompson",
-    "position": "WR",
-    "rotowire_id": "13490",
-    "team": "FA"
-  },
-  {
-    "average": 422.0,
-    "name": "Keytaon Thompson",
-    "position": "WR",
-    "rotowire_id": "17041",
-    "team": "FA"
-  },
-  {
-    "average": 262.0,
-    "name": "Donte Sylencieux",
-    "position": "WR",
-    "rotowire_id": "15706",
-    "team": "FA"
-  },
-  {
-    "average": 339.0,
-    "name": "Auden Tate",
-    "position": "WR",
-    "rotowire_id": "12569",
-    "team": "FA"
-  },
-  {
-    "average": 333.5,
-    "name": "Corey Sutton",
-    "position": "WR",
-    "rotowire_id": "16536",
-    "team": "FA"
-  },
-  {
-    "average": 605.0,
-    "name": "TJ Sheffield",
-    "position": "WR",
-    "rotowire_id": "19136",
-    "team": "FA"
-  },
-  {
-    "average": 604.5,
-    "name": "Laviska Shenault",
-    "position": "WR",
-    "rotowire_id": "14358",
-    "team": "FA"
-  },
-  {
-    "average": 452.0,
-    "name": "Xavier Smith",
-    "position": "WR",
-    "rotowire_id": "17467",
-    "team": "LAR"
-  },
-  {
-    "average": 489.5,
-    "name": "Ihmir Smith-Marsette",
-    "position": "WR",
-    "rotowire_id": "15287",
-    "team": "FA"
-  },
-  {
-    "average": 572.5,
-    "name": "Tyler Snead",
-    "position": "WR",
-    "rotowire_id": "16614",
-    "team": "FA"
-  },
-  {
-    "average": 350.0,
-    "name": "Willie Snead",
-    "position": "WR",
-    "rotowire_id": "9284",
-    "team": "FA"
-  },
-  {
-    "average": 493.5,
-    "name": "Savion Williams",
-    "position": "WR",
-    "rotowire_id": "18554",
-    "team": "GB"
-  },
-  {
-    "average": 383.5,
-    "name": "Roman Wilson",
-    "position": "WR",
-    "rotowire_id": "17043",
-    "team": "PIT"
-  },
-  {
-    "average": 217.4,
-    "name": "Antonio Williams",
-    "position": "WR",
-    "rotowire_id": "19237",
-    "team": "WAS"
-  },
-  {
-    "average": 445.5,
-    "name": "C.J. Williams",
-    "position": "WR",
-    "rotowire_id": "19898",
-    "team": "JAX"
-  },
-  {
-    "average": 374.0,
-    "name": "Jordan Watkins",
-    "position": "WR",
-    "rotowire_id": "18647",
-    "team": "SF"
-  },
-  {
-    "average": 517.0,
-    "name": "Kole Wilson",
-    "position": "WR",
-    "rotowire_id": "19925",
-    "team": "FA"
-  },
-  {
-    "average": 663.7,
-    "name": "Colbie Young",
-    "position": "WR",
-    "rotowire_id": "19447",
-    "team": "CIN"
-  },
-  {
-    "average": 458.8,
-    "name": "Dareke Young",
-    "position": "WR",
-    "rotowire_id": "15922",
-    "team": "LV"
-  },
-  {
-    "average": 431.7,
-    "name": "Xavier Hutchinson",
-    "position": "WR",
-    "rotowire_id": "16932",
-    "team": "HOU"
-  },
-  {
-    "average": 273.0,
-    "name": "Josh Imatorbhebhe",
-    "position": "WR",
-    "rotowire_id": "15389",
-    "team": "FA"
-  },
-  {
-    "average": 532.0,
-    "name": "Jha'Quan Jackson",
-    "position": "WR",
-    "rotowire_id": "17972",
-    "team": "FA"
-  },
-  {
-    "average": 289.0,
-    "name": "Kearis Jackson",
-    "position": "WR",
-    "rotowire_id": "16906",
-    "team": "FA"
-  },
-  {
-    "average": 362.0,
-    "name": "Sam James",
-    "position": "WR",
-    "rotowire_id": "16664",
-    "team": "FA"
-  },
-  {
-    "average": 329.0,
-    "name": "Mac Hippenhammer",
-    "position": "WR",
-    "rotowire_id": "17582",
-    "team": "FA"
-  },
-  {
-    "average": 695.5,
-    "name": "DeAndre Hopkins",
-    "position": "WR",
-    "rotowire_id": "8619",
-    "team": "FA"
-  },
-  {
-    "average": 449.5,
-    "name": "Jimmy Horn",
-    "position": "WR",
-    "rotowire_id": "18569",
-    "team": "CAR"
-  },
-  {
-    "average": 613.0,
-    "name": "Jordan Hudson",
-    "position": "WR",
-    "rotowire_id": "19442",
-    "team": "FA"
-  },
-  {
-    "average": 498.5,
-    "name": "Lil'Jordan Humphrey",
-    "position": "WR",
-    "rotowire_id": "13565",
-    "team": "DEN"
-  },
-  {
-    "average": 405.0,
-    "name": "Jadon Haselwood",
-    "position": "WR",
-    "rotowire_id": "16908",
-    "team": "FA"
-  },
-  {
-    "average": 509.0,
-    "name": "Jaivon Heiligh",
-    "position": "WR",
-    "rotowire_id": "16207",
-    "team": "FA"
-  },
-  {
-    "average": 307.0,
-    "name": "Thomas Hennigan",
-    "position": "WR",
-    "rotowire_id": "16301",
-    "team": "FA"
-  },
-  {
-    "average": 346.3,
-    "name": "KeAndre Lambert-Smith",
-    "position": "WR",
-    "rotowire_id": "18650",
-    "team": "LAC"
-  },
-  {
-    "average": 290.0,
-    "name": "Kameron Johnson",
-    "position": "WR",
-    "rotowire_id": "18307",
-    "team": "TB"
-  },
-  {
-    "average": 695.5,
-    "name": "Tez Johnson",
-    "position": "WR",
-    "rotowire_id": "18484",
-    "team": "TB"
-  },
-  {
-    "average": 319.5,
-    "name": "Tyler Johnson",
-    "position": "WR",
-    "rotowire_id": "14432",
-    "team": "FA"
-  },
-  {
-    "average": 263.0,
-    "name": "J.J. Jones",
-    "position": "WR",
-    "rotowire_id": "18868",
-    "team": "FA"
-  },
-  {
-    "average": 625.5,
-    "name": "Julio Jones",
-    "position": "WR",
-    "rotowire_id": "7242",
-    "team": "FA"
-  },
-  {
-    "average": 457.5,
-    "name": "Kolbe Katsis",
-    "position": "WR",
-    "rotowire_id": "19670",
-    "team": "FA"
-  },
-  {
-    "average": 562.5,
-    "name": "Tom Kennedy",
-    "position": "WR",
-    "rotowire_id": "14246",
-    "team": "FA"
-  },
-  {
-    "average": 366.5,
-    "name": "Amari Cooper",
-    "position": "WR",
-    "rotowire_id": "10055",
-    "team": "FA"
-  },
-  {
-    "average": 560.0,
-    "name": "Efton Chism",
-    "position": "WR",
-    "rotowire_id": "18889",
-    "team": "NE"
-  },
-  {
-    "average": 684.5,
-    "name": "Robbie Chosen",
-    "position": "WR",
-    "rotowire_id": "11191",
-    "team": "FA"
-  },
-  {
-    "average": 440.0,
-    "name": "Tyrie Cleveland",
-    "position": "WR",
-    "rotowire_id": "14621",
-    "team": "FA"
-  },
-  {
-    "average": 685.5,
-    "name": "Randall Cobb",
-    "position": "WR",
-    "rotowire_id": "7256",
-    "team": "FA"
-  },
-  {
-    "average": 699.8,
-    "name": "DeMario Douglas",
-    "position": "WR",
-    "rotowire_id": "16751",
-    "team": "NE"
-  },
-  {
-    "average": 634.6,
-    "name": "Chimere Dike",
-    "position": "WR",
-    "rotowire_id": "18641",
+    "average": 493.9,
+    "name": "Joey Slye",
+    "position": "K",
+    "rotowire_id": "14172",
     "team": "TEN"
   },
   {
-    "average": 669.3,
-    "name": "Greg Dortch",
-    "position": "WR",
-    "rotowire_id": "13469",
+    "average": 494.5,
+    "name": "Kole Taylor",
+    "position": "TE",
+    "rotowire_id": "18936",
     "team": "FA"
   },
   {
-    "average": 345.0,
-    "name": "Ty Fryfogle",
+    "average": 495.5,
+    "name": "Trevon Bradford",
     "position": "WR",
-    "rotowire_id": "15886",
+    "rotowire_id": "16312",
     "team": "FA"
   },
   {
-    "average": 441.0,
-    "name": "Xavier Gipson",
-    "position": "WR",
-    "rotowire_id": "17045",
+    "average": 496.0,
+    "name": "DJ Uiagalelei",
+    "position": "QB",
+    "rotowire_id": "18448",
     "team": "FA"
   },
   {
-    "average": 653.0,
-    "name": "Simi Fehoko",
-    "position": "WR",
-    "rotowire_id": "15559",
-    "team": "ARI"
-  },
-  {
-    "average": 667.8,
-    "name": "Tai Felton",
-    "position": "WR",
-    "rotowire_id": "18553",
-    "team": "MIN"
-  },
-  {
-    "average": 340.0,
-    "name": "Maurice Ffrench",
-    "position": "WR",
-    "rotowire_id": "14943",
+    "average": 497.0,
+    "name": "David Marvin",
+    "position": "K",
+    "rotowire_id": "13093",
     "team": "FA"
   },
   {
-    "average": 455.5,
-    "name": "Isaiah Ford",
+    "average": 498.0,
+    "name": "Drew Ogletree",
+    "position": "TE",
+    "rotowire_id": "16277",
+    "team": "IND"
+  },
+  {
+    "average": 499.0,
+    "name": "Ray-Ray McCloud",
     "position": "WR",
-    "rotowire_id": "11717",
+    "rotowire_id": "12570",
     "team": "FA"
   },
   {
-    "average": 342.5,
-    "name": "Bryce Ford-Wheaton",
-    "position": "WR",
-    "rotowire_id": "16743",
+    "average": 500.0,
+    "name": "Devon Garrison",
+    "position": "TE",
+    "rotowire_id": "18435",
     "team": "FA"
   },
   {
-    "average": 657.5,
-    "name": "Marquise Goodwin",
-    "position": "WR",
-    "rotowire_id": "8807",
-    "team": "FA"
-  },
-  {
-    "average": 301.0,
-    "name": "Anthony Gould",
-    "position": "WR",
-    "rotowire_id": "17971",
-    "team": "FA"
-  },
-  {
-    "average": 392.0,
-    "name": "Juwan Green",
-    "position": "WR",
-    "rotowire_id": "14976",
+    "average": 501.7,
+    "name": "Hendon Hooker",
+    "position": "QB",
+    "rotowire_id": "16905",
     "team": "FA"
   },
   {
@@ -3927,500 +3647,1067 @@
     "team": "FA"
   },
   {
-    "average": 534.5,
-    "name": "De'Angelo Hardy",
-    "position": "WR",
-    "rotowire_id": "18191",
+    "average": 504.0,
+    "name": "Phillip Lindsay",
+    "position": "RB",
+    "rotowire_id": "12715",
     "team": "FA"
   },
   {
-    "average": 310.0,
-    "name": "Keilahn Harris",
-    "position": "WR",
-    "rotowire_id": "17087",
+    "average": 505.0,
+    "name": "Kedon Slovis",
+    "position": "QB",
+    "rotowire_id": "17979",
     "team": "FA"
   },
   {
-    "average": 552.0,
-    "name": "Le'Meke Brockington",
+    "average": 506.0,
+    "name": "Jarvis Landry",
     "position": "WR",
-    "rotowire_id": "20042",
+    "rotowire_id": "9454",
     "team": "FA"
   },
   {
-    "average": 514.8,
-    "name": "Ja'Corey Brooks",
+    "average": 507.5,
+    "name": "Jonathan Mingo",
     "position": "WR",
-    "rotowire_id": "18561",
+    "rotowire_id": "16937",
+    "team": "DAL"
+  },
+  {
+    "average": 508.0,
+    "name": "Mac Hippenhammer",
+    "position": "WR",
+    "rotowire_id": "17582",
     "team": "FA"
   },
   {
-    "average": 260.0,
-    "name": "Ja'Marcus Bradley",
-    "position": "WR",
-    "rotowire_id": "14571",
+    "average": 509.0,
+    "name": "A.J. Rose",
+    "position": "RB",
+    "rotowire_id": "15350",
     "team": "FA"
   },
   {
-    "average": 279.0,
-    "name": "Devon Allen",
-    "position": "WR",
-    "rotowire_id": "16178",
+    "average": 511.0,
+    "name": "Tyrod Taylor",
+    "position": "QB",
+    "rotowire_id": "7357",
+    "team": "GB"
+  },
+  {
+    "average": 512.0,
+    "name": "Tony Brooks-James",
+    "position": "RB",
+    "rotowire_id": "14237",
     "team": "FA"
   },
   {
-    "average": 588.3,
-    "name": "Malik Benson",
+    "average": 513.0,
+    "name": "Jaivon Heiligh",
     "position": "WR",
-    "rotowire_id": "19432",
-    "team": "LV"
-  },
-  {
-    "average": 607.5,
-    "name": "Ronnie Bell",
-    "position": "WR",
-    "rotowire_id": "16843",
+    "rotowire_id": "16207",
     "team": "FA"
-  },
-  {
-    "average": 406.6,
-    "name": "Braxton Berrios",
-    "position": "WR",
-    "rotowire_id": "12771",
-    "team": "FA"
-  },
-  {
-    "average": 365.0,
-    "name": "Tarik Black",
-    "position": "WR",
-    "rotowire_id": "15519",
-    "team": "FA"
-  },
-  {
-    "average": 334.5,
-    "name": "Jake Bobo",
-    "position": "WR",
-    "rotowire_id": "17040",
-    "team": "SEA"
   },
   {
     "average": 515.5,
-    "name": "Isaiah Bond",
-    "position": "WR",
-    "rotowire_id": "18502",
-    "team": "CLE"
-  },
-  {
-    "average": 379.0,
-    "name": "Malachi Corley",
-    "position": "WR",
-    "rotowire_id": "17777",
-    "team": "CLE"
-  },
-  {
-    "average": 480.0,
-    "name": "Britain Covey",
-    "position": "WR",
-    "rotowire_id": "16337",
-    "team": "FA"
-  },
-  {
-    "average": 404.0,
-    "name": "Jacob Cowing",
-    "position": "WR",
-    "rotowire_id": "17008",
-    "team": "SF"
-  },
-  {
-    "average": 259.0,
-    "name": "Aron Cruickshank",
-    "position": "WR",
-    "rotowire_id": "17439",
-    "team": "FA"
-  },
-  {
-    "average": 390.0,
-    "name": "Malik Cunningham",
-    "position": "WR",
-    "rotowire_id": "16691",
-    "team": "FA"
-  },
-  {
-    "average": 284.0,
-    "name": "Derius Davis",
-    "position": "WR",
-    "rotowire_id": "16939",
-    "team": "LAC"
-  },
-  {
-    "average": 523.3,
-    "name": "Jacob De Jesus",
-    "position": "WR",
-    "rotowire_id": "19996",
-    "team": "FA"
-  },
-  {
-    "average": 336.0,
-    "name": "Deion Burks",
-    "position": "WR",
-    "rotowire_id": "19315",
-    "team": "IND"
-  },
-  {
-    "average": 475.0,
-    "name": "Josh Cameron",
-    "position": "WR",
-    "rotowire_id": "19321",
-    "team": "JAX"
-  },
-  {
-    "average": 430.0,
-    "name": "Kody Case",
-    "position": "WR",
-    "rotowire_id": "17255",
-    "team": "FA"
-  },
-  {
-    "average": 470.5,
-    "name": "Jacob Warren",
-    "position": "TE",
-    "rotowire_id": "18126",
-    "team": "FA"
-  },
-  {
-    "average": 399.8,
-    "name": "Tim Tebow",
-    "position": "TE",
-    "rotowire_id": "6463",
-    "team": "FA"
-  },
-  {
-    "average": 305.0,
     "name": "Adam Trautman",
     "position": "TE",
     "rotowire_id": "14541",
     "team": "DEN"
   },
   {
-    "average": 499.5,
-    "name": "Drew Ogletree",
-    "position": "TE",
-    "rotowire_id": "16277",
-    "team": "IND"
-  },
-  {
-    "average": 631.5,
-    "name": "Jamal Pettigrew",
-    "position": "TE",
-    "rotowire_id": "16405",
+    "average": 516.0,
+    "name": "Mataeo Durant",
+    "position": "RB",
+    "rotowire_id": "16018",
     "team": "FA"
   },
   {
-    "average": 266.5,
-    "name": "Steven Scheu",
-    "position": "TE",
-    "rotowire_id": "11195",
+    "average": 517.0,
+    "name": "Brayden Narveson",
+    "position": "K",
+    "rotowire_id": "18303",
     "team": "FA"
   },
   {
-    "average": 387.0,
-    "name": "Messiah Swinson",
+    "average": 518.0,
+    "name": "Eric Ebron",
     "position": "TE",
-    "rotowire_id": "18211",
+    "rotowire_id": "9210",
     "team": "FA"
   },
   {
-    "average": 361.0,
-    "name": "Charlie Taumoepeau",
+    "average": 519.0,
+    "name": "Michael Colubiale",
     "position": "TE",
-    "rotowire_id": "14633",
+    "rotowire_id": "14249",
     "team": "FA"
   },
   {
-    "average": 311.0,
-    "name": "Josh Ali",
+    "average": 520.0,
+    "name": "Dan Bailey",
+    "position": "K",
+    "rotowire_id": "7546",
+    "team": "FA"
+  },
+  {
+    "average": 521.5,
+    "name": "Corey Sutton",
     "position": "WR",
-    "rotowire_id": "16645",
+    "rotowire_id": "16536",
+    "team": "FA"
+  },
+  {
+    "average": 522.1,
+    "name": "Efton Chism",
+    "position": "WR",
+    "rotowire_id": "18889",
+    "team": "NE"
+  },
+  {
+    "average": 524.5,
+    "name": "Xavier Grimble",
+    "position": "TE",
+    "rotowire_id": "9283",
+    "team": "FA"
+  },
+  {
+    "average": 524.5,
+    "name": "Lance McCutcheon",
+    "position": "WR",
+    "rotowire_id": "16406",
+    "team": "FA"
+  },
+  {
+    "average": 526.8,
+    "name": "AJ Dillon",
+    "position": "RB",
+    "rotowire_id": "14370",
+    "team": "CAR"
+  },
+  {
+    "average": 527.0,
+    "name": "Kole Wilson",
+    "position": "WR",
+    "rotowire_id": "19925",
+    "team": "FA"
+  },
+  {
+    "average": 531.5,
+    "name": "Zamir White",
+    "position": "RB",
+    "rotowire_id": "15852",
+    "team": "FA"
+  },
+  {
+    "average": 531.5,
+    "name": "Jake Bobo",
+    "position": "WR",
+    "rotowire_id": "17040",
+    "team": "SEA"
+  },
+  {
+    "average": 534.0,
+    "name": "Isaiah Bond",
+    "position": "WR",
+    "rotowire_id": "18502",
+    "team": "CLE"
+  },
+  {
+    "average": 535.0,
+    "name": "Master Teague",
+    "position": "RB",
+    "rotowire_id": "16000",
+    "team": "FA"
+  },
+  {
+    "average": 536.2,
+    "name": "Jeff Weimer",
+    "position": "WR",
+    "rotowire_id": "20134",
     "team": "FA"
   },
   {
     "average": 537.5,
+    "name": "Sean Riley",
+    "position": "WR",
+    "rotowire_id": "14502",
+    "team": "FA"
+  },
+  {
+    "average": 538.3,
+    "name": "Will Levis",
+    "position": "QB",
+    "rotowire_id": "16665",
+    "team": "FA"
+  },
+  {
+    "average": 541.0,
+    "name": "Squirrel White",
+    "position": "WR",
+    "rotowire_id": "20059",
+    "team": "CHI"
+  },
+  {
+    "average": 543.4,
+    "name": "Nick Foles",
+    "position": "QB",
+    "rotowire_id": "8066",
+    "team": "FA"
+  },
+  {
+    "average": 545.2,
+    "name": "Mack Hollins",
+    "position": "WR",
+    "rotowire_id": "11861",
+    "team": "NE"
+  },
+  {
+    "average": 545.5,
+    "name": "Barika Kpeenu",
+    "position": "RB",
+    "rotowire_id": "19648",
+    "team": "FA"
+  },
+  {
+    "average": 548.0,
+    "name": "Deion Burks",
+    "position": "WR",
+    "rotowire_id": "19315",
+    "team": "IND"
+  },
+  {
+    "average": 549.3,
+    "name": "Miller Moss",
+    "position": "QB",
+    "rotowire_id": "19271",
+    "team": "FA"
+  },
+  {
+    "average": 550.5,
+    "name": "Jordan Howard",
+    "position": "RB",
+    "rotowire_id": "10815",
+    "team": "FA"
+  },
+  {
+    "average": 552.7,
+    "name": "Isaiah Davis",
+    "position": "RB",
+    "rotowire_id": "17057",
+    "team": "NYJ"
+  },
+  {
+    "average": 554.7,
+    "name": "Randall Cobb",
+    "position": "WR",
+    "rotowire_id": "7256",
+    "team": "FA"
+  },
+  {
+    "average": 555.0,
+    "name": "Marcus Rosemy-Jacksaint",
+    "position": "WR",
+    "rotowire_id": "17806",
+    "team": "FA"
+  },
+  {
+    "average": 558.0,
+    "name": "Jha'Quan Jackson",
+    "position": "WR",
+    "rotowire_id": "17972",
+    "team": "FA"
+  },
+  {
+    "average": 559.0,
+    "name": "Russell Wilson",
+    "position": "QB",
+    "rotowire_id": "8043",
+    "team": "FA"
+  },
+  {
+    "average": 560.0,
+    "name": "Maurice Ffrench",
+    "position": "WR",
+    "rotowire_id": "14943",
+    "team": "FA"
+  },
+  {
+    "average": 562.0,
+    "name": "Johnny Mundt",
+    "position": "TE",
+    "rotowire_id": "12316",
+    "team": "PHI"
+  },
+  {
+    "average": 563.1,
+    "name": "Greg Dortch",
+    "position": "WR",
+    "rotowire_id": "13469",
+    "team": "FA"
+  },
+  {
+    "average": 564.5,
+    "name": "Isaac Guerendo",
+    "position": "RB",
+    "rotowire_id": "17947",
+    "team": "SF"
+  },
+  {
+    "average": 565.0,
+    "name": "D'Vonte Price",
+    "position": "RB",
+    "rotowire_id": "15981",
+    "team": "FA"
+  },
+  {
+    "average": 566.0,
+    "name": "Luke Drzewiecki",
+    "position": "K",
+    "rotowire_id": "19893",
+    "team": "FA"
+  },
+  {
+    "average": 567.0,
     "name": "Aaron Anderson",
     "position": "WR",
     "rotowire_id": "19324",
     "team": "FA"
   },
   {
-    "average": 614.8,
-    "name": "Darnell Washington",
-    "position": "TE",
-    "rotowire_id": "16889",
-    "team": "PIT"
-  },
-  {
-    "average": 654.0,
-    "name": "Trevon Wesco",
-    "position": "TE",
-    "rotowire_id": "13828",
+    "average": 568.0,
+    "name": "Coleman Owen",
+    "position": "WR",
+    "rotowire_id": "18877",
     "team": "FA"
   },
   {
-    "average": 434.5,
-    "name": "Josh Whyle",
-    "position": "TE",
-    "rotowire_id": "16866",
-    "team": "GB"
-  },
-  {
-    "average": 375.0,
-    "name": "Jelani Woods",
-    "position": "TE",
-    "rotowire_id": "15821",
-    "team": "NYJ"
-  },
-  {
-    "average": 471.8,
-    "name": "Brock Wright",
-    "position": "TE",
-    "rotowire_id": "15681",
-    "team": "DET"
-  },
-  {
-    "average": 386.0,
-    "name": "Marlin Klein",
-    "position": "TE",
-    "rotowire_id": "19352",
-    "team": "HOU"
-  },
-  {
-    "average": 587.3,
-    "name": "Cole Kmet",
-    "position": "TE",
-    "rotowire_id": "14436",
-    "team": "CHI"
-  },
-  {
-    "average": 611.0,
-    "name": "Zack Kuntz",
-    "position": "TE",
-    "rotowire_id": "17034",
-    "team": "FA"
-  },
-  {
-    "average": 691.3,
-    "name": "Cameron Latu",
-    "position": "TE",
-    "rotowire_id": "16931",
-    "team": "NE"
-  },
-  {
-    "average": 399.0,
-    "name": "Kris Leach",
-    "position": "TE",
-    "rotowire_id": "17592",
-    "team": "FA"
-  },
-  {
-    "average": 281.0,
-    "name": "Marcedes Lewis",
-    "position": "TE",
-    "rotowire_id": "4891",
-    "team": "FA"
-  },
-  {
-    "average": 576.0,
-    "name": "Zaire Mitchell-Paden",
-    "position": "TE",
-    "rotowire_id": "16530",
-    "team": "FA"
-  },
-  {
-    "average": 469.0,
-    "name": "Jared Scott",
-    "position": "TE",
-    "rotowire_id": "16586",
-    "team": "FA"
-  },
-  {
-    "average": 343.0,
-    "name": "Jonnu Smith",
-    "position": "TE",
-    "rotowire_id": "11807",
-    "team": "GB"
-  },
-  {
-    "average": 581.0,
-    "name": "Geor'quarius Spivey",
-    "position": "TE",
-    "rotowire_id": "18426",
-    "team": "FA"
-  },
-  {
-    "average": 530.5,
-    "name": "Sammis Reyes",
-    "position": "TE",
-    "rotowire_id": "15586",
-    "team": "FA"
-  },
-  {
-    "average": 693.0,
-    "name": "Sam Roush",
-    "position": "TE",
-    "rotowire_id": "19357",
-    "team": "CHI"
-  },
-  {
-    "average": 344.0,
-    "name": "Jeremy Ruckert",
-    "position": "TE",
-    "rotowire_id": "15996",
-    "team": "NYJ"
-  },
-  {
-    "average": 352.0,
-    "name": "Carsen Ryan",
-    "position": "TE",
-    "rotowire_id": "19608",
-    "team": "CLE"
-  },
-  {
-    "average": 373.5,
+    "average": 569.2,
     "name": "Noah Fant",
     "position": "TE",
     "rotowire_id": "13426",
     "team": "NO"
   },
   {
-    "average": 431.0,
-    "name": "Zach Ertz",
+    "average": 570.0,
+    "name": "Cameron Latu",
     "position": "TE",
-    "rotowire_id": "8781",
+    "rotowire_id": "16931",
+    "team": "NE"
+  },
+  {
+    "average": 571.0,
+    "name": "Montorie Foster",
+    "position": "WR",
+    "rotowire_id": "19119",
+    "team": "SEA"
+  },
+  {
+    "average": 572.0,
+    "name": "C.J. Saunders",
+    "position": "WR",
+    "rotowire_id": "15775",
     "team": "FA"
   },
   {
-    "average": 644.0,
-    "name": "John FitzPatrick",
-    "position": "TE",
-    "rotowire_id": "16170",
+    "average": 573.0,
+    "name": "Marquise Goodwin",
+    "position": "WR",
+    "rotowire_id": "8807",
     "team": "FA"
   },
   {
-    "average": 688.0,
-    "name": "Jeremiah Franklin",
+    "average": 574.0,
+    "name": "Ben Skowronek",
+    "position": "WR",
+    "rotowire_id": "15467",
+    "team": "PIT"
+  },
+  {
+    "average": 575.0,
+    "name": "Garrett Nussmeier",
+    "position": "QB",
+    "rotowire_id": "19283",
+    "team": "KC"
+  },
+  {
+    "average": 578.0,
+    "name": "Savion Williams",
+    "position": "WR",
+    "rotowire_id": "18554",
+    "team": "GB"
+  },
+  {
+    "average": 580.0,
+    "name": "Durham Smythe",
     "position": "TE",
-    "rotowire_id": "20127",
+    "rotowire_id": "12807",
+    "team": "BAL"
+  },
+  {
+    "average": 581.0,
+    "name": "Marcus Mariota",
+    "position": "QB",
+    "rotowire_id": "10074",
+    "team": "WAS"
+  },
+  {
+    "average": 582.0,
+    "name": "Jaylin Lane",
+    "position": "WR",
+    "rotowire_id": "18643",
+    "team": "WAS"
+  },
+  {
+    "average": 583.5,
+    "name": "Kendric Pryor",
+    "position": "WR",
+    "rotowire_id": "16519",
     "team": "FA"
   },
   {
-    "average": 416.0,
-    "name": "Kylen Granson",
-    "position": "TE",
-    "rotowire_id": "15245",
-    "team": "TEN"
+    "average": 584.7,
+    "name": "Colbie Young",
+    "position": "WR",
+    "rotowire_id": "19447",
+    "team": "CIN"
   },
   {
-    "average": 645.0,
-    "name": "N'Keal Harry",
-    "position": "TE",
-    "rotowire_id": "13425",
+    "average": 585.0,
+    "name": "Ben DiNucci",
+    "position": "QB",
+    "rotowire_id": "14832",
     "team": "FA"
   },
   {
-    "average": 296.0,
-    "name": "Peyton Hendershot",
+    "average": 586.4,
+    "name": "Tim Tebow",
     "position": "TE",
-    "rotowire_id": "16041",
+    "rotowire_id": "6463",
     "team": "FA"
   },
   {
-    "average": 596.5,
-    "name": "Devon Garrison",
-    "position": "TE",
-    "rotowire_id": "18435",
+    "average": 587.5,
+    "name": "Darius Cooper",
+    "position": "WR",
+    "rotowire_id": "18958",
+    "team": "PHI"
+  },
+  {
+    "average": 588.0,
+    "name": "Cam Worthy",
+    "position": "WR",
+    "rotowire_id": "10537",
     "team": "FA"
   },
   {
-    "average": 559.2,
-    "name": "Tyler Higbee",
-    "position": "TE",
-    "rotowire_id": "10854",
-    "team": "LAR"
-  },
-  {
-    "average": 674.5,
-    "name": "Justin Joly",
-    "position": "TE",
-    "rotowire_id": "19276",
-    "team": "MIA"
-  },
-  {
-    "average": 497.0,
-    "name": "Will Kacmarek",
-    "position": "TE",
-    "rotowire_id": "19450",
-    "team": "MIA"
-  },
-  {
-    "average": 275.0,
-    "name": "Temuchin Hodges",
-    "position": "TE",
-    "rotowire_id": "11694",
+    "average": 589.0,
+    "name": "Noah Whittington",
+    "position": "RB",
+    "rotowire_id": "19305",
     "team": "FA"
   },
   {
-    "average": 491.0,
-    "name": "Justin Johnson",
-    "position": "TE",
-    "rotowire_id": "14102",
+    "average": 590.1,
+    "name": "Justin Tucker",
+    "position": "K",
+    "rotowire_id": "8398",
     "team": "FA"
   },
   {
-    "average": 347.0,
+    "average": 592.6,
+    "name": "Cole Kmet",
+    "position": "TE",
+    "rotowire_id": "14436",
+    "team": "CHI"
+  },
+  {
+    "average": 593.3,
+    "name": "Tarik Black",
+    "position": "WR",
+    "rotowire_id": "15519",
+    "team": "FA"
+  },
+  {
+    "average": 594.0,
+    "name": "Le'Meke Brockington",
+    "position": "WR",
+    "rotowire_id": "20042",
+    "team": "FA"
+  },
+  {
+    "average": 595.0,
+    "name": "Drew Plitt",
+    "position": "QB",
+    "rotowire_id": "16636",
+    "team": "FA"
+  },
+  {
+    "average": 596.7,
+    "name": "Julio Jones",
+    "position": "WR",
+    "rotowire_id": "7242",
+    "team": "FA"
+  },
+  {
+    "average": 598.0,
+    "name": "Malik Heath",
+    "position": "WR",
+    "rotowire_id": "17184",
+    "team": "FA"
+  },
+  {
+    "average": 599.0,
+    "name": "Jeremy Ruckert",
+    "position": "TE",
+    "rotowire_id": "15996",
+    "team": "NYJ"
+  },
+  {
+    "average": 600.0,
+    "name": "Xavier Weaver",
+    "position": "WR",
+    "rotowire_id": "18041",
+    "team": "FA"
+  },
+  {
+    "average": 601.3,
+    "name": "Jonnu Smith",
+    "position": "TE",
+    "rotowire_id": "11807",
+    "team": "GB"
+  },
+  {
+    "average": 602.0,
+    "name": "Raheem Blackshear",
+    "position": "RB",
+    "rotowire_id": "16355",
+    "team": "FA"
+  },
+  {
+    "average": 603.0,
     "name": "Mo Alie-Cox",
     "position": "TE",
     "rotowire_id": "12196",
     "team": "IND"
   },
   {
-    "average": 595.2,
-    "name": "Erick All",
-    "position": "TE",
-    "rotowire_id": "17696",
-    "team": "CIN"
-  },
-  {
-    "average": 609.6,
-    "name": "Elijah Arroyo",
-    "position": "TE",
-    "rotowire_id": "18540",
-    "team": "SEA"
-  },
-  {
-    "average": 309.0,
-    "name": "Nick Bowers",
-    "position": "TE",
-    "rotowire_id": "14869",
+    "average": 604.5,
+    "name": "James Turner",
+    "position": "K",
+    "rotowire_id": "18096",
     "team": "FA"
   },
   {
-    "average": 415.0,
-    "name": "Matt Bushman",
+    "average": 605.0,
+    "name": "Tom Kennedy",
+    "position": "WR",
+    "rotowire_id": "14246",
+    "team": "DET"
+  },
+  {
+    "average": 606.0,
+    "name": "Kenny Pickett",
+    "position": "QB",
+    "rotowire_id": "15841",
+    "team": "CAR"
+  },
+  {
+    "average": 607.0,
+    "name": "Parker Romo",
+    "position": "K",
+    "rotowire_id": "16559",
+    "team": "FA"
+  },
+  {
+    "average": 608.0,
+    "name": "Younghoe Koo",
+    "position": "K",
+    "rotowire_id": "12292",
+    "team": "FA"
+  },
+  {
+    "average": 609.0,
+    "name": "Isaiah Bowser",
+    "position": "RB",
+    "rotowire_id": "17320",
+    "team": "FA"
+  },
+  {
+    "average": 610.6,
+    "name": "Brock Wright",
     "position": "TE",
-    "rotowire_id": "15203",
+    "rotowire_id": "15681",
+    "team": "DET"
+  },
+  {
+    "average": 611.5,
+    "name": "Zack Kuntz",
+    "position": "TE",
+    "rotowire_id": "17034",
+    "team": "FA"
+  },
+  {
+    "average": 612.0,
+    "name": "Taylor Heinicke",
+    "position": "QB",
+    "rotowire_id": "10179",
+    "team": "FA"
+  },
+  {
+    "average": 613.3,
+    "name": "Anthony Richardson",
+    "position": "QB",
+    "rotowire_id": "16653",
+    "team": "IND"
+  },
+  {
+    "average": 614.5,
+    "name": "Brandon McManus",
+    "position": "K",
+    "rotowire_id": "9948",
+    "team": "FA"
+  },
+  {
+    "average": 615.0,
+    "name": "David Moore",
+    "position": "WR",
+    "rotowire_id": "12216",
+    "team": "FA"
+  },
+  {
+    "average": 615.6,
+    "name": "Jayden Higgins",
+    "position": "WR",
+    "rotowire_id": "18551",
+    "team": "HOU"
+  },
+  {
+    "average": 615.7,
+    "name": "Dohnte Meyers",
+    "position": "WR",
+    "rotowire_id": "19247",
+    "team": "CIN"
+  },
+  {
+    "average": 617.0,
+    "name": "Willie Snead",
+    "position": "WR",
+    "rotowire_id": "9284",
+    "team": "FA"
+  },
+  {
+    "average": 618.0,
+    "name": "Carsen Ryan",
+    "position": "TE",
+    "rotowire_id": "19608",
+    "team": "CLE"
+  },
+  {
+    "average": 619.0,
+    "name": "Matthew Trickett",
+    "position": "K",
+    "rotowire_id": "17385",
+    "team": "FA"
+  },
+  {
+    "average": 620.7,
+    "name": "Will Mallory",
+    "position": "TE",
+    "rotowire_id": "17014",
+    "team": "IND"
+  },
+  {
+    "average": 621.5,
+    "name": "Jarrett Guarantano",
+    "position": "QB",
+    "rotowire_id": "16617",
+    "team": "FA"
+  },
+  {
+    "average": 622.2,
+    "name": "Dylan Laube",
+    "position": "RB",
+    "rotowire_id": "17818",
+    "team": "LV"
+  },
+  {
+    "average": 622.5,
+    "name": "Julius Chestnut",
+    "position": "RB",
+    "rotowire_id": "15921",
+    "team": "TEN"
+  },
+  {
+    "average": 624.0,
+    "name": "Trevon Wesco",
+    "position": "TE",
+    "rotowire_id": "13828",
+    "team": "FA"
+  },
+  {
+    "average": 626.0,
+    "name": "Tyler Snead",
+    "position": "WR",
+    "rotowire_id": "16614",
+    "team": "FA"
+  },
+  {
+    "average": 628.5,
+    "name": "Ezekiel Elliott",
+    "position": "RB",
+    "rotowire_id": "10736",
     "team": "FA"
   },
   {
     "average": 629.0,
-    "name": "Grant Calcaterra",
-    "position": "TE",
-    "rotowire_id": "16039",
-    "team": "PHI"
+    "name": "Ty Chandler",
+    "position": "RB",
+    "rotowire_id": "15979",
+    "team": "NO"
   },
   {
-    "average": 257.0,
-    "name": "Sal Cannella",
+    "average": 630.0,
+    "name": "Zaire Mitchell-Paden",
     "position": "TE",
-    "rotowire_id": "14760",
+    "rotowire_id": "16530",
     "team": "FA"
+  },
+  {
+    "average": 631.0,
+    "name": "Brady Cook",
+    "position": "QB",
+    "rotowire_id": "18482",
+    "team": "MIA"
+  },
+  {
+    "average": 632.8,
+    "name": "Jacob De Jesus",
+    "position": "WR",
+    "rotowire_id": "19996",
+    "team": "FA"
+  },
+  {
+    "average": 633.4,
+    "name": "Gardner Minshew",
+    "position": "QB",
+    "rotowire_id": "13741",
+    "team": "ARI"
+  },
+  {
+    "average": 635.8,
+    "name": "Davis Cheek",
+    "position": "QB",
+    "rotowire_id": "16504",
+    "team": "FA"
+  },
+  {
+    "average": 636.5,
+    "name": "Peewee Jarrett",
+    "position": "QB",
+    "rotowire_id": "18203",
+    "team": "FA"
+  },
+  {
+    "average": 638.5,
+    "name": "Matt Prater",
+    "position": "K",
+    "rotowire_id": "5051",
+    "team": "FA"
+  },
+  {
+    "average": 639.6,
+    "name": "Clayton Tune",
+    "position": "QB",
+    "rotowire_id": "16913",
+    "team": "FA"
+  },
+  {
+    "average": 640.5,
+    "name": "Josh Gordon",
+    "position": "WR",
+    "rotowire_id": "8415",
+    "team": "FA"
+  },
+  {
+    "average": 641.0,
+    "name": "JaQuan Hardy",
+    "position": "RB",
+    "rotowire_id": "15660",
+    "team": "FA"
+  },
+  {
+    "average": 642.0,
+    "name": "Kai Forbath",
+    "position": "K",
+    "rotowire_id": "7544",
+    "team": "FA"
+  },
+  {
+    "average": 643.8,
+    "name": "Ben Sinnott",
+    "position": "TE",
+    "rotowire_id": "17833",
+    "team": "WAS"
+  },
+  {
+    "average": 645.0,
+    "name": "Tim Boyle",
+    "position": "QB",
+    "rotowire_id": "13109",
+    "team": "FA"
+  },
+  {
+    "average": 649.8,
+    "name": "Nick Chubb",
+    "position": "RB",
+    "rotowire_id": "12886",
+    "team": "FA"
+  },
+  {
+    "average": 650.0,
+    "name": "Cody Thompson",
+    "position": "WR",
+    "rotowire_id": "13490",
+    "team": "FA"
+  },
+  {
+    "average": 651.0,
+    "name": "Zane Gonzalez",
+    "position": "K",
+    "rotowire_id": "11831",
+    "team": "FA"
+  },
+  {
+    "average": 652.0,
+    "name": "Travell Harris",
+    "position": "WR",
+    "rotowire_id": "16526",
+    "team": "FA"
+  },
+  {
+    "average": 653.0,
+    "name": "Tre' McKitty",
+    "position": "TE",
+    "rotowire_id": "15252",
+    "team": "FA"
+  },
+  {
+    "average": 654.4,
+    "name": "Roschon Johnson",
+    "position": "RB",
+    "rotowire_id": "16772",
+    "team": "CHI"
+  },
+  {
+    "average": 655.5,
+    "name": "Ameer Abdullah",
+    "position": "RB",
+    "rotowire_id": "10126",
+    "team": "JAX"
+  },
+  {
+    "average": 656.0,
+    "name": "Drew Lock",
+    "position": "QB",
+    "rotowire_id": "13736",
+    "team": "SEA"
+  },
+  {
+    "average": 657.0,
+    "name": "Justin Joly",
+    "position": "TE",
+    "rotowire_id": "19276",
+    "team": "MIA"
+  },
+  {
+    "average": 659.9,
+    "name": "Brenen Thompson",
+    "position": "WR",
+    "rotowire_id": "19318",
+    "team": "LAC"
+  },
+  {
+    "average": 660.5,
+    "name": "Tai Felton",
+    "position": "WR",
+    "rotowire_id": "18553",
+    "team": "MIN"
+  },
+  {
+    "average": 661.8,
+    "name": "Henry Ruggs",
+    "position": "WR",
+    "rotowire_id": "14473",
+    "team": "FA"
+  },
+  {
+    "average": 662.0,
+    "name": "Charlie Taumoepeau",
+    "position": "TE",
+    "rotowire_id": "14633",
+    "team": "FA"
+  },
+  {
+    "average": 663.0,
+    "name": "Payne Durham",
+    "position": "TE",
+    "rotowire_id": "16720",
+    "team": "TB"
+  },
+  {
+    "average": 665.0,
+    "name": "Demarcus Robinson",
+    "position": "WR",
+    "rotowire_id": "11163",
+    "team": "SF"
+  },
+  {
+    "average": 666.0,
+    "name": "Arian Smith",
+    "position": "WR",
+    "rotowire_id": "18646",
+    "team": "NYJ"
+  },
+  {
+    "average": 667.3,
+    "name": "Malik Benson",
+    "position": "WR",
+    "rotowire_id": "19432",
+    "team": "LV"
+  },
+  {
+    "average": 669.8,
+    "name": "Erik Krommenhoek",
+    "position": "TE",
+    "rotowire_id": "16313",
+    "team": "FA"
+  },
+  {
+    "average": 670.0,
+    "name": "Jalon Daniels",
+    "position": "QB",
+    "rotowire_id": "19292",
+    "team": "TB"
+  },
+  {
+    "average": 671.3,
+    "name": "Jake Moody",
+    "position": "K",
+    "rotowire_id": "17133",
+    "team": "FA"
+  },
+  {
+    "average": 672.0,
+    "name": "Bryce Ford-Wheaton",
+    "position": "WR",
+    "rotowire_id": "16743",
+    "team": "FA"
+  },
+  {
+    "average": 674.5,
+    "name": "Ty Fryfogle",
+    "position": "WR",
+    "rotowire_id": "15886",
+    "team": "FA"
+  },
+  {
+    "average": 675.8,
+    "name": "Taylen Green",
+    "position": "QB",
+    "rotowire_id": "19289",
+    "team": "CLE"
+  },
+  {
+    "average": 676.0,
+    "name": "Josh Babicz",
+    "position": "TE",
+    "rotowire_id": "16503",
+    "team": "FA"
+  },
+  {
+    "average": 678.0,
+    "name": "Jam Miller",
+    "position": "RB",
+    "rotowire_id": "19302",
+    "team": "FA"
+  },
+  {
+    "average": 680.5,
+    "name": "Kalil Pimpleton",
+    "position": "WR",
+    "rotowire_id": "16168",
+    "team": "FA"
+  },
+  {
+    "average": 682.0,
+    "name": "Jeremiah Franklin",
+    "position": "TE",
+    "rotowire_id": "20127",
+    "team": "FA"
+  },
+  {
+    "average": 683.0,
+    "name": "Vincent Testaverde",
+    "position": "QB",
+    "rotowire_id": "14336",
+    "team": "FA"
+  },
+  {
+    "average": 685.0,
+    "name": "Kellen Mond",
+    "position": "QB",
+    "rotowire_id": "15470",
+    "team": "FA"
+  },
+  {
+    "average": 688.0,
+    "name": "Jahdae Walker",
+    "position": "WR",
+    "rotowire_id": "18938",
+    "team": "CHI"
+  },
+  {
+    "average": 689.7,
+    "name": "Hajj-Malik Williams",
+    "position": "QB",
+    "rotowire_id": "18910",
+    "team": "FA"
+  },
+  {
+    "average": 693.0,
+    "name": "Nick Sciba",
+    "position": "K",
+    "rotowire_id": "16613",
+    "team": "FA"
+  },
+  {
+    "average": 694.0,
+    "name": "Ronnie Brown",
+    "position": "RB",
+    "rotowire_id": "17268",
+    "team": "FA"
+  },
+  {
+    "average": 695.6,
+    "name": "Adam Randall",
+    "position": "RB",
+    "rotowire_id": "19301",
+    "team": "BAL"
+  },
+  {
+    "average": 696.7,
+    "name": "John Metchie",
+    "position": "WR",
+    "rotowire_id": "16069",
+    "team": "CAR"
+  },
+  {
+    "average": 699.1,
+    "name": "Sione Vaki",
+    "position": "RB",
+    "rotowire_id": "17760",
+    "team": "DET"
   }
 ]
