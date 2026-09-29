@@ -480,7 +480,12 @@
         {%- for category, category_cols in cols -%}
           {% set cat_first = loop.first %}
           {%- for key, label in category_cols -%}
-          <th{% if loop.first and not cat_first %} class="grp-divider"{% endif %}>{{ label }}</th>
+          {# `title=` gives every abbreviated header a native hover tooltip
+             (e.g. "YAC" -> "Rushing yards after contact") -- user request.
+             `full_name` (webapp.team_profile._full_name, a Jinja global)
+             degrades to a readable version of the raw key when it has no
+             specific entry, so this never renders a blank tooltip. #}
+          <th{% if loop.first and not cat_first %} class="grp-divider"{% endif %} title="{{ full_name(key) }}">{{ label }}</th>
           {%- endfor -%}
         {%- endfor -%}
       </tr></thead>

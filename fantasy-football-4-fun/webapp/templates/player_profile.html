@@ -42,6 +42,18 @@
      (_player_game_detail.html) -- everything else on this page is plain
      server-rendered HTML with no htmx. #}
   <script src="/static/htmx-1.9.12.min.js" defer></script>
+  {# table-sort.js's SMStatFlyouts (shared with index.html/team_profile.html,
+     see that file's own comment) declips a .stat-cell flyout that would
+     otherwise get cut off by a scrolling ancestor -- this page's Game log
+     detail (_player_game_detail.html) and Advanced & usage stats section
+     both render .stat-cell flyouts via the same _teamstat_macros.html this
+     helper targets. Bound once on `document` below (not per-swap): unlike
+     team_profile.html's per-game script, delegated listeners on `document`
+     already cover content added later by htmx (Game log rows, a season
+     switch), so no re-bind is needed when either swaps in. This page has
+     no #panel and never loaded table-sort.js before this. #}
+  <script src="/static/table-sort.js?v={{ asset_v }}" defer
+     onload="window.SMStatFlyouts &amp;&amp; window.SMStatFlyouts.bind(document);"></script>
 </head>
 <body hx-indicator="#bar">
   <div id="bar"></div>

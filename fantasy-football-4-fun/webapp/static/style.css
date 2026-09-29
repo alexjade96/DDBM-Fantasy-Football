@@ -2351,17 +2351,26 @@ tr.bench-impact td { background: color-mix(in srgb, #d9a441 8%, transparent); }
    disagreeing one -- reveals which source(s) fed it and what each one
    actually reported. User request: "if i hover over player x receiving
    value '10' the flyout shows the n number of sources and their
-   respective values." CSS-only reveal (:hover/:focus-within), no JS.
-   .stat-cell must be a positioned inline block so the absolutely-
-   positioned .stat-flyout anchors to IT, not the table cell (whose own
-   width varies per column).
+   respective values." Reveal is still CSS-only (:hover/:focus-within); a
+   small JS assist (index.html's prepStatFlyouts, see its own comment)
+   only steps in to reposition/declip a flyout that would otherwise get
+   cut off, it never controls show/hide. .stat-cell must be a positioned
+   inline block so the absolutely-positioned .stat-flyout anchors to IT,
+   not the table cell (whose own width varies per column).
 
-   Known, accepted limitation: both .tablewrap and .dt-detail use
-   overflow-x:auto, which per the CSS spec also clips overflow-y -- a
-   flyout near a scroll container's edge can get visually cut off (most
-   likely on the season-wide scrolltable). Trialled first as a
-   Testing-tab-only mockup specifically to weigh this tradeoff before
-   shipping it to the real page. */
+   Both .tablewrap and .dt-detail use overflow-x:auto, which per the CSS
+   spec also clips overflow-y -- a flyout near a scroll container's edge
+   used to render visibly cut off (most likely on the season-wide
+   scrolltable; first shipped as a documented, accepted limitation).
+   prepStatFlyouts fixes this by measuring each flyout on hover/focus and,
+   only when it would actually overflow its clipping ancestor or the
+   viewport, toggling it to .stat-flyout-declipped: taken out of normal
+   flow with inline top/left (JS-computed, clamped into the viewport) and
+   switched to position:fixed so it escapes the ancestor's clip box
+   entirely, flipping below the cell when there isn't room above. The
+   plain, unclipped case (most cells, most panel widths) never gets this
+   class and keeps the original anchored bottom-center CSS below
+   untouched -- the JS is a rare-case correction, not the normal path. */
 .stat-cell { position: relative; display: inline-block; cursor: help; }
 .stat-flyout { display: none; position: absolute; left: 50%;
   bottom: calc(100% + 6px); transform: translateX(-50%);
@@ -2372,6 +2381,14 @@ tr.bench-impact td { background: color-mix(in srgb, #d9a441 8%, transparent); }
   white-space: normal; text-align: left; cursor: default; }
 .stat-cell:hover .stat-flyout, .stat-cell:focus-within .stat-flyout,
 .stat-cell:focus .stat-flyout { display: block; }
+/* JS-declipped state (prepStatFlyouts): position:fixed with inline top/left
+   set per-hover, so `bottom`/`transform` from the anchored rule above must
+   be neutralised or they'd fight the JS-computed coordinates. z-index bumped
+   one step above the plain anchored flyout's -- both are never shown at
+   once on the same cell, but a declipped flyout is escaping a stacking
+   context (e.g. a scrolled .dt-detail) other panel chrome may sit above. */
+.stat-flyout.stat-flyout-declipped { position: fixed; bottom: auto;
+  left: 0; transform: none; z-index: 21; }
 .stat-flyout-head { display: block; font-size: 10px; text-transform: uppercase;
   letter-spacing: .04em; color: var(--faint); font-weight: 700;
   margin-bottom: 4px; }

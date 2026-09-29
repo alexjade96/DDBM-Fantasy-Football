@@ -1269,3 +1269,191 @@ def test_team_profile_reconciled_table_renders_flyout_on_every_cell():
     # The old flag+title-only rendering (flyout=false) is gone from the
     # real page's own output -- no bare `title="Sources disagree` tooltip.
     assert 'title="Sources disagree' not in detail
+
+
+# --- _offense_players_via_shared / _defense_players_via_shared (Phase 3: -----
+# --- adapters over stat_reconcile.player_week_rows, not yet wired into ------
+# --- _attach_week_stats's live call site -- see this module's own header ---
+# --- comment on both functions for the comparison-before-switch rationale) --
+
+
+def test_offense_players_via_shared_matches_merge_offense_players_shape():
+    """Direct shape parity check against the EXISTING, live
+    _merge_offense_players -- confirms the adapter produces the identical
+    dict shape (name/position/passing/rushing/receiving/snap/route) for a
+    simple single-metric case, independent of the broader real-data
+    comparison this migration was verified against (real 2026 league data,
+    96 team-weeks, 0 unexplained mismatches after two real bugs -- PFR
+    extra attachment, position-resolution ordering -- were found and
+    fixed)."""
+    role_rows = {
+        "player_stats_passing": [
+            {"player_display_name": "Jared Goff", "week": 1, "attempts": 39},
+        ],
+        "snap_counts_offense": [
+            {"player": "Jared Goff", "week": 1, "position": "QB", "offense_snaps": 65},
+        ],
+    }
+    stats = {
+        "passing": {"reconciled": [
+            {"player": "Jared Goff", "attempts": 39, "attempts_agreed": True,
+             "attempts_sources": {"player_stats": 39}},
+        ]},
+        "snap_counts_offense": role_rows["snap_counts_offense"],
+    }
+    roster = [{"player": "Jared Goff", "position": "QB"}]
+
+    old = tp._merge_offense_players(stats, roster)
+    new = tp._offense_players_via_shared(role_rows, roster)
+
+    k = tp._norm_name("Jared Goff")
+    assert set(old[k]) == set(new[k])
+    assert old[k]["name"] == new[k]["name"]
+    assert old[k]["position"] == new[k]["position"]
+    assert old[k]["passing"]["attempts"] == new[k]["passing"]["attempts"]
+
+
+def test_offense_players_via_shared_excludes_non_offense_players():
+    """A player with only defense/kicking role_rows entries (never a real
+    case for the SAME player in this app's own data model, but exercised
+    directly here) must not appear in the offense adapter's output --
+    mirrors _merge_offense_players's own implicit scope, which never even
+    reads defense/kicking role_rows keys."""
+    role_rows = {
+        "pfr_def": [{"pfr_player_name": "Aidan Hutchinson", "week": 1, "def_sacks": 2.0}],
+    }
+    out = tp._offense_players_via_shared(role_rows, [])
+    assert out == {}
+
+
+def test_defense_players_via_shared_matches_merge_defense_players_shape():
+    role_rows = {
+        "pfr_def": [
+            {"pfr_player_name": "Aidan Hutchinson", "week": 1, "def_sacks": 2.0},
+        ],
+        "snap_counts_defense": [
+            {"player": "Aidan Hutchinson", "week": 1, "position": "DE", "defense_snaps": 50},
+        ],
+    }
+    stats = {
+        "pfr_def": role_rows["pfr_def"],
+        "snap_counts_defense": role_rows["snap_counts_defense"],
+    }
+
+    old = tp._merge_defense_players(stats, [], "DET")
+    new = tp._defense_players_via_shared(role_rows, "DET")
+
+    k = tp._norm_name("Aidan Hutchinson")
+    assert set(old[k]) == set(new[k])
+    assert old[k]["position"] == new[k]["position"] == "DL"  # DE folds to DL via _DEF_GROUP_OF
+    assert old[k]["pfr_def"]["def_sacks"] == new[k]["pfr_def"]["def_sacks"]
+
+
+def test_defense_players_via_shared_falls_back_to_sleeper_position_map():
+    """Mirrors _merge_defense_players's own second-tier fallback: when
+    snap_counts has nothing for a player (or is entirely absent -- the
+    real, verified KC 2026 gap _sleeper_position_map's own docstring
+    documents), the adapter's position_of callback consults the same
+    current-roster Sleeper position pool, monkeypatched here rather than
+    hitting the network."""
+    role_rows = {
+        "pfr_def": [{"pfr_player_name": "Some Player", "week": 1, "def_sacks": 1.0}],
+    }
+    original = tp._sleeper_position_map
+    tp._sleeper_position_map = lambda abbr: {tp._norm_name("Some Player"): "LB"}
+    try:
+        out = tp._defense_players_via_shared(role_rows, "DET")
+    finally:
+        tp._sleeper_position_map = original
+
+    k = tp._norm_name("Some Player")
+    assert out[k]["position"] == "LB"
+
+
+def test_defense_players_via_shared_excludes_non_defense_players():
+    role_rows = {
+        "player_stats_passing": [
+            {"player_display_name": "Jared Goff", "week": 1, "attempts": 39},
+        ],
+    }
+    out = tp._defense_players_via_shared(role_rows, "DET")
+    assert out == {}
+
+
+# --- _full_name (abbreviated column header hover tooltips) -----------------
+
+
+def test_full_name_disambiguates_same_label_by_real_key():
+    """The whole point of keying this dict by real STAT KEY rather than by
+    label text: "TD" means a genuinely different real fact depending on
+    which column it's rendered on, and each key's own full name must
+    reflect that -- confirmed against the real column-spec constants
+    (_OFF_POSITION_COLS/_DEF_TEAM_KEYS) rather than assumed."""
+    assert tp._full_name("passing_tds") == "Passing touchdowns"
+    assert tp._full_name("rushing_tds") == "Rushing touchdowns"
+    assert tp._full_name("receiving_tds") == "Receiving touchdowns"
+    assert tp._full_name("td") == "Touchdowns"  # team defense's own raw key
+    assert tp._full_name("interceptions") == "Interceptions thrown"  # QB
+    assert tp._full_name("def_ints") == "Interceptions"  # per-player defense
+    assert tp._full_name("int") == "Interceptions"  # team defense
+
+
+def test_full_name_disambiguates_offense_and_defense_snap_keys():
+    assert tp._full_name("offense_snaps") == "Offensive snaps played"
+    assert tp._full_name("defense_snaps") == "Defensive snaps played"
+    assert tp._full_name("offense_pct") == "Offensive snap share"
+    assert tp._full_name("defense_pct") == "Defensive snap share"
+
+
+def test_full_name_falls_back_to_readable_key_when_unmapped():
+    """A key added to a column spec later without a matching
+    _STAT_FULL_NAMES entry still gets SOME tooltip text, never a blank
+    one."""
+    assert tp._full_name("some_future_stat_key") == "Some Future Stat Key"
+
+
+def test_full_name_covers_every_real_key_in_every_live_column_spec():
+    """Self-updating coverage guard (same discipline CLAUDE.md documents
+    elsewhere in this codebase for exactly this failure mode): sweeps every
+    real key that actually appears in _OFF_POSITION_COLS/_DEF_PLAYER_COLS/
+    _KICKER_KEYS/_DEF_TEAM_KEYS -- the four column specs position_group_
+    table actually renders -- and asserts each one has a REAL
+    _STAT_FULL_NAMES entry, not just the readable-fallback text (which
+    would silently mask a key that was added to a spec but never given a
+    real tooltip)."""
+    keys: set[str] = set()
+    for spec in tp._OFF_POSITION_COLS.values():
+        for _category, cols in spec:
+            keys.update(k for k, _label in cols)
+    for _category, cols in tp._DEF_PLAYER_COLS:
+        keys.update(k for k, _label in cols)
+    keys.update(k for k, _label in tp._KICKER_KEYS)
+    keys.update(k for k, _label in tp._DEF_TEAM_KEYS)
+
+    missing = sorted(k for k in keys if k not in tp._STAT_FULL_NAMES)
+    assert missing == [], f"missing real _STAT_FULL_NAMES entries: {missing}"
+
+
+def test_position_group_table_header_carries_title_attribute():
+    """End-to-end render check: the actual <th> markup carries a real
+    title= attribute with the full name, not just the Python-side mapping
+    existing in isolation."""
+    import jinja2
+
+    env = jinja2.Environment(
+        loader=jinja2.FileSystemLoader("webapp/templates"),
+        extensions=["jinja2.ext.do"])
+    env.globals["full_name"] = tp._full_name
+    tmpl = env.from_string(
+        '{% import "_teamstat_macros.html" as tsm %}'
+        '{{ tsm.position_group_table(groups, cols_by_group) }}')
+
+    groups = [{"group": "QB", "players": [
+        {"name": "Jared Goff", "position": "QB",
+         "passing": {"attempts": 39, "attempts_agreed": True,
+                    "attempts_sources": {"player_stats": 39}}},
+    ]}]
+    cols_by_group = {"QB": [("passing", [("attempts", "Att")])]}
+    html = tmpl.render(groups=groups, cols_by_group=cols_by_group)
+    assert 'title="Pass attempts"' in html
+    assert ">Att<" in html

@@ -1068,6 +1068,12 @@ tpl.env.globals["KICKER_COLS"] = _team_profile._KICKER_COLS
 # a dict keyed by every possible position value. See
 # team_profile._roster_position_columns's own docstring.
 tpl.env.globals["roster_position_columns"] = _team_profile._roster_position_columns
+# Hover-tooltip text for an abbreviated column header (e.g. "YAC" ->
+# "Yards after contact") -- a plain callable, not a static dict, since a
+# key not in team_profile._STAT_FULL_NAMES still needs SOME text (its own
+# readable fallback, see that function's own docstring). Consulted by
+# _teamstat_macros.position_group_table's own header-cell `title=`.
+tpl.env.globals["full_name"] = _team_profile._full_name
 # Best-effort Sleeper player_id for a row of any Advanced-stats/Schedule
 # table (see team_profile.resolve_row_player_id's own docstring) -- lets
 # _teamstat_macros.html's stat_table/reconciled_table/position_group_table

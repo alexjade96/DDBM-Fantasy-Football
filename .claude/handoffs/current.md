@@ -1,6 +1,6 @@
 # Context Handoff
 
-Generated: 2026-09-21T09:56:00-07:00
+Generated: 2026-09-29T00:00:00-07:00
 
 Purpose:
 This document is the authoritative project state for resuming work in a new
@@ -10,380 +10,342 @@ Claude Code session.
 
 ## Goal
 
-Iterate on the Player Comparison landing tab (league-free, real-NFL
-player-vs-player comparison) and its Testing-tab prototype workflow: fix
-button gating/layout bugs, prototype and promote layout ideas from the
-Testing tab into the live tab, and fix a radar-chart color-identification
-problem. This picks up directly after the prior session's handoff
-(`ba19f43` -- "Redesign Player Comparison and add pizza-chart radar
-polish"), which is now superseded by this session's work.
+Build a shared, cross-source stat-reconciliation layer for the
+`fantasy-football-4-fun` webapp so both `team_profile.py` and
+`player_profile.py` can consume ONE reconciled per-player-week row instead
+of each building its own separate merge/collection logic. Per-week is the
+ground truth grain; season totals are `sum(reconciled weekly values)`.
 
-**Nothing from this session has been committed yet.** All changes are in
-the working tree only.
+Plan: Phase 1 (extend `stat_reconcile.py` to every metric family) -> Phase 2
+(shared `player_week_rows()` assembler) -> Phase 3 (migrate
+`team_profile.py`'s LIVE rendering to consume it) -> Phase 4 (migrate
+`player_profile.py`, **NOT STARTED**).
+
+A separate, small hover-flyout declip fix (CSS/JS only, no Python) was also
+completed and is now committed alongside Phases 1-3.
 
 ---
 
 ## Current State
 
-- Branch: `main`. Working tree has UNCOMMITTED changes across this whole
-  session (many small iterations, no commits made -- see Constraints for
-  why: user never asked for a commit).
-- Full pytest (`fantasy-football-4-fun/`): **442 passed**, 2 pre-existing
-  unrelated failures unchanged all session
-  (`test_ffadp.py::test_export_xlsx_route` -- missing `openpyxl`;
-  `test_nflref.py::test_snapshot_serves_when_network_gone` -- pre-existing
-  `KeyError`).
-- Dev server running live at `127.0.0.1:8000` throughout the session (per
-  standing user rule -- see Constraints) and used to verify every change
-  via direct `curl`/HTTP inspection. **No browser automation tool
-  (Playwright etc.) was available in ANY turn this session** -- every
-  verification was HTTP/HTML/CSS text inspection plus one real rendered
-  PNG fetch+view (the final radar-color fix), never an actual interactive
-  click-through. This is a discipline gap versus the prior session's own
-  documented standard (which used real Playwright browser checks) --
-  flag this explicitly to the user if they ask "did you actually test
-  this."
+**Committed.** All of Phases 1-3 plus the flyout fix landed in one commit
+this session (see `git log -1` for the hash/message). Working tree is clean
+relative to that commit as of this handoff.
 
-### Files touched this session (all uncommitted)
+Files in that commit:
+- `fantasy-football-4-fun/webapp/stat_reconcile.py` -- Phases 1+2.
+- `fantasy-football-4-fun/webapp/team_profile.py` -- Phase 3 adapters live,
+  `_full_name`/`_STAT_FULL_NAMES` tooltip feature.
+- `fantasy-football-4-fun/webapp/app.py` -- registered `full_name` as a
+  Jinja global.
+- `fantasy-football-4-fun/webapp/templates/_teamstat_macros.html` --
+  `title=` attribute on `position_group_table`'s header cells.
+- `fantasy-football-4-fun/webapp/static/style.css` -- `.stat-flyout-declipped`.
+- `fantasy-football-4-fun/webapp/static/table-sort.js` -- new
+  `window.SMStatFlyouts` shared helper.
+- `fantasy-football-4-fun/webapp/templates/index.html` -- wires
+  `prepStatFlyouts`.
+- `fantasy-football-4-fun/webapp/templates/_team_game_detail.html` -- binds
+  `SMStatFlyouts` per game-swap root.
+- `fantasy-football-4-fun/webapp/templates/player_profile.html` -- now
+  loads `table-sort.js`, binds `SMStatFlyouts` on `document`.
+- `fantasy-football-4-fun/tests/test_stat_reconcile.py` -- ~45 new tests.
+- `fantasy-football-4-fun/tests/test_team_profile.py` -- ~15 new tests.
 
-- `fantasy-football-4-fun/webapp/templates/_playercompare_compare.html` --
-  Reset/Compare button visibility+gating fixed twice (see Important
-  Decisions), controls row restructured into filters/actions groups
-  (promoted from Testing demo), row-highlight wiring added (promoted),
-  chip-strip wiring added (promoted), hint text updated.
-- `fantasy-football-4-fun/webapp/templates/_playercompare_table.html` --
-  removed the hint paragraph above the leaderboard table (user request,
-  final instruction of the session before this handoff... actually this
-  was mid-session; see Current State ordering below is chronological).
-- `fantasy-football-4-fun/webapp/templates/_playercompare_charts.html` --
-  briefly gained then had REVERTED a color-swatch header-row addition (see
-  Rejected Approaches); final state has NO changes from this file's
-  pre-session baseline other than what was already reverted back out.
-- `fantasy-football-4-fun/webapp/templates/_landing_testing.html` --
-  created fresh this session (Testing tab had no Player Comparison content
-  before), iterated through ~6 rounds of demo prototypes, then EMPTIED
-  back down to a minimal placeholder once every demo was either promoted
-  to the live tab or dropped.
-- `fantasy-football-4-fun/webapp/app.py` -- new `GET /testing` route +
-  `landing_testing()` handler (still present, page just has no content
-  now); `_playercompare_table_ctx` briefly gained then had REVERTED
-  `color_a`/`color_b` fields.
-- `fantasy-football-4-fun/webapp/static/style.css` -- large amount of churn:
-  added then removed ALL `.lt-*` Testing-tab demo CSS; added
-  `.playercompare-group*` (promoted grouped-controls), `.playercompare-
-  row-picked` (promoted row-highlight), `.playercompare-chips`/`-chip`/
-  `-chip-x` (promoted chip strip); briefly added then reverted
-  `.compare-swatch`/`--pc-color` border.
-- `fantasy-football-4-fun/sleepermetrics/plots.py` -- NEW `_colored_vs_title()`
-  helper function (see Architecture); `plot_player_overlay`'s snapshot
-  branch now calls it instead of `fig.suptitle()`. This is the CURRENT,
-  FINAL fix for the color-identification problem (superseded the
-  reverted HTML-swatch approach).
-- `fantasy-football-4-fun/tests/test_playercompare_landing.py` -- net
-  growth from many rounds of add/revise/remove; ended at 41 tests, all
-  passing.
-- `fantasy-football-4-fun/tests/test_landing_testing.py` -- created, grew
-  to 9 tests through the demo-prototyping rounds, then REWRITTEN down to
-  4 tests once the page was emptied (tests the placeholder state, not the
-  removed demos).
-- `fantasy-football-4-fun/tests/test_player_compare.py` -- 3 new tests
-  added at the very end for `_colored_vs_title` (title-segment coloring,
-  centering, single-player edge case).
+**Test suite: 586 passed, 0 failed** (`fantasy-football-4-fun/venv/Scripts/
+python.exe -m pytest tests/ -q`).
+
+CI has NOT been run this session (nothing pushed to a remote).
 
 ---
 
 ## Architecture
 
-### Player Comparison request flow (unchanged endpoints from prior session)
+### 1. `stat_reconcile.py` -- shared reconciliation layer (Phases 1+2)
 
-- `GET /playercompare` -- shell (now: filters+actions grouped controls row,
-  a chip strip below the board).
-- `GET /playercompare/data` -- leaderboard checkboxes (now: checked rows
-  get a tinted/accented background via `.playercompare-row-picked`; the
-  hint line above the table that used to read "101 RBs · 2026 season ·
-  Sleeper feed... Check 2 or more players..." is REMOVED).
-- `GET /playercompare/compare` -- comparison section (radar/table/trend).
-  Header row (`.compare-header-row`, portrait+name flanking the radar) is
-  back to its ORIGINAL pre-session appearance -- no swatches, no colored
-  border. Color identification is now solved INSIDE the radar PNG itself.
-- `GET /playercompare/table` -- toggle refresh target (untouched this
-  session beyond the shared `_playercompare_table_ctx` churn, which net
-  ended back at its original shape).
-- `GET /chart/player_overlay` -- the PNG endpoint. Snapshot-mode title is
-  now multi-colored (see below).
-- `GET /testing` (NEW this session) -- `landing_testing()` in app.py,
-  renders `_landing_testing.html`. Currently a minimal placeholder (header
-  + "Nothing is currently under review here.") -- the route/nav link
-  stay per explicit user choice ("keep the Testing tab, just empty of
-  this content") even though it currently has zero prototype content.
+`_ALL_METRIC_MAPS = {**_METRIC_MAPS, **_EXTRA_METRIC_MAPS}` covers
+passing/rushing/receiving plus defense/defense_team/snaps_offense/
+snaps_defense/snaps_special_teams/routes/kicking. `METRIC_LABELS`
+deliberately NOT extended (still "Passing"/"Rushing"/"Receiving" only --
+its own docstring claims that scope and nothing iterates it in a template).
 
-### `_colored_vs_title()` (sleepermetrics/plots.py, the session's final
-deliverable)
+**`reconcile_season(rows_by_source, metric, season_only_rows=None,
+season_only_source="")`** -- sum-then-check: reconciles each week first,
+then sums. Different from the pre-existing `aggregate_weeks` (sums each
+source's raw weeks first, then votes among sums -- two independent passes;
+has NO live caller, kept dormant, do not remove without fresh confirmation).
+`_MAX_STATS`/`_OMIT_STATS`/`_RECOMPUTE_STATS` match `team_profile.py`'s
+existing season-aggregation precedent (`_kicker_season_totals`,
+`_def_season_totals`/`_DEF_SEASON_EXCLUDED_KEYS`). **Not yet consumed by
+any live page** -- Phase 4's first real consumer.
 
-Solves "the radar has no legend, so which polygon is which player is
-unclear" WITHOUT a legend and WITHOUT moving the radar off-center:
-- Draws each player's name as its OWN `fig.text()` Text artist, colored via
-  the same `palette()` the polygon lines/fills already use, joined by a
-  plain-ink " vs " separator.
-- matplotlib has no single-Text multi-color API, so it draws all segments
-  at a placeholder x=0.5 first, calls `fig.canvas.draw()` to realize their
-  widths, measures via `get_window_extent()`, then repositions every
-  segment left-to-right so the WHOLE GROUP centers as one line.
-- Called from `plot_player_overlay`'s snapshot branch with `drawn_names`
-  (not `players.keys()`) so a player whose profile never resolved (no
-  polygon actually drawn) doesn't get a colored name in the title either.
-- The `title` PARAMETER is now IGNORED in snapshot mode (the function
-  builds its own title text from `drawn_names`/`colors` instead) -- but
-  still used normally in `mode="trend"` (trend chart keeps its ordinary
-  `ax.legend()`, unaffected by any of this session's work).
-- Verified with a real rendered PNG fetched from the live server
-  (Jahmyr Gibbs vs Derrick Henry, real 2026 data) -- title colors matched
-  each player's polygon color exactly, radar stayed centered, no legend.
-  Screenshot was viewed directly in-session (Read tool on the saved PNG),
-  the ONE piece of actual visual verification this session did.
+**`player_week_rows(role_rows, position_of=None)`** -- merges every metric
+family's per-week reconciled rows into one dict per (player, week).
+Returns `(player_rows, team_rows)`. Key internals: `_ROLE_ROWS_KEY`
+(explicit table, source key-naming genuinely differs per source, not one
+formula), `_ROLE_POSITION_KEY`, two-pass position resolution (fills every
+role's real position source across ALL roles before any `position_of`
+fallback is consulted -- fixes a real two-way-player ordering bug),
+`_attach_pfr_extra` (PFR's non-overlapping extra columns joined directly by
+name, mirroring `team_profile._attach_pfr_extra`'s per-game logic).
+
+### 2. `team_profile.py` -- Phase 3, LIVE switch, BOTH paths still exist
+
+`_offense_players_via_shared`/`_defense_players_via_shared` -- adapters
+translating `player_week_rows`'s generic shape into the exact shape
+`_build_position_groups` expects. **`_offense_position_groups`/
+`_defense_position_groups` call these adapters** (this is what's live on
+`/team/{abbr}`, confirmed correct by the user in a live browser check).
+
+**`_merge_offense_players`/`_merge_defense_players` are NOT dormant and
+NOT deleted -- they are STILL LIVE**, called directly by
+`player_profile.py`'s `_game_log` (see Important Discoveries below; this
+was found mid-session and is the reason Phase 4 exists as separate,
+required work before any deletion). Do not delete either function without
+a fresh, explicit go-ahead, and only once `player_profile.py` no longer
+calls them.
+
+### 3. Tooltip feature (`_full_name`)
+
+`team_profile._STAT_FULL_NAMES` (~70 entries) + `_full_name(key)` --
+hover-tooltip text for every abbreviated column header in
+`position_group_table` (the only live consumer of abbreviated `(key,
+label)` headers). Keyed by real stat KEY (not label text -- several labels
+are genuinely ambiguous, e.g. "TD" means different things in different
+tables). Registered as Jinja global `full_name`; wired into
+`_teamstat_macros.html`'s `<th title="{{ full_name(key) }}">`.
+
+### 4. Hover-flyout declip fix (this session, CSS/JS only)
+
+`.stat-cell`/`.stat-flyout` (the per-source breakdown that appears on
+hovering a reconciled stat cell) is `position: absolute`, and its
+containing tables (`.tablewrap`/`.dt-detail`) use `overflow-x: auto`,
+which per the CSS spec also clips `overflow-y` -- a flyout near a table
+edge could render visibly cut off. This was a documented "known, accepted
+limitation" before this session.
+
+Fixed with `window.SMStatFlyouts.bind(root)` in `table-sort.js` (shared,
+since all three consuming pages need it): on hover/focus it measures the
+flyout at its normal position; only if an edge would be clipped by a
+scroll ancestor or the viewport does it switch the flyout to
+`.stat-flyout-declipped` (`position: fixed`, JS-computed/clamped
+top/left, flips below the cell if no room above). CSS still owns
+show/hide entirely -- the JS never controls whether a flyout appears,
+only where it lands when it would otherwise be cut off.
+
+Wired into:
+- `index.html` -- `prepStatFlyouts()` calls `SMStatFlyouts.bind(document)`,
+  hooked to `htmx:afterSwap` plus an initial call.
+- `_team_game_detail.html` -- binds per `#gs-panels-{{ game_key }}` root,
+  matching that file's existing per-swap script convention (no reliable
+  `document.currentScript` under htmx's script re-execution).
+- `player_profile.html` -- did NOT load `table-sort.js` before this
+  session; now does, and binds on `document` via the script's own
+  `onload` handler (delegation means lazily-loaded Game log rows need no
+  re-bind).
+
+Verified via direct Jinja template renders (not just syntax checks) that
+the new markup and script calls actually appear in real output. **No
+browser was used** (none available in this environment) -- the clamping
+math itself was not visually confirmed.
 
 ---
 
 ## Important Decisions
 
-- **Both the row-highlight and grouped-controls Testing-tab demos were
-  PROMOTED to the live Player Comparison tab, then their Testing-tab demo
-  sections were REMOVED entirely** (not kept as read-only references --
-  an intermediate state that DID keep them read-only with a "Live on the
-  real tab" tag was explicitly reverted per later user instruction: "when
-  implementing to live, you can remove the demos from the testing tabs").
-- **The chip-strip demo was ALSO promoted to the live tab** in a later
-  round ("implement #1 to live and remove the rest of the prototypes from
-  testing") -- at that point the user also asked to keep the `/testing`
-  route/nav but empty it of ALL remaining content (sticky bar, combo, and
-  the two already-promoted ones), rather than deleting the page. This is
-  why `_landing_testing.html` currently exists but is nearly empty.
-- **Reset/Compare buttons: final state is BOTH always visible (never
-  `hidden`) and gated together on the identical `n >= 2` `disabled`
-  condition, right-justified as a pair, AGNOSTIC to (not embedded inside)
-  whatever the leaderboard table/chip strip/sticky elements are doing.**
-  This went through several iterations before settling -- see Rejected
-  Approaches for the discarded intermediate states. The `sync()` function
-  in `_playercompare_compare.html` is the single source of truth: one
-  `var usable = n >= 2` drives both buttons' `.disabled`.
-- **The Testing-tab "sticky bar" and "combo" (chips+sticky) prototypes
-  were iterated on extensively (nested-scroll-container bug fix,
-  bottom-pinning, "encroaching on the table" layout fix) but were
-  ULTIMATELY DROPPED, not promoted** -- when the user said "implement #1
-  to live," #1 was specifically the plain chip strip, not the sticky/combo
-  variants. All that iteration's CSS/JS is gone from the codebase now
-  (removed along with the rest of the Testing tab's demo content).
-- **Color identification for the radar chart: HTML-side (header-row
-  swatches) was tried FIRST, fully implemented, verified working -- then
-  EXPLICITLY REVERSED by the user ("include the color indicator in the
-  graphic instead?") in favor of coloring the title text inside the PNG
-  itself.** The HTML swatch approach is NOT present in the final code;
-  don't reintroduce it without being asked again. See Rejected Approaches.
-- **`_playercompare_table_ctx`'s `color_a`/`color_b` fields were added
-  then fully removed** -- they existed only to support the reverted
-  HTML-swatch approach and have no purpose now that colors are computed
-  entirely inside `plots.py`.
+- **"Sum-then-check" (Option A) over "vote twice"** -- season total is
+  always exactly `sum(reconciled weekly values)`.
+- **All metric families reconciled, not just the original 3** -- a future
+  second source for any single-source family needs zero new plumbing.
+- **Promote `stat_reconcile.py` to the shared layer**, not a new module.
+- **Compute on-demand, no new persistence/caching layer** -- reuses the
+  existing per-request TTL cache pattern (`_PROFILE_CACHE`).
+- **`METRIC_LABELS` NOT extended** to the new families (Jinja global,
+  docstring scope preserved).
+- **Phase 3 adapter approach over renaming Phase 2's role keys** -- keeps
+  the shared assembler page-agnostic.
+- **Snap-count and PFR-def cells gaining a hover-flyout** (real, visible
+  behavior change) -- explicitly accepted by the user, twice.
+- **A punter's real position (e.g. "P") now shown instead of "Other"**
+  (real, visible behavior change) -- explicitly accepted.
+- **`_merge_offense_players`/`_merge_defense_players` are kept, not
+  deleted** -- explicit user decision this session, after discovering
+  `player_profile.py` still depends on them directly. Revisit only once
+  Phase 4 migrates `player_profile.py` off them.
+- **Tooltips keyed by real stat KEY**, not a simpler global label
+  glossary -- per-column accuracy over simplicity.
+- **Flyout declip fix implemented as a shared `table-sort.js` helper**
+  (`SMStatFlyouts`), not duplicated per page -- matches this codebase's
+  own established precedent (`SMTableSort`) for logic three different
+  pages (`index.html`, `team_profile.html`, `player_profile.html`) all
+  need, one `#panel`-based and two `#panel`-less.
 
 ---
 
 ## Important Discoveries
 
-- **Three separate concurrent `htmx.ajax()` calls, each paired with its
-  own `document.body`-level `htmx:afterSwap` listener, only reliably wire
-  up ONE of the boards** when a page has multiple independent leaderboard
-  fetches firing in the same tick (this bit the Testing tab when it had 4
-  demo boards). htmx's swap/settle machinery isn't built for several
-  concurrent same-tick requests racing to match their own target via a
-  shared global event. Fix: plain `fetch()` + manual `.innerHTML =`
-  assignment per board, each in its own self-contained `.then()` chain
-  with no shared global event to race on. This is a durable gotcha for
-  ANY future page with multiple independent htmx-style fetches firing at
-  once -- if that's ever needed again, use plain `fetch()`, not several
-  parallel `htmx.ajax()` calls with a shared listener.
-- **Nested scroll containers**: the leaderboard fragment
-  (`_playercompare_table.html`) brings its OWN `.tablewrap.scrolltable`
-  (max-height:420px, its own `overflow-y:auto`). Wrapping THAT inside
-  another element that ALSO has `max-height`/`overflow-y:auto` (as the
-  Testing tab's sticky-bar demo did, to have something for its `scroll`
-  listener to bind to) produces two independently-scrolling boxes stacked
-  on each other -- confusing, possibly-non-firing scroll events. Fix
-  pattern (now removed from the codebase along with the demo, but worth
-  remembering): neutralize the INNER `.scrolltable`'s own scroll behavior
-  (`max-height: none; overflow-y: visible`) so the outer wrapper is the
-  single actual scroll container; `position: sticky` still correctly
-  anchors to the nearest scrolling ANCESTOR, not necessarily its immediate
-  parent, so this doesn't break sticky positioning.
-- **A `position: sticky` element sharing its parent's fixed-height scroll
-  budget with other content will visibly shrink that other content as it
-  grows.** The combo demo's chip strip, when placed INSIDE the same
-  scrolling box as the leaderboard table with `position: sticky;
-  bottom: 0`, grew (more chips = more wrapped lines) and ate into how many
-  table rows stayed visible -- "encroaching on the table" (user-reported).
-  General lesson: a growing sticky/pinned element must NOT share a fixed-
-  height scroll container with the content it's supposed to sit beside;
-  give it separate space outside that container instead.
-- **`plots.palette(names)` is deterministic and SORTS the name set** before
-  assigning colors (`sorted(set(names))`), so computing "the same color a
-  chart will use for this label" from outside the chart function is exact
-  and order-independent -- callers don't need to replicate the chart's own
-  iteration order, just call `palette()` on the same label set.
-- **matplotlib has no built-in multi-color single-Text API.** Coloring
-  part of a title differently from the rest requires drawing multiple
-  separate `Text` artists and manually laying them out (draw once to
-  realize real pixel widths via `get_window_extent()`, then reposition) --
-  this is a reusable pattern (`_colored_vs_title`) if a similar need comes
-  up elsewhere in this codebase (e.g. a colored subtitle).
+- **The current NFL season is 2026** (`sleepermetrics.league.nfl_state()`).
+  All real-data verification for Phases 1-3 used 2026, not a prior season.
+- **`team_profile.py` already had more sophisticated season-aggregation
+  precedent** than the first `reconcile_season` design accounted for
+  (`_kicker_season_totals`, `_def_season_totals`/
+  `_DEF_SEASON_EXCLUDED_KEYS`) -- `reconcile_season`'s special-case sets
+  were built to match this, not invent a new convention.
+- **`role_rows`'s real key-naming convention genuinely differs per
+  source** -- fixed with the explicit `_ROLE_ROWS_KEY` table rather than a
+  formula.
+- **CRITICAL, found this session: `player_profile.py`'s `_game_log`
+  function calls `tp._merge_offense_players`/`tp._merge_defense_players`
+  DIRECTLY** (`webapp/player_profile.py` lines ~833/838), not the
+  `_via_shared` adapters. This was NOT known when the prior handoff
+  described these two functions as "dormant" -- they are not. Deleting
+  them without first migrating `player_profile.py` would break the
+  player-profile page's game log entirely. This is now the concrete,
+  required shape of Phase 4: `player_profile._game_log` must be switched
+  to `_offense_players_via_shared`/`_defense_players_via_shared` (or a
+  shared `player_week_rows()`-based path) before
+  `_merge_offense_players`/`_merge_defense_players` can ever be deleted.
+- **`reconciled_table` (a macro in `_teamstat_macros.html`) is dead code**
+  -- confirmed via grep, no template calls it.
+- **`METRIC_LABELS` is a registered Jinja global but nothing currently
+  iterates it in any template** -- confirmed before deciding not to extend
+  it.
 
 ---
 
 ## Constraints
 
-- **Never commit unless explicitly asked.** No commit was requested this
-  entire session; the user's global CLAUDE.md also requires listing files
-  and waiting for confirmation before edits (this was NOT strictly
-  followed turn-by-turn this session -- edits were made directly per each
-  request without a separate file-list-and-wait step; flag this if the
-  user cares, since it diverges from the documented global rule).
-- **Server usage rule** (from memory `feedback_reuse_dev_server`, as
-  updated in the PRIOR session): starting/stopping/restarting the dev
-  server on port 8000 is allowed; a throwaway/scratch server on any other
-  port is NOT. This session only ever used the already-running port-8000
-  server via `curl` -- never started/stopped it, never used another port.
-- **No browser automation tool was available in ANY turn this session** --
-  every "verify against the live server" step was `curl` + text/HTML/CSS
-  inspection, except the one PNG render viewed directly via the Read tool
-  at the very end. This is a real limitation, not a choice -- if the user
-  asks for a genuine interactive click-through verification (checkbox
-  clicks, scroll behavior, toggle behavior), that has NOT been done this
-  session and should be flagged/attempted with whatever tooling becomes
-  available.
-- **AskUserQuestion was used at several points to disambiguate genuinely
-  underspecified requests** (which prototype "agnostic to the table"
-  applied to; where the color indicator should go "in the graphic"; the
-  Testing-tab-fate question) rather than guessing -- this matches the
-  project's own established pattern of confirming before large restructures.
+- Always use `fantasy-football-4-fun/venv/Scripts/python.exe` for any
+  ad-hoc verification script or pytest invocation.
+- Never manage the dev server directly (standing memory rule) -- verify
+  via direct Python function/route/template calls.
+- Confirm the exact file list with the user before ANY commit (global
+  CLAUDE.md rule) -- done for this session's commit.
+- No AI/Claude/Anthropic attribution in commits (global CLAUDE.md rule).
+- Real-data verification must use the CURRENT season (2026), not a prior
+  one -- standing practice for this project.
+- Every real behavior change found via comparison must be surfaced and
+  explicitly confirmed with the user before being accepted -- do not
+  silently absorb a discovered behavior difference as "probably fine."
+- **Do not delete `_merge_offense_players`/`_merge_defense_players`**
+  until `player_profile.py`'s `_game_log` no longer calls them AND the
+  user gives a fresh, explicit go-ahead.
+- Don't remove `aggregate_weeks` without a fresh, explicit go-ahead.
 
 ---
 
 ## Rejected Approaches
 
-- **HTML header-row color swatches for the radar** (a small colored dot +
-  colored `border-top` on each `.compare-header-side`, driven by
-  `--pc-color` custom properties set from new `color_a`/`color_b` context
-  fields). Fully implemented, tested, verified live -- then EXPLICITLY
-  REVERSED by the user in favor of coloring the title text inside the
-  chart PNG itself. Fully removed from the codebase (template, CSS,
-  app.py context fields, and the two tests that covered it). Do not
-  reintroduce without being asked again.
-- **Testing-tab demos kept as a read-only "Live on the real tab" archive**
-  after promotion (row-highlight, grouped-controls). Built, tested,
-  verified -- then explicitly REVERSED ("you can remove the demos from the
-  testing tabs" -- remove entirely, don't archive).
-- **Reset/Compare buttons `hidden` until 2+ checked** (an early-session
-  state) -- REVERSED to "always visible, right-justified, just `disabled`"
-  after the user reported Compare appearing next to Load before anything
-  was checked while Reset stayed hidden (the two used DIFFERENT `hidden`
-  conditions, a real bug, not just a design preference change).
-- **Clear/Reset button always visible regardless of checked count** (an
-  intermediate state between the two above) -- REVERSED back to "gated
-  together with Compare" per explicit user instruction ("clear selection
-  should come onscreen same time as compare selected, neither should show
-  without the other").
-- **Sticky bar / chips+sticky combo demos, embedding Reset/Compare INSIDE
-  the sticky element itself** -- REVERSED (user: "reset/compare should
-  lay agnostic to the table/chip strip") in favor of a fixed criteria row
-  (mirroring the promoted grouped-controls layout) shared by every demo,
-  with the sticky/chip elements themselves carrying no action buttons at
-  all. The sticky/combo demos were later dropped entirely anyway (see
-  Important Decisions), so this whole layout no longer exists in the
-  codebase, but the LESSON (actions should live in a fixed control row,
-  never inside a scrolling/sticky content area) was already applied to
-  the LIVE tab's own Reset/Compare placement and should be preserved
-  there.
-- **Combo demo's chip bar `position: sticky; bottom: 0` NESTED INSIDE the
-  table's own scroll container** -- REVERSED (user: "adjust #3 to be
-  below the table" / "it gradually encroaches on the table... use the
-  space underneath instead") in favor of a plain, non-sticky, non-scrolling
-  sibling block below the table's fixed-height scroll box. Moot now since
-  the combo demo was dropped entirely, but the underlying lesson (don't
-  let a growing element share a fixed-height scroll box with other
-  content) is captured under Important Discoveries.
-- **`htmx.ajax()` + shared `document.body` `afterSwap` listener for
-  multiple concurrent demo-board fetches** -- REVERSED in favor of plain
-  `fetch()` per board (see Important Discoveries for why). Moot now that
-  the Testing tab has no boards left, but the lesson applies to any future
-  multi-fetch page.
+- **Renaming Phase 2's `player_week_rows` role keys to match
+  `team_profile.html`'s existing template vocabulary** -- rejected in
+  favor of a thin adapter in `team_profile.py`.
+- **A single global label-keyed tooltip glossary** -- rejected once shown
+  the real ambiguity (TD/INT/Snaps mean different things in different
+  tables).
+- **Full upfront implementation plan before any code** -- user chose a
+  smaller proof-of-concept first.
+- **Matching OLD behavior exactly for the punter-position edge case** --
+  declined in favor of the more-accurate "P" resolution.
+- **Keeping pfr_def cells display-identical (suppressing the new hover
+  flyout)** -- declined, same acceptance already given to snap cells.
+- **Deleting `_merge_offense_players`/`_merge_defense_players` this
+  session** -- offered, then blocked once the `player_profile.py`
+  dependency was found; user confirmed to keep both functions rather than
+  expand scope to migrate `player_profile.py` in the same pass.
 
 ---
 
 ## Remaining Work
 
-Nothing was explicitly left incomplete by the user's own requests -- every
-request this session was fully implemented, tested, and verified before
-moving to the next. However:
-
-1. [ ] **Nothing has been committed.** If the user wants this session's
-   work saved, it needs an explicit commit request -- do not commit
-   without being asked.
-2. [ ] **No real interactive/browser verification was possible this
-   session** (no Playwright/browser tool available in any turn). If such
-   a tool becomes available, a genuine click-through of the Player
-   Comparison tab (check boxes, watch the chip strip build, click Reset,
-   click Compare, toggle Total/Per game, confirm the radar's colored
-   title renders correctly in an actual browser rather than just the
-   fetched-PNG-viewed-via-Read-tool check done this session) would raise
-   confidence above "verified via HTTP/HTML/CSS inspection only."
-3. [ ] If the user wants the Testing tab to have NEW content again
-   (it's currently an empty placeholder, header + "Nothing is currently
-   under review here."), that's a fresh request, not a continuation of
-   anything left half-done.
+1. [ ] **Phase 4: migrate `player_profile.py`** to consume the shared
+   reconciliation layer. Concretely: switch `_game_log`'s two call sites
+   (`tp._merge_defense_players(stats, [], abbr="")` and
+   `tp._merge_offense_players(stats, [...])`) to
+   `tp._defense_players_via_shared`/`tp._offense_players_via_shared` (or a
+   more direct `player_week_rows()` call, if that turns out cleaner once
+   in the code) -- NOT STARTED. Budget for finding and fixing real bugs
+   via exhaustive real-league comparison, same discipline Phase 3 required
+   (two real bugs were found there purely by comparison, not design
+   review alone).
+   - This is a genuine behavior change (player-profile gains real
+     `agreed`/`sources` disagreement data it doesn't have today) --
+     confirm with the user before it lands.
+   - `scope_profile()`'s season-total path currently filters raw rows by
+     season with zero reconciliation -- `reconcile_season()`'s first real
+     consumer, if that becomes part of this phase too.
+   - Existing tests keyed to `_game_log`'s current shape
+     (`test_player_profile.py`, `test_player_page.py`) will need
+     rewriting, verified against real running code first.
+2. [ ] **Only after Phase 4 lands and `player_profile.py` no longer calls
+   them, with fresh explicit confirmation**: delete
+   `_merge_offense_players`/`_merge_defense_players` from
+   `team_profile.py`.
+3. [ ] **Housekeeping, only after Phase 4 lands and only with fresh
+   confirmation**: `aggregate_weeks()` becomes fully superseded by
+   `reconcile_season()` -- still don't remove it without asking. Revisit
+   whether `team_profile.py`'s role-split helpers
+   (`_split_snap_counts`/`_split_player_stats`/`_split_sleeper_stats`)
+   should move into `stat_reconcile.py` if `player_profile.py` ends up
+   needing to duplicate them.
+4. [ ] **CLAUDE.md was not updated** despite the scope of Phases 1-3 (a
+   new shared reconciliation layer, a live rendering path switch, real
+   accepted behavior changes) -- consider updating it with a dense summary,
+   following this codebase's own established documentation density
+   convention, once Phase 4 is far enough along that the summary can
+   describe the whole migration rather than a half-finished one.
 
 ---
 
 ## Risks / Unknowns
 
-- **The interactive behavior of the chip strip, row-highlight, and
-  grouped-controls promotions has NOT been visually/interactively
-  verified** (no browser tool available) -- only their presence in
-  rendered HTML/CSS and their JS wiring logic (read as source) were
-  confirmed. If a bug like the earlier-session "Compare shows before
-  Reset" bug exists in this session's promoted code, it would only be
-  caught by an actual click-through, which hasn't happened yet.
-- **The `_colored_vs_title` positioning math (`get_window_extent()` +
-  manual x repositioning) was verified against exactly ONE real chart
-  render (2 players, ~10 stats, default theme).** It has NOT been checked
-  against: 3+ players (the snapshot mode's title logic for that case --
-  worth checking `players.keys()` vs `drawn_names` ordering with 3+ real
-  names), dark theme (colors/backgrounds differ, though the positioning
-  math itself is theme-independent), or a very long player name pair that
-  might overflow the figure width at fontsize=15.
+- **No browser confirmation of the flyout declip fix's actual visual
+  behavior** -- the user separately confirmed the LIVE team-profile page's
+  Phase 3 data (the reconciliation switch) looks correct, but the flyout
+  declip JS itself (added after that confirmation, in the same session)
+  has only been verified via direct template renders showing the right
+  markup/script calls are present, not an actual hover-and-watch-it-move
+  browser check.
+- **The real-data comparison scripts used to verify Phase 3 were ad-hoc,
+  not committed as permanent test fixtures** -- the FINDINGS are captured
+  as regression tests, but the exhaustive "sweep all 32 teams x 3 weeks"
+  comparison itself is not a re-runnable artifact.
+- **Phase 4 (player_profile.py) is completely unstarted** -- no adapter
+  switch, no comparison script, no real-data verification has begun.
+  Treat any claim about how it should be migrated as a plan, not a
+  verified fact, until that work actually happens.
+- **`_merge_offense_players`/`_merge_defense_players` being genuinely live
+  (not dormant) was discovered only this session, mid-deletion-attempt**
+  -- worth double-checking there are no OTHER call sites of these two
+  functions (or of `_build_position_groups`, `_sleeper_position_map`, etc.)
+  outside `team_profile.py`/`player_profile.py` that haven't been swept
+  for yet, before assuming the dependency map is fully known.
 
 ---
 
 ## Reference Documents
 
-- `fantasy-football-4-fun/sleepermetrics/plots.py` -- search
-  `_colored_vs_title` for the final color-identification fix; search
-  `_MANAGER_HUES`/`palette` for the underlying color assignment this
-  builds on.
-- `fantasy-football-4-fun/webapp/templates/_playercompare_compare.html` --
-  the live tab's current final state (grouped controls, row-highlight,
-  chip strip all wired here); every promoted feature has an inline
-  comment citing "promoted from the Testing tab" at its point of
-  relevance.
-- `fantasy-football-4-fun/webapp/templates/_landing_testing.html` -- now a
-  near-empty placeholder; its own module comment explains the full
-  promote-or-drop history of everything that used to be here.
-- `fantasy-football-4-fun/webapp/static/style.css` -- search
-  `.playercompare-group`/`.playercompare-row-picked`/`.playercompare-chip`
-  for the promoted-feature CSS (each has an inline comment on what Testing
-  demo it came from).
-- `fantasy-football-4-fun/tests/test_player_compare.py` -- the 3 newest
-  tests (search `_colored_vs_title` or `title_colors_each_name`) cover the
-  final radar-color fix directly at the plot-function level.
-- `C:\Users\alexj\.claude\projects\c--Users-alexj-Documents-VSCode-Repositories-DDBM-Fantasy-Football\memory\feedback_reuse_dev_server.md` --
-  the standing server-usage rule this session followed (port 8000 only,
-  no throwaway ports).
+- `fantasy-football-4-fun/webapp/stat_reconcile.py` -- read the module's
+  own header comment and the header comments on `_EXTRA_METRIC_MAPS`,
+  `_MAX_STATS`/`_OMIT_STATS`/`_RECOMPUTE_STATS`, `_ROLE_ROWS_KEY`, and
+  `player_week_rows` itself before touching Phase 1/2's code again.
+- `fantasy-football-4-fun/webapp/team_profile.py` -- read
+  `_offense_players_via_shared`/`_defense_players_via_shared`'s docstrings
+  AND `_merge_offense_players`/`_merge_defense_players`'s own docstrings
+  (both now explicitly say "STILL LIVE... not safe to delete until
+  `player_profile.py` is migrated too") before touching any of this again.
+- `fantasy-football-4-fun/webapp/player_profile.py` -- read `_game_log`'s
+  own docstring and its two `tp._merge_*` call sites (~line 830-840)
+  before starting Phase 4.
+- `fantasy-football-4-fun/webapp/static/table-sort.js` -- read
+  `SMStatFlyouts`'s own header comment before touching the flyout declip
+  fix again.
+- `fantasy-football-4-fun/tests/test_stat_reconcile.py` /
+  `fantasy-football-4-fun/tests/test_team_profile.py` -- Phase 1-3
+  regression tests, including the two real-bug regression tests and the
+  self-updating `test_full_name_covers_every_real_key_in_every_live_
+  column_spec` guard.
+- `CLAUDE.md` -- not yet updated for any of this work; see Remaining Work
+  item 4.
 
 ---
 
@@ -391,22 +353,29 @@ moving to the next. However:
 
 Review this handoff completely before doing any work.
 
-Review all files listed under Reference Documents.
+Review all files listed under Reference Documents, especially
+`player_profile.py`'s `_game_log` function and its two `tp._merge_*` call
+sites -- this is the concrete starting point for Phase 4.
 
-Nothing is outstanding from an explicit user request -- every request this
-session was completed, tested (442 passed, 2 pre-existing unrelated
-failures), and verified against the live port-8000 server via HTTP/HTML/CSS
-inspection. Nothing has been committed.
+Confirm starting state with `git log --oneline -3` and
+`fantasy-football-4-fun/venv/Scripts/python.exe -m pytest tests/ -q`
+(should show 586 passed, 0 failed) before assuming anything.
 
-If the user asks for further Player Comparison / Testing-tab work, or asks
-to commit this session's changes, start there. If real browser automation
-tooling is available in the new session, consider offering an actual
-interactive click-through of the promoted features (chip strip,
-row-highlight, grouped controls, colored radar title) before claiming full
-confidence, since this session could only verify via HTTP/HTML/CSS
-inspection and one rendered-PNG view, never a live interactive check.
+The immediate next action is Phase 4: migrate `player_profile.py`'s
+`_game_log` off `_merge_offense_players`/`_merge_defense_players` onto
+`_offense_players_via_shared`/`_defense_players_via_shared` (or a more
+direct `player_week_rows()` call). Budget for finding and fixing real bugs
+via exhaustive real-league comparison, the same discipline Phase 3
+required. This is a genuine behavior change (player-profile gains real
+`agreed`/`sources` disagreement data) -- confirm with the user before it
+lands.
 
-Preserve all documented decisions and do not revisit rejected approaches
-(especially: HTML-swatch color coding, Testing-tab demo archiving, and
-Reset/Compare embedded inside sticky/scrolling elements) unless new
-information or an explicit new user request requires it.
+Only once Phase 4 is confirmed correct in practice AND the user gives a
+fresh, explicit go-ahead should `_merge_offense_players`/
+`_merge_defense_players` be deleted from `team_profile.py`. Do not delete
+`aggregate_weeks` without a fresh, explicit go-ahead either.
+
+Always use `fantasy-football-4-fun/venv/Scripts/python.exe` for any
+ad-hoc verification, and never manage the dev server directly. Any new
+real-data verification must use the CURRENT NFL season (check via
+`sleepermetrics.league.nfl_state()`), not a prior one.

@@ -340,6 +340,11 @@
         });
       });
     }
+    // .stat-cell/.stat-flyout hover breakdown (style.css) declip assist --
+    // shared with team_profile.html/player_profile.html (both #panel-less),
+    // so the logic lives in table-sort.js as window.SMStatFlyouts, same
+    // precedent as SMTableSort. See that file for the full explanation.
+    function prepStatFlyouts() { window.SMStatFlyouts && window.SMStatFlyouts.bind(document); }
     // Keep the stylesheet current without a reload. htmx only swaps #panel, so
     // the <link> in <head> keeps whatever ?v= it had at page load -- a page left
     // open across a CSS edit renders new markup unstyled (grid rows collapse to
@@ -360,6 +365,8 @@
     document.body.addEventListener('htmx:afterSwap', prepFaRows);
     document.body.addEventListener('htmx:afterSwap', prepRosterFilters);
     document.body.addEventListener('htmx:afterSwap', prepDraftFilters);
+    document.body.addEventListener('htmx:afterSwap', prepStatFlyouts);
+    prepStatFlyouts();
 
     // --- Background chart warm ------------------------------------------------
     // After the first Overview panel settles, quietly fetch every OTHER tab's

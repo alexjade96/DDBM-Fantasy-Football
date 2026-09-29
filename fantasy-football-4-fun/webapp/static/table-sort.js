@@ -87,4 +87,110 @@
       .querySelectorAll('#panel table').forEach(makeSortable);
   }
   global.SMTableSort = { makeSortable: makeSortable, prepTables: prepTables };
+
+  // .stat-cell/.stat-flyout hover breakdown (style.css, team_profile.html's
+  // per-game reconciled stat tables, same macro used by player_profile.html)
+  // is CSS-only by default: a .stat-flyout anchors bottom-center via
+  // position:absolute on its .stat-cell. That works until the cell sits
+  // near the edge of a horizontally-scrollable ancestor (.tablewrap/
+  // .dt-detail, both overflow-x:auto, which per spec also clips
+  // overflow-y): the flyout renders but gets visibly cut off. Lives here,
+  // not in one page's own <script>, because THREE #panel-having and
+  // #panel-less pages all render this same macro output: index.html's
+  // dashboard tabs (#panel, htmx-swapped), and team_profile.html /
+  // player_profile.html (both standalone, #panel-less pages with their own
+  // lazily-swapped sections) -- same reasoning that already put table
+  // sorting here instead of duplicating it three times.
+  //
+  // bind(root) delegates two listener pairs on `root` (mouseenter/
+  // mouseleave with capture, since neither bubbles, and focusin/focusout,
+  // which do) scoped to `.stat-cell`. It never controls whether a flyout
+  // shows -- CSS (:hover/:focus-within) still owns that entirely. On
+  // enter/focus it measures the flyout at its normal (still-absolute)
+  // position; only when an edge would be clipped by the nearest
+  // overflow:auto/scroll ancestor OR the viewport does it switch the
+  // flyout to .stat-flyout-declipped (position:fixed, style.css) with
+  // inline top/left computed from the cell's own getBoundingClientRect(),
+  // clamped into the viewport, flipping below the cell when there isn't
+  // room above. Reverted on leave/blur so a plain, unclipped hover
+  // elsewhere keeps the simpler default. Idempotent per root (a WeakSet,
+  // not root.dataset -- `document` itself has no .dataset, and index.html
+  // calls bind(document)) so a repeat call -- index.html's
+  // htmx:afterSwap, or a standalone page re-invoking after its own lazy
+  // section swap -- never double-binds the same root.
+  var _boundRoots = typeof WeakSet === 'function' ? new WeakSet() : null;
+  function bindStatFlyouts(root) {
+    root = root || document;
+    if (_boundRoots) {
+      if (_boundRoots.has(root)) return;
+      _boundRoots.add(root);
+    } else if (root.dataset) {
+      if (root.dataset.flyoutBound) return;
+      root.dataset.flyoutBound = '1';
+    }
+    var GAP = 6, MARGIN = 8;
+    function scroller(el) {
+      var node = el.parentElement;
+      while (node && node !== root) {
+        var of = getComputedStyle(node).overflowX;
+        if (of === 'auto' || of === 'scroll') return node;
+        node = node.parentElement;
+      }
+      return null;
+    }
+    function place(cell) {
+      var fly = cell.querySelector(':scope > .stat-flyout');
+      if (!fly) return;
+      fly.classList.remove('stat-flyout-declipped');
+      fly.style.top = ''; fly.style.left = '';
+      var cellBox = cell.getBoundingClientRect();
+      var flyBox = fly.getBoundingClientRect();
+      var vw = document.documentElement.clientWidth;
+      var vh = document.documentElement.clientHeight;
+      var bounds = { top: 0, left: 0, right: vw, bottom: vh };
+      var scr = scroller(cell);
+      if (scr) {
+        var scrBox = scr.getBoundingClientRect();
+        bounds.top = Math.max(bounds.top, scrBox.top);
+        bounds.left = Math.max(bounds.left, scrBox.left);
+        bounds.right = Math.min(bounds.right, scrBox.right);
+        bounds.bottom = Math.min(bounds.bottom, scrBox.bottom);
+      }
+      var clipped = flyBox.top < bounds.top || flyBox.bottom > bounds.bottom ||
+        flyBox.left < bounds.left || flyBox.right > bounds.right;
+      if (!clipped) return;
+      var width = flyBox.width;
+      var top = cellBox.top - GAP - flyBox.height;
+      if (top < MARGIN) top = cellBox.bottom + GAP;
+      top = Math.max(MARGIN, Math.min(top, vh - flyBox.height - MARGIN));
+      var left = cellBox.left + cellBox.width / 2 - width / 2;
+      left = Math.max(MARGIN, Math.min(left, vw - width - MARGIN));
+      fly.classList.add('stat-flyout-declipped');
+      fly.style.top = top + 'px';
+      fly.style.left = left + 'px';
+    }
+    function clear(cell) {
+      var fly = cell.querySelector(':scope > .stat-flyout');
+      if (!fly) return;
+      fly.classList.remove('stat-flyout-declipped');
+      fly.style.top = ''; fly.style.left = '';
+    }
+    root.addEventListener('mouseenter', function (e) {
+      var cell = e.target.closest && e.target.closest('.stat-cell');
+      if (cell) place(cell);
+    }, true);
+    root.addEventListener('focusin', function (e) {
+      var cell = e.target.closest && e.target.closest('.stat-cell');
+      if (cell) place(cell);
+    });
+    root.addEventListener('mouseleave', function (e) {
+      var cell = e.target.closest && e.target.closest('.stat-cell');
+      if (cell) clear(cell);
+    }, true);
+    root.addEventListener('focusout', function (e) {
+      var cell = e.target.closest && e.target.closest('.stat-cell');
+      if (cell) clear(cell);
+    });
+  }
+  global.SMStatFlyouts = { bind: bindStatFlyouts };
 })(window);

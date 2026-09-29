@@ -200,6 +200,12 @@
     var root = document.getElementById('gs-panels-{{ game_key }}');
     if (!root || !window.SMTableSort) return;
     root.querySelectorAll('table').forEach(window.SMTableSort.makeSortable);
+    // Declip-on-hover assist for this game's .stat-cell flyouts (reconciled
+    // Offense/Defense values) -- same table-sort.js helper index.html uses,
+    // bound per-game-root since this whole block is itself the lazily-
+    // swapped content (see table-sort.js's own SMStatFlyouts comment for
+    // why this lives there instead of duplicated per page).
+    if (window.SMStatFlyouts) window.SMStatFlyouts.bind(root);
   })();
 </script>
 {% else %}
