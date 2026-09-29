@@ -102,7 +102,7 @@ def test_player_page_without_league(_fake_profile):
     assert "RB" in body and "BAL" in body
     assert "Opened without a league" in body
     assert "player_stats" not in body  # dataset KEY never leaks, only its label
-    assert "Weekly stats" in body
+    assert "Game log" in body  # renamed from "Weekly stats", 2026-09
     assert "best-effort name match" in body  # snap_counts is flagged
     # no league -> the back link's href fallback has no league/season to carry
     assert 'href="/dashboard"' in body
@@ -110,12 +110,25 @@ def test_player_page_without_league(_fake_profile):
 
 def test_player_page_shows_no_current_season_message_when_only_past_data_exists(monkeypatch):
     """Regression test: `{% set flags.any_real_nfl = true %}` inside the
-    Real-NFL history {% for %} loop must actually reach the check AFTER the
-    loop (a bare {% set %} there would be scoped to the loop iteration and
-    silently reset, always reporting "no data at all" even when past-season
-    rows exist -- see player_profile.html's `namespace(...)` comment). A
-    player with real data, none of it dated the current season, must show
-    the "no data THIS season" message, never the "no data AT ALL" one."""
+    Advanced & usage stats {% for %} loops (_player_season_sections.html,
+    renamed from "Real-NFL history" -- see that section's own header
+    comment) must actually reach the check AFTER the loop (a bare {% set %}
+    there would be scoped to the loop iteration and silently reset, always
+    reporting "no data at all" even when this section has real rows to
+    show for a DIFFERENT dataset later in the same loop -- see that
+    section's own `namespace(...)` comment).
+
+    2026-09: `player_profile()` no longer bakes a current/past split at all
+    (no `current_rows`/`past_rows`/`adp_current`/`league_current`, no "see
+    past seasons below" message -- `scope_profile()` re-filters ONE shared
+    `season_scope` per request instead, see that function's own docstring),
+    so this test now supplies UNSCOPED `real_nfl` rows (as the real
+    `player_profile()` return shape has them) and lets `player_page()`'s
+    own default `season_scope=None` resolve to `profile["current_season"]`
+    the normal way -- with no rows dated the current season 2026, the
+    section must still render (not raise) and show its own real "no data
+    for this season" message, not silently omit the whole section or throw
+    on a missing key the old fixture used to supply."""
     monkeypatch.setattr(
         pp, "player_profile",
         lambda player_id, league_id=None, fresh=False: {
@@ -124,19 +137,17 @@ def test_player_page_shows_no_current_season_message_when_only_past_data_exists(
             "seasons_covered": ["2026", "2025", "2024"],
             "real_nfl": {
                 "player_stats": {
-                    "rows": [{"season": "2024", "week": 1}],
-                    "current_rows": [], "past_rows": [{"season": "2024", "week": 1}],
+                    "rows": [{"season": "2024", "week": 1, "attempts": 1}],
                     "best_effort": False},
             },
-            "adp_history": [], "adp_current": [], "adp_past": [],
+            "game_log": [], "game_log_stat_cols": [],
+            "adp_history": [],
             "current_season": "2026",
-            "league": None, "league_current": None, "league_past": None,
+            "league": None,
         })
     resp = app.player_page(_Req(), player_id="5995", render=1)
     body = resp.body.decode()
-    assert "No real-NFL data found for this player in 2026 -- see past seasons below." in body
-    assert "No real-NFL data found for this player over" not in body
-    assert "past seasons (1 rows)" in body
+    assert "No real-NFL data found for this player in 2026." in body
 
 
 def test_player_page_back_link_carries_league_and_season(monkeypatch, _fake_profile):
@@ -263,14 +274,30 @@ def test_player_page_refresh_shows_loader_even_when_warm(monkeypatch, _fake_prof
     assert "refresh=1" in body
 
 
-# --- season pills / htmx percentile swap ------------------------------------
+# --- shared season dropdown / htmx follow-up-sections swap ------------------
+# 2026-09: player_page's own "season pills" for the percentile chart alone
+# were replaced entirely by ONE shared season dropdown that re-renders EVERY
+# follow-up section (Percentile profile, {league} history, Game log,
+# Advanced & usage stats, Draft ADP history) in lockstep -- see
+# webapp.app.player_season_sections's own docstring. The per-section
+# `focus=`-based `player_percentile_part()` route this file used to test no
+# longer exists at all (AttributeError on `webapp.app`); `season_scope=` on
+# `player_season_sections()` is its real replacement, and the season control
+# itself is now a plain `<select name="season_scope">` (see
+# _player_percentile.html's own header comment for why it isn't `.year`
+# pills any more: a career-spanning player's season list can run long).
+# `player_profile.player_profile()` itself ALSO changed shape in the same
+# pass -- it no longer bakes a "focus_season"/"available_seasons" split at
+# all (`scope_profile()` re-filters a `season_profiles` dict fresh per
+# request instead, see that function's own docstring), so this fixture is
+# updated to match BOTH changes together.
 
 @pytest.fixture
 def _fake_profile_with_seasons(monkeypatch):
     """Two seasons of percentile data, keyed for the season-overlay radar --
-    the shape player_percentile_part() reads (season_profiles/
-    available_seasons/focus_season), distinct from _fake_profile's league-
-    history-focused fixture above."""
+    the real shape `player_profile.scope_profile()` reads
+    (`season_profiles`/`seasons_covered`/`current_season`), distinct from
+    _fake_profile's league-history-focused fixture above."""
     def _profile(season, pct):
         return {"season": season, "position": "RB", "player_id": "5995",
                "n_population": 40,
@@ -282,12 +309,10 @@ def _fake_profile_with_seasons(monkeypatch):
         return {
             "identity": {"player_id": player_id, "player_name": "Justice Hill",
                          "position": "RB", "team": "BAL", "gsis_id": "00-0034975"},
-            "seasons_covered": ["2025", "2024"],
-            "real_nfl": {}, "adp_history": [], "league": None,
-            "percentile_profile": season_profiles["2025"],
+            "current_season": "2025", "seasons_covered": ["2025", "2024"],
+            "real_nfl": {}, "game_log": [], "game_log_stat_cols": [],
+            "adp_history": [], "league": None,
             "season_profiles": season_profiles,
-            "available_seasons": ["2025", "2024"],
-            "focus_season": "2025",
         }
     monkeypatch.setattr(pp, "player_profile", _fake)
     return _fake
@@ -296,30 +321,34 @@ def _fake_profile_with_seasons(monkeypatch):
 def test_player_page_renders_season_pills_as_htmx_buttons(_fake_profile_with_seasons):
     resp = app.player_page(_Req(), player_id="5995", render=1)
     body = resp.body.decode()
-    assert '<button type="button" class="year on"' in body
-    assert 'hx-get="/player/5995/percentile?focus=2025' in body
-    assert 'hx-get="/player/5995/percentile?focus=2024' in body
-    assert 'hx-target="#percentile-section"' in body
-    # the pills, chart and table all live inside one swappable container
-    assert '<div id="percentile-section">' in body
+    assert '<select name="season_scope"' in body
+    assert 'hx-get="/player/5995/season?theme=' in body
+    assert 'hx-target="#player-season-sections"' in body
+    assert '<option value="2025" selected>2025</option>' in body
+    assert '<option value="2024" >2024</option>' in body
+    # the dropdown, chart and table all live inside one shared swappable
+    # container that covers every follow-up section, not just percentile
+    assert '<div id="player-season-sections">' in body
 
 
 def test_player_percentile_part_switches_focus_season(_fake_profile_with_seasons):
-    resp = app.player_percentile_part(_Req(), player_id="5995", focus="2024")
+    resp = app.player_season_sections(_Req(), player_id="5995", season_scope="2024")
     assert resp.status_code == 200
     body = resp.body.decode()
     assert "Percentile profile" in body and "(2024)" in body
-    # the newly-focused pill is marked .on, the other is not
-    assert '<button type="button" class="year on"\n     hx-get="/player/5995/percentile?focus=2024' in body
-    assert '<button type="button" class="year"\n     hx-get="/player/5995/percentile?focus=2025' in body
+    # the newly-picked season is the selected <option>, the other is not
+    assert '<option value="2024" selected>2024</option>' in body
+    assert '<option value="2025" >2025</option>' in body
 
 
 def test_player_percentile_part_falls_back_to_default_focus_on_unknown_season(
         _fake_profile_with_seasons):
-    """An unresolvable `focus` (stale bookmark, tampered query string) must
-    not 500 or silently show blank data -- it degrades to the profile's own
-    default focus season, same contract player_page() already has."""
-    resp = app.player_percentile_part(_Req(), player_id="5995", focus="1999")
+    """An unresolvable `season_scope` (stale bookmark, tampered query
+    string) must not 500 or silently show blank data -- it degrades to the
+    profile's own current season, same contract player_page() already has
+    (see `scope_profile()`'s own docstring: a season not in
+    `seasons_covered` falls back to `profile["current_season"]`)."""
+    resp = app.player_season_sections(_Req(), player_id="5995", season_scope="1999")
     assert resp.status_code == 200
     body = resp.body.decode()
     assert "(2025)" in body

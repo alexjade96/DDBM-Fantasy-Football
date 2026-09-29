@@ -64,7 +64,7 @@ def test_registry_lists_the_datasets():
         "player_stats", "schedules", "snap_counts",
         "ngs_passing", "ngs_receiving", "ngs_rushing",
         "pfr_pass", "pfr_rec", "pfr_rush", "pfr_def",
-        "injuries",
+        "injuries", "route_participation",
     }
 
 

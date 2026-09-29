@@ -67,26 +67,31 @@ def test_current_season_matches_recent_seasons_first_entry(monkeypatch):
     assert pp._current_season() == "2026"
 
 
-def test_split_current_separates_by_season_string(monkeypatch):
+def test_scope_to_season_filters_by_season_string(monkeypatch):
+    """`_scope_to_season` is the general filter that replaced
+    `_split_current` (a fixed current/past SPLIT) once the page's
+    "follow-up sections" moved to one shared season dropdown re-scoped
+    fresh per request (`scope_profile`) -- see that function's own
+    docstring for the full history. It returns ONE filtered list for
+    whichever season is picked, not a (current, past) tuple; there is no
+    "past" concept left, just "whatever season isn't picked simply isn't
+    shown this request"."""
     rows = [{"season": "2025", "v": 1}, {"season": 2024, "v": 2},
             {"season": "2025", "v": 3}]
-    current, past = pp._split_current(rows, "2025")
-    assert [r["v"] for r in current] == [1, 3]
-    assert [r["v"] for r in past] == [2]
+    assert [r["v"] for r in pp._scope_to_season(rows, "2025")] == [1, 3]
+    assert [r["v"] for r in pp._scope_to_season(rows, "2024")] == [2]
 
 
-def test_split_current_compares_int_and_str_seasons_equal(monkeypatch):
+def test_scope_to_season_compares_int_and_str_seasons_equal(monkeypatch):
     """A row's `season` can be an int (nflverse/pandas) or a str (this
     module's own league-scoped rows) -- both must match a str
-    current_season the same way."""
+    requested season the same way."""
     rows = [{"season": 2025, "v": 1}]
-    current, past = pp._split_current(rows, "2025")
-    assert len(current) == 1 and not past
+    assert len(pp._scope_to_season(rows, "2025")) == 1
 
 
-def test_split_current_empty_input():
-    current, past = pp._split_current([], "2025")
-    assert current == [] and past == []
+def test_scope_to_season_empty_input():
+    assert pp._scope_to_season([], "2025") == []
 
 
 # --- _player_identity ------------------------------------------------------
@@ -146,8 +151,16 @@ def test_real_nfl_history_matches_gsis_and_name_fallback(monkeypatch):
     assert out["player_stats"]["best_effort"] is False
     assert len(out["pfr_rush"]["rows"]) == 1
     assert out["pfr_rush"]["best_effort"] is True
-    # a dataset with no matching rows still reports the (empty) shape
-    assert out["injuries"] == {"rows": [], "best_effort": False}
+    # A dataset with no matching rows still reports the (empty) shape,
+    # `best_effort=True`: the real gsis_id lookup found nothing (the fake
+    # loader returns an empty frame for "injuries"), so it falls through to
+    # the name+position best-effort match tier -- same lossy join
+    # PFR-bridged datasets always use, just engaged one tier later, per
+    # `_real_nfl_history`'s own docstring ("A row found this way is marked
+    # best_effort too... only engaged when the real id lookup found
+    # nothing"). It's marked best_effort because of which PATH it took,
+    # not because it found a match through it.
+    assert out["injuries"] == {"rows": [], "best_effort": True}
 
 
 def test_real_nfl_history_no_gsis_id_still_tries_name_fallback(monkeypatch):
@@ -330,10 +343,17 @@ def test_player_profile_with_league_id_builds_league_section(monkeypatch):
 
 
 def test_player_profile_splits_current_vs_past_seasons(monkeypatch):
-    """_build_profile's current/past split (league_current/league_past,
-    adp_current/adp_past, and real_nfl[ds]'s current_rows/past_rows) --
-    the shape player_profile.html reads to show this season directly and
-    push everything else behind a drilldown."""
+    """2026-09: `player_profile()`/`_build_profile` no longer bake ANY
+    current/past split into the cached result at all -- `real_nfl`,
+    `adp_history`, and the league section's own rows now carry EVERY
+    season at once (see `scope_profile`'s own docstring: "the template's
+    own per-dataset current_rows/past_rows and *_current/*_past drilldown
+    reads are gone along with the drilldowns themselves"). Re-scoping to
+    one season is now `scope_profile()`'s own job, called fresh per
+    request, not something baked into the cached profile -- this test now
+    covers BOTH halves together: `player_profile()` returns the full
+    unscoped multi-season rows, and `scope_profile()` on top of it
+    correctly filters to just one season's worth."""
     monkeypatch.setattr(pp, "sleeper_players", _fake_players_df)
     monkeypatch.setattr(pp, "_recent_seasons", lambda n=5: ["2026", "2025", "2024"])
     monkeypatch.setattr(pp, "_percentile_profile_for", lambda *a, **k: None)
@@ -369,14 +389,26 @@ def test_player_profile_splits_current_vs_past_seasons(monkeypatch):
     out = pp.player_profile("5995", league_id="fake_league")
 
     assert out["current_season"] == "2026"
-    assert [r["v"] for r in out["real_nfl"]["player_stats"]["current_rows"]] == ["new"]
-    assert [r["v"] for r in out["real_nfl"]["player_stats"]["past_rows"]] == ["old"]
-    assert [r["consensus"] for r in out["adp_current"]] == [10]
-    assert [r["consensus"] for r in out["adp_past"]] == [20]
+    # Unscoped: every season's rows present at once, no current/past split.
+    assert [r["v"] for r in out["real_nfl"]["player_stats"]["rows"]] == ["new", "old"]
+    assert [r["consensus"] for r in out["adp_history"]] == [10, 20]
+
+    scoped = pp.scope_profile(out, "2026")
+    assert [r["v"] for r in scoped["real_nfl"]["player_stats"]["rows"]] == ["new"]
+    assert [r["consensus"] for r in scoped["adp_history"]] == [10]
+
+    scoped_past = pp.scope_profile(out, "2024")
+    assert [r["v"] for r in scoped_past["real_nfl"]["player_stats"]["rows"]] == ["old"]
+    assert [r["consensus"] for r in scoped_past["adp_history"]] == [20]
     # draft_board is stubbed identically for every season, so BOTH 2026 and
-    # 2024 draft_picks exist -- confirms the split, not just presence.
-    lg_cur = out["league_current"]
-    lg_past = out["league_past"]
+    # 2024 draft_picks exist in the unscoped `out["league"]` -- confirms
+    # league data covers every season too, same as real_nfl/adp_history.
+    assert len(out["league"]["draft_picks"]) == 2
+    assert {p["season"] for p in out["league"]["draft_picks"]} == {"2026", "2024"}
+    # scope_profile()'s own "league_scoped" splits it to one season, same
+    # as everything else this function scopes.
+    lg_cur = pp.scope_profile(out, "2026")["league_scoped"]
+    lg_past = pp.scope_profile(out, "2024")["league_scoped"]
     assert len(lg_cur["draft_picks"]) == 1 and lg_cur["draft_picks"][0]["season"] == "2026"
     assert len(lg_past["draft_picks"]) == 1 and lg_past["draft_picks"][0]["season"] == "2024"
 

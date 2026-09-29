@@ -103,19 +103,39 @@ def test_team_identity_degrades_when_nflref_unavailable(monkeypatch):
 # --- _roster_leaderboard ------------------------------------------------------
 
 def test_roster_leaderboard_delegates_to_nflref(monkeypatch):
+    """2026-09: `_roster_leaderboard` no longer calls `player_leaderboard`
+    with `team=abbr, limit=100` -- a real, confirmed bug fix (see that
+    function's own docstring): Sleeper's `team` column is a CURRENT-
+    snapshot assignment, not per-season historical, so filtering by team
+    at the API layer produced a wrong roster for any past season a player
+    has since been traded away from/to. It now pulls the FULL unfiltered
+    leaderboard (`team="ALL", limit=10_000`) and cross-references
+    `player_stats`' own per-season `recent_team` column (matched on
+    `gsis_id`) to decide who was really on this team that season -- so the
+    fake leaderboard row here needs a real `gsis_id`, and a matching
+    `player_stats` row under the SAME id + this team's abbr, or the
+    cross-reference filters it out entirely (an empty roster, not the
+    unfiltered stub row this test used to get for free)."""
     calls = []
 
     def _fake_leaderboard(season, pos="ALL", source="nflverse", team="ALL", limit=200):
         calls.append((season, pos, source, team, limit))
         return pd.DataFrame([{"rank": 1, "player": "Brock Purdy", "position": "QB",
+                              "gsis_id": "00-0037834", "team": "SF",
                               "fpts_ppr": 300.0, "ppg_ppr": 20.0}])
 
+    def _fake_load(dataset, season):
+        assert dataset == "player_stats"
+        return pd.DataFrame([{"player_id": "00-0037834", "recent_team": "SF"}])
+
     import webapp.sources.nflref.summary as nflref_summary
+    import webapp.sources.nflref.board as nflref_board
     monkeypatch.setattr(nflref_summary, "player_leaderboard", _fake_leaderboard)
+    monkeypatch.setattr(nflref_board, "load", _fake_load)
 
     out = tp._roster_leaderboard("SF", "2025")
     assert len(out) == 1
-    assert calls == [("2025", "ALL", "sleeper", "SF", 100)]
+    assert calls == [("2025", "ALL", "sleeper", "ALL", 10_000)]
 
 
 def test_roster_leaderboard_degrades_on_error(monkeypatch):
@@ -134,13 +154,28 @@ def test_roster_leaderboard_empty_frame(monkeypatch):
 
 
 def test_roster_leaderboard_scrubs_nan_stats_to_none(monkeypatch):
+    """See test_roster_leaderboard_delegates_to_nflref's own docstring for
+    why a fake leaderboard row now needs a real gsis_id + a matching
+    player_stats row to survive the team cross-reference at all -- BOTH
+    rows here get one, so the NaN-scrubbing behavior under test is
+    exercised on a row that actually makes it into the output."""
     df = pd.DataFrame([
-        {"rank": 1, "player": "Brock Purdy", "position": "QB", "fpts_ppr": 300.0, "ppg_ppr": 20.0},
-        {"rank": 2, "player": "Backup QB", "position": "QB", "fpts_ppr": float("nan"), "ppg_ppr": float("nan")},
+        {"rank": 1, "player": "Brock Purdy", "position": "QB",
+         "gsis_id": "00-0037834", "team": "SF", "fpts_ppr": 300.0, "ppg_ppr": 20.0},
+        {"rank": 2, "player": "Backup QB", "position": "QB",
+         "gsis_id": "00-0000001", "team": "SF",
+         "fpts_ppr": float("nan"), "ppg_ppr": float("nan")},
+    ])
+    ps = pd.DataFrame([
+        {"player_id": "00-0037834", "recent_team": "SF"},
+        {"player_id": "00-0000001", "recent_team": "SF"},
     ])
     import webapp.sources.nflref.summary as nflref_summary
+    import webapp.sources.nflref.board as nflref_board
     monkeypatch.setattr(nflref_summary, "player_leaderboard", lambda *a, **k: df)
+    monkeypatch.setattr(nflref_board, "load", lambda dataset, season: ps)
     out = tp._roster_leaderboard("SF", "2025")
+    assert len(out) == 2
     assert out[1]["fpts_ppr"] is None
     assert out[1]["ppg_ppr"] is None
 
@@ -363,7 +398,23 @@ def test_attach_week_stats_empty_inputs():
     assert out[0]["game_type"] is None
     for metric in ("passing", "rushing", "receiving"):
         assert out[0]["stats"][metric] == {"reconciled": [], "sources": [], "source_groups": []}
-    assert set(out[0]["stats"]) == {"passing", "rushing", "receiving"}
+    # A subset check, not exact-set equality -- `stats` has grown several
+    # more top-level keys since this test was first written (offense_by_
+    # position/defense_by_position/kicker_groups/route_summary/route_
+    # unavailable/off_position_cols, none of which this test cares about),
+    # and a brittle exact-set assertion here had already gone stale once
+    # before this fix (the same repeat-offender pattern CLAUDE.md documents
+    # elsewhere in this codebase: an exact-list/exact-set check breaking on
+    # every legitimate shape addition instead of testing the real
+    # invariant). With empty team_datasets, every position-grouped/route/
+    # kicker key still degrades cleanly to falsy (empty list/dict/False),
+    # which is the actual thing this test is verifying.
+    assert {"passing", "rushing", "receiving"} <= set(out[0]["stats"])
+    assert out[0]["stats"]["offense_by_position"] == []
+    assert out[0]["stats"]["defense_by_position"] == []
+    assert out[0]["stats"]["kicker_groups"] == []
+    assert out[0]["stats"]["route_summary"] == []
+    assert out[0]["stats"]["route_unavailable"] is False
 
 
 def test_attach_week_stats_splits_snap_counts_by_role():
@@ -1009,36 +1060,51 @@ def test_team_profile_template_renders_player_stats_in_reconciled_metric_tables(
     """End-to-end: player_stats rows (the comprehensive box-score fallback,
     added specifically because ngs_receiving/ngs_rushing/ngs_passing only
     cover players NFL's tracking system published that week) feed the
-    RECONCILED Passing/Rushing/Receiving tables now (2026-09 metric
-    regroup) rather than their own separate "Box score: <role>" sections --
-    player_stats is the only source with data here, so each reconciled row
-    shows player_stats as its sole source, via the real _attach_week_stats
-    pipeline end to end.
+    per-game position-group tables (2026-09, THIRD rework of this panel --
+    see position_group_table's own docstring: one row per player, merged
+    across passing/rushing/receiving, grouped by resolved position --
+    which itself superseded the earlier per-metric reconciled-table-with-
+    source-note layout this test used to check for `<strong>Receiving</
+    strong>`/`Source: ...` markup that no longer exists on this page at
+    all). player_stats is the only source with data here, so each merged
+    player's row reads it directly, via the real _attach_week_stats
+    pipeline end to end. A matching `snap_counts` row per player is
+    required for position resolution -- without it a player groups under
+    "Other", which has no entry in `_OFF_POSITION_COLS`/`DEF_COLS` and
+    renders nothing at all (the exact trap the other tests fixed alongside
+    this one, this session, ran into).
 
     The per-game detail is lazy-loaded (2026-09) via _team_game_detail.html
     -- rendered directly here, same as webapp.app.team_game_detail() would
     build it for this game's `stats`."""
     schedule_raw = [{"week": 1, "away_team": "SF", "away_score": 24,
                      "home_team": "DAL", "home_score": 20, "margin": 4}]
-    team_datasets = {"player_stats": [
-        _player_stats_row(player_display_name="Kyle Juszczyk", targets=2,
-                          receptions=2, receiving_yards=32),
-        _player_stats_row(player_display_name="Brock Purdy", attempts=30,
-                          carries=3, rushing_yards=15),
-    ]}
+    team_datasets = {
+        "player_stats": [
+            _player_stats_row(player_display_name="Kyle Juszczyk", targets=2,
+                              receptions=2, receiving_yards=32),
+            _player_stats_row(player_display_name="Brock Purdy", attempts=30,
+                              carries=3, rushing_yards=15),
+        ],
+        "snap_counts": [
+            {"player": "Kyle Juszczyk", "team": "SF", "week": 1, "position": "RB",
+             "offense_pct": 0.4},
+            {"player": "Brock Purdy", "team": "SF", "week": 1, "position": "QB",
+             "offense_pct": 1.0},
+        ],
+    }
     schedule = tp._attach_week_stats(schedule_raw, team_datasets)
 
     template = _tpl.env.get_template("_team_game_detail.html")
     detail = template.render(theme="light", game_key=1, stats=schedule[0]["stats"],
                              source_labels={"player_stats": "Box score (nflverse)"})
-    assert "<strong>Receiving</strong>" in detail
-    assert "<strong>Passing</strong>" in detail
-    assert "<strong>Rushing</strong>" in detail
-    assert "Source: Box score (nflverse)" in detail
     assert "Kyle Juszczyk" in detail
     assert "Brock Purdy" in detail
-    # No stray "Box score: <role>" headings from the old source-segmented
-    # layout -- the metric heading alone is the section title now.
+    # Real reconciled values from player_stats reach the rendered cells,
+    # via the per-position table (not a separate "Box score: <role>"
+    # section -- that source-segmented layout is gone entirely).
+    assert "32" in detail  # Juszczyk's receiving_yards
+    assert "30" in detail  # Purdy's passing attempts
     assert "Box score: Receiving" not in detail
     assert "Box score: Passing" not in detail
     assert "Box score: Rushing" not in detail
@@ -1171,7 +1237,11 @@ def test_team_profile_reconciled_table_renders_flyout_on_every_cell():
 
     The per-game detail is lazy-loaded (2026-09) via _team_game_detail.html
     -- rendered directly here, same as webapp.app.team_game_detail() would
-    build it for this game's `stats`."""
+    build it for this game's `stats`. A matching `snap_counts` row is
+    required for position resolution -- without it the merged player
+    groups under "Other" (no entry in `_OFF_POSITION_COLS`) and renders
+    nothing, the same real gap the other tests fixed alongside this one,
+    this session, ran into."""
     schedule_raw = [{"week": 1, "away_team": "SF", "away_score": 24,
                      "home_team": "DAL", "home_score": 20, "margin": 4}]
     team_datasets = {
@@ -1179,6 +1249,8 @@ def test_team_profile_reconciled_table_renders_flyout_on_every_cell():
                                            attempts=29)],
         "sleeper": [{"player": "Patrick Mahomes", "team": "KC", "week": 1,
                     "pass_att": 28}],
+        "snap_counts": [{"player": "Patrick Mahomes", "team": "KC", "week": 1,
+                        "position": "QB", "offense_pct": 1.0}],
     }
     schedule = tp._attach_week_stats(schedule_raw, team_datasets)
 
