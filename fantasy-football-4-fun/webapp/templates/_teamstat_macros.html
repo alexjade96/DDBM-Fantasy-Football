@@ -86,12 +86,20 @@
    snap_counts (offense_pct/defense_pct/st_pct -- team_profile._OFF_
    POSITION_COLS/_DEF_PLAYER_COLS's own "Snap%" columns) and PFR's rate
    columns (times_pressured_pct/passing_bad_throw_pct/receiving_drop_pct
-   -- team_profile._OFF_POSITION_COLS's own "Prss%"/"Bad thr%"/"Drop%").
-   Sleeper's own fgm_pct ("FG%") is DELIBERATELY excluded -- verified live,
-   it already reads 0-100 ("100.0", "80.0"), not 0-1, so running it through
-   this same *100 transform would inflate a real 100% make to "10000%". #}
+   -- team_profile._OFF_POSITION_COLS's own "Prss%"/"Bad thr%"/"Drop%";
+   def_missed_tackle_pct/def_completion_pct -- _DEF_PLAYER_COLS's own
+   "Missed tkl%"/"Cmp% allowed", added 2026-09 alongside several other
+   real PFR columns that used to be shown ONLY in the now-removed
+   season-wide reconciled table -- see team_profile._OFF_POSITION_COLS'S
+   and _DEF_PLAYER_COLS's own comments for the full list and why). Every
+   value verified live against real 2025 rows before being added here
+   (0-1 fractions, e.g. 0.256, not 0-100). Sleeper's own fgm_pct ("FG%")
+   is DELIBERATELY excluded -- verified live, it already reads 0-100
+   ("100.0", "80.0"), not 0-1, so running it through this same *100
+   transform would inflate a real 100% make to "10000%". #}
 {% set _pct_keys = ("offense_pct", "defense_pct", "st_pct",
-  "times_pressured_pct", "passing_bad_throw_pct", "receiving_drop_pct") %}
+  "times_pressured_pct", "passing_bad_throw_pct", "receiving_drop_pct",
+  "def_missed_tackle_pct", "def_completion_pct") %}
 
 {# `hide_player=true` drops the leading Player column entirely -- for a
    caller already scoped to exactly one known player (player_profile.html's
@@ -394,41 +402,6 @@
     </tbody>
   </table>
 </div>
-{% endmacro %}
-
-{# Renders the "Source: X, Y, Z" line under a metric's reconciled table --
-   one flat, deduped list of every source that fed ANY stat in the table,
-   not split out per stat (per user request: "don't need to split out which
-   data is from which source etc, just coagulated together"). Lives here
-   (not inlined in team_profile.html) so a future Testing-tab mockup can
-   reuse it without a copy that could drift.
-
-   `entry.source_groups` is computed once in
-   webapp.team_profile._grouped_metric_stats (stat_reconcile.
-   stat_source_groups) -- grouped by exact per-stat source combination for
-   OTHER potential uses of that data, but this macro only needs the union
-   of every source across every combo, so it flattens them back into one
-   list here. `source_labels` (caller's own `stat_reconcile.SOURCE_LABELS`
-   context var, passed explicitly since this file's macros take no
-   implicit context) maps each source key to a display name.
-
-   `entry.pfr` (a metric's own un-reconciled PFR sub-table) adds "PFR
-   advanced" to the list too, deduped against a `pfr_*` source that might
-   already be there from a real reconcile_metric() vote (e.g. rushing's
-   "carries", which pfr_rush does feed) -- the real bug this dedup guards
-   against: rendering "PFR advanced" twice when pfr_rush is both a voting
-   source AND supplies the separate own-metrics sub-table. #}
-{% macro metric_sources_note(entry, metric, source_labels) %}
-{% set names = [] %}
-{% for combo, stats in entry.source_groups %}
-  {% for src in combo %}{% set _ = names.append(source_labels.get(src, src)) %}{% endfor %}
-{% endfor %}
-{% if entry.pfr and "PFR advanced" not in names %}
-  {% set _ = names.append("PFR advanced") %}
-{% endif %}
-{% if names %}
-<p class="hint">Source: {{ names | unique | join(", ") }}</p>
-{% endif %}
 {% endmacro %}
 
 {# Position-grouped, one-row-per-player table for the per-game drilldown's

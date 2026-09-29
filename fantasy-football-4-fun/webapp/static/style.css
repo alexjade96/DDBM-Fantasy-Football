@@ -2324,10 +2324,14 @@ tr.bench-impact td { background: color-mix(in srgb, #d9a441 8%, transparent); }
    redundant PFR caption) plus the .stat-flag/.stat-cell/.stat-flyout
    rules here. The card wrap itself (.metric-card) was later dropped
    app-wide in favor of a plain h3 heading (2026-09, user request, see
-   .gd-block/.pg-wrap/.adv-stat-plain's own comments) -- only the flyout
-   styling below survives from that original pass. History, for context:
-   .stat-flag (the reconciled-table disagreement ⚠) originally had ZERO
-   CSS anywhere -- bare inline text, no color, no hover affordance. */
+   .gd-block/.pg-wrap's own comments) -- only the flyout styling below
+   survives from that original pass, still live on the schedule
+   drilldown's per-game position-group/reconciled tables (the season-wide
+   reconciled table this styling used to ALSO cover was removed entirely
+   in a later 2026-09 pass, see the Roster section's own CSS comment for
+   why). History, for context: .stat-flag (the reconciled-table
+   disagreement ⚠) originally had ZERO CSS anywhere -- bare inline text,
+   no color, no hover affordance. */
 
 /* The disagreement flag: small amber chip (reuses --gold, the same token
    .bkr-msg.warn already uses for "pay attention here"). Purely a visual
@@ -2415,47 +2419,25 @@ table.dt-games td.pfr-extra, table.dt-games th.pfr-extra { color: var(--muted); 
 table.dt-games td.grp-divider, table.dt-games th.grp-divider {
   border-left: 1px solid var(--line); padding-left: 14px; }
 
-/* team_profile.html's Advanced & usage stats per-metric <details> blocks
-   (Passing/Rushing/Receiving/Snap counts/Defense/Injuries) -- a borderless
-   collapsible section. Originally a bordered/backgrounded card
-   (.adv-stat-card, since REMOVED -- it read as a stack of separate boxes,
-   the same complaint that, in earlier sessions, had already moved
-   player_profile.html's Game log to `.drilltable`/`.dt-row`, and, in this
-   same 2026-09 pass, dropped the card look from team_profile.html's
-   Roster section and the per-game "Route participation"/"raw source
-   data" blocks on both pages too -- see .roster-pos-table/.gd-block/
-   .pg-wrap's own comments for those). This section keeps its
-   <details>/<summary> COLLAPSE though, unlike Roster (which dropped that
-   too) -- a deliberate, separate user answer for this one section, so
-   it's still layered on `.dt-row` (kept for the existing open/closed
-   arrow + summary cursor behaviour) rather than a plain heading. Spacing
-   between sections matches Roster's own 24px gap (`.tablewrap.scrolltable
-   + h3`) rather than a bordered card's old, tighter gap -- an open,
-   borderless collapsible needs the extra air a card's own edge used to
-   supply for free. */
-.adv-stat-plain { padding: 4px 0; }
-.adv-stat-plain + .adv-stat-plain { margin-top: 24px; }
-.adv-stat-plain > summary { padding: 11px 30px 11px 0; }
-.adv-stat-plain[open] > summary { background: none; border-bottom: 1px solid var(--line);
-  margin: 0 0 10px; padding-right: 30px; }
-.adv-stat-plain > .hint:first-of-type { margin-top: -2px; }
-.adv-stat-plain > .tablewrap:last-child,
-.adv-stat-plain > .hint:last-child { margin-bottom: 6px; }
-
 /* team_profile.html: Roster's per-position groups (QB/RB/WR/TE/K/DEF) --
    a plain h3 + table, always visible, no card frame and no collapse.
    Two things were tried and rejected here on user request: a bordered/
-   backgrounded card (matching .adv-stat-card, the pattern Advanced &
-   usage stats itself USED TO use one section down, before it too dropped
-   the card frame -- see .adv-stat-plain) and, after that, a borderless
-   but still COLLAPSIBLE <details> toggle -- the toggle itself was judged
-   unnecessary, not just its styling, so there's no <details>/<summary>
-   left at all. table.dt-games is width:auto by default (shrinks to its
-   own content), which left a position's table narrower than the panel;
-   .roster-pos-table forces it to the full row width instead, matching
-   how other width:auto contexts on this page (.roster-scroll,
-   #panel .dt-detail > table.dt-games) already override the same default
-   for the same reason. */
+   backgrounded card (.adv-stat-card, matching the look this page's old
+   "Advanced & usage stats" section used before it was removed entirely
+   -- 2026-09, see _team_season_sections.html's own header comment for why:
+   that section's season-wide Passing/Rushing/Receiving reconciliation
+   duplicated Roster's own per-position season totals, and its snap-count/
+   PFR-defense lists duplicated the schedule drilldown's per-game detail,
+   so each piece moved to wherever it actually belonged rather than being
+   kept, relabeled, or given its own borderless-collapsible treatment) and,
+   after that, a borderless but still COLLAPSIBLE <details> toggle -- the
+   toggle itself was judged unnecessary, not just its styling, so there's
+   no <details>/<summary> left at all. table.dt-games is width:auto by
+   default (shrinks to its own content), which left a position's table
+   narrower than the panel; .roster-pos-table forces it to the full row
+   width instead, matching how other width:auto contexts on this page
+   (.roster-scroll, #panel .dt-detail > table.dt-games) already override
+   the same default for the same reason. */
 .roster-pos-table { width: 100%; }
 h3 + .tablewrap.scrolltable { margin-top: 6px; }
 /* Space BETWEEN one position group's table and the next group's heading
@@ -2466,9 +2448,9 @@ h3 + .tablewrap.scrolltable { margin-top: 6px; }
    documented elsewhere on this page. Scoped to `.tablewrap.scrolltable +
    h3` specifically (not a blanket `h3 { margin-top }`) so it only adds
    space BETWEEN position groups, not above the very first one (h2 already
-   supplies that) and not inside the Schedule/Advanced-stats sections
-   below, which already have their own spacing (.adv-stat-plain + .adv-
-   stat-plain, the .drilltable/.dt-row treatment). */
+   supplies that) and not inside the Schedule & results / Injury reports
+   sections below, which already have their own spacing (the
+   .drilltable/.dt-row treatment, and Injury reports' own scrolltable). */
 .tablewrap.scrolltable + h3 { margin-top: 24px; }
 
 /* position_group_table's own plain heading + full-width table (2026-09,

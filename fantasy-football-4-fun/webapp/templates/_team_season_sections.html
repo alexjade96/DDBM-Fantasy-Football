@@ -1,11 +1,42 @@
 {# Every season-DEPENDENT section on the team-profile page (team_profile.
    html), in one file so it can be re-rendered as a single htmx fragment
-   when the season dropdown changes: Roster leaderboard, Schedule &
-   results, Advanced & usage stats. Mirrors player_profile.html's own
-   _player_season_sections.html split (same user request, applied to this
-   page too) -- picking a season re-renders ALL THREE of these in
-   lockstep, in place, rather than the old plain <a> pill row navigating
-   the whole page.
+   when the season dropdown changes: Roster leaderboard (season totals),
+   Schedule & results (per-game drilldown only), Injury reports. Mirrors
+   player_profile.html's own _player_season_sections.html split (same user
+   request, applied to this page too) -- picking a season re-renders all
+   three in lockstep, in place, rather than the old plain <a> pill row
+   navigating the whole page.
+
+   2026-09: this page USED to also have a standalone "Advanced & usage
+   stats" section (season-summed Passing/Rushing/Receiving + snap counts +
+   PFR defense + injuries) sitting beside Schedule & results, which showed
+   the SAME per-week stats twice on the page with nothing saying the two
+   were related -- a game's own per-game row below duplicated whatever
+   that game contributed to the season total above it (user report: "same
+   row in schedule + advanced stats, is there a better way of
+   reconciling"). Rather than just relabeling the duplication (a first
+   attempt folded the whole season block under Schedule & results as a
+   "Season totals" subsection, which the user then corrected -- moving a
+   chunk isn't the same as actually disseminating it), each piece of that
+   old section now goes wherever it actually belongs, per-metric:
+     - Passing/Rushing/Receiving season reconciliation: DROPPED outright.
+       Roster's own per-position tables already show season-cumulative
+       real production per player (games/attempts/yards/TDs/shares/etc,
+       see that section's own comment) -- a second, differently-shaped
+       season total for the same players was the actual redundancy, not
+       just a naming/placement problem.
+     - Snap counts (offense/defense/special teams) and PFR advanced
+       defense: DROPPED from this season-wide list. Both are already
+       fully disseminated per-game in the Game log's own drilldown
+       (_team_game_detail.html's Offense/Defense/Special-teams panels,
+       via stats["offense_by_position"]/["defense_by_position"]/
+       ["kicker_groups"]) -- the season-wide list was pure duplication of
+       exactly the same rows, with nothing new to show.
+     - Injury reports: KEPT, but as its OWN standalone season-wide
+       section (below), not folded into Roster (an injury status isn't a
+       cumulative stat -- there's nothing to sum) or left only inside the
+       per-game drilldown (a reader asking "who's been hurt this season"
+       wants one list, not 17 games to expand and skim).
 
    "Season history" (the multi-season W-L-T/PF-PA table) stays OUTSIDE
    this container in team_profile.html -- it deliberately spans every
@@ -24,20 +55,13 @@
    fragment swap has nowhere to redirect FROM.
 
    Needs in context: abbr, theme, current_season, roster_by_position,
-   schedule, team_stats_grouped, source_labels, metric_labels (a Jinja
-   global), plus tsm ("_teamstat_macros.html") and idm ("_ident.html"),
-   imported here directly (mirrors _player_season_sections.html's own
-   local imports) so this file also renders standalone from the htmx
-   fragment route, which has no other template around it. #}
+   schedule, team_stats_grouped, source_labels, plus tsm
+   ("_teamstat_macros.html") and idm ("_ident.html"), imported here
+   directly (mirrors _player_season_sections.html's own local imports) so
+   this file also renders standalone from the htmx fragment route, which
+   has no other template around it. #}
 {% import "_ident.html" as idm with context %}
 {% import "_teamstat_macros.html" as tsm %}
-{% set metric_labels = METRIC_LABELS %}
-{% set single_source_labels = [
-  ("snap_counts_offense", "Snap counts: Offense"),
-  ("snap_counts_defense", "Snap counts: Defense"),
-  ("snap_counts_special_teams", "Snap counts: Special teams"),
-  ("pfr_def", "Defense (PFR advanced)"),
-  ("injuries", "Injury reports")] %}
 
 {# --- roster / season leaderboard, grouped by position ------------------
    Each position is a plain, ALWAYS-VISIBLE section: a heading (h3) plus
@@ -118,23 +142,30 @@
 <p class="empty">No roster data found for {{ abbr }} in {{ current_season }}.</p>
 {% endif %}
 
-{# --- schedule & results, one drilldown row per game --------------------
+{# --- schedule & results: one drilldown row per game ---------------------
    Each game expands into this team's own advanced/usage stat lines for
    that week (see webapp.team_profile._attach_week_stats), sliced from the
-   same team_datasets already loaded for the Advanced stats section below
-   -- no extra data pull per game, only a second RENDER: each row's detail
-   is now LAZY-LOADED on first expand (`hx-get`/`hx-trigger="toggle once"`
-   to webapp.app.team_game_detail(), which reads the same cached
+   same team_datasets already loaded for Roster/Injury reports -- no extra
+   data pull per game, only a second RENDER: each row's detail is
+   LAZY-LOADED on first expand (`hx-get`/`hx-trigger="toggle once"` to
+   webapp.app.team_game_detail(), which reads the same cached
    team_profile() call this page already made) rather than every game's
    full detail baked inline into the page on load. A real, measured cost
    motivated this (2026-09): a full season's schedule section alone ran
    ~900KB of HTML, almost entirely up-to-8-stacked-tables-per-game detail
-   a reader may never open. The detail itself is ALSO now sub-tabbed
-   (Box score / Snap counts / Defense / Injuries, see
-   _team_game_detail.html) instead of a flat stack with nothing but a
-   bold label between sections -- both changes address the same
-   complaint (this section reading as one long, heavy scroll), one on
-   payload, one on layout. #}
+   a reader may never open. The detail itself is ALSO sub-tabbed (Offense
+   / Defense / Special teams / Injuries, see _team_game_detail.html)
+   instead of a flat stack with nothing but a bold label between sections
+   -- both changes address the same complaint (this section reading as
+   one long, heavy scroll), one on payload, one on layout.
+
+   This section used to ALSO carry a season-wide "Advanced & usage stats"
+   sibling/subsection (Passing/Rushing/Receiving reconciliation + snap
+   counts + PFR defense + injuries, all summed across the season) -- see
+   this file's own header comment for why that was removed rather than
+   just relabeled: every stat it showed already exists somewhere more
+   specific (Roster's season totals, or this section's own per-game
+   detail), so nothing here needs a season-wide summary of its own. #}
 <h2>Schedule &amp; results <span class="hint">({{ current_season }})</span></h2>
 {% if schedule %}
 <div class="tablewrap">
@@ -165,44 +196,42 @@
 <p class="empty">No schedule data found for {{ abbr }} in {{ current_season }}.</p>
 {% endif %}
 
-{# --- advanced / usage stats, grouped by metric (see team_profile.html's
-     own header comment block for the full rationale) ---------------------
-   Borderless collapsible sections (.adv-stat-plain, style.css) -- dropped
-   the bordered/backgrounded .adv-stat-card box (2026-09, user request:
-   "mimic the position group table styling & spacing"), keeping the
-   <details>/<summary> collapse itself (unlike Roster, which also dropped
-   the collapse entirely -- a deliberate, separate answer for this
-   section). See .adv-stat-plain's own CSS comment for why this is a
-   dedicated class rather than a modifier on .adv-stat-card (that class's
-   bordered look is still used elsewhere on other pages). #}
-<h2>Advanced &amp; usage stats <span class="hint">({{ current_season }})</span></h2>
-{% set flags = namespace(any=false) %}
-{% for metric, label in metric_labels %}
-{% set entry = team_stats_grouped.get(metric) %}
-{% if entry and (entry.reconciled or entry.pfr) %}
-{% set flags.any = true %}
-<details class="dt-row adv-stat-plain">
-  <summary>{{ label }}{% if entry.reconciled %} ({{ entry.reconciled|length }} players){% endif %}</summary>
-  {{ tsm.metric_sources_note(entry, metric, source_labels) }}
-  {% if entry.reconciled %}
-  {{ tsm.reconciled_table(entry.reconciled, metric, source_labels, scroll=true, flyout=true, roster_index=roster_index) }}
-  {% endif %}
-  {% if entry.pfr %}
-  {{ tsm.stat_table(entry.pfr, scroll=true, roster_index=roster_index) }}
-  {% endif %}
-</details>
-{% endif %}
-{% endfor %}
-{% for ds, label in single_source_labels %}
-{% set rows = team_stats_grouped.get(ds) %}
-{% if rows %}
-{% set flags.any = true %}
-<details class="dt-row adv-stat-plain">
-  <summary>{{ label }} ({{ rows|length }} rows)</summary>
-  {{ tsm.stat_table(rows, scroll=true, roster_index=roster_index) }}
-</details>
-{% endif %}
-{% endfor %}
-{% if not flags.any %}
-<p class="empty">No advanced/usage data found for {{ abbr }} in {{ current_season }}.</p>
+{# --- injury reports: season-wide, its own section -----------------------
+   The one piece of the old "Advanced & usage stats" section kept as a
+   season-wide list rather than dropped or folded elsewhere (see this
+   file's own header comment for the full breakdown of where everything
+   else went): an injury report isn't a cumulative stat (nothing to sum,
+   so it doesn't belong in Roster) and a reader asking "who's been hurt
+   this season" wants one list, not each of up to 17 games expanded and
+   skimmed individually (it already appears per-game too, in the Game log
+   drilldown's own Injuries pill -- this is the same rows, season-wide,
+   for that different question). `week` is rendered as its own explicit
+   leading column (unlike stat_table()'s normal id_cols exclusion, which
+   assumes week is already stated by a parent per-game row -- not true
+   here, this table spans every week at once). #}
+<h2>Injury reports <span class="hint">({{ current_season }})</span></h2>
+{% set injury_rows = team_stats_grouped.get("injuries") %}
+{% if injury_rows %}
+<div class="tablewrap scrolltable">
+  <table class="dt-games">
+    <thead><tr>
+      <th class="n">Wk</th><th>Player</th>
+      {% set drop = tsm.id_cols + tsm.game_extra_cols %}
+      {% set cols = injury_rows[0].keys() | list | reject("in", drop) | list %}
+      {% for k in cols %}<th>{{ k.replace("_", " ") }}</th>{% endfor %}
+    </tr></thead>
+    <tbody>
+    {% for row in injury_rows %}
+      <tr>
+        <td class="n">{{ row.week }}</td>
+        <td>{% set nm = row.get("player") or row.get("player_display_name") or row.get("full_name") %}
+          {% if nm %}{{ idm.player_link(resolve_row_player_id(row, roster_index) if resolve_row_player_id is defined else none, nm) }}{% else %}&ndash;{% endif %}</td>
+        {% for k in cols %}<td>{{ tsm.cell(row[k]) }}</td>{% endfor %}
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<p class="empty">No injury reports found for {{ abbr }} in {{ current_season }}.</p>
 {% endif %}

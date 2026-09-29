@@ -59,8 +59,10 @@ def roster_name_index(roster: list[dict]) -> dict[str, str]:
 
 def resolve_row_player_id(row: dict, roster_index: dict[str, str] | None = None) -> str | None:
     """Best-effort Sleeper `player_id` for one row of ANY of this module's
-    per-stat tables (Advanced & usage stats' reconciled/single-source
-    tables, the Schedule drilldown's per-game position groups) -- the id
+    per-stat tables (Season totals' reconciled/single-source tables, the
+    Game log's per-game position groups -- both now live under one
+    Schedule & results section, see _team_season_sections.html's own
+    header comment) -- the id
     `_ident.html`'s `player_link()`/`headshot()` need to hyperlink a name,
     which none of these rows carry natively (they come from nflverse/PFR,
     keyed on `gsis_id`/`pfr_player_id`/plain name, never a Sleeper id).
@@ -771,37 +773,85 @@ _OFF_GROUP_ORDER = ("QB", "RB", "WR", "TE")
 # _teamstat_macros.html; `category` says which of a merged player's
 # `passing`/`rushing`/`receiving`/`snap`/`kicker` sub-dicts to read `key`
 # from.
+#
+# 2026-09: extended with several real PFR-extra columns (times_pressured_pct/
+# times_blitzed/times_hurried/times_hit/passing_bad_throw_pct for QB;
+# rushing_yards_before/after_contact_avg for RB; receiving_drop_pct/
+# receiving_int/receiving_rat for RB/WR/TE) that were previously shown
+# ONLY in the season-wide reconciled table (removed this same session, see
+# _team_season_sections.html's own header comment) -- a real, confirmed
+# gap: this fixed spec was already a CURATED subset of what PFR/reconciled
+# tables actually carry (pre-dating this session, untouched by the
+# season-totals removal itself), so removing the season-wide table's own
+# dynamic full-column rendering left these values with nowhere left to
+# show at all. Diffed directly against the old season-wide table's own
+# `reconciled_cols`+`pfr_extra_cols` union (webapp.stat_reconcile /
+# _teamstat_macros.html, as last committed) before adding anything here,
+# so this now covers every real column that table used to show.
+# Each category below can appear MORE THAN ONCE in a row, and NOT always
+# consecutively (e.g. QB is passing/rushing/passing/passing/snap -- the two
+# categories interleave) -- position_group_table (_teamstat_macros.html)
+# keys strictly off the STRING per entry, not a deduped set, reading the
+# SAME underlying sub-dict (p.get("passing")) every time that string
+# appears; the only effect of a NEW entry (whether same category as the
+# last one or not) is that the macro's own per-entry `.grp-divider` rule (a
+# vertical line before the first column of every entry after the first)
+# fires there too. This is how a single logical category (e.g. Passing)
+# gets internal sub-group dividers -- box score | pressure | accuracy --
+# AND how a different category can be interleaved between them (e.g. QB's
+# Rushing block sitting between Passing's box-score and pressure blocks)
+# without the macro needing a second grouping concept: entry boundaries ARE
+# the divider boundaries, in whatever order the list itself is written
+# (2026-09, user request: each position's block order, alongside pulling
+# each category's core box-score columns to the FRONT of its own block --
+# QB: Passing box score, Rushing, Passing pressure, Passing accuracy, Snap;
+# RB: Rushing box score, Receiving box score, Rushing contact, Receiving
+# quality, Snap, Route; WR: Receiving box score, Rushing, Receiving
+# quality, Snap, Route; TE unchanged, its own receiving categories were
+# already adjacent with no other category to interleave).
 _OFF_POSITION_COLS = {
     "QB": [
         ("passing", [("attempts", "Att"), ("completions", "Cmp"),
                      ("passing_yards", "Yds"), ("passing_tds", "TD"),
-                     ("interceptions", "INT"), ("times_pressured", "Prss"),
-                     ("times_sacked", "Sack"), ("passing_bad_throws", "Bad thr")]),
+                     ("interceptions", "INT")]),
         ("rushing", [("carries", "Car"), ("rushing_yards", "Yds"), ("rushing_tds", "TD")]),
+        ("passing", [("times_pressured", "Prss"), ("times_pressured_pct", "Prss%"),
+                     ("times_blitzed", "Blitz"), ("times_hurried", "Hrd"),
+                     ("times_hit", "Hit"), ("times_sacked", "Sack")]),
+        ("passing", [("passing_bad_throws", "Bad thr"),
+                     ("passing_bad_throw_pct", "Bad thr%")]),
         ("snap", [("offense_snaps", "Snaps"), ("offense_pct", "Snap%")]),
     ],
     "RB": [
-        ("rushing", [("carries", "Car"), ("rushing_yards", "Yds"),
-                     ("rushing_tds", "TD"), ("rushing_yards_before_contact", "YBC"),
-                     ("rushing_yards_after_contact", "YAC"),
-                     ("rushing_broken_tackles", "Broken tkl")]),
+        ("rushing", [("carries", "Car"), ("rushing_yards", "Yds"), ("rushing_tds", "TD")]),
         ("receiving", [("targets", "Tgt"), ("receptions", "Rec"),
                        ("receiving_yards", "Yds"), ("receiving_tds", "TD")]),
+        ("rushing", [("rushing_yards_before_contact", "YBC"),
+                     ("rushing_yards_before_contact_avg", "YBC/att"),
+                     ("rushing_yards_after_contact", "YAC"),
+                     ("rushing_yards_after_contact_avg", "YAC/att"),
+                     ("rushing_broken_tackles", "Broken tkl")]),
+        ("receiving", [("receiving_drop", "Drop"), ("receiving_drop_pct", "Drop%"),
+                       ("receiving_int", "Int"), ("receiving_rat", "Rtg targeted")]),
         ("snap", [("offense_snaps", "Snaps"), ("offense_pct", "Snap%")]),
         ("route", [("routes_run", "Routes")]),
     ],
     "WR": [
         ("receiving", [("targets", "Tgt"), ("receptions", "Rec"),
-                       ("receiving_yards", "Yds"), ("receiving_tds", "TD"),
-                       ("receiving_drop", "Drop"), ("receiving_broken_tackles", "Broken tkl")]),
+                       ("receiving_yards", "Yds"), ("receiving_tds", "TD")]),
         ("rushing", [("carries", "Car"), ("rushing_yards", "Yds"), ("rushing_tds", "TD")]),
+        ("receiving", [("receiving_drop", "Drop"), ("receiving_drop_pct", "Drop%"),
+                       ("receiving_int", "Int"), ("receiving_rat", "Rtg targeted"),
+                       ("receiving_broken_tackles", "Broken tkl")]),
         ("snap", [("offense_snaps", "Snaps"), ("offense_pct", "Snap%")]),
         ("route", [("routes_run", "Routes")]),
     ],
     "TE": [
         ("receiving", [("targets", "Tgt"), ("receptions", "Rec"),
-                       ("receiving_yards", "Yds"), ("receiving_tds", "TD"),
-                       ("receiving_drop", "Drop"), ("receiving_broken_tackles", "Broken tkl")]),
+                       ("receiving_yards", "Yds"), ("receiving_tds", "TD")]),
+        ("receiving", [("receiving_drop", "Drop"), ("receiving_drop_pct", "Drop%"),
+                       ("receiving_int", "Int"), ("receiving_rat", "Rtg targeted"),
+                       ("receiving_broken_tackles", "Broken tkl")]),
         ("snap", [("offense_snaps", "Snaps"), ("offense_pct", "Snap%")]),
         ("route", [("routes_run", "Routes")]),
     ],
@@ -874,15 +924,40 @@ _KICKER_COLS = [("kicker", _KICKER_KEYS)]
 # team-level stat line) is NOT part of this dict -- it has its own single
 # "player" (the team itself) and its own column spec, handled separately
 # by `_defense_position_groups`.
+#
+# 2026-09: extended with 8 real pfr_def columns (def_missed_tackle_pct,
+# def_times_hitqb, def_completion_pct, def_yards_allowed_per_cmp,
+# def_yards_allowed_per_tgt, def_adot, def_air_yards_completed,
+# def_yards_after_catch) that were only ever reachable via the season-wide
+# section's own dynamic stat_table() (every real column, not a curated
+# subset) -- see _OFF_POSITION_COLS's own comment just above for the full
+# rationale, same gap, same fix. Most of these read NaN for a non-coverage
+# player (a DL/LB with no targets thrown his way has no completion%/aDOT/
+# YAC-allowed to report) and dash out via cell()'s existing NaN guard,
+# same as any other absent-stat cell -- real, non-null values were
+# confirmed live for DBs who saw real targets before adding these.
+# Split into several same-named "pfr_def" entries so core box-score stats
+# (Sack/Tkl) lead the row, with everything else following as sub-grouped
+# blocks, each getting its own `.grp-divider` -- see _OFF_POSITION_COLS's
+# own header comment for why repeating a category name is what creates a
+# sub-group boundary in position_group_table.
 _DEF_PLAYER_COLS = [
-    ("pfr_def", [("def_sacks", "Sack"), ("def_pressures", "Prss"),
-                 ("def_tackles_combined", "Tkl"), ("def_missed_tackles", "Missed tkl"),
-                 ("def_times_blitzed", "Blitz"), ("def_times_hurried", "Hrd"),
-                 ("def_ints", "INT"), ("def_targets", "Tgt"),
+    ("pfr_def", [("def_sacks", "Sack"), ("def_tackles_combined", "Tkl")]),
+    ("pfr_def", [("def_missed_tackles", "Missed tkl"),
+                 ("def_missed_tackle_pct", "Missed tkl%"),
+                 ("def_pressures", "Prss"), ("def_times_blitzed", "Blitz"),
+                 ("def_times_hurried", "Hrd"), ("def_times_hitqb", "Hit QB")]),
+    ("pfr_def", [("def_ints", "INT"), ("def_targets", "Tgt"),
                  ("def_completions_allowed", "Cmp allowed"),
-                 ("def_yards_allowed", "Yds allowed"),
-                 ("def_receiving_td_allowed", "TD allowed"),
-                 ("def_passer_rating_allowed", "Rtg allowed")]),
+                 ("def_completion_pct", "Cmp% allowed")]),
+    ("pfr_def", [("def_yards_allowed", "Yds allowed"),
+                 ("def_yards_allowed_per_cmp", "Yds/cmp allowed"),
+                 ("def_yards_allowed_per_tgt", "Yds/tgt allowed"),
+                 ("def_receiving_td_allowed", "TD allowed")]),
+    ("pfr_def", [("def_passer_rating_allowed", "Rtg allowed"),
+                 ("def_adot", "aDOT allowed"),
+                 ("def_air_yards_completed", "Air yds allowed"),
+                 ("def_yards_after_catch", "YAC allowed")]),
     ("snap", [("defense_snaps", "Snaps"), ("defense_pct", "Snap%")]),
 ]
 
@@ -1734,52 +1809,27 @@ def _team_route_rows(abbr: str, seasons: list[str], player_stats_rows: list[dict
 
 
 def _season_grouped_stats(team_datasets: dict) -> dict:
-    """The season-wide "Advanced & usage stats" section's own metric
-    grouping -- same shape/logic `_grouped_metric_stats` builds per-game,
-    just fed the WHOLE season's rows per source instead of one week's
-    slice, so Passing/Rushing/Receiving show one reconciled table across
-    every game rather than needing to be reassembled from 17-18 per-game
-    ones. `snap_counts`/`pfr_def`/`injuries` pass through unchanged
-    (single source, nothing to group by metric)."""
-    role_rows: dict[str, list[dict]] = {}
-    for ds, rows in team_datasets.items():
-        # "route_participation_unavailable_seasons" is metadata (a set of
-        # season strings, see _team_route_rows), not a rows list -- every
-        # OTHER team_datasets value is a list[dict] this loop's branches
-        # assume, so this one key must be skipped explicitly rather than
-        # falling into the generic else-branch below with the wrong shape.
-        if ds == "route_participation_unavailable_seasons":
-            continue
-        if not rows:
-            continue
-        if ds == "snap_counts":
-            for bucket, rows_b in _split_snap_counts(rows).items():
-                role_rows[f"snap_counts_{bucket}"] = rows_b
-        elif ds == "player_stats":
-            for bucket, rows_b in _split_player_stats(rows).items():
-                role_rows[f"player_stats_{bucket}"] = rows_b
-        elif ds == "sleeper":
-            for bucket, rows_b in _split_sleeper_stats(rows).items():
-                role_rows[f"sleeper_{bucket}"] = rows_b
-        else:
-            role_rows[ds] = rows
-
-    stats = _grouped_metric_stats(role_rows, multi_week=True)
-    for extra_key in ("snap_counts_offense", "snap_counts_defense",
-                     "snap_counts_special_teams", "pfr_def", "injuries"):
-        if extra_key in role_rows:
-            stats[extra_key] = role_rows[extra_key]
-    # "route_participation" DOES land in role_rows (the else-branch
-    # fallback above copies every team_datasets key), but is deliberately
-    # NOT added to the extra_key passthrough here -- the season-wide
-    # "Advanced & usage stats" section is off-limits per standing user
-    # instruction (see CLAUDE.md), and team_profile.html's own
-    # single_source_labels list (the only thing that renders a
-    # team_stats_grouped key on that section) never names it, so it's
-    # already inert there without needing a second exclusion mechanism.
-    # The per-game route summary lives ONLY in the schedule drilldown --
-    # see _route_summary_rows / _attach_week_stats.
-    return stats
+    """The Injury reports section's own data (2026-09: the only survivor of
+    what used to be a much bigger season-wide "Advanced & usage stats"
+    section -- Passing/Rushing/Receiving reconciliation, snap-count splits,
+    and PFR-defense all lived here too, until each was found to already be
+    shown elsewhere and removed rather than kept as duplicate work: season
+    totals belong to Roster's own per-position tables, and snap counts/PFR
+    defense are already fully disseminated per-game in the schedule
+    drilldown -- see _team_season_sections.html's own header comment for
+    the full breakdown of where everything else went). Trimmed to just
+    this one dataset ON PURPOSE: the old version ran the full multi-source
+    reconciliation pipeline (`_grouped_metric_stats(..., multi_week=True)`)
+    across every rostered player's whole season for output nothing reads
+    any more -- confirmed via a full-repo search before trimming (this
+    function's only call site is `_build_profile`, and `team_stats_grouped`
+    -- what it returns -- has exactly one consumer, the Injury reports
+    section's `.get("injuries")`). Kept as its own small function (rather
+    than inlined into `_build_profile`) so a future second season-wide
+    single-source need has an obvious place to grow into, the same role
+    this function used to serve for `snap_counts`/`pfr_def` before those
+    moved out."""
+    return {"injuries": team_datasets.get("injuries") or []}
 
 
 def _build_profile(abbr: str, season: str | None) -> dict:

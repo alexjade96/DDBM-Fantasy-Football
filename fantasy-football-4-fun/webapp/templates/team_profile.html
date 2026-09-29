@@ -3,10 +3,15 @@
    header comment) but keyed on an NFL abbreviation instead of a Sleeper
    player_id, and fully league-free: an NFL team has no fantasy-league
    identity of its own. A single season dropdown (below) picks which real
-   NFL season Roster/Schedule/Advanced-stats show, re-rendered together via
-   webapp.app.team_season_sections() -- see _team_season_sections.html's own
-   header comment for the full contract. Every section degrades
-   independently to "no data" rather than assuming any dataset resolves. #}
+   NFL season Roster / Schedule & results / Injury reports show, re-rendered
+   together via webapp.app.team_season_sections() -- see
+   _team_season_sections.html's own header comment for the full contract
+   AND for why this page no longer has a separate "Advanced & usage stats"
+   section (its content was redistributed: season totals into Roster,
+   snap-counts/PFR-defense into Schedule & results' own per-game drilldown,
+   injury reports promoted to their own standalone section). Every section
+   degrades independently to "no data" rather than assuming any dataset
+   resolves. #}
 <!doctype html>
 <html lang="en">
 <head>
@@ -55,11 +60,10 @@
 </head>
 <body hx-indicator="#bar">
   <div id="bar"></div>
-{# Roster/Schedule/Advanced-stats' own macro imports (idm/tsm) and the
-   metric-grouping rationale (METRIC_LABELS/single_source_labels) now live
-   in _team_season_sections.html, the shared partial those three sections
-   moved into (see this file's own header comment) -- this top-level file
-   no longer renders any of that markup directly. #}
+{# Roster/Schedule/Injury-reports' own macro imports (idm/tsm) live in
+   _team_season_sections.html, the shared partial those sections moved
+   into (see this file's own header comment) -- this top-level file no
+   longer renders any of that markup directly. #}
 <main class="reportpanel">
   <a class="back-link" href="/nflstats"
      onclick="if (document.referrer) { history.back(); return false; }">&larr; Back</a>
@@ -96,7 +100,8 @@
   {% endif %}
 
   {# One shared container for every season-dependent section on this page
-     (Roster, Schedule & results, Advanced & usage stats) -- the dropdown
+     (Roster, Schedule & results, Injury reports -- see
+     _team_season_sections.html's own header comment) -- the dropdown
      above targets THIS div, so picking a season re-renders all three in
      lockstep. "Season history" below stays OUTSIDE it: that table already
      spans every season at once and was never season-scoped to begin with.

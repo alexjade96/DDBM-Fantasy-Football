@@ -5557,12 +5557,14 @@ def team_page(request: Request, abbr: str, season: str | None = None,
 def team_season_sections(request: Request, abbr: str, season: str | None = None,
                          refresh: int = 0, theme: str = "light"):
     """The team-profile page's shared "follow-up sections" container
-    (Roster leaderboard, Schedule & results, Advanced & usage stats), as an
-    htmx fragment -- the season dropdown (team_profile.html) hx-gets this
-    instead of the old plain <a> pill row navigating the whole page, so
-    picking a different season re-renders all three sections in lockstep,
-    in place (mirrors player_profile.html's own identical switch, see
-    webapp.app.player_season_sections).
+    (Roster leaderboard, Schedule & results, Injury reports -- see
+    _team_season_sections.html's own header comment for why this used to
+    also include a season-wide "Advanced & usage stats" section and no
+    longer does), as an htmx fragment -- the season dropdown
+    (team_profile.html) hx-gets this instead of the old plain <a> pill row
+    navigating the whole page, so picking a different season re-renders
+    every section in lockstep, in place (mirrors player_profile.html's own
+    identical switch, see webapp.app.player_season_sections).
 
     UNLIKE that player-profile route, this one can be a genuinely COLD
     request: `team_profile()` is cached PER (abbr, season) -- a season the
