@@ -127,17 +127,24 @@
   },
   {
     "adp": 20.9,
-    "name": "Nico Collins",
-    "position": "WR",
-    "team": "HOU",
-    "yahoo_id": "33477"
-  },
-  {
-    "adp": 20.9,
     "name": "Drake London",
     "position": "WR",
     "team": "ATL",
     "yahoo_id": "33963"
+  },
+  {
+    "adp": 20.9,
+    "name": "Brock Bowers",
+    "position": "TE",
+    "team": "LV",
+    "yahoo_id": "40878"
+  },
+  {
+    "adp": 20.9,
+    "name": "Nico Collins",
+    "position": "WR",
+    "team": "HOU",
+    "yahoo_id": "33477"
   },
   {
     "adp": 21.7,
@@ -617,17 +624,17 @@
   },
   {
     "adp": 95.1,
-    "name": "Dalton Kincaid",
-    "position": "TE",
-    "team": "BUF",
-    "yahoo_id": "40048"
-  },
-  {
-    "adp": 95.1,
     "name": "Travis Kelce",
     "position": "TE",
     "team": "KC",
     "yahoo_id": "26686"
+  },
+  {
+    "adp": 95.1,
+    "name": "Dalton Kincaid",
+    "position": "TE",
+    "team": "BUF",
+    "yahoo_id": "40048"
   },
   {
     "adp": 95.7,
@@ -1008,18 +1015,18 @@
     "yahoo_id": "34042"
   },
   {
+    "adp": 124.8,
+    "name": "Baker Mayfield",
+    "position": "QB",
+    "team": "TB",
+    "yahoo_id": "30971"
+  },
+  {
     "adp": 124.9,
     "name": "Dalton Schultz",
     "position": "TE",
     "team": "HOU",
     "yahoo_id": "31107"
-  },
-  {
-    "adp": 124.9,
-    "name": "Baker Mayfield",
-    "position": "QB",
-    "team": "TB",
-    "yahoo_id": "30971"
   },
   {
     "adp": 125.0,
@@ -1254,24 +1261,17 @@
   },
   {
     "adp": 130.1,
-    "name": "Browns",
-    "position": "DEF",
-    "team": "CLE",
-    "yahoo_id": "100005"
-  },
-  {
-    "adp": 130.1,
     "name": "Chris Rodriguez Jr.",
     "position": "RB",
     "team": "JAX",
     "yahoo_id": "40231"
   },
   {
-    "adp": 130.3,
-    "name": "Khalil Shakir",
-    "position": "WR",
-    "team": "BUF",
-    "yahoo_id": "34104"
+    "adp": 130.1,
+    "name": "Browns",
+    "position": "DEF",
+    "team": "CLE",
+    "yahoo_id": "100005"
   },
   {
     "adp": 130.3,
@@ -1282,6 +1282,13 @@
   },
   {
     "adp": 130.3,
+    "name": "Harrison Mevis",
+    "position": "K",
+    "team": "LAR",
+    "yahoo_id": "41312"
+  },
+  {
+    "adp": 130.3,
     "name": "Greg Dulcich",
     "position": "TE",
     "team": "MIA",
@@ -1289,10 +1296,10 @@
   },
   {
     "adp": 130.3,
-    "name": "Harrison Mevis",
-    "position": "K",
-    "team": "LAR",
-    "yahoo_id": "41312"
+    "name": "Khalil Shakir",
+    "position": "WR",
+    "team": "BUF",
+    "yahoo_id": "34104"
   },
   {
     "adp": 130.7,
