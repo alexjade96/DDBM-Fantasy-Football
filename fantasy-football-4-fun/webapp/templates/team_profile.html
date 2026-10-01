@@ -115,7 +115,7 @@
       <thead><tr>
         <th>Season</th><th class="n">W</th><th class="n">L</th><th class="n">T</th>
         <th class="n">PF</th><th class="n">PA</th>
-        <th class="n">PF/G</th><th class="n">PA/G</th><th class="n">Diff</th>
+        <th class="n">PF/G</th><th class="n">PA/G</th>
       </tr></thead>
       <tbody>
       {% for h in season_history %}
@@ -128,9 +128,6 @@
           <td class="n">{{ h.points_against }}</td>
           <td class="n">{{ "%.1f"|format(h.pf_per_game) }}</td>
           <td class="n">{{ "%.1f"|format(h.pa_per_game) }}</td>
-          <td class="n {% if h.point_diff > 0 %}dv-pos{% elif h.point_diff < 0 %}dv-neg{% endif %}">
-            {{- "%+g"|format(h.point_diff) -}}
-          </td>
         </tr>
       {% endfor %}
       </tbody>
