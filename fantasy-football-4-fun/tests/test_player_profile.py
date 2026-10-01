@@ -774,7 +774,7 @@ def test_plot_player_radar_multi_season_legend_sits_below_not_beside():
 
 def test_plot_player_radar_title_and_subtitle_follow_the_selected_season():
     """Title is "Player (POS) (season)" and the subtitle states the data
-    limits ("Compared against N POSs in season") for the FOCUSED season: both
+    limits ("Comparison against N Active POSs") for the FOCUSED season: both
     N and the year change with the selection, and it stays one short line."""
     import matplotlib.pyplot as plt
 
@@ -785,9 +785,9 @@ def test_plot_player_radar_title_and_subtitle_follow_the_selected_season():
         fig = plots.plot_player_radar({"2024": p24, "2025": p25}, focus, "Justice Hill")
         pos = p25["position"]
         assert fig._suptitle.get_text() == f"Justice Hill ({pos}) ({focus})"
-        subs = [t for t in fig.texts if t.get_text().startswith("Compared against")]
+        subs = [t for t in fig.texts if t.get_text().startswith("Comparison against")]
         assert len(subs) == 1
-        assert subs[0].get_text() == f"Compared against {n} {pos}s in {focus}"
+        assert subs[0].get_text() == f"Comparison against {n} Active {pos}s"
         plt.close(fig)
 
 
@@ -926,8 +926,8 @@ def test_plot_player_radar_per_game_marks_subtitle_and_uses_decimals():
     from sleepermetrics import plots
     prof = _scaled_profile("2026", 266.5, 0.0, 422.0)
     fig = plots.plot_player_radar({"2026": prof}, "2026", "Jared Goff", per_game=True)
-    subs = [t.get_text() for t in fig.texts if t.get_text().startswith("Compared against")]
-    assert subs == ["Compared against 70 QBs in 2026 (per game)"]
+    subs = [t.get_text() for t in fig.texts if t.get_text().startswith(("Comparison against", "Per game comparison"))]
+    assert subs == ["Per game comparison against 70 Active QBs"]
     labels = [t.get_text() for t in fig.axes[0].texts if "\n(" in t.get_text()]
     assert labels == ["Pass yds\n(266.5)"]
     plt.close(fig)

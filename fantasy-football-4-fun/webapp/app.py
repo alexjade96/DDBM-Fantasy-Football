@@ -1049,7 +1049,9 @@ CHART_META = {
     "week_matchups": {"cap": "Every game this week: who played whom, and the margin.", "wide": True},
     "week_race": {"cap": "Table position after each week: where lines cross, the lead changed."},
     # Player profile (league-free)
-    "player_radar": {"cap": "Per-game rates at each stat, scaled between the lowest and highest value among real NFL players at the position; other seasons ghosted behind the focused one."},
+    # No caption: the radar card carries only the image (title and subtitle are
+    # drawn inside it); the season/ghost-line hint sits above, on the page.
+    "player_radar": {},
 }
 tpl.env.globals["CHART_META"] = CHART_META
 

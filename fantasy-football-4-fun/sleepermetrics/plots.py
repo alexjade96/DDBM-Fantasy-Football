@@ -4586,7 +4586,8 @@ def plot_player_radar(season_profiles: dict | None, focus_season: str | None,
     # Both follow the selected (focus) season: its own position, field size
     # and year. The rings' linear scale is explained once on the page, not
     # restated on the chart.
-    subtitle = f"Compared against {n} {pos}s in {focus}" + (" (per game)" if per_game else "")
+    subtitle = (("Per game comparison" if per_game else "Comparison")
+                + f" against {n} Active {pos}s")
     fig.suptitle(f"{player_name} ({pos}) ({focus})",
                  fontsize=15, fontweight="bold", color=T["ink"], x=0.5,
                  ha="center", y=0.99)

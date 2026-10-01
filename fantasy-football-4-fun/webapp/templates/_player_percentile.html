@@ -70,7 +70,7 @@
 {% endif %}
 {% endif %}
 {% if percentile_profile %}
-{{ ch.chart("player_radar", player_id=player_id, season_override=season_scope) }}
+{{ ch.chart("player_radar", player_id=player_id, season_override=season_scope, alt="Radar chart of per-game stats against the field") }}
 <div class="tablewrap">
   <table class="dt-games">
     <thead><tr><th>Stat</th><th class="n">Value</th><th class="n">Per game</th><th class="n">Percentile</th><th class="n">Position rank</th></tr></thead>
