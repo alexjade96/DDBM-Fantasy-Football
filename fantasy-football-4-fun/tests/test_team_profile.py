@@ -580,6 +580,8 @@ def test_season_record_computes_win_loss_and_points(monkeypatch):
     assert rec["points_for"] == 24 + 17 + 14 + 20
     assert rec["points_against"] == 20 + 10 + 21 + 20
     assert rec["point_diff"] == rec["points_for"] - rec["points_against"]
+    assert rec["pf_per_game"] == round(75 / 4, 1)  # 18.8
+    assert rec["pa_per_game"] == round(71 / 4, 1)  # 17.8
 
 
 def test_season_record_excludes_unplayed_games(monkeypatch):

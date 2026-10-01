@@ -1573,6 +1573,10 @@ def _season_record(abbr: str, season: str) -> dict | None:
         "season": season, "wins": wins, "losses": losses, "ties": ties,
         "games": len(played), "points_for": pf, "points_against": pa,
         "point_diff": pf - pa,
+        # Per-game rates describe a team better than season sums, which
+        # depend on how many games were played (17 vs 18 vs a live season).
+        "pf_per_game": round(pf / len(played), 1),
+        "pa_per_game": round(pa / len(played), 1),
     }
 
 

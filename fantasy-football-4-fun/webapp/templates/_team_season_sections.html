@@ -1,6 +1,6 @@
 {# Every season-DEPENDENT section on the team-profile page (team_profile.
    html), in one file so it can be re-rendered as a single htmx fragment
-   when the season dropdown changes: Roster leaderboard (season totals),
+   when the season dropdown changes: Roster (season totals),
    Schedule & results (per-game drilldown only), Injury reports. Mirrors
    player_profile.html's own _player_season_sections.html split (same user
    request, applied to this page too) -- picking a season re-renders all
@@ -101,7 +101,7 @@
    a 0-100 scale, not a 0-1 fraction) get 1 decimal, everything else (a
    real counting stat -- games, attempts, yards, TDs, FGM, XPA) is a plain
    integer. #}
-<h2>Roster &middot; {{ current_season }} leaderboard</h2>
+<h2>Roster &middot; {{ current_season }}</h2>
 {% if roster_by_position %}
 {% for grp in roster_by_position %}
 {% set cols = roster_position_columns(grp.position) %}

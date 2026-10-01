@@ -99,30 +99,17 @@
   </label>
   {% endif %}
 
-  {# One shared container for every season-dependent section on this page
-     (Roster, Schedule & results, Injury reports -- see
-     _team_season_sections.html's own header comment) -- the dropdown
-     above targets THIS div, so picking a season re-renders all three in
-     lockstep. "Season history" below stays OUTSIDE it: that table already
-     spans every season at once and was never season-scoped to begin with.
-     webapp.app.team_season_sections() serves the swap -- UNLIKE player_
-     profile.py's cheap in-memory re-filter, team_profile() is cached per
-     (abbr, season), so a season switch here can be a genuinely cold data
-     pull; the shared hx-indicator="#bar" on <body> is this page's only
-     loading feedback for that (see _team_season_sections.html's own
-     header comment for why there's no separate loader fragment). #}
-  <div id="team-season-sections">
-  {% include "_team_season_sections.html" %}
-  </div>
-
-  {# --- multi-season history ---------------------------------------------- #}
+  {# --- multi-season history: sits right under the season picker (user
+       request) since it is the other season-level summary; it stays OUTSIDE
+       #team-season-sections because it spans every season at once. #}
   <h2>Season history</h2>
   {% if season_history %}
   <div class="tablewrap">
     <table class="dt-games">
       <thead><tr>
         <th>Season</th><th class="n">W</th><th class="n">L</th><th class="n">T</th>
-        <th class="n">PF</th><th class="n">PA</th><th class="n">Diff</th>
+        <th class="n">PF</th><th class="n">PA</th>
+        <th class="n">PF/G</th><th class="n">PA/G</th><th class="n">Diff</th>
       </tr></thead>
       <tbody>
       {% for h in season_history %}
@@ -133,6 +120,8 @@
           <td class="n">{{ h.ties }}</td>
           <td class="n">{{ h.points_for }}</td>
           <td class="n">{{ h.points_against }}</td>
+          <td class="n">{{ "%.1f"|format(h.pf_per_game) }}</td>
+          <td class="n">{{ "%.1f"|format(h.pa_per_game) }}</td>
           <td class="n {% if h.point_diff > 0 %}dv-pos{% elif h.point_diff < 0 %}dv-neg{% endif %}">
             {{- "%+g"|format(h.point_diff) -}}
           </td>
@@ -144,6 +133,23 @@
   {% else %}
   <p class="empty">No season history found for {{ abbr }}.</p>
   {% endif %}
+
+  {# One shared container for every season-dependent section on this page
+     (Roster, Schedule & results, Injury reports -- see
+     _team_season_sections.html's own header comment) -- the dropdown
+     above targets THIS div, so picking a season re-renders all three in
+     lockstep. "Season history" (above) stays OUTSIDE it: that table already
+     spans every season at once and was never season-scoped to begin with.
+     webapp.app.team_season_sections() serves the swap -- UNLIKE player_
+     profile.py's cheap in-memory re-filter, team_profile() is cached per
+     (abbr, season), so a season switch here can be a genuinely cold data
+     pull; the shared hx-indicator="#bar" on <body> is this page's only
+     loading feedback for that (see _team_season_sections.html's own
+     header comment for why there's no separate loader fragment). #}
+  <div id="team-season-sections">
+  {% include "_team_season_sections.html" %}
+  </div>
+
 </main>
 </body>
 </html>
