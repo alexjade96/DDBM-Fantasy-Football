@@ -564,6 +564,18 @@ def test_percentile_profile_excludes_fantasy_scoring_columns(monkeypatch):
         assert "rec_yards" in keys
 
 
+def test_percentile_profile_drops_snap_share_for_qbs_only(monkeypatch):
+    """A QB plays essentially every snap, so snap share carries no signal on
+    his radar; every other position keeps it."""
+    from sleepermetrics import nflstats
+    monkeypatch.setattr(nflstats, "player_leaderboard",
+                        lambda *a, **k: _fake_sleeper_wr_board())
+    qb = nflref.percentile_profile("2024", "QB", "1", source="sleeper")
+    wr = nflref.percentile_profile("2024", "WR", "1", source="sleeper")
+    assert "snap_share" not in {c["key"] for c in qb["columns"]}
+    assert "snap_share" in {c["key"] for c in wr["columns"]}
+
+
 def test_percentile_profile_axis_ticks_ascend_for_higher_is_better_stat(monkeypatch):
     """A normal (higher-is-better) stat's ticks rise from the 20th to the
     100th percentile ring, matching "further out on the spoke = better"."""

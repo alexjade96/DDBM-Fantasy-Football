@@ -165,6 +165,32 @@ def test_player_trend_unknown_position_falls_back_to_pts_ppr(monkeypatch):
 _FAKE_AXIS_TICKS = [{"percentile": p, "value": float(p * 2)} for p in (20, 40, 60, 80, 100)]
 
 
+def _plain_texts(ax):
+    """The axes' ordinary texts (spoke names, ring values), without the
+    per-spoke colour-coded value annotations."""
+    from matplotlib.text import Annotation
+    return [t for t in ax.texts if not isinstance(t, Annotation)]
+
+
+def test_plot_player_overlay_snapshot_spoke_values_are_colour_coded_per_player():
+    """Under each spoke name, every player's own value appears in that
+    player's colour: `(v1 | v2)`."""
+    import matplotlib.pyplot as plt
+    from matplotlib.text import Annotation
+
+    from sleepermetrics import plots
+    players = {"Alice": _snapshot_profile(70.0), "Bob": _snapshot_profile(40.0)}
+    players["Bob"]["columns"][0]["value"] = 150.0
+    fig = plots.plot_player_overlay(players, ["fpts_ppr"], mode="snapshot")
+    ax = fig.axes[0]
+    pieces = [t for t in ax.texts if isinstance(t, Annotation)]
+    assert [t.get_text() for t in pieces] == ["(", "180.0", " | ", "150.0", ")"]
+    colors = plots.palette(players.keys())
+    assert pieces[1].get_color() == colors["Alice"]
+    assert pieces[3].get_color() == colors["Bob"]
+    plt.close(fig)
+
+
 def _snapshot_profile(pct):
     return {"columns": [
         {"key": "fpts_ppr", "label": "PPR pts", "value": 180.0, "percentile": pct,
@@ -481,23 +507,24 @@ def test_plot_player_overlay_snapshot_spoke_names_rotate_with_their_own_angle():
     plt.close(fig)
 
 
-def test_plot_player_overlay_snapshot_ticks_are_bold():
-    """Ring value labels are bold (matching the reference chart's own bold
-    ring numbers), not the default/normal font weight."""
+def test_plot_player_overlay_snapshot_ticks_are_not_bold():
+    """Ring value labels are normal weight (bold ones crowded each other near
+    the hub); only the spoke name stays bold."""
     import matplotlib.pyplot as plt
 
     from sleepermetrics import plots
     players = {"Alice's RB1": _snapshot_profile(70.0)}
     fig = plots.plot_player_overlay(players, ["fpts_ppr"], mode="snapshot")
     ax = fig.axes[0]
-    assert all(t.get_fontweight() == "bold" for t in ax.texts)
+    ring_ticks = [t for t in _plain_texts(ax) if t.get_text() != "PPR pts"]
+    assert ring_ticks
+    assert all(t.get_fontweight() == "normal" for t in ring_ticks)
     plt.close(fig)
 
 
 def test_plot_player_overlay_snapshot_ticks_and_spoke_names_are_readably_sized():
-    """Ring value ticks (>= 8pt) and spoke-name labels (>= 10pt, bold) are
-    both sized up from an earlier, harder-to-read pass (6.5pt/9pt normal
-    weight) -- regression guard for the user-requested size increase. Spoke
+    """Ring value ticks (>= 7pt, kept small so inner rings don't collide) and
+    spoke-name labels (>= 10pt, bold) -- size-floor regression guard. Spoke
     names are drawn as plain ax.text() (see _radar_axes -- a real theta tick
     label can't be rotated on this projection), so this looks them up by
     matching text content against the stat key/label rather than via
@@ -508,7 +535,7 @@ def test_plot_player_overlay_snapshot_ticks_and_spoke_names_are_readably_sized()
     players = {"Alice's RB1": _snapshot_profile(70.0)}
     fig = plots.plot_player_overlay(players, ["fpts_ppr"], mode="snapshot")
     ax = fig.axes[0]
-    assert all(t.get_fontsize() >= 8 for t in ax.texts)
+    assert all(t.get_fontsize() >= 7 for t in ax.texts)
     spoke_label = next(t for t in ax.texts if t.get_text() == "PPR pts")
     assert spoke_label.get_fontsize() >= 10
     assert spoke_label.get_fontweight() == "bold"
@@ -612,7 +639,7 @@ def test_plot_player_overlay_snapshot_ticks_va_flips_with_rotation():
     # theta=pi (bottom, gets the upside-down flip). Ring-tick values are
     # numeric text ("40.0", not "stat0", which is the spoke-NAME label drawn
     # at the same theta but a different radius/style -- exclude it).
-    tick_texts = [t for t in ax.texts if not t.get_text().startswith("stat")]
+    tick_texts = [t for t in _plain_texts(ax) if not t.get_text().startswith("stat")]
     top_texts = [t for t in tick_texts if abs(t.get_position()[0] - 0.0) < 1e-9]
     bottom_texts = [t for t in tick_texts
                     if abs(t.get_position()[0] - math.pi) < 1e-9]
@@ -654,7 +681,7 @@ def test_plot_player_overlay_snapshot_no_ticks_for_spoke_missing_axis_ticks():
     }
     fig = plots.plot_player_overlay(players, ["rush_yd"], mode="snapshot")
     ax = fig.axes[0]
-    assert [t.get_text() for t in ax.texts] == ["Rush yds"]
+    assert [t.get_text() for t in _plain_texts(ax)] == ["Rush yds"]
     plt.close(fig)
 
 

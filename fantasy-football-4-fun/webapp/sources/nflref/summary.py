@@ -418,6 +418,8 @@ def percentile_profile(season: str, pos: str, player_id: str,
     for key, label in leaderboard_columns(pos, source=source):
         if key in _RADAR_EXCLUDED_KEYS:
             continue
+        if key == "snap_share" and str(pos).upper() == "QB":
+            continue        # a QB plays essentially every snap: no signal
         if key not in lb.columns:
             continue
         if per_game and key in _EXCLUDED_FROM_PER_GAME:

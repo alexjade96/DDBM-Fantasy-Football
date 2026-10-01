@@ -9,6 +9,7 @@ import matplotlib
 
 matplotlib.use("Agg")
 import matplotlib.colors as mcolors  # noqa: E402
+import matplotlib.patheffects as pe  # noqa: E402
 import matplotlib.pyplot as plt  # noqa: E402
 
 from . import headshots, metrics  # noqa: E402
@@ -4260,7 +4261,7 @@ def _radar_axes(fig, labels: list[str], pizza: bool = False):
             if i % 2:
                 continue        # only shade every OTHER band, starting at the innermost
             r0, r1 = band_edges[i], band_edges[i + 1]
-            ax.fill_between(band_theta, r0, r1, color=T["neutral"], alpha=0.30,
+            ax.fill_between(band_theta, r0, r1, color=T["neutral"], alpha=0.45,
                             zorder=0, linewidth=0)
     else:
         ax.set_yticklabels(["25", "50", "75", "100"], fontsize=7.5, color=T["faint"])
@@ -4360,10 +4361,12 @@ def _draw_pizza_ticks(ax, angles: list[float], keys: list[str], players: dict,
     # ticks' own relative spacing but pulls the outermost ring in from 100,
     # where the rim's spoke-name labels live.
     _TICK_R_SCALE = 0.90
-    tick_style = dict(fontsize=8.5, color=T["faint"], ha="center",
-                      fontweight="bold", zorder=4,
+    # Darker ink (not the faint grey) on a near-opaque pill, so a value stays
+    # legible where a polygon edge or fill passes behind it.
+    tick_style = dict(fontsize=7.5, color=T["ink2"], ha="center",
+                      fontweight="normal", zorder=5,
                       bbox=dict(facecolor=T["bg"], edgecolor="none",
-                                alpha=0.75, pad=0.6))
+                                alpha=0.92, pad=0.8))
     for k_idx, key in enumerate(keys):
         ticks = None
         for prof in players.values():
@@ -4385,6 +4388,59 @@ def _draw_pizza_ticks(ax, angles: list[float], keys: list[str], players: dict,
             ax.text(ang, t["percentile"] * _TICK_R_SCALE,
                     _format_pizza_tick_value(key, t["value"], per_game), rotation=rot,
                     rotation_mode="anchor", va=va, **tick_style)
+
+
+def _draw_spoke_values(ax, angles: list[float], keys: list[str], players: dict,
+                       colors: dict, per_game: bool = False):
+    """A second line under each spoke name on the comparison radar, e.g.
+    `(283 | 301)`, each number in its player's own colour (the profile radar
+    prints `(283)` under the name; this is the several-players version).
+
+    Matplotlib can't colour pieces of one string, so each piece is its own
+    annotation, measured and laid out along the label's rotated baseline in
+    points, on the same anchor (radius 112) as the spoke name and rotated
+    the same way (including the upside-down flip), one line below it."""
+    fig = ax.figure
+    renderer = fig.canvas.get_renderer()
+    size, line_gap = 11, 19      # same size/weight as the spoke name      # pt: value font size, name-to-values spacing
+
+    def width_pt(s: str) -> float:
+        t = ax.text(0, 0, s, fontsize=size)
+        w = t.get_window_extent(renderer).width * 72 / fig.dpi
+        t.remove()
+        return w
+
+    for k_idx, key in enumerate(keys):
+        pieces = [("(", T["ink2"])]
+        for i, (name, prof) in enumerate(players.items()):
+            if not prof:
+                continue
+            col = next((c for c in prof.get("columns", []) if c["key"] == key), None)
+            txt = _format_pizza_tick_value(key, col["value"], per_game) if col else "-"
+            if len(pieces) > 1:
+                pieces.append((" | ", T["ink2"]))
+            pieces.append((txt, colors[name]))
+        pieces.append((")", T["ink2"]))
+        widths = [width_pt(s) for s, _ in pieces]
+        total = sum(widths)
+
+        ang = angles[k_idx]
+        rot = -math.degrees(ang)
+        if 90 < rot % 360 < 270:
+            rot += 180
+        r = math.radians(rot)
+        bx, by = math.cos(r), math.sin(r)          # along the baseline
+        ux, uy = -math.sin(r), math.cos(r)         # the text's "up"
+        pos = -total / 2
+        for (s, color), w in zip(pieces, widths):
+            d = pos + w / 2
+            pos += w
+            ax.annotate(s, xy=(ang, 112), xycoords="data",
+                        xytext=(d * bx - line_gap * ux, d * by - line_gap * uy),
+                        textcoords="offset points", annotation_clip=False,
+                        rotation=rot,
+                        rotation_mode="anchor", ha="center", va="center",
+                        fontsize=size, color=color, fontweight="bold")
 
 
 def _radar_scales(season_profiles: dict, focus_profile: dict, keys: list[str]) -> dict:
@@ -4681,6 +4737,13 @@ def plot_player_overlay(players: dict, stat_keys: list[str], mode: str = "snapsh
         fig = plt.figure(figsize=(9.5, 9.5))
         ax, angles = _radar_axes(fig, labels, pizza=True)
         drawn_names = []
+        # Lighter fills as more players stack (so ring values show through),
+        # a background-coloured halo under each edge, and a distinct marker
+        # per player so overlapping outlines stay separable.
+        n_players = sum(1 for p in players.values() if p)
+        fill_alpha = {1: 0.15, 2: 0.12}.get(n_players, 0.08)
+        markers = ["o", "s", "^", "D", "v", "P"]
+        halo = [pe.withStroke(linewidth=4.5, foreground=T["bg"])]
         for name, prof in players.items():
             if not prof:
                 continue
@@ -4688,8 +4751,11 @@ def plot_player_overlay(players: dict, stat_keys: list[str], mode: str = "snapsh
                       for c in prof.get("columns", [])}
             values = [by_key.get(k, 0) for k in keys]
             vals = values + values[:1]
-            ax.plot(angles, vals, color=colors[name], linewidth=2, label=name)
-            ax.fill(angles, vals, color=colors[name], alpha=0.15)
+            mk = markers[len(drawn_names) % len(markers)]
+            ax.plot(angles, vals, color=colors[name], linewidth=2, label=name,
+                    marker=mk, markersize=5, markeredgecolor=T["bg"],
+                    markeredgewidth=0.8, path_effects=halo, zorder=3)
+            ax.fill(angles, vals, color=colors[name], alpha=fill_alpha)
             drawn_names.append(name)
         if not drawn_names:
             plt.close(fig)
@@ -4701,7 +4767,10 @@ def plot_player_overlay(players: dict, stat_keys: list[str], mode: str = "snapsh
         # Statsbomb/Ted Knutson radar style, rather than a shared 0-100
         # percentile axis with a "value (percentile)" badge floating at every
         # point -- the earlier design here, now superseded.
-        _draw_pizza_ticks(ax, angles, keys, players)
+        _draw_pizza_ticks(ax, angles, keys, players,
+                          per_game=stat_mode == "per_game")
+        _draw_spoke_values(ax, angles, keys, players, colors,
+                           per_game=stat_mode == "per_game")
 
         # No legend: the title names every player directly ("Christian
         # McCaffrey vs Jonathan Taylor") AND each name is drawn in that

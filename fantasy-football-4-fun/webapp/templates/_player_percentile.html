@@ -70,9 +70,10 @@
 {% endif %}
 {% endif %}
 {% if percentile_profile %}
+<div class="grid two">
 {{ ch.chart("player_radar", player_id=player_id, season_override=season_scope, alt="Radar chart of per-game stats against the field") }}
-<div class="tablewrap">
-  <table class="dt-games">
+<div class="card tablewrap">
+  <table class="dt-games" style="width:100%">
     <thead><tr><th>Stat</th><th class="n">Value</th><th class="n">Per game</th><th class="n">Percentile</th><th class="n">Position rank</th></tr></thead>
     <tbody>
     {% for c in percentile_profile.columns %}
@@ -96,6 +97,7 @@
     {% endfor %}
     </tbody>
   </table>
+</div>
 </div>
 <p class="hint">Against {{ percentile_profile.n_population }} real NFL {{ percentile_profile.position }}s that season.</p>
 {% else %}
