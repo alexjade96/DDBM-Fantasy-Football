@@ -142,6 +142,12 @@
         btn.classList.add('on');
         var mode = btn.getAttribute('data-stat-mode');
         imgs.forEach(function (img) {
+          // Show the same shimmer a first load gets while the new PNG renders;
+          // _playercompare_compare.html's fadeInCharts() already listens for
+          // this <img>'s load/error and clears it (or offers a Retry).
+          var fig = img.closest('.card.chart, .compare-header-radar');
+          if (fig) { fig.classList.add('skeleton'); fig.classList.remove('chart-failed'); }
+          img.classList.remove('loaded');
           img.src = img.src.replace(/([?&]stat_mode=)[^&]*/, '$1' + mode);
         });
         // Re-fetch just the table's <tbody> for the new stat_mode -- the
@@ -149,9 +155,13 @@
         // PNGs above, so they need an actual round trip to change (fixes
         // the real bug where the table silently never updated on toggle).
         if (tableBody && window.htmx) {
+          // Dim the old rows until the new ones land, so the pause reads as
+          // loading rather than as a toggle that did nothing.
+          tableBody.style.opacity = '0.45';
+          var done = function () { tableBody.style.opacity = ''; };
           window.htmx.ajax('GET', tableUrl + '&stat_mode=' + mode, {
             target: tableBody, swap: 'innerHTML',
-          });
+          }).then(done, done);
         }
       });
     });

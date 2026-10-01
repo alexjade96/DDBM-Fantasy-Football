@@ -19,8 +19,18 @@
   <link rel="dns-prefetch" href="https://github.com">
   <link rel="dns-prefetch" href="https://objects.githubusercontent.com">
 </head>
-<body>
+<body hx-indicator="#bar">
 {% include "_refresh_banner.html" %}
+  {# Same top progress bar the dashboard has (style.css: #bar.htmx-request).
+     Without it every landing-page request (tab switches, the Load buttons,
+     Compare selected, the header Search) ran with nothing visible happening:
+     the htmx request class had nothing to style. #load-status is the shared
+     elapsed-time pill; the script below shows it only once a request has run
+     past a short delay, so a fast tab switch never flashes it. #}
+  <div id="bar"></div>
+  <div id="load-status" hidden role="status" aria-live="polite">
+    <span class="dot"></span><span id="load-status-text"></span>
+  </div>
   {# The landing page is a loaded-league layout with nothing loaded yet: the
      same .top header (brand + the league lookup), the same .tabs strip, and a
      #panel main pane -- only the pane holds the greeting instead of a league's
@@ -90,6 +100,77 @@
   </footer>
 
   <script>
+    // Elapsed-time pill for any slow landing-page request (the same #load-status
+    // element and copy the dashboard uses). Shown only after SHOW_AFTER_MS so a
+    // fast swap never flashes it; past SLOW_MS the copy explains the wait (a
+    // sleeping host waking up). `notice(text, ms)` is a short message with no
+    // request behind it, used for file downloads (a plain <a download> gives no
+    // feedback until the server starts responding).
+    window.SMLoadStatus = (function () {
+      var SHOW_AFTER_MS = 700, SLOW_MS = 15000;
+      var wrap = document.getElementById('load-status');
+      var textEl = document.getElementById('load-status-text');
+      var active = 0, startedAt = 0, timer = null, showTimer = null, noticeTimer = null;
+      var missed = 0;
+      function reset() {
+        active = 0; missed = 0;
+        clearTimeout(showTimer);
+        clearInterval(timer);
+        timer = null;
+        wrap.hidden = true;
+        wrap.classList.remove('slow');
+      }
+      function tick() {
+        // Self-heal: #bar carries htmx's request class for as long as ANY
+        // request is in flight (body hx-indicator). If it is gone for two
+        // ticks the count has drifted (an event htmx never fired), so drop
+        // the pill instead of leaving it up forever.
+        var bar = document.getElementById('bar');
+        missed = bar && !bar.classList.contains('htmx-request') ? missed + 1 : 0;
+        if (missed >= 2) { reset(); return; }
+        var elapsed = Date.now() - startedAt;
+        var secs = Math.round(elapsed / 1000);
+        wrap.classList.toggle('slow', elapsed >= SLOW_MS);
+        textEl.textContent = elapsed >= SLOW_MS
+          ? 'Still loading (' + secs + 's), the server sleeps when idle and can take a bit to wake up'
+          : 'Loading (' + secs + 's)';
+      }
+      function start() {
+        active++;
+        if (active > 1) return;
+        startedAt = Date.now();
+        showTimer = setTimeout(function () {
+          clearTimeout(noticeTimer);
+          wrap.hidden = false;
+          tick();
+          timer = setInterval(tick, 1000);
+        }, SHOW_AFTER_MS);
+      }
+      function stop() {
+        active = Math.max(0, active - 1);
+        if (active > 0) return;
+        clearTimeout(showTimer);
+        clearInterval(timer);
+        timer = null;
+        wrap.hidden = true;
+        wrap.classList.remove('slow');
+      }
+      function notice(text, ms) {
+        if (active > 0) return;
+        clearTimeout(noticeTimer);
+        textEl.textContent = text;
+        wrap.hidden = false;
+        noticeTimer = setTimeout(function () { if (!active) wrap.hidden = true; }, ms);
+      }
+      document.body.addEventListener('htmx:beforeRequest', start);
+      document.body.addEventListener('htmx:afterRequest', stop);
+      document.addEventListener('click', function (e) {
+        var a = e.target.closest && e.target.closest('a[download]');
+        if (a) notice('Preparing download…', 3500);
+      });
+      return { start: start, stop: stop, notice: notice };
+    })();
+
     // Landing form (#lookup): a single box, auto-detected server-side by
     // /lookup?nav=1 (see app.py's lookup() for what nav=1 means). Submitting
     // fires an htmx.ajax GET there. A LEAGUE match comes back as an

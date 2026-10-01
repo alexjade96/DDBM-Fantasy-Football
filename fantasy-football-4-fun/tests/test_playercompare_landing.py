@@ -770,3 +770,35 @@ def test_chart_player_overlay_no_ids_degrades_without_pick(monkeypatch):
     resp = app.chart("player_overlay", position="RB")
     assert resp.status_code == 200
     assert resp.media_type == "image/png"
+
+
+# -- loading indicators ---------------------------------------------------------
+
+def test_home_has_the_progress_bar_every_request_uses():
+    """The landing page needs #bar plus hx-indicator on the body: the only CSS
+    tied to a request in flight is `#bar.htmx-request`, so without them every
+    tab switch / Load / Compare / Search ran with nothing visible."""
+    from webapp import app
+    body = app.home(_Req(), user="").body.decode()
+    assert '<body hx-indicator="#bar">' in body
+    assert '<div id="bar"></div>' in body
+    assert 'id="load-status"' in body
+
+
+def test_home_elapsed_pill_waits_before_showing_and_self_heals():
+    from webapp import app
+    body = (app.BASE / "templates" / "home.html").read_text(encoding="utf-8")
+    assert "SHOW_AFTER_MS" in body            # a fast swap must not flash it
+    assert "htmx-request" in body             # self-heal keys off the real request class
+    assert "a[download]" in body              # file downloads get a notice too
+
+
+def test_playercompare_toggle_shows_skeleton_and_dims_the_table():
+    """Flipping Total / Per game re-renders the PNGs and the table, so both
+    show a loading state until the new content lands."""
+    from webapp import app
+    body = app.playercompare_chart_section(
+        _Req(), position="RB", season="2024",
+        player_ids="1,2", player_labels="Test RB,Test RB Two").body.decode()
+    assert "classList.add('skeleton')" in body
+    assert "tableBody.style.opacity" in body
