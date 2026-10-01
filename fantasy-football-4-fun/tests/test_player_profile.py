@@ -772,21 +772,46 @@ def test_plot_player_radar_multi_season_legend_sits_below_not_beside():
     plt.close(fig)
 
 
-def test_plot_player_radar_long_subtitle_does_not_overflow_the_figure():
-    """A long subtitle (this function's own, always-present "Each spoke:
-    real stat value..." sentence) must wrap rather than run off a 7in-wide
-    centered figure -- a real, shipped regression once the title/subtitle
-    moved from left-aligned to centered (an unwrapped long line ran off the
-    right edge entirely). Asserts the rendered subtitle text actually
-    contains a newline (i.e. textwrap did wrap it, not a no-op)."""
+def test_plot_player_radar_title_and_subtitle_follow_the_selected_season():
+    """Title is "Player (POS) (season)" and the subtitle states the data
+    limits ("Compared against N POSs in season") for the FOCUSED season: both
+    N and the year change with the selection, and it stays one short line."""
     import matplotlib.pyplot as plt
 
     from sleepermetrics import plots
-    fig = plots.plot_player_radar({"2025": _profile("2025", 72.0)}, "2025", "Justice Hill")
-    subtitle_texts = [t for t in fig.texts if "Each spoke" in t.get_text()]
-    assert len(subtitle_texts) == 1
-    assert "\n" in subtitle_texts[0].get_text()
-    plt.close(fig)
+    p24, p25 = _profile("2024", 40.0), _profile("2025", 72.0)
+    p24["n_population"], p25["n_population"] = 88, 92
+    for focus, n in (("2024", 88), ("2025", 92)):
+        fig = plots.plot_player_radar({"2024": p24, "2025": p25}, focus, "Justice Hill")
+        pos = p25["position"]
+        assert fig._suptitle.get_text() == f"Justice Hill ({pos}) ({focus})"
+        subs = [t for t in fig.texts if t.get_text().startswith("Compared against")]
+        assert len(subs) == 1
+        assert subs[0].get_text() == f"Compared against {n} {pos}s in {focus}"
+        plt.close(fig)
+
+
+def test_plot_player_radar_spoke_labels_carry_the_focused_seasons_value():
+    """Each spoke name has the focused season's own value on a second line
+    ("Rush yds" over "(900)"), and it follows the selection."""
+    import matplotlib.pyplot as plt
+
+    from sleepermetrics import plots
+    p24, p25 = _profile("2024", 40.0), _profile("2025", 72.0)
+    for c in p24["columns"]:
+        c["value"] = 111.0
+    for c in p25["columns"]:
+        c["value"] = 222.0
+    for focus, prof in (("2024", p24), ("2025", p25)):
+        fig = plots.plot_player_radar({"2024": p24, "2025": p25}, focus, "Justice Hill")
+        ax = fig.axes[0]
+        texts = {t.get_text() for t in ax.texts if "\n(" in t.get_text()}
+        # value formatting follows the ring labels (rate stats keep decimals,
+        # share stats print as a percent), so build the expectation the same way
+        want = {c["label"] + "\n(" + plots._format_pizza_tick_value(c["key"], c["value"]) + ")"
+                for c in prof["columns"]}
+        assert texts == want, (texts, want)
+        plt.close(fig)
 
 
 def test_plot_player_radar_defaults_focus_to_most_recent_when_unresolved():
@@ -795,7 +820,7 @@ def test_plot_player_radar_defaults_focus_to_most_recent_when_unresolved():
     from sleepermetrics import plots
     profiles = {"2023": _profile("2023", 40.0), "2025": _profile("2025", 72.0)}
     fig = plots.plot_player_radar(profiles, "2099", "Justice Hill")
-    assert fig._suptitle.get_text().startswith("Justice Hill · 2025")
+    assert fig._suptitle.get_text().endswith("(2025)")
     plt.close(fig)
 
 

@@ -4440,7 +4440,11 @@ def plot_player_radar(season_profiles: dict | None, focus_season: str | None,
 
     cols = focus_profile["columns"]
     keys = [c["key"] for c in cols]
-    labels = [c["label"] for c in cols]
+    # Spoke name with the FOCUSED season's own value underneath, e.g.
+    # "Pass yds" over "(533)": the rings carry the field's scale, this
+    # carries the player's actual number for the selected season.
+    labels = [c["label"] + "\n(" + _format_pizza_tick_value(c["key"], c["value"]) + ")"
+              for c in cols]
 
     earliest, latest = seasons[0], seasons[-1]
 
@@ -4498,23 +4502,15 @@ def plot_player_radar(season_profiles: dict | None, focus_season: str | None,
 
     pos = focus_profile["position"]
     n = focus_profile["n_population"]
-    subtitle = (f"Each spoke: rings step evenly from the lowest to the highest value "
-                f"among {n} real NFL {pos}s that season")
-    if len(seasons) > 1:
-        subtitle += f" · {len(seasons)} seasons shown, {focus} in focus"
-    # Centered on a 7x7in figure, a long single-line subtitle runs off the
-    # canvas edge (a real, shipped regression once the title/subtitle moved
-    # from left-aligned to centered) -- wrap it, same technique _finish()
-    # already uses for its own centered-figure charts. A wrapped (2-line)
-    # subtitle then needs the title pushed up and the subtitle pushed down
-    # from where a single line sat, or the two collide -- same fixed-gap
-    # convention _finish() uses for a multi-line subtitle under its title.
-    wrapped_subtitle = textwrap.fill(subtitle, width=62, break_long_words=False)
-    n_lines = wrapped_subtitle.count("\n") + 1
-    fig.suptitle(f"{player_name} · {focus} percentile profile ({pos})",
-                fontsize=15, fontweight="bold", color=T["ink"], x=0.5, ha="center", y=0.99)
-    fig.text(0.5, 0.965 - (n_lines - 1) * 0.018, wrapped_subtitle, fontsize=9,
-             color=T["muted"], ha="center", va="top")
+    # Both follow the selected (focus) season: its own position, field size
+    # and year. The rings' linear scale is explained once on the page, not
+    # restated on the chart.
+    subtitle = f"Compared against {n} {pos}s in {focus}"
+    fig.suptitle(f"{player_name} ({pos}) ({focus})",
+                 fontsize=15, fontweight="bold", color=T["ink"], x=0.5,
+                 ha="center", y=0.99)
+    fig.text(0.5, 0.945, subtitle, fontsize=10, color=T["muted"],
+             ha="center", va="top")
     fig.patch.set_facecolor(T["bg"])
     fig.tight_layout(rect=(0, 0.04 if len(seasons) > 1 else 0, 1, 0.88))
     return fig
