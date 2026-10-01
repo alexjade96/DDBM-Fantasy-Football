@@ -814,6 +814,67 @@ def test_plot_player_radar_spoke_labels_carry_the_focused_seasons_value():
         plt.close(fig)
 
 
+def _scaled_profile(season, value, lo, hi, higher=True, pct=50.0):
+    """One-column profile carrying the fields percentile_profile now adds."""
+    return {"season": season, "position": "QB", "player_id": "1", "n_population": 70,
+            "columns": [{"key": "pass_yards", "label": "Pass yds", "value": value,
+                         "percentile": pct, "bounds": [lo, hi],
+                         "higher_is_better": higher, "scaled": 50.0,
+                         "axis_ticks": []}]}
+
+
+def test_radar_scales_widen_to_fit_the_players_other_seasons():
+    """The focused season's field gives the bounds; another season of the
+    SAME player outside that range widens them. Nothing else about the
+    profiles changes (percentile/rank stay per-season)."""
+    from sleepermetrics import plots
+    focus = _scaled_profile("2026", 533.0, 0.0, 844.0, pct=90.0)
+    other = _scaled_profile("2025", 4564.0, 0.0, 4707.0, pct=98.9)
+    scales = plots._radar_scales({"2025": other, "2026": focus}, focus, ["pass_yards"])
+    assert scales["pass_yards"]["hi"] == 4564.0       # widened by the 2025 value
+    assert scales["pass_yards"]["lo"] == 0.0
+    # percentile data is untouched
+    assert focus["columns"][0]["percentile"] == 90.0 and other["columns"][0]["percentile"] == 98.9
+
+
+def test_radar_scales_not_widened_when_other_seasons_are_inside_the_range():
+    from sleepermetrics import plots
+    focus = _scaled_profile("2026", 533.0, 0.0, 844.0)
+    other = _scaled_profile("2025", 400.0, 0.0, 700.0)
+    s = plots._radar_scales({"2025": other, "2026": focus}, focus, ["pass_yards"])["pass_yards"]
+    assert (s["lo"], s["hi"]) == (0.0, 844.0)
+
+
+def test_radar_scales_lower_is_better_keeps_best_at_the_rim():
+    from sleepermetrics import plots
+    scale = {"lo": 280.0, "hi": 450.0, "higher": False}
+    assert plots._scale_position(scale, 280.0) == 100.0
+    assert plots._scale_position(scale, 450.0) == 0.0
+    ticks = [t["value"] for t in plots._scale_ticks(scale)]
+    assert ticks == sorted(ticks, reverse=True) and ticks[-1] == 280.0
+
+
+def test_plot_player_radar_ghost_season_is_plotted_by_value_on_the_shared_scale():
+    """A 4,564-yard ghost season must sit on the rings printed for the
+    FOCUS season's (widened) scale -- at the rim -- not at its own season's
+    97% position, and the outer ring label must read the widened maximum."""
+    import matplotlib.pyplot as plt
+
+    from sleepermetrics import plots
+    focus = _scaled_profile("2026", 533.0, 0.0, 844.0, pct=90.0)
+    ghost = _scaled_profile("2025", 4564.0, 0.0, 4707.0, pct=98.9)
+    ghost["columns"][0]["scaled"] = 97.0
+    fig = plots.plot_player_radar({"2025": ghost, "2026": focus}, "2026", "Jared Goff")
+    ax = fig.axes[0]
+    by_label = {l.get_label(): l for l in ax.lines if l.get_label() in ("2025", "2026")}
+    assert by_label["2025"].get_ydata()[0] == pytest.approx(100.0)       # at the rim
+    assert by_label["2026"].get_ydata()[0] == pytest.approx(533.0 / 4564.0 * 100)
+    ring_texts = {t.get_text() for t in ax.texts}
+    assert "4564" in ring_texts          # outer ring = widened max, not 844
+    assert "844" not in ring_texts
+    plt.close(fig)
+
+
 def test_plot_player_radar_defaults_focus_to_most_recent_when_unresolved():
     import matplotlib.pyplot as plt
 

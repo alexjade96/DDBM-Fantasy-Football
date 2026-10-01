@@ -4374,6 +4374,63 @@ def _draw_pizza_ticks(ax, angles: list[float], keys: list[str], players: dict):
                     rotation_mode="anchor", va=va, **tick_style)
 
 
+def _radar_scales(season_profiles: dict, focus_profile: dict, keys: list[str]) -> dict:
+    """Per-spoke linear scale shared by EVERY season on the player-profile
+    radar: `{key: {"lo", "hi", "higher"}}`.
+
+    The bounds start as the FOCUSED season's field range (`bounds` from
+    `percentile_profile`) and are WIDENED to include the same player's value
+    in each other season, so a ghost season that was far larger (or smaller)
+    than the focus field still lands on the printed rings instead of being
+    scaled against its own season's field. ONLY the plotting scale is
+    widened: the percentile, position rank and "N players" shown elsewhere
+    are computed per season against that season's own field and never see
+    these extra values.
+
+    A spoke whose focus column has no `bounds` (a stubbed/older profile, or
+    a field with no range) is omitted; the caller falls back to the profile's
+    own `scaled`/`percentile` for it."""
+    scales = {}
+    for c in focus_profile.get("columns", []):
+        key = c["key"]
+        if key not in keys or not c.get("bounds"):
+            continue
+        lo, hi = c["bounds"]
+        for prof in season_profiles.values():
+            other = next((x for x in (prof or {}).get("columns", [])
+                          if x["key"] == key), None)
+            if other is not None and other.get("value") is not None:
+                lo, hi = min(lo, other["value"]), max(hi, other["value"])
+        scales[key] = {"lo": float(lo), "hi": float(hi),
+                       "higher": bool(c.get("higher_is_better", True))}
+    return scales
+
+
+def _scale_position(scale: dict, value: float) -> float:
+    """0-100 radius of `value` on a `_radar_scales` entry (0 = worst end of
+    the range, 100 = best end; a no-range scale reads 0)."""
+    lo, hi = scale["lo"], scale["hi"]
+    if hi <= lo:
+        return 0.0
+    frac = (value - lo) / (hi - lo) if scale["higher"] else (hi - value) / (hi - lo)
+    return min(max(frac, 0.0), 1.0) * 100
+
+
+def _scale_ticks(scale: dict) -> list[dict]:
+    """The 5 evenly spaced ring values for a `_radar_scales` entry, in the
+    same `[{"percentile": ring, "value": v}, ...]` shape `_draw_pizza_ticks`
+    reads from a profile's `axis_ticks`."""
+    lo, hi = scale["lo"], scale["hi"]
+    if hi <= lo:
+        return []
+    out = []
+    for ring in (20, 40, 60, 80, 100):
+        frac = ring / 100.0
+        v = lo + (hi - lo) * frac if scale["higher"] else hi - (hi - lo) * frac
+        out.append({"percentile": ring, "value": round(float(v), 2)})
+    return out
+
+
 def plot_player_radar(season_profiles: dict | None, focus_season: str | None,
                       player_name: str):
     """Every available season's percentile profile overlaid on one radar,
@@ -4466,10 +4523,18 @@ def plot_player_radar(season_profiles: dict | None, focus_season: str | None,
     # -- the focused polygon's FILL is a second, unlabelled draw afterward
     # so it layers on top without adding a duplicate legend entry.
     focus_vals = None
+    scales = _radar_scales(season_profiles, focus_profile, keys)
     for season in seasons:
         prof = season_profiles.get(season) or {}
-        by_key = {c["key"]: c.get("scaled", c["percentile"])
-                  for c in prof.get("columns", [])}
+        # Plot by VALUE on the shared per-spoke scale (so every season lines
+        # up with the printed rings); a spoke without a scale falls back to
+        # the profile's own scaled/percentile position.
+        by_key = {}
+        for c in prof.get("columns", []):
+            if c["key"] in scales and c.get("value") is not None:
+                by_key[c["key"]] = _scale_position(scales[c["key"]], c["value"])
+            else:
+                by_key[c["key"]] = c.get("scaled", c["percentile"])
         values = [by_key.get(k, 0) for k in keys]
         vals = values + values[:1]
         if season == focus:
@@ -4484,7 +4549,10 @@ def plot_player_radar(season_profiles: dict | None, focus_season: str | None,
     # replaces the old plain "72 (percentile)" point badges: with a real
     # value scale printed on every spoke, a reader no longer needs the point
     # itself annotated to know what it means.
-    _draw_pizza_ticks(ax, angles, keys, {focus: focus_profile})
+    ring_profile = {"columns": [
+        {**c, "axis_ticks": _scale_ticks(scales[c["key"]]) if c["key"] in scales
+         else c.get("axis_ticks")} for c in focus_profile["columns"]]}
+    _draw_pizza_ticks(ax, angles, keys, {focus: ring_profile})
 
     if len(seasons) > 1:
         # Legend BELOW the radar, centered and horizontal -- see the matching

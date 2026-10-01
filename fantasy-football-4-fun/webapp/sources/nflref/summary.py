@@ -394,7 +394,8 @@ def percentile_profile(season: str, pos: str, player_id: str,
 
     Returns `{"season", "position", "player_id", "n_population", "stat_mode",
     "columns": [{"key", "label", "value", "percentile", "rank", "rank_of",
-    "tied", "scaled", "axis_ticks"}, ...]}`, or `None` if this player has no
+    "tied", "scaled", "bounds", "higher_is_better", "axis_ticks"}, ...]}`,
+    or `None` if this player has no
     row in that season's leaderboard (never raises). `rank`/`rank_of`/`tied`
     are the player's position rank (1 = best, ties share the best rank)
     among players with a value for that stat. `scaled` is his 0-100 radius
@@ -441,6 +442,12 @@ def percentile_profile(season: str, pos: str, player_id: str,
                      "rank": rank, "rank_of": int(len(valid)),
                      "tied": bool((valid == value).sum() > 1),
                      "scaled": _scaled_position(series, float(value), higher),
+                     # The field's own [lo, hi] for this stat and its direction,
+                     # so a caller can WIDEN the radar scale (e.g. to fit the
+                     # same player's other seasons) without touching the
+                     # percentile/rank above, which stay per-season.
+                     "bounds": list(_axis_bounds(series) or ()) or None,
+                     "higher_is_better": higher,
                      "axis_ticks": _axis_ticks(series, higher)})
 
     if not cols:

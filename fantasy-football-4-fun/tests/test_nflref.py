@@ -664,6 +664,25 @@ def test_percentile_profile_position_rank_and_ties(monkeypatch):
     assert best["rank"] == 1
 
 
+def test_percentile_profile_exposes_field_bounds_and_direction(monkeypatch):
+    """`bounds` ([lo, hi] of the field) and `higher_is_better` let a caller
+    widen the radar scale without recomputing the field."""
+    from sleepermetrics import nflstats
+    monkeypatch.setattr(nflstats, "player_leaderboard",
+                        lambda *a, **k: _fake_sleeper_wr_board())
+    col = next(c for c in nflref.percentile_profile("2024", "WR", "2", source="sleeper")["columns"]
+               if c["key"] == "rec_yards")
+    assert col["bounds"] == [200.0, 1200.0]
+    assert col["higher_is_better"] is True
+
+    monkeypatch.setattr(nflstats, "player_leaderboard",
+                        lambda *a, **k: _fake_sleeper_def_board())
+    d = next(c for c in nflref.percentile_profile("2024", "DEF", "AAA", source="sleeper")["columns"]
+             if c["key"] == "pts_allow")
+    assert d["bounds"] == [280.0, 450.0]
+    assert d["higher_is_better"] is False
+
+
 def test_axis_ticks_empty_when_field_has_no_range():
     """Every player identical (or no data) -> no scale to draw; the dot sits
     at 0 rather than dividing by zero."""
