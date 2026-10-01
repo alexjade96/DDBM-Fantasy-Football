@@ -379,125 +379,11 @@ def test_extra_metric_maps_never_collide_with_core_metric_maps():
     assert set(sr._METRIC_MAPS) & set(sr._EXTRA_METRIC_MAPS) == set()
 
 
-# --- aggregate_weeks ------------------------------------------------------------
-
-
-def test_aggregate_weeks_sums_across_real_weeks_not_last_row_wins():
-    """Regression guard for a real, live-verified bug: reconcile_metric
-    alone (no aggregate_weeks step) kept only the LAST row it saw per
-    player+source when handed a whole season's rows, so a season 'total'
-    silently became one arbitrary week's number (KC's real case: Mahomes
-    read 189 passing yards, a single week, instead of his real ~3,587-yard
-    season). aggregate_weeks must SUM every week's value, not keep one."""
-    rows_by_source = {
-        "player_stats": [
-            {"player_display_name": "Patrick Mahomes", "week": 1, "attempts": 39, "passing_yards": 258},
-            {"player_display_name": "Patrick Mahomes", "week": 2, "attempts": 29, "passing_yards": 187},
-            {"player_display_name": "Patrick Mahomes", "week": 3, "attempts": 37, "passing_yards": 224},
-        ],
-    }
-    agg, _ = sr.aggregate_weeks(rows_by_source, "passing")
-    row = agg["player_stats"][0]
-    assert row["attempts"] == 105  # 39 + 29 + 37
-    assert row["passing_yards"] == 669  # 258 + 187 + 224
-
-
-def test_aggregate_weeks_drops_week_zero_rows():
-    """ngs_* (and only ngs_*) publishes a pre-aggregated week=0 season-total
-    row alongside real weekly rows -- summing it in doubles the real total.
-    Regression guard for a real, live-verified bug (Mahomes's NGS-summed
-    attempts read 1004, exactly 2x his real 502, before this guard)."""
-    rows_by_source = {
-        "player_stats": [
-            {"player_display_name": "Patrick Mahomes", "week": 0, "attempts": 502},  # should never appear on player_stats in practice, but guard anyway
-            {"player_display_name": "Patrick Mahomes", "week": 1, "attempts": 39},
-            {"player_display_name": "Patrick Mahomes", "week": 2, "attempts": 29},
-        ],
-    }
-    agg, _ = sr.aggregate_weeks(rows_by_source, "passing")
-    assert agg["player_stats"][0]["attempts"] == 68  # 39 + 29, NOT +502
-
-
-def test_aggregate_weeks_excludes_ngs_from_reconciliation_source_set():
-    """NGS is excluded from the season-wide `rows_by_source` output entirely
-    (see _SEASON_EXCLUDED_SOURCES's own docstring: an incomplete-coverage
-    source's season sum isn't a genuine data point to vote on, it's a
-    coverage-gap artifact) -- real pattern this prevents: NGS's season sum
-    reads systematically LOWER than complete sources for nearly every real
-    player purely from missing weeks, which would otherwise flag as
-    'disagreement' on almost every single stat, burying genuine same-game
-    disagreements under false alarms."""
-    rows_by_source = {
-        "player_stats": [
-            {"player_display_name": "Patrick Mahomes", "week": 1, "attempts": 39},
-            {"player_display_name": "Patrick Mahomes", "week": 2, "attempts": 29},
-        ],
-        "ngs_passing": [
-            {"player_display_name": "Patrick Mahomes", "week": 1, "attempts": 39},
-            # week 2 missing entirely -- a real NGS coverage gap
-        ],
-    }
-    agg, _ = sr.aggregate_weeks(rows_by_source, "passing")
-    assert "ngs_passing" not in agg
-    assert "player_stats" in agg
-
-
-def test_aggregate_weeks_returns_ngs_coverage_for_future_analysis():
-    """The excluded NGS data isn't discarded -- it comes back as
-    `ngs_coverage`, per user request ("add a note ... for eventual analysis
-    of actual ngs full-season coverage in the future"): real week count and
-    NGS's own (incomplete) summed value, keyed by player, so a future
-    session can compute a real coverage rate without re-deriving this."""
-    rows_by_source = {
-        "player_stats": [
-            {"player_display_name": "Patrick Mahomes", "week": 1, "attempts": 39},
-            {"player_display_name": "Patrick Mahomes", "week": 2, "attempts": 29},
-        ],
-        "ngs_passing": [
-            {"player_display_name": "Patrick Mahomes", "week": 1, "attempts": 39},
-        ],
-    }
-    _, coverage = sr.aggregate_weeks(rows_by_source, "passing")
-    key = sr._norm_name("Patrick Mahomes")
-    assert key in coverage
-    entry = coverage[key]
-    assert entry["player"] == "Patrick Mahomes"
-    assert entry["ngs_passing_weeks"] == 1
-    assert entry["ngs_passing"]["attempts"] == 39
-
-
-def test_aggregate_weeks_and_reconcile_metric_compose():
-    """The intended pipeline: aggregate_weeks(...)[0] feeds straight into
-    reconcile_metric(...) unchanged, and the composition produces a real
-    season-total reconciled row (not per-game columns bleeding through)."""
-    rows_by_source = {
-        "player_stats": [
-            {"player_display_name": "Patrick Mahomes", "week": 1, "attempts": 39, "completions": 24},
-            {"player_display_name": "Patrick Mahomes", "week": 2, "attempts": 29, "completions": 16},
-        ],
-        "sleeper": [
-            {"player": "Patrick Mahomes", "week": 1, "pass_att": 39.0, "pass_cmp": 24.0},
-            {"player": "Patrick Mahomes", "week": 2, "pass_att": 29.0, "pass_cmp": 16.0},
-        ],
-    }
-    agg, _ = sr.aggregate_weeks(rows_by_source, "passing")
-    out = sr.reconcile_metric(agg, "passing")
-    assert len(out) == 1
-    row = out[0]
-    assert row["attempts"] == 68
-    assert row["attempts_agreed"] is True
-    assert set(row["attempts_sources"]) == {"player_stats", "sleeper"}
-
-
-def test_aggregate_weeks_unknown_metric_returns_empty():
-    assert sr.aggregate_weeks({}, "defense") == ({}, {})
-
-
 # --- reconcile_season ("sum-then-check": reconcile per week, then sum) --------
 
 
 def test_reconcile_season_sums_reconciled_weekly_values_not_raw_source_totals():
-    """The whole point of reconcile_season vs aggregate_weeks: when sources
+    """The whole point of reconcile_season: when sources
     disagree on ONE week, the season total is built from whichever value won
     THAT week's vote, not from summing either source's own raw total. Here
     sleeper disagrees with player_stats on week 2's attempts (30 vs 29);
@@ -547,7 +433,7 @@ def test_reconcile_season_agreed_true_only_when_every_week_was_unanimous():
 
 
 def test_reconcile_season_drops_week_zero_rows():
-    """Same guard aggregate_weeks already has, for the same real reason
+    """Guard against ngs_*'s week-0 rows
     (ngs_*'s own pre-aggregated week-0 season-total row would double the
     real total if summed alongside the real weekly rows)."""
     rows_by_source = {
@@ -562,9 +448,7 @@ def test_reconcile_season_drops_week_zero_rows():
 
 
 def test_reconcile_season_ngs_still_votes_on_weeks_it_covers():
-    """Unlike aggregate_weeks (which excludes NGS from the season-wide
-    SOURCE SET entirely, see _SEASON_EXCLUDED_SOURCES's own docstring),
-    reconcile_season never excludes NGS -- an incomplete-coverage source is
+    """reconcile_season never excludes NGS -- an incomplete-coverage source is
     still a real, valid vote on any INDIVIDUAL week it did cover; it simply
     contributes nothing to weeks it's missing, since reconciliation happens
     per week and a source with no row that week doesn't vote that week. NGS

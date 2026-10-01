@@ -621,8 +621,7 @@ def _attach_pfr_extra(reconciled: list[dict], pfr_rows: list[dict] | None) -> No
             row["_pfr_extra"] = extra
 
 
-def _grouped_metric_stats(role_rows: dict[str, list[dict]],
-                          multi_week: bool = False) -> dict[str, dict]:
+def _grouped_metric_stats(role_rows: dict[str, list[dict]]) -> dict[str, dict]:
     """Build the metric-grouped `stats["passing"/"rushing"/"receiving"]`
     shape from already-role-split rows (`role_rows` keys: "player_stats_
     passing", "ngs_passing", "pfr_pass", "sleeper_passing", ... -- whatever
@@ -644,17 +643,10 @@ def _grouped_metric_stats(role_rows: dict[str, list[dict]],
     dict can differ player to player. Look up display labels via
     `stat_reconcile.SOURCE_LABELS`.
 
-    `multi_week=True` (the season-wide caller) first sums each source's own
-    weekly rows per player via `stat_reconcile.aggregate_weeks` before
-    reconciling -- REQUIRED whenever `role_rows` can hold more than one
-    week's rows per player per source, or `reconcile_metric` (built for the
-    "one row per player per source" per-game case) silently keeps only the
-    LAST week it happens to see, not a season total. Real bug this fixed:
-    KC's season-wide Passing table showed Mahomes at 189 passing yards (one
-    week's number) instead of his real ~4,900-yard season, before this flag
-    existed. `multi_week=False` (the per-game caller) skips the aggregation
-    step entirely -- a single week's rows are already one-per-player, so
-    aggregating would be a harmless no-op paid for nothing, every game.
+    Expects ONE week's rows per player per source (the per-game grain).
+    There is no multi-week mode: the season-wide caller that needed one
+    was removed, and season totals now come from per-week reconciliation
+    (`stat_reconcile.reconcile_season`).
     """
     from webapp import stat_reconcile
 
@@ -667,9 +659,6 @@ def _grouped_metric_stats(role_rows: dict[str, list[dict]],
             hit = role_rows.get(key)
             if hit:
                 rows_by_source[src] = hit
-        ngs_coverage = {}
-        if multi_week:
-            rows_by_source, ngs_coverage = stat_reconcile.aggregate_weeks(rows_by_source, metric)
         reconciled = stat_reconcile.reconcile_metric(rows_by_source, metric)
         entry = {
             "reconciled": reconciled, "sources": sorted(rows_by_source),
@@ -682,24 +671,10 @@ def _grouped_metric_stats(role_rows: dict[str, list[dict]],
             "source_groups": stat_reconcile.stat_source_groups(
                 metric, present=set(rows_by_source)),
         }
-        if ngs_coverage:
-            # Not displayed anywhere yet -- kept for a future NGS
-            # coverage-rate analysis (see aggregate_weeks's own docstring).
-            entry["ngs_coverage"] = ngs_coverage
         pfr_rows = role_rows.get(_PFR_METRIC_DS[metric])
         if pfr_rows:
             entry["pfr"] = pfr_rows
-            # Per-game only: `_attach_pfr_extra` joins PFR's raw rows onto
-            # the reconciled ones by player name assuming ONE row per
-            # player (true at a single game's grain). The season-wide
-            # caller's own `pfr_rows` here is a whole season's UN-SUMMED
-            # weekly rows (several per player), which this join was never
-            # built to aggregate -- see team_profile.html's per-game vs.
-            # season-wide sections; the season-wide one keeps rendering
-            # `entry.pfr` as its own separate table, unchanged, per
-            # standing user direction to leave that section as raw output.
-            if not multi_week:
-                _attach_pfr_extra(reconciled, pfr_rows)
+            _attach_pfr_extra(reconciled, pfr_rows)
         out[metric] = entry
     return out
 
@@ -1965,7 +1940,7 @@ def _season_grouped_stats(team_datasets: dict) -> dict:
     drilldown -- see _team_season_sections.html's own header comment for
     the full breakdown of where everything else went). Trimmed to just
     this one dataset ON PURPOSE: the old version ran the full multi-source
-    reconciliation pipeline (`_grouped_metric_stats(..., multi_week=True)`)
+    reconciliation pipeline (a since-removed multi-week mode of `_grouped_metric_stats`)
     across every rostered player's whole season for output nothing reads
     any more -- confirmed via a full-repo search before trimming (this
     function's only call site is `_build_profile`, and `team_stats_grouped`

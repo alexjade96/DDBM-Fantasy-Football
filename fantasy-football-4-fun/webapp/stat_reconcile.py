@@ -40,19 +40,15 @@ handed to `reconcile_metric()` are already filtered to one team's one game
 by the caller (team_profile.py), so the join pool is a handful of players,
 not a whole league's roster where a name collision would be a real risk.
 
-Two strategies exist for a SEASON total, not one: `aggregate_weeks` (sums
-each SOURCE's own raw weeks first, THEN votes among sources' own season
-sums -- two independent reconciliation passes) and `reconcile_season`
-(votes ONCE, per week, then sums the already-reconciled weekly values --
-"per-week is ground truth, a season total is just arithmetic on top of it";
-see that function's own docstring for the full rationale and how the two
-differ in practice). `aggregate_weeks` has no live caller today (see
-`team_profile._grouped_metric_stats`'s own `multi_week` flag); `reconcile_
-season` is a standalone proof-of-concept, not yet wired into either
-profile page, added as the first step toward a single shared reconciled-
-row builder both team_profile.py and player_profile.py would consume
-(planned, not yet built -- player_profile.py currently does its own
-separate, non-reconciling per-dataset collection, see `_real_nfl_history`).
+A SEASON total is built by `reconcile_season`: vote ONCE per week, then
+sum the already-reconciled weekly values ("per-week is ground truth, a
+season total is just arithmetic on top of it"; see that function's own
+docstring). The per-week grain is what both profile pages consume, via
+`player_week_rows()` (below). An earlier `aggregate_weeks` (sum each
+SOURCE's weeks first, then vote on the season sums) was removed as dead
+code: it could pick a season total that differed from the sum of the
+weekly rows, and its only caller was a season-wide page section that no
+longer exists.
 """
 from __future__ import annotations
 
@@ -429,131 +425,6 @@ def _stat_value(row: dict, key: str):
     return v
 
 
-#: Sources excluded from SEASON-WIDE reconciliation (see `aggregate_weeks`)
-#: because they don't cover every real game -- a season SUM built from an
-#: incomplete source isn't comparable to one built from a complete source,
-#: and including it here would flag "disagreement" on nearly every player's
-#: season total, drowning out genuine same-game disagreements between
-#: sources that ARE both complete. NGS only publishes a row for a player-
-#: week its own tracking system actually covered (verified live and
-#: documented at length elsewhere in this codebase -- see CLAUDE.md's
-#: "NGS is NOT comprehensive" bullet); it stays a full voting source for
-#: PER-GAME reconciliation (`reconcile_metric` called directly, no
-#: `aggregate_weeks` step), where a missing row just means it doesn't vote
-#: that week, which is fine.
-_SEASON_EXCLUDED_SOURCES = {"ngs_passing", "ngs_receiving", "ngs_rushing"}
-
-
-def aggregate_weeks(rows_by_source: dict[str, list[dict]],
-                    metric: str) -> tuple[dict[str, list[dict]], dict]:
-    """Collapse MULTIPLE WEEKS of rows per source into ONE summed row per
-    player per source -- the season-total counterpart to `reconcile_metric`,
-    which itself assumes at most one row per player per source (built for
-    the per-GAME drilldown, where that's true by construction).
-
-    Real bug this fixed: team_profile.py's season-wide "Advanced & usage
-    stats" section hands `reconcile_metric` a WHOLE SEASON's rows per
-    source (17+ weeks, one row per player per week) without this step
-    first -- `reconcile_metric`'s own per-player dict slot keeps only the
-    LAST row it sees for that player+source, so a season "total" silently
-    became whatever ONE WEEK happened to be seen last (verified live: KC's
-    season-wide Passing table showed Mahomes at 189 passing yards, a single
-    week's number, not his real ~4,900-yard season).
-
-    Sums every canonical stat's own source column (see `_METRIC_MAPS`) per
-    player, across every row for that player+source -- NOT a mean, since
-    these are counting stats (a season total is the sum of the weeks, not
-    their average).
-
-    Returns `(rows_by_source, ngs_coverage)`:
-      - `rows_by_source` is the same `{source: [row, ...]}` shape
-        `reconcile_metric` expects, so the two compose:
-        `aggregate_weeks(...)[0]` -> `reconcile_metric(...)`. EXCLUDES
-        `_SEASON_EXCLUDED_SOURCES` (NGS) entirely -- see that set's own
-        docstring for why: an incomplete-coverage source's season sum
-        isn't a genuine data point to vote alongside a complete source's,
-        it's an artifact of missing weeks. Real pattern that prompted this
-        (live-verified, all 4 real teams checked): NGS's season sum for
-        nearly every real player reads systematically LOWER than
-        player_stats/sleeper's, purely from missing weeks -- e.g. Travis
-        Kelce's real 108 targets summed to only 97 on NGS alone, with NO
-        single game actually in dispute.
-      - `ngs_coverage` is `{norm_name: {"player": name, "weeks": N,
-        <stat>: ngs_total, ...}}` for whichever players NGS's EXCLUDED
-        rows covered -- kept, not discarded, specifically so a future
-        session can analyze NGS's real week-by-week coverage rate (what
-        fraction of a player's real games NGS actually published a row
-        for) without re-deriving this aggregation. Not wired into any
-        display yet; a data point for future work, per user request
-        ("add a note ... for eventual analysis of actual ngs full-season
-        coverage in the future").
-
-    A row with `week == 0` is SKIPPED for every source -- a real, verified
-    data shape: the `ngs_*` datasets (and only those; player_stats/pfr_*/
-    sleeper do not) publish their own pre-aggregated SEASON-TOTAL row at
-    week 0 alongside every real weekly row. Summing it in doubled every
-    ngs_* season total before this guard existed (live-verified: Mahomes's
-    season attempts read 1004, exactly 2x his real 502). Now moot for
-    reconciliation itself (NGS is excluded from `rows_by_source` anyway),
-    but still applied when building `ngs_coverage` so THAT figure is also
-    a real weekly sum, not double-counted.
-    """
-    stat_map = _METRIC_MAPS.get(metric)
-    if not stat_map:
-        return {}, {}
-
-    def _sum_source(src: str) -> dict[str, dict]:
-        name_col = _NAME_COL.get(src)
-        cols = {col for src_cols in stat_map.values() for s, col in src_cols.items() if s == src}
-        # norm_name -> {name_col: name, col: total, ...} -- the summed row
-        # keeps THIS source's own name-column key (name_col), not a
-        # hardcoded "player", so reconcile_metric's own _NAME_COL lookup
-        # (built for the raw per-source row shape) still finds the name on
-        # an aggregated row exactly as it would on a raw one. A real bug
-        # this fixed: an earlier version wrote "player" unconditionally,
-        # which only happened to match sleeper's own name_col ("player"),
-        # silently dropping player_stats/ngs_*'s aggregated rows from every
-        # season-wide reconciliation (they use "player_display_name").
-        sums: dict[str, dict] = {}
-        weeks: dict[str, int] = {}
-        for row in rows_by_source.get(src, []) or []:
-            if row.get("week") == 0:
-                continue
-            name = row.get(name_col) if name_col else None
-            if not name:
-                continue
-            key = _norm_name(name)
-            if not key:
-                continue
-            slot = sums.setdefault(key, {name_col: name} if name_col else {})
-            weeks[key] = weeks.get(key, 0) + 1
-            for col in cols:
-                v = _stat_value(row, col)
-                if v is None:
-                    continue
-                slot[col] = slot.get(col, 0) + v
-        for key, slot in sums.items():
-            slot["_weeks"] = weeks.get(key, 0)
-        return sums
-
-    out: dict[str, list[dict]] = {}
-    ngs_coverage: dict[str, dict] = {}
-    for src in METRIC_SOURCES[metric]:
-        sums = _sum_source(src)
-        if not sums:
-            continue
-        if src in _SEASON_EXCLUDED_SOURCES:
-            name_col = _NAME_COL.get(src)
-            for key, slot in sums.items():
-                entry = ngs_coverage.setdefault(key, {"player": slot.get(name_col)})
-                entry[src] = {k: v for k, v in slot.items() if k not in (name_col, "_weeks")}
-                entry[f"{src}_weeks"] = slot["_weeks"]
-            continue
-        out[src] = [{k: v for k, v in slot.items() if k != "_weeks"}
-                    for slot in sums.values()]
-    return out, ngs_coverage
-
-
 def _majority(values: dict[str, float | int]) -> tuple[float | int | None, bool]:
     """`values`: {source: value} for one stat, sources that reported it only.
 
@@ -601,7 +472,7 @@ def _majority(values: dict[str, float | int]) -> tuple[float | int | None, bool]
 
 def _weeks_present(rows_by_source: dict[str, list[dict]]) -> list:
     """Every distinct `week` value across all sources' rows, sorted, week 0
-    excluded (see `aggregate_weeks`'s own docstring for why: ngs_* publishes
+    excluded (ngs_* publishes
     a pre-aggregated season-total row at week 0 alongside its real weekly
     rows -- including it here would double-count a player's season sum on
     top of the real weeks already covering that same production)."""
@@ -620,11 +491,10 @@ def reconcile_season(rows_by_source: dict[str, list[dict]], metric: str,
     truth grain, a season total is just arithmetic on top of numbers
     already trusted.
 
-    This is a DIFFERENT order of operations from `aggregate_weeks` (which
-    sums each SOURCE's own raw weeks first, then votes among sources' own
-    sums -- two independent reconciliation passes, one of which can pick a
-    season total that isn't equal to the sum of what the weekly rows
-    actually say). `reconcile_season` votes exactly ONCE, at the week
+    Summing each SOURCE's own weeks first and voting on the season sums
+    would be two independent reconciliation passes, one of which can pick
+    a season total that isn't equal to the sum of what the weekly rows
+    actually say. `reconcile_season` votes exactly ONCE, at the week
     grain; the season number is guaranteed by construction to equal
     `sum(week's reconciled value for every week)`.
 
@@ -676,8 +546,8 @@ def reconcile_season(rows_by_source: dict[str, list[dict]], metric: str,
         season-only source's own figure and the sum of the reconciled
         weekly values. Empty dict when no season-only rows were passed.
 
-    Unknown `metric` returns `([], {})`, matching `aggregate_weeks`'s own
-    convention for the same case. Works for any metric `_stat_map_for`
+    Unknown `metric` returns `([], {})`, as the other
+    reconcile functions do for the same case. Works for any metric `_stat_map_for`
     resolves (core or extra, see `_ALL_METRIC_MAPS`) -- a single-source
     family (e.g. "defense", "snaps_offense") reconciles trivially (nothing
     to vote on, `agreed` always True) through the identical code path.
