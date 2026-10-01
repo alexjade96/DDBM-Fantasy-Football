@@ -713,8 +713,15 @@ def plot_consistency(s: Season):
     pal = palette(s.team_wk["user_name"])
     fig, ax = plt.subplots(figsize=(9, 6))
     data = [s.team_wk.loc[s.team_wk["user_name"] == n, "points"].values for n in order]
-    bp = ax.boxplot(data, vert=False, patch_artist=True, widths=0.55,
-                    showfliers=False, medianprops=dict(color=T["ink2"]))
+    # `orientation=` replaced the deprecated `vert=` in Matplotlib 3.10;
+    # requirements allow >=3.7, so fall back on older versions.
+    try:
+        bp = ax.boxplot(data, orientation="horizontal", patch_artist=True,
+                        widths=0.55, showfliers=False,
+                        medianprops=dict(color=T["ink2"]))
+    except TypeError:
+        bp = ax.boxplot(data, vert=False, patch_artist=True, widths=0.55,
+                        showfliers=False, medianprops=dict(color=T["ink2"]))
     for patch, n in zip(bp["boxes"], order):
         patch.set_facecolor(pal[n])
         patch.set_alpha(0.5)
