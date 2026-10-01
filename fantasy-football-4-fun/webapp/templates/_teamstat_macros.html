@@ -411,9 +411,9 @@
    splitting by further subsections"). Each player who touched the ball in
    ANY category this game -- a rushing QB, a pass-catching RB, both real
    and common -- gets exactly ONE row, not one row per metric he happened
-   to record; `team_profile._merge_offense_players`/`_merge_defense_players`
-   do that merge in Python, this macro only renders the already-merged
-   shape.
+   to record; `team_profile._offense_players_via_shared`/`_defense_players_
+   via_shared` do that merge in Python, this macro only renders the
+   already-merged shape.
 
    `cols` is a list of `(category, [(key, label), ...])` pairs (e.g.
    `OFF_POSITION_COLS["QB"]`, a Jinja global registered in app.py from
@@ -493,7 +493,7 @@
       {% for p in grp.players %}
         <tr>
           {# `p` always carries both `name` and `position` (see
-             _merge_offense_players/_merge_defense_players's own
+             _offense_players_via_shared/_defense_players_via_shared's own
              docstrings -- position is computed even when the raw source
              row didn't have one), so resolve_row_player_id's name+
              position identity fallback tier can match here even without

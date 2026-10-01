@@ -1081,90 +1081,37 @@ def _position_of(name: str, roster_pos: dict[str, str],
     return snap_pos.get(key) or roster_pos.get(key) or "Other"
 
 
-def _merge_offense_players(stats: dict, roster: list[dict]) -> dict[str, dict]:
-    """STILL LIVE as of 2026-09 -- `team_profile._offense_position_groups`
-    switched to `_offense_players_via_shared` (below), but
-    `player_profile._game_log` calls THIS function directly for its own
-    per-game merge (see that function's own docstring). Not dormant, not
-    safe to delete until `player_profile.py` is migrated too (tracked as
-    Phase 4 in the reconciliation-layer handoff) -- confirmed with the user
-    2026-09 before any deletion, after this cross-module dependency was
-    found.
+def _offense_players_via_shared(role_rows: dict, roster: list[dict]) -> dict[str, dict]:
+    """Adapter: `stat_reconcile.player_week_rows`'s generic per-role output,
+    translated into `{name: {"position":..., "passing": row|None,
+    "rushing": row|None, "receiving": row|None, "snap": row|None,
+    "route": row|None}}` -- one entry per offensive player who appears in
+    ANY of passing/rushing/receiving/offensive-snaps/routes this game, so
+    it can feed `_build_position_groups` (OL-fold, group ordering,
+    per-group name sort). A player active in more than one metric (a QB
+    who rushed, a RB who caught passes -- both real and common, verified
+    live) correctly ends up as ONE entry with more than one sub-key
+    filled, not duplicated across several.
 
-    One entry per offensive player who appears in ANY of passing/
-    rushing/receiving/offensive-snaps/routes this game: `{name: {"position":...,
-    "passing": row|None, "rushing": row|None, "receiving": row|None,
-    "snap": row|None, "route": row|None}}`. A player in more than one
-    metric (a QB who rushed, a RB who caught passes -- both real and
-    common, verified live) correctly ends up as ONE entry with more than
-    one sub-key filled, not duplicated across several -- this is the whole
-    point of the rework.
-
-    `stats["route_participation"]` (see `nflref.route_participation` +
-    `_team_route_rows`) is matched by NORMALISED NAME, not gsis_id, unlike
-    every other join in this module's data layer -- the merge dict here is
-    already keyed by `_norm_name` (every other source's rows carry a plain
-    `player` name column, no id), so joining route rows the same way keeps
-    ONE join convention throughout `_merge_offense_players` rather than
-    mixing name- and id-based lookups inside a single function. A QB never
-    gets a "route" entry (`_OFF_POSITION_COLS["QB"]` has no route category
-    to read it into) even if he happened to be a receiver on a trick play --
-    real but rare enough not to warrant its own display column.
+    LIVE as of 2026-09 -- called by `team_profile._offense_position_groups`
+    (Phase 3) AND `player_profile._game_log` (Phase 4). Verified against
+    the real current-season league for Phase 3 (96 real team-weeks, all 32
+    teams, 0 unexplained mismatches once two real bugs the comparison
+    itself caught were fixed against the former hand-written merge this
+    function replaced -- see `player_week_rows`'s own header comment for
+    the position-resolution ordering fix, and this module's own
+    `_attach_pfr_extra` mirror in `stat_reconcile.py` for the
+    PFR-exclusive-column fix), and again independently for Phase 4
+    (~2,100 real player-weeks across 33 real active players spanning
+    every offense/defense position group, 0 unexplained mismatches). The
+    former hand-written merge function (`_merge_offense_players`) this
+    adapter replaced was deleted 2026-09 once both migrations landed and
+    a repo-wide grep confirmed zero remaining callers.
 
     Kicker stats do NOT go through this merge (a kicker never shares a
     row with a QB/RB/WR/TE metric anyway) -- they replace the
     Special-teams pill's own content directly in `_team_game_detail.html`,
-    see `_KICKER_COLS`/`_sleeper_kicker_rows`."""
-    roster_pos = {_norm_name(r["player"]): r["position"] for r in roster}
-    snap_rows = stats.get("snap_counts_offense") or []
-    snap_pos = {_norm_name(r.get("player")): r.get("position") for r in snap_rows}
-
-    players: dict[str, dict] = {}
-    def slot(name: str) -> dict:
-        key = _norm_name(name)
-        if key not in players:
-            players[key] = {"name": name,
-                            "position": _position_of(name, roster_pos, snap_pos),
-                            "passing": None, "rushing": None,
-                            "receiving": None, "snap": None, "route": None}
-        return players[key]
-
-    for metric in ("passing", "rushing", "receiving"):
-        for row in stats.get(metric, {}).get("reconciled", []) or []:
-            p = slot(row["player"])
-            merged = dict(row)
-            extra = merged.pop("_pfr_extra", None) or {}
-            merged.update(extra)
-            p[metric] = merged
-    for row in snap_rows:
-        p = slot(row.get("player"))
-        p["snap"] = row
-    for row in stats.get("route_participation") or []:
-        p = slot(row.get("name"))
-        p["route"] = row
-    return players
-
-
-def _offense_players_via_shared(role_rows: dict, roster: list[dict]) -> dict[str, dict]:
-    """Adapter: `stat_reconcile.player_week_rows`'s generic per-role output,
-    translated into the EXACT dict shape `_merge_offense_players` (above)
-    already produces (`name`/`position`/`passing`/`rushing`/`receiving`/
-    `snap`/`route`), so it can feed the SAME, UNCHANGED `_build_position_
-    groups` (OL-fold, group ordering, per-group name sort) without touching
-    that grouping logic at all.
-
-    LIVE as of 2026-09 -- called by `team_profile._offense_position_groups`
-    (`player_profile._game_log` still calls `_merge_offense_players`
-    directly, not this adapter -- see that function's own docstring; not
-    yet migrated). Verified equivalent to `_merge_offense_players` across
-    the whole real current-season league (96 real team-weeks, all 32
-    teams, 0 unexplained mismatches once two real bugs the comparison
-    itself caught were fixed -- see `player_week_rows`'s own header
-    comment for the position-resolution ordering fix, and this module's
-    own `_attach_pfr_extra` mirror in `stat_reconcile.py` for the
-    PFR-exclusive-column fix). `_merge_offense_players` itself is left in
-    place, still live via `player_profile.py`, not safe to delete until
-    that module is migrated too.
+    see `_KICKER_COLS`/`_sleeper_kicker_rows`.
 
     `role_rows` is one GAME's rows only (the same per-game slice
     `_attach_week_stats` already builds) -- `player_week_rows` itself is
@@ -1271,53 +1218,6 @@ def _sleeper_position_map(abbr: str) -> dict[str, str]:
         return {}
 
 
-def _merge_defense_players(stats: dict, roster: list[dict], abbr: str = "") -> dict[str, dict]:
-    """STILL LIVE as of 2026-09 -- `team_profile._defense_position_groups`
-    switched to `_defense_players_via_shared` (above), but
-    `player_profile._game_log` calls THIS function directly for its own
-    per-game merge (see that function's own docstring). Not dormant, not
-    safe to delete until `player_profile.py` is migrated too (tracked as
-    Phase 4 in the reconciliation-layer handoff) -- confirmed with the user
-    2026-09 before any deletion, after this cross-module dependency was
-    found.
-
-    Same idea as `_merge_offense_players`, scoped to defense: one entry
-    per player appearing in PFR's defensive stat line OR the defensive
-    snap-share table. `roster` is passed through for signature symmetry
-    with the offense function but UNUSED here -- the Sleeper roster
-    LEADERBOARD only carries fantasy positions (QB/RB/WR/TE/K), never real
-    defensive ones (verified live: zero LB/CB/S/DL values in it).
-
-    Position resolution: `snap_counts_defense`'s own `position` column
-    first (real-game accurate when present), falling back to
-    `_sleeper_position_map(abbr)` (Sleeper's current-roster player pool --
-    see that function's own docstring for the real gap this fallback
-    fixes: a team can have zero snap_counts rows for a whole season), then
-    "Other" if neither resolves (a genuinely unmappable name, not expected
-    in practice with both sources tried)."""
-    snap_rows = stats.get("snap_counts_defense") or []
-    snap_pos = {_norm_name(r.get("player")): r.get("position") for r in snap_rows}
-    fallback_pos = _sleeper_position_map(abbr) if abbr else {}
-
-    by_player: dict[str, dict] = {}
-    def slot(name: str) -> dict:
-        key = _norm_name(name)
-        if key not in by_player:
-            raw_pos = snap_pos.get(key) or fallback_pos.get(key) or "Other"
-            by_player[key] = {"name": name,
-                              "position": _DEF_GROUP_OF.get(raw_pos, "Other"),
-                              "pfr_def": None, "snap": None}
-        return by_player[key]
-
-    for row in stats.get("pfr_def") or []:
-        p = slot(row.get("pfr_player_name"))
-        p["pfr_def"] = row
-    for row in snap_rows:
-        p = slot(row.get("player"))
-        p["snap"] = row
-    return by_player
-
-
 def _build_position_groups(players: dict[str, dict], group_order: tuple[str, ...],
                            group_of: dict[str, str] | None = None) -> list[dict]:
     """Bucket `players` (from `_offense_players_via_shared`/
@@ -1357,8 +1257,9 @@ def _offense_position_groups(stats: dict, roster: list[dict],
 
     2026-09: built on `_offense_players_via_shared` (the shared
     `stat_reconcile.player_week_rows` assembler, adapted to this exact
-    shape) -- verified equivalent to `_merge_offense_players` (still live
-    via `player_profile.py`, see that function's own docstring) across
+    shape) -- verified equivalent to the former hand-written merge it
+    replaced (`_merge_offense_players`, since deleted; see
+    `_offense_players_via_shared`'s own docstring) across
     the whole real current-season league (96 real
     team-weeks, all 32 teams, 0 unexplained mismatches after fixing two
     real bugs the comparison itself caught: PFR-exclusive columns weren't

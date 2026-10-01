@@ -673,8 +673,11 @@ def test_player_week_rows_merges_multiple_roles_onto_one_player_row():
     """The core point of this function: a QB with real passing AND rushing
     activity the same week ends up as ONE row with both roles filled, not
     two separate rows the caller has to stitch back together -- mirrors
-    team_profile._merge_offense_players's existing real behavior for
-    exactly this case (a rushing QB), generalized across every family."""
+    the real behavior team_profile.py's own per-game merge (originally
+    the hand-written _merge_offense_players, since replaced by the
+    _offense_players_via_shared adapter over this function, and deleted)
+    already had for exactly this case (a rushing QB), generalized across
+    every family."""
     role_rows = {
         "player_stats_passing": [
             {"player_display_name": "Jared Goff", "week": 1, "attempts": 39, "passing_yards": 206},
@@ -828,8 +831,9 @@ def test_player_week_rows_attaches_pfr_extra_onto_passing_row():
     player_week_rows never did this at all, silently dropping every real
     PFR-exclusive column (pressure/sack/blitz counts, bad-throw rate) from
     every merged passing row. Found by comparing this function's real
-    output against team_profile._merge_offense_players's existing live
-    output on real 2026 DET data."""
+    output against team_profile._merge_offense_players's then-live output
+    (that function has since been replaced and deleted, see this module's
+    own header comment) on real 2026 DET data."""
     role_rows = {
         "player_stats_passing": [
             {"player_display_name": "Jared Goff", "week": 1, "attempts": 39},

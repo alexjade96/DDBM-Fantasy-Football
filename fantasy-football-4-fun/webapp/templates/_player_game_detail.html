@@ -12,12 +12,12 @@
    `game` is one entry from `webapp.player_profile._game_log` --
    `{"season","week","position","merged_row","raw_by_category",
    "route_summary","route_unavailable"}`. `merged_row` is the SAME shape
-   `team_profile._merge_offense_players`/`_merge_defense_players` produce
-   for this exact player+game on the team page's own drilldown (same
-   reconciliation code, just called for one player instead of a whole
-   team) -- rendered through the identical `position_group_table` macro so
-   the two pages show byte-identical numbers/columns/flyouts for the same
-   game. `raw_by_category` groups the SAME raw, unreconciled per-source
+   `team_profile._offense_players_via_shared`/`_defense_players_via_shared`
+   produce for this exact player+game on the team page's own drilldown
+   (same shared reconciliation layer, just called for one player instead
+   of a whole team) -- rendered through the identical `position_group_table`
+   macro so the two pages show byte-identical numbers/columns/flyouts for
+   the same game. `raw_by_category` groups the SAME raw, unreconciled per-source
    rows the page's own "Advanced & usage stats" section shows in full
    elsewhere (renamed from "Real-NFL history" to match team_profile.
    html's identical section, 2026-09, user request), just scoped to this

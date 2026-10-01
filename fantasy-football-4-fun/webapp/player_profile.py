@@ -615,7 +615,7 @@ def _week_rows(rows: list[dict], season: str, week: int) -> list[dict]:
     _clean_records`, which every row team_profile.py's own reconciliation
     pipeline flows through -- so a row reaching THIS module's reconciliation
     functions for the first time here would otherwise carry a raw NaN
-    straight into `stat_reconcile`/`_merge_offense_players`'s output,
+    straight into `stat_reconcile`/`_offense_players_via_shared`'s output,
     confirmed live: PFR's `pfr_rec` rows carry `rushing_broken_tackles` as
     NaN for a receiver with no rushing PFR line that game, which
     `_attach_pfr_extra` flattens verbatim with no `is not None` guard of its
@@ -765,21 +765,35 @@ def _player_route_weeks(gsis_id: str | None,
 
 def _game_log(identity: dict, real_nfl: dict, seasons: list[str]) -> list[dict]:
     """One entry per week this player has real box-score data for, each a
-    RECONCILED summary row -- the exact same shape/values
-    `team_profile._merge_offense_players`/`_merge_defense_players` already
-    produce for this player on the team page's own per-game drilldown,
-    reused here unmodified (see this module's own header: same source data,
-    same reconciliation code, just called for one player instead of one
-    team). This is the player page's new primary per-game view; the
-    existing flat `real_nfl` raw tables stay exactly as they are (see
-    `_build_profile`), now also grouped per-game/per-category as
-    `raw_by_category` on each entry here for the page's expandable detail.
+    RECONCILED summary row -- the SAME shape/values
+    `team_profile._offense_players_via_shared`/`_defense_players_via_shared`
+    produce for this player on the team page's own per-game drilldown
+    (2026-09, Phase 4 of the reconciliation-layer migration: switched from
+    calling `team_profile`'s own former hand-written merge functions
+    directly to calling these shared-layer adapters instead -- those
+    functions (`_merge_offense_players`/`_merge_defense_players`) are now
+    deleted; see `_offense_players_via_shared`'s own docstring for the
+    migration history. Verified equivalent (zero numeric mismatches)
+    across ~2,100 real player-weeks for 33 real active players spanning
+    every position group, including the real edge cases a rushing QB and
+    a receiving RB exercise. This is a genuine, accepted behavior change:
+    a merged row now carries the same `_sources`/`_agreed` reconciliation
+    metadata team_profile.py's own per-game cells do, where before it
+    carried none -- `_log_stat_values`/`source_stat_table` read plain
+    values off `merged_row` either way, so nothing in THIS module needed
+    to change to pick it up; only the raw `real_nfl` tables below stay
+    genuinely unreconciled, unaffected by this switch). This is the
+    player page's primary per-game view; the existing flat `real_nfl` raw
+    tables stay exactly as they are (see `_build_profile`), now also
+    grouped per-game/per-category as `raw_by_category` on each entry here
+    for the page's expandable detail.
 
     A defensive player (position in `team_profile._DEF_GROUP_OF`'s target
-    set, i.e. resolves to DL/LB/DB) goes through `_merge_defense_players`
-    instead -- PFR is defense's only source (see `stat_reconcile`'s own
-    docstring: "Defense ... have no second source at all"), so there is no
-    reconciliation step for a defensive player's game log, only the merge.
+    set, i.e. resolves to DL/LB/DB) goes through `_defense_players_via_
+    shared` instead -- PFR is defense's only source (see `stat_reconcile`'s
+    own docstring: "Defense ... have no second source at all"), so there is
+    no reconciliation step for a defensive player's game log, only the
+    merge.
     """
     from webapp import team_profile as tp
 
@@ -828,15 +842,10 @@ def _game_log(identity: dict, real_nfl: dict, seasons: list[str]) -> list[dict]:
             role_rows["route_participation"] = route_hit
 
         if is_defense:
-            stats = {"pfr_def": role_rows.get("pfr_def") or [],
-                     "snap_counts_defense": role_rows.get("snap_counts_defense") or []}
-            players = tp._merge_defense_players(stats, [], abbr="")
+            players = tp._defense_players_via_shared(role_rows, abbr="")
         else:
-            stats = tp._grouped_metric_stats(role_rows)
-            stats["snap_counts_offense"] = role_rows.get("snap_counts_offense") or []
-            stats["route_participation"] = role_rows.get("route_participation") or []
-            players = tp._merge_offense_players(
-                stats, [{"player": name, "position": position}] if position else [])
+            players = tp._offense_players_via_shared(
+                role_rows, [{"player": name, "position": position}] if position else [])
         merged_row = players.get(tp._norm_name(name))
         if not merged_row:
             continue

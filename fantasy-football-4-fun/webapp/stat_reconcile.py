@@ -843,11 +843,14 @@ def reconcile_metric(rows_by_source: dict[str, list[dict]], metric: str) -> list
 # defense/snaps/routes/kicking onto ONE dict per real player per real week,
 # rather than one table per metric family (what `reconcile_metric` alone
 # still returns). `team_profile._merge_offense_players`/`_merge_defense_
-# players` already do a version of this idea today, but hand-written per
-# page and limited to their own 5 offense / 2 defense sub-keys; this
-# generalizes it to every family at once, driven by `_PLAYER_ROLE_METRICS`
-# (data), so a new metric family needs a new map entry here, not a new
-# merge function.
+# players` (hand-written, page-specific, limited to their own 5 offense /
+# 2 defense sub-keys) already did a version of this idea when this module
+# was built; both have since been replaced by the adapters this module's
+# output feeds (`_offense_players_via_shared`/`_defense_players_via_
+# shared`) and deleted entirely (2026-09, zero remaining callers). This
+# generalizes the idea to every family at once, driven by
+# `_PLAYER_ROLE_METRICS` (data), so a new metric family needs a new map
+# entry here, not a new merge function.
 #
 # A team-level row (Sleeper's own `defense_team` family -- see
 # `_EXTRA_METRIC_MAPS["defense_team"]`'s own comment: no individual player
@@ -873,9 +876,11 @@ _PLAYER_ROLE_METRICS = {
 #: position column at all; confirmed live against pfr_def's real columns.
 #: `snap_counts_defense`, a SEPARATE role_rows key from defense's own
 #: metric sources, is the real position source there, matching
-#: `team_profile._merge_defense_players`'s existing real logic. `None`
-#: means this role's own data never carries position at all, and a
-#: caller-supplied `position_of` fallback is the only way to fill it.
+#: `team_profile._defense_players_via_shared`'s real resolution logic
+#: (originally matched the former `_merge_defense_players`, since
+#: deleted). `None` means this role's own data never carries position at
+#: all, and a caller-supplied `position_of` fallback is the only way to
+#: fill it.
 _ROLE_POSITION_KEY = {
     "passing": None, "rushing": None, "receiving": None,
     "defense": "snap_counts_defense", "snap_offense": "snap_counts_offense",

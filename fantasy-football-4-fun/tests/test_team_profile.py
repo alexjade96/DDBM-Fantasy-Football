@@ -1198,10 +1198,10 @@ def test_teamstat_macros_shared_file_renders_identically_to_inline_original():
     the Defense pill's position_group_table -> pfr_def columns), the
     surviving real path for this exact data. A matching snap_counts row
     (carrying `position`) is required alongside pfr_def -- pfr_def rows
-    have no position of their own, and _merge_defense_players groups an
-    unresolvable player under "Other", which DEF_COLS (position_group_
-    table's cols_by_group) has no entry for, so nothing would render
-    without it -- same real resolution path _merge_defense_players'
+    have no position of their own, and `_defense_players_via_shared`
+    groups an unresolvable player under "Other", which DEF_COLS
+    (position_group_table's cols_by_group) has no entry for, so nothing
+    would render without it -- same real resolution path that adapter's
     own docstring describes. `def_passer_rating_allowed` ("Rtg allowed")
     carries the rounding-worthy float here, not `missed_tackle_pct` (a
     real key from the ORIGINAL version of this test) -- _DEF_PLAYER_COLS
@@ -1271,21 +1271,26 @@ def test_team_profile_reconciled_table_renders_flyout_on_every_cell():
     assert 'title="Sources disagree' not in detail
 
 
-# --- _offense_players_via_shared / _defense_players_via_shared (Phase 3: -----
-# --- adapters over stat_reconcile.player_week_rows, not yet wired into ------
-# --- _attach_week_stats's live call site -- see this module's own header ---
-# --- comment on both functions for the comparison-before-switch rationale) --
+# --- _offense_players_via_shared / _defense_players_via_shared --------------
+# --- (shared-layer adapters over stat_reconcile.player_week_rows; LIVE on ---
+# --- both team_profile.py's own call sites AND player_profile._game_log). --
+# --- The former hand-written merge functions these adapters replaced ------
+# --- (_merge_offense_players/_merge_defense_players) were verified ----------
+# --- equivalent to them (real 2026 league data, 96 team-weeks for Phase 3, --
+# --- ~2,100 real player-weeks for Phase 4, 0 unexplained mismatches either --
+# --- time) and then DELETED once both migrations landed and a repo-wide ----
+# --- grep confirmed zero remaining callers -- see this module's own ---------
+# --- _offense_players_via_shared docstring for the full history. The tests -
+# --- below used to compare live against those functions; now pinned to -----
+# --- their expected values directly instead. ---------------------------------
 
 
-def test_offense_players_via_shared_matches_merge_offense_players_shape():
-    """Direct shape parity check against the EXISTING, live
-    _merge_offense_players -- confirms the adapter produces the identical
-    dict shape (name/position/passing/rushing/receiving/snap/route) for a
-    simple single-metric case, independent of the broader real-data
-    comparison this migration was verified against (real 2026 league data,
-    96 team-weeks, 0 unexplained mismatches after two real bugs -- PFR
-    extra attachment, position-resolution ordering -- were found and
-    fixed)."""
+def test_offense_players_via_shared_shape_pinned():
+    """Pinned-shape regression test for a simple single-metric case
+    (name/position/passing/rushing/receiving/snap/route) -- originally a
+    direct shape-parity comparison against the former
+    `_merge_offense_players`, now pinned since that function is deleted
+    (see this module's own header comment above)."""
     role_rows = {
         "player_stats_passing": [
             {"player_display_name": "Jared Goff", "week": 1, "attempts": 39},
@@ -1294,31 +1299,22 @@ def test_offense_players_via_shared_matches_merge_offense_players_shape():
             {"player": "Jared Goff", "week": 1, "position": "QB", "offense_snaps": 65},
         ],
     }
-    stats = {
-        "passing": {"reconciled": [
-            {"player": "Jared Goff", "attempts": 39, "attempts_agreed": True,
-             "attempts_sources": {"player_stats": 39}},
-        ]},
-        "snap_counts_offense": role_rows["snap_counts_offense"],
-    }
     roster = [{"player": "Jared Goff", "position": "QB"}]
 
-    old = tp._merge_offense_players(stats, roster)
     new = tp._offense_players_via_shared(role_rows, roster)
-
     k = tp._norm_name("Jared Goff")
-    assert set(old[k]) == set(new[k])
-    assert old[k]["name"] == new[k]["name"]
-    assert old[k]["position"] == new[k]["position"]
-    assert old[k]["passing"]["attempts"] == new[k]["passing"]["attempts"]
+    assert set(new[k]) == {"name", "position", "passing", "rushing", "receiving", "snap", "route"}
+    assert new[k]["name"] == "Jared Goff"
+    assert new[k]["position"] == "QB"
+    assert new[k]["passing"]["attempts"] == 39
 
 
 def test_offense_players_via_shared_excludes_non_offense_players():
     """A player with only defense/kicking role_rows entries (never a real
     case for the SAME player in this app's own data model, but exercised
     directly here) must not appear in the offense adapter's output --
-    mirrors _merge_offense_players's own implicit scope, which never even
-    reads defense/kicking role_rows keys."""
+    mirrors the former `_merge_offense_players`'s own implicit scope,
+    which never even read defense/kicking role_rows keys."""
     role_rows = {
         "pfr_def": [{"pfr_player_name": "Aidan Hutchinson", "week": 1, "def_sacks": 2.0}],
     }
@@ -1326,7 +1322,11 @@ def test_offense_players_via_shared_excludes_non_offense_players():
     assert out == {}
 
 
-def test_defense_players_via_shared_matches_merge_defense_players_shape():
+def test_defense_players_via_shared_shape_pinned():
+    """Pinned-shape regression test for the defense adapter -- originally
+    a direct shape-parity comparison against the former
+    `_merge_defense_players`, now pinned since that function is deleted
+    (see this module's own header comment above)."""
     role_rows = {
         "pfr_def": [
             {"pfr_player_name": "Aidan Hutchinson", "week": 1, "def_sacks": 2.0},
@@ -1335,18 +1335,11 @@ def test_defense_players_via_shared_matches_merge_defense_players_shape():
             {"player": "Aidan Hutchinson", "week": 1, "position": "DE", "defense_snaps": 50},
         ],
     }
-    stats = {
-        "pfr_def": role_rows["pfr_def"],
-        "snap_counts_defense": role_rows["snap_counts_defense"],
-    }
 
-    old = tp._merge_defense_players(stats, [], "DET")
     new = tp._defense_players_via_shared(role_rows, "DET")
-
     k = tp._norm_name("Aidan Hutchinson")
-    assert set(old[k]) == set(new[k])
-    assert old[k]["position"] == new[k]["position"] == "DL"  # DE folds to DL via _DEF_GROUP_OF
-    assert old[k]["pfr_def"]["def_sacks"] == new[k]["pfr_def"]["def_sacks"]
+    assert new[k]["position"] == "DL"  # DE folds to DL via _DEF_GROUP_OF
+    assert new[k]["pfr_def"]["def_sacks"] == 2.0
 
 
 def test_defense_players_via_shared_falls_back_to_sleeper_position_map():

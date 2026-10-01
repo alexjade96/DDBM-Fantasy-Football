@@ -223,6 +223,159 @@ def test_adp_history_skips_seasons_with_no_match(monkeypatch):
     assert pp._adp_history("5995", ["2025"]) == []
 
 
+# --- _game_log -----------------------------------------------------------
+#
+# 2026-09 (Phase 4): _game_log switched from calling team_profile's own
+# former hand-written merge functions directly to calling the shared
+# reconciliation layer's _offense_players_via_shared/
+# _defense_players_via_shared adapters instead -- see _game_log's own
+# docstring. Verified equivalent (zero numeric mismatches) across ~2,100
+# real player-weeks for 33 real active players (QB/WR/TE and 10 real
+# defenders) before this switch landed; these tests are the committed
+# regression coverage for that switch, not a replacement for that
+# real-data sweep. The former functions themselves (_merge_offense_
+# players/_merge_defense_players) were DELETED once this migration landed
+# and a repo-wide grep confirmed zero remaining callers anywhere.
+
+def _route_weeks_stub(monkeypatch):
+    """`_player_route_weeks` imports `webapp.sources.nflref.board` directly
+    (not through `_real_nfl_history`'s own mockable seam) -- stub it to
+    `([], set())` so these tests don't need a real/fake route dataset."""
+    monkeypatch.setattr(pp, "_player_route_weeks", lambda gsis_id, seasons: ([], set()))
+
+
+def test_game_log_offense_player_uses_shared_reconciliation(monkeypatch):
+    """An offensive player's merged row now carries real `_sources`/
+    `_agreed` reconciliation metadata (the real, accepted behavior change
+    this migration introduces) -- confirms `_game_log` is actually calling
+    `team_profile._offense_players_via_shared`, not the old direct
+    `_merge_offense_players` call, which never attached this metadata."""
+    _route_weeks_stub(monkeypatch)
+    monkeypatch.setattr(pp, "_sleeper_player_weeks", lambda *a, **k: [])
+
+    identity = {"player_id": "1", "gsis_id": "00-0000001",
+               "player_name": "Test Back", "position": "RB", "team": "SF"}
+    real_nfl = {
+        "player_stats": {"rows": [
+            {"season": "2025", "week": 1, "player_id": "00-0000001",
+             "player_display_name": "Test Back", "position": "RB",
+             "recent_team": "SF", "attempts": 0, "carries": 12,
+             "rushing_yards": 60, "rushing_tds": 1, "targets": 0,
+             "receptions": 0, "receiving_yards": 0, "receiving_tds": 0},
+        ], "best_effort": False},
+        "ngs_rushing": {"rows": [
+            {"season": "2025", "week": 1, "player_gsis_id": "00-0000001",
+             "player_display_name": "Test Back", "rush_attempts": 12,
+             "rush_yards": 60, "rush_touchdowns": 1},
+        ], "best_effort": False},
+    }
+
+    out = pp._game_log(identity, real_nfl, ["2025"])
+    assert len(out) == 1
+    row = out[0]["merged_row"]
+    rushing = row.get("rushing") or {}
+    assert rushing.get("rushing_yards") == 60
+    # The real behavior change: reconciliation metadata now present.
+    assert rushing.get("rushing_yards_agreed") is True
+    assert "player_stats" in (rushing.get("rushing_yards_sources") or {})
+    assert "ngs_rushing" in (rushing.get("rushing_yards_sources") or {})
+
+
+def test_game_log_defense_player_uses_shared_reconciliation(monkeypatch):
+    """A defensive player routes through `_defense_players_via_shared`
+    (PFR is defense's only source, so `_agreed` is always True there --
+    see that adapter's own docstring) -- confirms the defense branch was
+    migrated too, not just the offense one."""
+    _route_weeks_stub(monkeypatch)
+    monkeypatch.setattr(pp, "_sleeper_player_weeks", lambda *a, **k: [])
+
+    identity = {"player_id": "2", "gsis_id": None,
+               "player_name": "Test Backer", "position": "LB", "team": "SF"}
+    real_nfl = {
+        "pfr_def": {"rows": [
+            {"season": "2025", "week": 1, "game_type": "REG", "team": "SF",
+             "opponent": "DAL", "pfr_player_name": "Test Backer",
+             "pfr_player_id": "TestB00", "def_sacks": 1.0,
+             "def_tackles_combined": 9.0, "def_ints": 0.0},
+        ], "best_effort": True},
+    }
+
+    out = pp._game_log(identity, real_nfl, ["2025"])
+    assert len(out) == 1
+    row = out[0]["merged_row"]
+    defense = row.get("pfr_def") or {}
+    assert defense.get("def_sacks") == 1.0
+    assert defense.get("def_tackles_combined") == 9.0
+    assert defense.get("def_sacks_agreed") is True
+    assert defense.get("def_sacks_sources") == {"pfr_def": 1.0}
+
+
+def test_game_log_offense_reconciled_values_pinned(monkeypatch):
+    """Pinned-value regression test for `_offense_players_via_shared`'s
+    output on a realistic multi-source offensive week (the shared-layer
+    adapter `_game_log` now calls). Originally written as a direct
+    equivalence check against the former hand-written
+    `_merge_offense_players` (the same comparison the real-data sweep ran
+    across ~2,100 real player-weeks before this migration landed); that
+    function is now deleted, so the expected values are pinned here
+    directly instead of compared live against it."""
+    from webapp import team_profile as tp
+
+    role_rows = {
+        "player_stats_rushing": [
+            {"player_display_name": "Test Back", "season": "2025", "week": 1,
+             "team": "SF", "carries": 12, "rushing_yards": 60, "rushing_tds": 1},
+        ],
+        "ngs_rushing": [
+            {"player_display_name": "Test Back", "season": "2025", "week": 1,
+             "rush_attempts": 12, "rush_yards": 60, "rush_touchdowns": 1},
+        ],
+        "snap_counts_offense": [
+            {"player": "Test Back", "season": "2025", "week": 1,
+             "team": "SF", "position": "RB", "offense_pct": 0.8},
+        ],
+    }
+    roster = [{"player": "Test Back", "position": "RB"}]
+
+    row = tp._offense_players_via_shared(role_rows, roster)["test back"]
+    rushing = row["rushing"]
+    assert rushing["rushing_yards"] == 60
+    assert rushing["carries"] == 12
+    assert rushing["rushing_tds"] == 1
+    assert rushing["rushing_yards_agreed"] is True
+    assert row["position"] == "RB"
+
+
+def test_game_log_offense_and_defense_both_resolve_via_shared_adapters(monkeypatch):
+    """Smoke test confirming `_game_log` produces a real merged row for
+    both an offensive and a defensive player, via the shared-layer
+    adapters (`_offense_players_via_shared`/`_defense_players_via_shared`)
+    -- not asserting the old functions are unreachable (they no longer
+    exist at all, so there is nothing left to guard against), just that
+    both branches of `_game_log`'s `is_defense` dispatch still work."""
+    _route_weeks_stub(monkeypatch)
+    monkeypatch.setattr(pp, "_sleeper_player_weeks", lambda *a, **k: [])
+
+    offense_identity = {"player_id": "1", "gsis_id": "00-0000001",
+                        "player_name": "Test Back", "position": "RB", "team": "SF"}
+    offense_real_nfl = {"player_stats": {"rows": [
+        {"season": "2025", "week": 1, "player_id": "00-0000001",
+         "player_display_name": "Test Back", "position": "RB", "recent_team": "SF",
+         "carries": 12, "rushing_yards": 60, "rushing_tds": 1},
+    ], "best_effort": False}}
+    offense_log = pp._game_log(offense_identity, offense_real_nfl, ["2025"])
+    assert offense_log and offense_log[0]["merged_row"]["rushing"]["rushing_yards"] == 60
+
+    defense_identity = {"player_id": "2", "gsis_id": None,
+                        "player_name": "Test Backer", "position": "LB", "team": "SF"}
+    defense_real_nfl = {"pfr_def": {"rows": [
+        {"season": "2025", "week": 1, "pfr_player_name": "Test Backer",
+         "def_sacks": 1.0},
+    ], "best_effort": True}}
+    defense_log = pp._game_log(defense_identity, defense_real_nfl, ["2025"])
+    assert defense_log and defense_log[0]["merged_row"]["pfr_def"]["def_sacks"] == 1.0
+
+
 # --- _percentile_profile_for / _all_season_profiles -------------------------
 
 def test_percentile_profile_for_delegates_to_nflref(monkeypatch):
