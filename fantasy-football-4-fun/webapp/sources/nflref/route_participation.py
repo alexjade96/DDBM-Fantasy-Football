@@ -59,6 +59,8 @@ a bug; check back once nflverse publishes the season's file.
 """
 from __future__ import annotations
 
+import os
+
 import pandas as pd
 
 from .base import NflDataset
@@ -70,6 +72,12 @@ _SKILL_POS = {"WR", "RB", "TE", "FB"}
 _PBP_COLS = [
     "game_id", "play_id", "week", "season", "play_type",
     "receiver_player_id", "receiver_player_name",
+]
+
+# The pbp_participation columns `_build` actually reads.
+_PART_COLS = [
+    "nflverse_game_id", "play_id", "offense_players", "offense_names",
+    "offense_positions", "route",
 ]
 
 # Every charted route value seen live in pbp_participation (2016-2025;
@@ -145,9 +153,17 @@ def _targets_by_route(pass_plays: pd.DataFrame) -> pd.DataFrame:
 def _build(season: str) -> pd.DataFrame:
     from . import api
 
-    pbp = api.read_release_parquet(f"pbp/play_by_play_{season}.parquet")
-    part = api.read_release_parquet(
-        f"pbp_participation/pbp_participation_{season}.parquet")
+    pbp_asset = f"pbp/play_by_play_{season}.parquet"
+    part_asset = f"pbp_participation/pbp_participation_{season}.parquet"
+    if api.on_render():
+        # Render's 512MB instances: parse only the columns used (play-by-play
+        # alone is 372 columns / ~176MB), and fetch the participation file
+        # first, since it is the one that 404s for an in-progress season.
+        part = api.read_release_parquet(part_asset, columns=_PART_COLS)
+        pbp = api.read_release_parquet(pbp_asset, columns=_PBP_COLS)
+    else:
+        pbp = api.read_release_parquet(pbp_asset)
+        part = api.read_release_parquet(part_asset)
     if pbp is None or pbp.empty or part is None or part.empty:
         return pd.DataFrame()
 
@@ -205,6 +221,15 @@ class RouteParticipation(NflDataset):
             cached = cache.load(self.name, season)
             if cached is not None:
                 return cached
+
+        from . import api
+        if (api.on_render() and not reload
+                and os.environ.get("ROUTES_LIVE_BUILD", "") not in ("1", "true", "yes")):
+            # Render has no committed snapshot (data/sources/nflverse/ is
+            # gitignored) and a live build parses two play-level releases,
+            # enough to exceed the instance's memory. Degrade to "not
+            # available" instead; set ROUTES_LIVE_BUILD=1 to allow it.
+            return pd.DataFrame()
 
         try:
             out = _build(season)

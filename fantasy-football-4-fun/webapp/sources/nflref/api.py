@@ -18,6 +18,7 @@ Verified directly fetchable (HEAD 200, application/octet-stream):
 """
 from __future__ import annotations
 
+import os
 from io import BytesIO
 
 import pandas as pd
@@ -59,16 +60,34 @@ def head_release(asset: str, validators: dict | None = None) -> tuple[str, dict 
     return "changed", new
 
 
-def read_release_parquet(asset: str) -> pd.DataFrame:
+def on_render() -> bool:
+    """True only on a Render host (Render sets `RENDER=true`). Memory-saving
+    behaviour that exists for Render's 512MB instances is gated on this, so a
+    dev/test server behaves exactly as before."""
+    return os.environ.get("RENDER", "").lower() == "true"
+
+
+def read_release_parquet(asset: str, columns: list[str] | None = None) -> pd.DataFrame:
     """Download one nflverse-data release asset and parse it.
 
     `asset` is the release path, e.g. `"player_stats/player_stats_2024.parquet"`
     (the first segment is the release tag, the rest the file name). Raises on a
     non-2xx or an unparseable body so the caller (NflDataset.fetch) can fall
     back to its on-disk snapshot.
+
+    `columns` limits the parse to those columns (any not in the file are
+    ignored), so a wide asset such as play-by-play (372 columns) does not
+    materialise every column.
     """
     url = f"{_BASE}/{asset}"
     resp = requests.get(url, headers={"User-Agent": _UA}, timeout=60,
                         allow_redirects=True)
     resp.raise_for_status()
-    return pd.read_parquet(BytesIO(resp.content))
+    buf = BytesIO(resp.content)
+    del resp
+    if columns is None:
+        return pd.read_parquet(buf)
+    import pyarrow.parquet as pq
+    present = set(pq.ParquetFile(buf).schema_arrow.names)
+    buf.seek(0)
+    return pd.read_parquet(buf, columns=[c for c in columns if c in present])
