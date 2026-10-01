@@ -11,11 +11,12 @@ import json
 
 import pandas as pd
 
-from repo_paths import SOURCES_DIR
+from repo_paths import SOURCES_DIR, on_render
 
 from .api import sleeper_api
 
 _stats_cache: dict = {}
+_RENDER_MAX_WEEKS = 6   # cap on untrimmed weeks held in memory when on_render()
 _chart_cache: dict = {}
 _default_rules_cache: dict = {}
 
@@ -46,6 +47,11 @@ def nfl_stats(season: str, week: int) -> dict:
     key = (str(season), int(week))
     if key not in _stats_cache:
         _stats_cache[key] = sleeper_api(f"/stats/nfl/regular/{season}/{week}") or {}
+        # Render's 512MB instances: each untrimmed week is ~2.3MB held, and
+        # callers sweep weeks one at a time, so keep only the most recent few.
+        if on_render():
+            while len(_stats_cache) > _RENDER_MAX_WEEKS:
+                _stats_cache.pop(next(iter(_stats_cache)))
     return _stats_cache[key]
 
 

@@ -19,6 +19,8 @@ from __future__ import annotations
 
 import time
 
+from repo_paths import heavy_build_guard, prune_cache
+
 import pandas as pd
 
 
@@ -2049,8 +2051,14 @@ def team_profile(abbr: str, season: str | None = None, fresh: bool = False) -> d
         hit = _PROFILE_CACHE.get(key)
         if hit and time.time() - hit["at"] < _PROFILE_TTL:
             return hit["data"]
-    data = _build_profile(tm, sea)
-    _PROFILE_CACHE[key] = {"data": data, "at": time.time()}
+    with heavy_build_guard():
+        if not fresh:
+            hit = _PROFILE_CACHE.get(key)
+            if hit and time.time() - hit["at"] < _PROFILE_TTL:
+                return hit["data"]
+        data = _build_profile(tm, sea)
+        _PROFILE_CACHE[key] = {"data": data, "at": time.time()}
+        prune_cache(_PROFILE_CACHE, _PROFILE_TTL)
     return data
 
 

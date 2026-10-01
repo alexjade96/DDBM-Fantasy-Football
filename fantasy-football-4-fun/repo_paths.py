@@ -41,7 +41,10 @@ to be correct for the real repo layout.
 """
 from __future__ import annotations
 
+import contextlib
 import os
+import threading
+import time
 from pathlib import Path
 
 # fantasy-football-4-fun/repo_paths.py -> parent = fantasy-football-4-fun/ -> parent.parent = repo root.
@@ -52,3 +55,33 @@ SEASON_DIR = Path(os.environ.get(
 
 SOURCES_DIR = Path(os.environ.get(
     "SLEEPERMETRICS_SOURCES_DIR", str(REPO_ROOT / "data" / "sources")))
+
+
+def on_render() -> bool:
+    """True only on a Render host (Render sets `RENDER=true`). Memory-saving
+    behaviour that exists for Render's 512MB instances is gated on this, so a
+    dev/test server behaves exactly as before."""
+    return os.environ.get("RENDER", "").lower() == "true"
+
+
+_heavy_build_lock = threading.Lock()
+
+
+def heavy_build_guard():
+    """Context manager for a memory-heavy cold build (a player/team profile).
+    On Render it serialises them, since each holds ~190MB while building and two
+    at once exceed the 512MB instance; elsewhere it does nothing."""
+    return _heavy_build_lock if on_render() else contextlib.nullcontext()
+
+
+def prune_cache(cache: dict, ttl: float, max_entries: int = 4) -> None:
+    """Render only: drop expired `{"at": ts}` entries and keep at most
+    `max_entries` of the newest, so a long-running instance does not accumulate
+    one profile per visited player/team."""
+    if not on_render():
+        return
+    now = time.time()
+    for k in [k for k, v in cache.items() if now - v["at"] >= ttl]:
+        cache.pop(k, None)
+    for k in sorted(cache, key=lambda k: cache[k]["at"])[:-max_entries]:
+        cache.pop(k, None)

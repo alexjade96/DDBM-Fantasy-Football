@@ -60,11 +60,7 @@ def head_release(asset: str, validators: dict | None = None) -> tuple[str, dict 
     return "changed", new
 
 
-def on_render() -> bool:
-    """True only on a Render host (Render sets `RENDER=true`). Memory-saving
-    behaviour that exists for Render's 512MB instances is gated on this, so a
-    dev/test server behaves exactly as before."""
-    return os.environ.get("RENDER", "").lower() == "true"
+from repo_paths import on_render  # noqa: E402,F401  (re-exported: api.on_render)
 
 
 def read_release_parquet(asset: str, columns: list[str] | None = None) -> pd.DataFrame:

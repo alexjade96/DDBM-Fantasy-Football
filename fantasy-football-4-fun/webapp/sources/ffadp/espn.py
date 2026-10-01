@@ -18,6 +18,8 @@ years (e.g. 2019, 2025 come back all-sentinel).
 """
 from __future__ import annotations
 
+from repo_paths import on_render
+
 from . import api, cache
 from .base import AdpProvider, AdpRow
 
@@ -70,6 +72,12 @@ class EspnAdp(AdpProvider):
         # Snapshot first, unless a reload is asked for.
         if not reload:
             rows = cache.load(self.name, season)
+        if not rows and on_render() and not reload:
+            # Render's 512MB instances: the live feed is ~20MB of JSON, and a
+            # season with no usable ADP (2019, 2025: all-sentinel) never gets
+            # a snapshot, so every call would re-download it. Only the ADP
+            # tab's Refresh (reload=True) pulls live there.
+            return []
         if not rows:
             try:
                 rows = _trim(api.espn_players(season))
