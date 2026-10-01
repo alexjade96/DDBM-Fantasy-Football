@@ -282,41 +282,68 @@ _EXCLUDED_FROM_PER_GAME = {"games"}
 #: inside `percentile_profile()`, not to `leaderboard_columns()` itself.
 _RADAR_EXCLUDED_KEYS = {"fpts_ppr", "ppg_ppr", "games"}
 
-#: The 5 percentile marks each column's `axis_ticks` reports a real value at --
-#: matches a classic 5-ring "pizza chart" radar (Statsbomb/Ted Knutson style):
-#: each spoke prints its OWN stat's actual value at evenly-spaced rings, not a
-#: shared 0/25/50/75/100 percentile scale, so a reader sees "72 rush yards"
-#: printed at that ring rather than a bare, cross-stat-meaningless "50".
+#: The 5 ring positions (0-100 radius scale) each column's `axis_ticks`
+#: reports a real value at -- a classic 5-ring "pizza chart" radar
+#: (Statsbomb/Ted Knutson style): each spoke prints its OWN stat's actual
+#: value at evenly spaced rings (evenly spaced in VALUE between the field's
+#: min and max), not a shared 0/25/50/75/100 scale.
 _AXIS_TICK_PERCENTILES = (20, 40, 60, 80, 100)
 
 
-def _axis_ticks(series: pd.Series, higher_is_better: bool) -> list[dict]:
-    """This stat's real-value tick marks at `_AXIS_TICK_PERCENTILES`, for a
-    pizza-chart radar's own per-spoke scale (see the module comment above
-    `_AXIS_TICK_PERCENTILES`). `series` is the SAME ranked series
-    `percentile_profile` already built for this column (raw or per-game,
-    whichever `stat_mode` is active), so this is free follow-on work, not a
-    second leaderboard pass.
-
-    `pandas.Series.quantile` on the percentile FRACTION (not a rank position)
-    gives "the value that N% of the field is at or below" -- e.g. quantile(1.0)
-    is always the field's real maximum, matching a percentile-100 spoke tip.
-    `higher_is_better=False` (points/yards allowed) flips which end is
-    "best": quantile(0.0) -- the field MINIMUM -- is what a 100th-percentile
-    defense actually allows, so the tick order is reversed to keep "outward
-    on the spoke = better" consistent with how the point itself is plotted.
-
-    Returns `[{"percentile": p, "value": v}, ...]`, or `[]` for an
-    all-NaN/empty series (nothing to derive a scale from).
-    """
+def _axis_bounds(series: pd.Series) -> tuple[float, float] | None:
+    """(lo, hi) of the field for one stat -- the radar scale's two ends -- or
+    `None` when there is no usable range (empty, or every player identical)."""
     clean = series.dropna()
     if clean.empty:
+        return None
+    lo, hi = float(clean.min()), float(clean.max())
+    return (lo, hi) if hi > lo else None
+
+
+def _axis_ticks(series: pd.Series, higher_is_better: bool) -> list[dict]:
+    """This stat's real-value tick marks for a pizza-chart radar's own
+    per-spoke scale (see the module comment above `_AXIS_TICK_PERCENTILES`).
+
+    The rings are EVENLY SPACED IN VALUE between the field's lowest and
+    highest value (the field only sets the two bounds; it does not shape the
+    middle). Ring `p` (20..100) sits `p`% of the way from the worst end of the
+    range to the best end, so a spoke with a max of 65 reads 13, 26, 39, 52,
+    65. This replaced quantile ticks, which collapsed to repeated values
+    (several rings reading 0) on stats where much of the field has no volume
+    or where a stat ties (interceptions, rush TDs, a snap share capped at 1).
+    `_scaled_position` places a player's dot on the SAME linear scale, so the
+    printed ring values always line up with where the dot sits.
+
+    `higher_is_better=False` (points/yards allowed) puts the field MINIMUM at
+    the outer rim, so values descend outward and "outward = better" holds.
+
+    Each tick is `{"percentile": ring, "value": v}`; the `"percentile"` key
+    is the ring's position on the 0-100 radius scale (kept under that name so
+    existing consumers keep working), NOT a rank percentile. `[]` when the
+    field has no range to scale (empty, or every value identical).
+    """
+    bounds = _axis_bounds(series)
+    if bounds is None:
         return []
+    lo, hi = bounds
     out = []
     for p in _AXIS_TICK_PERCENTILES:
-        frac = p / 100.0 if higher_is_better else 1.0 - p / 100.0
-        out.append({"percentile": p, "value": round(float(clean.quantile(frac)), 2)})
+        frac = p / 100.0
+        v = lo + (hi - lo) * frac if higher_is_better else hi - (hi - lo) * frac
+        out.append({"percentile": p, "value": round(float(v), 2)})
     return out
+
+
+def _scaled_position(series: pd.Series, value: float, higher_is_better: bool) -> float:
+    """Where `value` sits on the radar's linear 0-100 radius scale for this
+    stat (0 = worst end of the field's range, 100 = best end), matching
+    `_axis_ticks`' rings. 0.0 when the field has no range."""
+    bounds = _axis_bounds(series)
+    if bounds is None:
+        return 0.0
+    lo, hi = bounds
+    frac = (value - lo) / (hi - lo) if higher_is_better else (hi - value) / (hi - lo)
+    return round(min(max(frac, 0.0), 1.0) * 100, 1)
 
 
 def percentile_profile(season: str, pos: str, player_id: str,
@@ -366,10 +393,14 @@ def percentile_profile(season: str, pos: str, player_id: str,
     and games played as normal reference columns.
 
     Returns `{"season", "position", "player_id", "n_population", "stat_mode",
-    "columns": [{"key", "label", "value", "percentile", "axis_ticks"}, ...]}`,
-    or `None` if this player has no row in that season's leaderboard (never
-    raises). `axis_ticks` is `[{"percentile", "value"}, ...]` -- see
-    `_axis_ticks()`'s own docstring for the pizza-chart radar this feeds.
+    "columns": [{"key", "label", "value", "percentile", "rank", "rank_of",
+    "tied", "scaled", "axis_ticks"}, ...]}`, or `None` if this player has no
+    row in that season's leaderboard (never raises). `rank`/`rank_of`/`tied`
+    are the player's position rank (1 = best, ties share the best rank)
+    among players with a value for that stat. `scaled` is his 0-100 radius
+    on the radar's linear scale (the radar plots THIS, not `percentile`) and
+    `axis_ticks` is `[{"percentile", "value"}, ...]` -- the evenly spaced
+    rings on that same scale; see `_axis_ticks()`.
     """
     lb = player_leaderboard(season, pos=pos, source=source, limit=10_000,
                             reload=reload)
@@ -399,9 +430,18 @@ def percentile_profile(season: str, pos: str, player_id: str,
         pct_rank = series.rank(pct=True, na_option="bottom",
                                ascending=key not in _LOWER_IS_BETTER)
         percentile = round(float(pct_rank.loc[row.index[0]]) * 100, 1)
+        higher = key not in _LOWER_IS_BETTER
+        # Position rank (1 = best) among players with a value for this stat;
+        # `method="min"` gives tied players the same, best rank, and `tied`
+        # lets the UI mark it ("T-20") rather than imply a unique placement.
+        valid = series.dropna()
+        rank = int(valid.rank(method="min", ascending=not higher).loc[row.index[0]])
         cols.append({"key": key, "label": label, "value": round(float(value), 2),
                      "percentile": percentile,
-                     "axis_ticks": _axis_ticks(series, key not in _LOWER_IS_BETTER)})
+                     "rank": rank, "rank_of": int(len(valid)),
+                     "tied": bool((valid == value).sum() > 1),
+                     "scaled": _scaled_position(series, float(value), higher),
+                     "axis_ticks": _axis_ticks(series, higher)})
 
     if not cols:
         return None

@@ -589,6 +589,90 @@ def test_percentile_profile_axis_ticks_descend_for_lower_is_better_stat(monkeypa
     assert values == sorted(values, reverse=True)
 
 
+def test_percentile_profile_axis_ticks_are_evenly_spaced_between_field_bounds(monkeypatch):
+    """The rings step evenly in VALUE from the field's min to its max (the
+    field only sets the bounds), so a stat where much of the field is tied or
+    zero no longer prints repeated ring values."""
+    from sleepermetrics import nflstats
+    monkeypatch.setattr(nflstats, "player_leaderboard",
+                        lambda *a, **k: _fake_sleeper_wr_board())
+    prof = nflref.percentile_profile("2024", "WR", "1", source="sleeper")
+    ticks = next(c for c in prof["columns"] if c["key"] == "rec_yards")["axis_ticks"]
+    # rec_yards field: 200 / 700 / 1200 -> lo 200, hi 1200
+    assert [t["value"] for t in ticks] == pytest.approx([400, 600, 800, 1000, 1200])
+    steps = [b["value"] - a["value"] for a, b in zip(ticks, ticks[1:])]
+    assert steps == pytest.approx([200] * 4)
+
+
+def test_percentile_profile_lower_is_better_ticks_are_evenly_spaced_descending(monkeypatch):
+    from sleepermetrics import nflstats
+    monkeypatch.setattr(nflstats, "player_leaderboard",
+                        lambda *a, **k: _fake_sleeper_def_board())
+    prof = nflref.percentile_profile("2024", "DEF", "AAA", source="sleeper")
+    ticks = next(c for c in prof["columns"] if c["key"] == "pts_allow")["axis_ticks"]
+    # pts_allow field: 280 (best) / 450 (worst); outer rim is the best (280)
+    assert [t["value"] for t in ticks] == pytest.approx([416, 382, 348, 314, 280])
+
+
+def test_percentile_profile_scaled_matches_the_ring_scale(monkeypatch):
+    """`scaled` is the dot's radius on the same linear scale as the rings:
+    the field max reads 100, the field min 0, and the middle value sits
+    proportionally (NOT at its rank percentile)."""
+    from sleepermetrics import nflstats
+    monkeypatch.setattr(nflstats, "player_leaderboard",
+                        lambda *a, **k: _fake_sleeper_wr_board())
+    top = next(c for c in nflref.percentile_profile("2024", "WR", "1", source="sleeper")["columns"]
+               if c["key"] == "rec_yards")
+    mid = next(c for c in nflref.percentile_profile("2024", "WR", "2", source="sleeper")["columns"]
+               if c["key"] == "rec_yards")
+    low = next(c for c in nflref.percentile_profile("2024", "WR", "3", source="sleeper")["columns"]
+               if c["key"] == "rec_yards")
+    assert (top["scaled"], mid["scaled"], low["scaled"]) == (100.0, 50.0, 0.0)
+    # rank percentile for the middle of three is NOT 50 -- the two differ
+    assert mid["percentile"] != mid["scaled"]
+
+
+def test_percentile_profile_lower_is_better_scaled_puts_best_at_the_rim(monkeypatch):
+    from sleepermetrics import nflstats
+    monkeypatch.setattr(nflstats, "player_leaderboard",
+                        lambda *a, **k: _fake_sleeper_def_board())
+    best = next(c for c in nflref.percentile_profile("2024", "DEF", "AAA", source="sleeper")["columns"]
+                if c["key"] == "pts_allow")
+    worst = next(c for c in nflref.percentile_profile("2024", "DEF", "BBB", source="sleeper")["columns"]
+                 if c["key"] == "pts_allow")
+    assert (best["scaled"], worst["scaled"]) == (100.0, 0.0)
+
+
+def test_percentile_profile_position_rank_and_ties(monkeypatch):
+    """`rank` is 1 = best among players with a value; tied players share the
+    best rank and are flagged `tied`. A lower-is-better stat ranks the
+    smallest value first."""
+    from sleepermetrics import nflstats
+    monkeypatch.setattr(nflstats, "player_leaderboard",
+                        lambda *a, **k: _fake_sleeper_wr_board())
+    cols = {c["key"]: c for c in
+            nflref.percentile_profile("2024", "WR", "2", source="sleeper")["columns"]}
+    assert (cols["rec_yards"]["rank"], cols["rec_yards"]["rank_of"]) == (2, 3)
+    assert cols["rec_yards"]["tied"] is False
+    # all three WRs have rush_td == 0: a three-way tie shares rank 1
+    assert (cols["rush_td"]["rank"], cols["rush_td"]["tied"]) == (1, True)
+
+    monkeypatch.setattr(nflstats, "player_leaderboard",
+                        lambda *a, **k: _fake_sleeper_def_board())
+    best = next(c for c in nflref.percentile_profile("2024", "DEF", "AAA", source="sleeper")["columns"]
+                if c["key"] == "pts_allow")
+    assert best["rank"] == 1
+
+
+def test_axis_ticks_empty_when_field_has_no_range():
+    """Every player identical (or no data) -> no scale to draw; the dot sits
+    at 0 rather than dividing by zero."""
+    from webapp.sources.nflref import summary
+    assert summary._axis_ticks(pd.Series([0.0, 0.0, 0.0]), True) == []
+    assert summary._axis_ticks(pd.Series([], dtype=float), True) == []
+    assert summary._scaled_position(pd.Series([3.0, 3.0]), 3.0, True) == 0.0
+
+
 def test_schedule_grid_team_filter(monkeypatch):
     monkeypatch.setattr(api, "read_release_parquet", lambda asset: _fake_games())
     # _fake_games: AAA@BBB (wk1), CCC@DDD (wk1), AAA@CCC (wk2)

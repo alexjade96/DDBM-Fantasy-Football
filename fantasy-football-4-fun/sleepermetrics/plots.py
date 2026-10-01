@@ -4464,7 +4464,8 @@ def plot_player_radar(season_profiles: dict | None, focus_season: str | None,
     focus_vals = None
     for season in seasons:
         prof = season_profiles.get(season) or {}
-        by_key = {c["key"]: c["percentile"] for c in prof.get("columns", [])}
+        by_key = {c["key"]: c.get("scaled", c["percentile"])
+                  for c in prof.get("columns", [])}
         values = [by_key.get(k, 0) for k in keys]
         vals = values + values[:1]
         if season == focus:
@@ -4497,7 +4498,8 @@ def plot_player_radar(season_profiles: dict | None, focus_season: str | None,
 
     pos = focus_profile["position"]
     n = focus_profile["n_population"]
-    subtitle = f"Each spoke: real stat value at that percentile ring, among {n} real NFL {pos}s that season"
+    subtitle = (f"Each spoke: rings step evenly from the lowest to the highest value "
+                f"among {n} real NFL {pos}s that season")
     if len(seasons) > 1:
         subtitle += f" · {len(seasons)} seasons shown, {focus} in focus"
     # Centered on a 7x7in figure, a long single-line subtitle runs off the
@@ -4604,7 +4606,8 @@ def plot_player_overlay(players: dict, stat_keys: list[str], mode: str = "snapsh
         for name, prof in players.items():
             if not prof:
                 continue
-            by_key = {c["key"]: c["percentile"] for c in prof.get("columns", [])}
+            by_key = {c["key"]: c.get("scaled", c["percentile"])
+                      for c in prof.get("columns", [])}
             values = [by_key.get(k, 0) for k in keys]
             vals = values + values[:1]
             ax.plot(angles, vals, color=colors[name], linewidth=2, label=name)
@@ -4638,9 +4641,11 @@ def plot_player_overlay(players: dict, stat_keys: list[str], mode: str = "snapsh
         # was actually drawn, so the two can never disagree.
         _colored_vs_title(fig, drawn_names, colors)
         per_game = stat_mode == "per_game"
-        subtitle = "Each spoke: real stat value at that percentile ring, among real NFL players at this position"
+        subtitle = ("Each spoke: rings step evenly from the lowest to the highest "
+                    "value among real NFL players at this position")
         if position:
-            subtitle = f"Each spoke: real stat value at that percentile ring, among real NFL {position}s"
+            subtitle = ("Each spoke: rings step evenly from the lowest to the highest "
+                        f"value among real NFL {position}s")
         subtitle += (" (per-game rates)" if per_game else " (season totals)")
         fig.text(0.5, 0.94, subtitle, fontsize=9, color=T["muted"], ha="center")
         fig.patch.set_facecolor(T["bg"])

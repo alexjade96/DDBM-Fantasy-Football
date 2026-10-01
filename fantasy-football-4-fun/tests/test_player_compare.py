@@ -412,6 +412,27 @@ def test_plot_player_overlay_snapshot_draws_pizza_ticks_per_spoke():
     plt.close(fig)
 
 
+def test_plot_player_overlay_snapshot_plots_at_scaled_position_not_percentile():
+    """The polygon vertex for a spoke is the column's linear `scaled`
+    position (so it lines up with the evenly spaced ring values), falling
+    back to `percentile` only for a profile that has no `scaled`."""
+    import matplotlib.pyplot as plt
+
+    from sleepermetrics import plots
+    prof = {"columns": [
+        {"key": "rush_yd", "label": "Rush yds", "value": 9.0, "percentile": 60.0,
+         "scaled": 8.0, "axis_ticks": _FAKE_AXIS_TICKS},
+        {"key": "pass_td", "label": "Pass TD", "value": 3.0, "percentile": 55.0,
+         "axis_ticks": _FAKE_AXIS_TICKS},   # no `scaled` -> falls back
+    ]}
+    fig = plots.plot_player_overlay({"Alice": prof}, ["rush_yd", "pass_td"],
+                                    mode="snapshot")
+    ax = fig.axes[0]
+    ys = list(ax.lines[0].get_ydata())
+    assert ys[:2] == [8.0, 55.0]
+    plt.close(fig)
+
+
 def test_plot_player_overlay_snapshot_share_spoke_ticks_render_as_percent():
     """End-to-end: a snap_share/tgt_share spoke's ring ticks render as whole
     percentages ("34%"), not the leaderboard table's 3-decimal fraction
