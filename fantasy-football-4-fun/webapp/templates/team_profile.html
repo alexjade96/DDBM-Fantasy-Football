@@ -104,6 +104,12 @@
        #team-season-sections because it spans every season at once. #}
   <h2>Season history</h2>
   {% if season_history %}
+  {# Sub-description: this is only the recent window (team_profile.
+     _DEFAULT_WINDOW), not the franchise's whole history. Range and count
+     come from the rows actually shown. season_history is newest first. #}
+  <p class="hint">Last {{ season_history|length }} NFL season{{ "s" if season_history|length != 1 }}
+    ({{ season_history[-1].season }}{% if season_history|length > 1 %} to {{ season_history[0].season }}{% endif %}),
+    regular season and playoffs, from nflverse game results. Earlier seasons are not shown.</p>
   <div class="tablewrap">
     <table class="dt-games">
       <thead><tr>
