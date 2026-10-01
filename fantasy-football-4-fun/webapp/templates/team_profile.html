@@ -59,6 +59,7 @@
   <script src="/static/table-sort.js?v={{ asset_v }}"></script>
 </head>
 <body hx-indicator="#bar">
+{% include "_refresh_banner.html" %}
   <div id="bar"></div>
 {# Roster/Schedule/Injury-reports' own macro imports (idm/tsm) live in
    _team_season_sections.html, the shared partial those sections moved

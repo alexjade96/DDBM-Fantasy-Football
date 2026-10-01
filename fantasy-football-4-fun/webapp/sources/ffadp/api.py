@@ -51,6 +51,44 @@ FFC_FORMAT = {"std": "standard", "half_ppr": "half-ppr",
               "ppr": "ppr", "2qb": "2qb"}
 
 
+def probe_unchanged(url: str, params=None, validators: dict | None = None):
+    """Has `url` changed since `validators` were recorded?
+
+    A conditional GET (`If-None-Match` / `If-Modified-Since`), streamed so a
+    `200` is closed without reading the body. Returns `("unchanged",
+    validators)`, `("changed", {"etag", "last_modified"})` or `("error",
+    None)`. Never raises. Verified live: Sleeper's ADP endpoint and CBS answer
+    `304` to an ETag, FFC to a Last-Modified date.
+    """
+    headers = {"User-Agent": _UA}
+    if validators:
+        if validators.get("etag"):
+            headers["If-None-Match"] = validators["etag"]
+        if validators.get("last_modified"):
+            headers["If-Modified-Since"] = validators["last_modified"]
+    try:
+        resp = requests.get(url, params=params, headers=headers, timeout=30,
+                            stream=True)
+    except Exception:
+        return "error", None
+    try:
+        if resp.status_code == 304:
+            return "unchanged", validators
+        if resp.status_code >= 400:
+            return "error", None
+        new = {"etag": resp.headers.get("ETag"),
+               "last_modified": resp.headers.get("Last-Modified")}
+        if validators and new["etag"] and new["etag"] == validators.get("etag"):
+            return "unchanged", validators
+        return "changed", new
+    finally:
+        resp.close()
+
+
+def ffc_url(fmt: str = "ppr") -> str:
+    return f"{_FFC_BASE}/{FFC_FORMAT.get(fmt, 'ppr')}"
+
+
 def ffc_adp(season, fmt: str = "ppr", teams: int = 12) -> list[dict]:
     """FFC's ADP `players` list for a season + scoring format.
 

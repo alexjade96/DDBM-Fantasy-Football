@@ -24,6 +24,7 @@ multi-source usage board can tell where a row came from.
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
 import pandas as pd
@@ -162,8 +163,12 @@ def raw_week(season, week, reload: bool = False) -> dict:
     if trimmed:
         try:
             path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text(json.dumps(trimmed, indent=2, sort_keys=True),
-                            encoding="utf-8")
+            # Temp file + replace: a reader never sees a half-written week
+            # while a background refresh swaps it in.
+            tmp = path.with_suffix(".json.tmp")
+            tmp.write_text(json.dumps(trimmed, indent=2, sort_keys=True),
+                           encoding="utf-8")
+            os.replace(tmp, path)
         except Exception:
             pass
         _week_cache[key] = trimmed

@@ -12,6 +12,7 @@ lets a pick be called a steal or a bust relative to where it was taken.
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
 import pandas as pd
@@ -780,7 +781,9 @@ def _fetch_adp_raw(season) -> dict:
                 **vals,
             }
         _ADP_CACHE_DIR.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps(out, indent=2, sort_keys=True), encoding="utf-8")
+        tmp = path.with_suffix(".json.tmp")      # atomic: no half-written file
+        tmp.write_text(json.dumps(out, indent=2, sort_keys=True), encoding="utf-8")
+        os.replace(tmp, path)
         return _adp_cache.setdefault(season, out)
     except Exception:
         pass

@@ -1,0 +1,49 @@
+{# Slim banner for the background data refresh (webapp/refresher.py). Hidden
+   unless a real download is running. Polls /refresh/status: every few
+   seconds for the first half minute after the page opens (the refresh is
+   started by the very request that served this page, so the first poll can
+   land just before it begins), and continuously while it runs. When a run
+   this page watched finishes, it offers a reload; it never reloads on its
+   own, so data does not change under someone mid-read. #}
+<div id="refresh-banner" class="refresh-banner" role="status" aria-live="polite" hidden>
+  <span class="refresh-text"></span>
+  <button type="button" class="refresh-reload" hidden>Reload</button>
+</div>
+<script>
+(function () {
+  var el = document.getElementById('refresh-banner');
+  if (!el || el.dataset.bound) return;
+  el.dataset.bound = '1';
+  var text = el.querySelector('.refresh-text');
+  var btn = el.querySelector('.refresh-reload');
+  var sawRunning = false, quiet = 0, timer = null;
+  btn.addEventListener('click', function () { location.reload(); });
+  function show(msg, withReload) {
+    text.textContent = msg;
+    btn.hidden = !withReload;
+    el.hidden = false;
+  }
+  function next(ms) { clearTimeout(timer); timer = setTimeout(poll, ms); }
+  function poll() {
+    fetch('/refresh/status', { cache: 'no-store' })
+      .then(function (r) { return r.json(); })
+      .then(function (s) {
+        if (s.phase === 'running') {
+          sawRunning = true;
+          var tail = s.label ? ' (' + s.label + ')' : '';
+          show('Updating NFL data: ' + s.done + ' of ' + s.total + tail, false);
+          next(2500);
+        } else if (s.phase === 'done' && sawRunning) {
+          show(s.failed
+            ? 'NFL data updated, but ' + s.failed + ' source(s) could not be refreshed and will retry.'
+            : 'NFL data updated.', true);
+        } else {
+          el.hidden = true;
+          if (!sawRunning && ++quiet < 6) next(5000);
+        }
+      })
+      .catch(function () { /* banner is best-effort */ });
+  }
+  poll();
+})();
+</script>

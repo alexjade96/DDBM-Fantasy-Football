@@ -36,6 +36,7 @@ import sleepermetrics as sm  # noqa: E402
 from sleepermetrics import draft, metrics, plots, scoring, summaries  # noqa: E402
 # Aliased: the `/report` route function below would otherwise shadow the module.
 from sleepermetrics import report as sm_report  # noqa: E402
+from webapp import refresher as _refresher  # noqa: E402
 
 BASE = Path(__file__).resolve().parent
 ROOT = REPO_ROOT
@@ -61,6 +62,9 @@ async def _lifespan(_app: "FastAPI"):
                          name="prime-default-league", daemon=True).start()
     except Exception:
         pass
+    # Same idea for the in-season data snapshots: plan a refresh at boot
+    # (a no-op unless Sleeper's week moved or an nflverse file changed).
+    _refresher.maybe_start()
     yield
 
 
@@ -98,9 +102,20 @@ async def _stamp_asset_version(request: Request, call_next):
     inline spans separated by a single space. The client compares this header on
     every swap and re-points the link when it differs.
     """
+    # Page requests (not static files or the banner's own status poll) nudge
+    # the data refresher; it is non-blocking and plans at most once a minute.
+    path = request.url.path
+    if not path.startswith(("/static", "/refresh/")):
+        _refresher.maybe_start()
     resp = await call_next(request)
     resp.headers["X-Asset-V"] = asset_v()
     return resp
+
+
+@app.get("/refresh/status")
+def refresh_status():
+    """Progress of the background data refresh, for the page banner."""
+    return JSONResponse(_refresher.status(), headers={"Cache-Control": "no-store"})
 
 
 def _md(text: str):

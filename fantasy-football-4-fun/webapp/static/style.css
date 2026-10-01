@@ -2499,3 +2499,16 @@ h3 + .tablewrap.scrolltable { margin-top: 6px; }
    unrelated "Waivers & free agent pickups" <h3>). */
 h3.gd-block + .tablewrap, h3.gd-block + p.empty { margin-top: 6px; }
 .tablewrap + h3.gd-block, p.empty + h3.gd-block { margin-top: 24px; }
+
+/* Background data-refresh banner (_refresh_banner.html, webapp/refresher.py).
+   Sits above the page content; only shown while a real download runs or just
+   finished. */
+.refresh-banner { display: flex; align-items: center; justify-content: center;
+  gap: 12px; padding: 7px 14px; font-size: 13px; color: var(--muted);
+  background: var(--surface); border-bottom: 1px solid var(--line); }
+.refresh-banner[hidden] { display: none; }
+.refresh-reload { font: inherit; font-size: 12.5px; padding: 3px 12px;
+  border-radius: 7px; border: 1px solid var(--line); background: var(--surface);
+  color: var(--ink); cursor: pointer; }
+.refresh-reload:hover { border-color: var(--turf); }
+.refresh-reload[hidden] { display: none; }

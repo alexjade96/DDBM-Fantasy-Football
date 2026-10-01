@@ -8,6 +8,7 @@ snapshot. Committed to the repo on purpose -- the snapshot IS the fallback.
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
 from repo_paths import SOURCES_DIR
@@ -64,7 +65,11 @@ def save(source: str, season: str, rows: list[dict],
     try:
         p = _path(source, season, variant)
         p.parent.mkdir(parents=True, exist_ok=True)
-        p.write_text(json.dumps(rows, indent=2, sort_keys=True), encoding="utf-8")
+        # Temp file + replace, so a background refresh never exposes a
+        # half-written snapshot to a concurrent read.
+        tmp = p.with_suffix(".json.tmp")
+        tmp.write_text(json.dumps(rows, indent=2, sort_keys=True), encoding="utf-8")
+        os.replace(tmp, p)
     except Exception:
         pass
 

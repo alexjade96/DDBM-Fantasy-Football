@@ -37,3 +37,6 @@ tools/parity/out_*.json
 # unlike data/sources/adp/ which IS committed). Keep the dir markers.
 data/sources/sleeper_stats/*/
 data/sources/nflverse/
+# When each snapshot source was last refreshed (webapp/refresher.py).
+data/sources/refresh_state.json
+data/sources/refresh_state.json.tmp

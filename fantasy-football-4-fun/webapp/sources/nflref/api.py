@@ -27,6 +27,38 @@ _UA = "sleepermetrics-nflref/1.0 (+https://github.com/alexjade96/DDBM-Fantasy-Fo
 _BASE = "https://github.com/nflverse/nflverse-data/releases/download"
 
 
+def head_release(asset: str, validators: dict | None = None) -> tuple[str, dict | None]:
+    """Has one release asset changed since `validators` were recorded?
+
+    A conditional HEAD (`If-None-Match` / `If-Modified-Since`): GitHub's asset
+    host answers `304 Not Modified` with no body when nothing changed. Returns
+    `("unchanged", validators)`, `("changed", {"etag", "last_modified"})`, or
+    `("error", None)` when the host can't be reached. Never raises.
+    """
+    headers = {"User-Agent": _UA}
+    if validators:
+        if validators.get("etag"):
+            headers["If-None-Match"] = validators["etag"]
+        if validators.get("last_modified"):
+            headers["If-Modified-Since"] = validators["last_modified"]
+    try:
+        resp = requests.head(f"{_BASE}/{asset}", headers=headers, timeout=20,
+                             allow_redirects=True)
+    except Exception:
+        return "error", None
+    if resp.status_code == 304:
+        return "unchanged", validators
+    if resp.status_code >= 400:
+        return "error", None
+    new = {"etag": resp.headers.get("ETag"),
+           "last_modified": resp.headers.get("Last-Modified")}
+    # A host that ignores the conditional headers answers 200 every time;
+    # an identical ETag still means unchanged.
+    if validators and new["etag"] and new["etag"] == validators.get("etag"):
+        return "unchanged", validators
+    return "changed", new
+
+
 def read_release_parquet(asset: str) -> pd.DataFrame:
     """Download one nflverse-data release asset and parse it.
 

@@ -10,6 +10,7 @@ fallback for an offline / cold-host render.
 """
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import pandas as pd
@@ -49,7 +50,11 @@ def save(dataset: str, season: str, df: pd.DataFrame) -> None:
     try:
         p = _path(dataset, season)
         p.parent.mkdir(parents=True, exist_ok=True)
-        df.to_parquet(p, index=False)
+        # Temp file + replace, so a reader never sees a half-written snapshot
+        # while a background refresh is swapping it in.
+        tmp = p.with_suffix(".parquet.tmp")
+        df.to_parquet(tmp, index=False)
+        os.replace(tmp, p)
     except Exception:
         pass
 

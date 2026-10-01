@@ -67,16 +67,23 @@ def sleeper_adp(season) -> list:
     same as `sleeper_api` -- so the caller (draft.py) decides how to degrade,
     not this function.
     """
+    url, params = adp_request(season)
+    resp = _get_session().get(url, params=params, timeout=30)
+    resp.raise_for_status()
+    return resp.json()
+
+
+def adp_request(season) -> tuple[str, list]:
+    """The (url, params) `sleeper_adp` sends -- one definition, so the
+    background refresher's "has it changed?" probe asks for exactly the same
+    resource."""
     params = [
         ("season_type", "regular"),
         ("position[]", "QB"), ("position[]", "RB"), ("position[]", "WR"),
         ("position[]", "TE"), ("position[]", "K"), ("position[]", "DEF"),
         ("order_by", "adp_ppr"),
     ]
-    resp = _get_session().get(f"{_ADP_BASE}/projections/nfl/{season}",
-                              params=params, timeout=30)
-    resp.raise_for_status()
-    return resp.json()
+    return f"{_ADP_BASE}/projections/nfl/{season}", params
 
 
 def sleeper_api_many(paths: list[str]) -> list:

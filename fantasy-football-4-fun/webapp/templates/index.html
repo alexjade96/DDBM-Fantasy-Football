@@ -33,6 +33,7 @@
   <script src="/static/table-sort.js?v={{ asset_v }}" defer></script>
 </head>
 <body hx-indicator="#bar">
+{% include "_refresh_banner.html" %}
   <div id="bar"></div>
   <!-- Elapsed-time status for a long-running load (cold Render boot, or a
        league/season switch that replays league_data()'s Sleeper chain walk).
