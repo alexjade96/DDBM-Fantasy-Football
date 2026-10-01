@@ -937,7 +937,7 @@ def _adp_history(sleeper_id: str, seasons: list[str],
 
 
 def _percentile_profile_for(player_id: str, position: str | None,
-                            season: str) -> dict | None:
+                            season: str, stat_mode: str = "total") -> dict | None:
     """One thin, patchable seam around `nflref.summary.percentile_profile`
     (module-level so tests can `monkeypatch.setattr(pp, ...)` it exactly like
     `_real_nfl_history`/`_adp_history` already are, rather than reaching
@@ -952,14 +952,17 @@ def _percentile_profile_for(player_id: str, position: str | None,
         return None
     try:
         from webapp.sources.nflref import summary as nflref_summary
+        if stat_mode == "total":
+            return nflref_summary.percentile_profile(
+                season, position, player_id, source="sleeper")
         return nflref_summary.percentile_profile(
-            season, position, player_id, source="sleeper")
+            season, position, player_id, source="sleeper", stat_mode=stat_mode)
     except Exception:
         return None
 
 
 def _all_season_profiles(player_id: str, position: str | None,
-                         seasons: list[str]) -> dict:
+                         seasons: list[str], stat_mode: str = "total") -> dict:
     """Every season's FULL percentile profile (all stat columns, not just
     points), keyed by season string -- the radar-overlay chart's input.
     A season with no leaderboard row for this player (never played, or the
@@ -972,7 +975,8 @@ def _all_season_profiles(player_id: str, position: str | None,
     """
     out = {}
     for season in seasons:
-        prof = _percentile_profile_for(player_id, position, season)
+        prof = _percentile_profile_for(player_id, position, season,
+                                       stat_mode=stat_mode)
         if prof:
             out[season] = prof
     return out
@@ -1085,6 +1089,12 @@ def _build_profile(player_id: str, league_id: str | None = None) -> dict:
     # table rendered below the chart.
     season_profiles = _all_season_profiles(
         player_id, identity.get("position"), real_nfl_seasons)
+    # The same profiles ranked on PER-GAME rates: the radar plots these (a
+    # season only a few games old is not dwarfed by full seasons), while the
+    # stat table keeps the season-total profile above and adds the per-game
+    # figure as its own column.
+    season_profiles_per_game = _all_season_profiles(
+        player_id, identity.get("position"), real_nfl_seasons, stat_mode="per_game")
     available_seasons = sorted(season_profiles, reverse=True)
     focus_season = available_seasons[0] if available_seasons else None
     percentile_profile = season_profiles.get(focus_season) if focus_season else None
@@ -1111,6 +1121,7 @@ def _build_profile(player_id: str, league_id: str | None = None) -> dict:
         "league": league_section,
         "percentile_profile": percentile_profile,
         "season_profiles": season_profiles,
+        "season_profiles_per_game": season_profiles_per_game,
         "available_seasons": available_seasons,
         "focus_season": focus_season,
     }
@@ -1177,6 +1188,8 @@ def scope_profile(profile: dict, season: str | None) -> dict:
     # that season, same as any other absent-data case) rather than forcing
     # a fallback to a DIFFERENT season than every other section is showing.
     percentile_profile = (profile.get("season_profiles") or {}).get(season)
+    percentile_profile = _with_per_game(
+        percentile_profile, (profile.get("season_profiles_per_game") or {}).get(season))
 
     return {
         "season_scope": season,
@@ -1187,6 +1200,26 @@ def scope_profile(profile: dict, season: str | None) -> dict:
         "league_scoped": league_scoped,
         "percentile_profile": percentile_profile,
     }
+
+
+def _with_per_game(total_profile: dict | None, per_game_profile: dict | None) -> dict | None:
+    """The season-total profile with each column's PER-GAME value attached as
+    `per_game` (for the stat table's extra column). Percentile, rank and
+    every other field stay the season-total ones. Share/rate stats (snap
+    share, target share, aDOT) are already rates, so they get `None` rather
+    than repeating their own value. A missing per-game profile or column
+    leaves `per_game` as `None`."""
+    if not total_profile:
+        return total_profile
+    from webapp.sources.nflref import summary as nflref_summary
+    by_key = {c["key"]: c for c in (per_game_profile or {}).get("columns", [])}
+    cols = []
+    for c in total_profile.get("columns", []):
+        pg = by_key.get(c["key"])
+        value = None if (pg is None or c["key"] in nflref_summary._ALREADY_RATE_KEYS) \
+            else pg.get("value")
+        cols.append({**c, "per_game": value})
+    return {**total_profile, "columns": cols}
 
 
 def player_profile(player_id: str, league_id: str | None = None,

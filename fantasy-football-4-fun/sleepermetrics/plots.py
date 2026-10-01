@@ -4152,7 +4152,11 @@ def _format_stat_value(key: str, value) -> str:
     return f"{v:.0f}"
 
 
-def _format_pizza_tick_value(key: str, value) -> str:
+#: Already-a-rate stats: per-game mode leaves their formatting alone.
+_PER_GAME_PLAIN_KEYS = {"adot", "ppg_ppr"}
+
+
+def _format_pizza_tick_value(key: str, value, per_game: bool = False) -> str:
     """Same as `_format_stat_value`, except a genuine 0-1 proportion (see
     `_PERCENT_TICK_KEYS`) renders as a whole-number percentage ("34%")
     instead of a 3-decimal fraction ("0.340") -- radar-ONLY, the leaderboard
@@ -4173,6 +4177,14 @@ def _format_pizza_tick_value(key: str, value) -> str:
         return "–"
     if key in _PERCENT_TICK_KEYS:
         return f"{v * 100:.0f}%"
+    if per_game and key not in _PER_GAME_PLAIN_KEYS:
+        # A per-game counting stat is a small non-integer (0.5 TD, 266.5
+        # yards): two decimals under 10, one above, never rounded to a bare
+        # integer that would collapse neighbouring rings. Trailing zeros are
+        # dropped ("0.4", "26") so the ring labels stay short near the hub,
+        # where several spokes' labels already crowd.
+        s = f"{v:.2f}" if abs(v) < 10 else f"{v:.1f}"
+        return s.rstrip("0").rstrip(".") if "." in s else s
     return _format_stat_value(key, value)
 
 
@@ -4260,7 +4272,8 @@ def _radar_axes(fig, labels: list[str], pizza: bool = False):
     return ax, angles
 
 
-def _draw_pizza_ticks(ax, angles: list[float], keys: list[str], players: dict):
+def _draw_pizza_ticks(ax, angles: list[float], keys: list[str], players: dict,
+                      per_game: bool = False):
     """Per-spoke real-value ring labels for a `pizza=True` radar (see
     `_radar_axes`) -- e.g. "581" printed at the 80th-percentile ring on the
     Rush yds spoke, rather than a shared "80" every spoke would otherwise
@@ -4370,7 +4383,7 @@ def _draw_pizza_ticks(ax, angles: list[float], keys: list[str], players: dict):
         va = "top" if flipped else "bottom"
         for t in ticks:
             ax.text(ang, t["percentile"] * _TICK_R_SCALE,
-                    _format_pizza_tick_value(key, t["value"]), rotation=rot,
+                    _format_pizza_tick_value(key, t["value"], per_game), rotation=rot,
                     rotation_mode="anchor", va=va, **tick_style)
 
 
@@ -4432,7 +4445,7 @@ def _scale_ticks(scale: dict) -> list[dict]:
 
 
 def plot_player_radar(season_profiles: dict | None, focus_season: str | None,
-                      player_name: str):
+                      player_name: str, per_game: bool = False):
     """Every available season's percentile profile overlaid on one radar,
     the focused season bold and filled, every other season a thin dimmed
     outline behind it -- so a season's shape reads against its own history
@@ -4500,7 +4513,7 @@ def plot_player_radar(season_profiles: dict | None, focus_season: str | None,
     # Spoke name with the FOCUSED season's own value underneath, e.g.
     # "Pass yds" over "(533)": the rings carry the field's scale, this
     # carries the player's actual number for the selected season.
-    labels = [c["label"] + "\n(" + _format_pizza_tick_value(c["key"], c["value"]) + ")"
+    labels = [c["label"] + "\n(" + _format_pizza_tick_value(c["key"], c["value"], per_game) + ")"
               for c in cols]
 
     earliest, latest = seasons[0], seasons[-1]
@@ -4552,7 +4565,7 @@ def plot_player_radar(season_profiles: dict | None, focus_season: str | None,
     ring_profile = {"columns": [
         {**c, "axis_ticks": _scale_ticks(scales[c["key"]]) if c["key"] in scales
          else c.get("axis_ticks")} for c in focus_profile["columns"]]}
-    _draw_pizza_ticks(ax, angles, keys, {focus: ring_profile})
+    _draw_pizza_ticks(ax, angles, keys, {focus: ring_profile}, per_game=per_game)
 
     if len(seasons) > 1:
         # Legend BELOW the radar, centered and horizontal -- see the matching
@@ -4573,7 +4586,7 @@ def plot_player_radar(season_profiles: dict | None, focus_season: str | None,
     # Both follow the selected (focus) season: its own position, field size
     # and year. The rings' linear scale is explained once on the page, not
     # restated on the chart.
-    subtitle = f"Compared against {n} {pos}s in {focus}"
+    subtitle = f"Compared against {n} {pos}s in {focus}" + (" (per game)" if per_game else "")
     fig.suptitle(f"{player_name} ({pos}) ({focus})",
                  fontsize=15, fontweight="bold", color=T["ink"], x=0.5,
                  ha="center", y=0.99)

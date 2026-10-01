@@ -409,7 +409,7 @@ def test_percentile_profile_for_degrades_on_error(monkeypatch):
 
 
 def test_all_season_profiles_keys_by_season(monkeypatch):
-    def _fake(player_id, position, season):
+    def _fake(player_id, position, season, stat_mode="total"):
         pts = {"2023": 60.0, "2024": 75.0, "2025": 90.0}[season]
         return {"season": season, "columns": [{"key": "fpts_ppr", "label": "PPR pts",
                              "value": 200.0, "percentile": pts}],
@@ -422,7 +422,7 @@ def test_all_season_profiles_keys_by_season(monkeypatch):
 
 
 def test_all_season_profiles_skips_seasons_with_no_data(monkeypatch):
-    def _fake(player_id, position, season):
+    def _fake(player_id, position, season, stat_mode="total"):
         return None if season == "2023" else {
             "season": season,
             "columns": [{"key": "fpts_ppr", "label": "PPR pts",
@@ -693,7 +693,7 @@ def test_player_profile_picks_most_recent_season_with_data(monkeypatch):
 
     # 2026 has no data yet (offseason); 2025 does -- the focus season should
     # land on 2025, the most recent with real data, not 2026.
-    def _fake(player_id, position, season):
+    def _fake(player_id, position, season, stat_mode="total"):
         return None if season == "2026" else {
             "season": season, "position": position, "player_id": player_id,
             "n_population": 30,
@@ -875,6 +875,67 @@ def test_plot_player_radar_ghost_season_is_plotted_by_value_on_the_shared_scale(
     plt.close(fig)
 
 
+def test_with_per_game_attaches_per_game_value_and_keeps_total_percentile():
+    """The table keeps season totals (value, percentile, rank) and gains a
+    per-game value from the per-game profile; share/rate stats get None."""
+    total = {"season": "2026", "columns": [
+        {"key": "pass_yards", "label": "Pass yds", "value": 533.0, "percentile": 90.0, "rank": 8},
+        {"key": "snap_share", "label": "Snap share", "value": 1.0, "percentile": 85.0, "rank": 1}]}
+    per_game = {"season": "2026", "columns": [
+        {"key": "pass_yards", "label": "Pass yds", "value": 266.5, "percentile": 70.0},
+        {"key": "snap_share", "label": "Snap share", "value": 1.0, "percentile": 85.0}]}
+    out = pp._with_per_game(total, per_game)
+    cols = {c["key"]: c for c in out["columns"]}
+    assert cols["pass_yards"]["per_game"] == 266.5
+    assert cols["pass_yards"]["value"] == 533.0 and cols["pass_yards"]["percentile"] == 90.0
+    assert cols["snap_share"]["per_game"] is None          # already a rate
+    assert total["columns"][0].get("per_game") is None     # input not mutated
+
+
+def test_with_per_game_degrades_without_a_per_game_profile():
+    total = {"season": "2026", "columns": [
+        {"key": "pass_yards", "label": "Pass yds", "value": 533.0, "percentile": 90.0}]}
+    assert pp._with_per_game(total, None)["columns"][0]["per_game"] is None
+    assert pp._with_per_game(None, {"columns": []}) is None
+
+
+def test_player_profile_builds_total_and_per_game_season_profiles(monkeypatch):
+    monkeypatch.setattr(pp, "sleeper_players", _fake_players_df)
+    monkeypatch.setattr(pp, "_real_nfl_history", lambda *a, **k: {})
+    monkeypatch.setattr(pp, "_adp_history", lambda *a, **k: [])
+    monkeypatch.setattr(pp, "_recent_seasons", lambda n=5: ["2025"])
+    modes = []
+
+    def _fake(player_id, position, season, stat_mode="total"):
+        modes.append(stat_mode)
+        return {"season": season, "position": position, "player_id": player_id,
+                "n_population": 30, "stat_mode": stat_mode,
+                "columns": [{"key": "fpts_ppr", "label": "PPR pts",
+                             "value": 10.0 if stat_mode == "per_game" else 180.0,
+                             "percentile": 72.0}]}
+    monkeypatch.setattr(pp, "_percentile_profile_for", _fake)
+    out = pp.player_profile("5995")
+    assert sorted(set(modes)) == ["per_game", "total"]
+    assert out["season_profiles"]["2025"]["stat_mode"] == "total"
+    assert out["season_profiles_per_game"]["2025"]["stat_mode"] == "per_game"
+
+
+def test_plot_player_radar_per_game_marks_subtitle_and_uses_decimals():
+    import matplotlib.pyplot as plt
+
+    from sleepermetrics import plots
+    prof = _scaled_profile("2026", 266.5, 0.0, 422.0)
+    fig = plots.plot_player_radar({"2026": prof}, "2026", "Jared Goff", per_game=True)
+    subs = [t.get_text() for t in fig.texts if t.get_text().startswith("Compared against")]
+    assert subs == ["Compared against 70 QBs in 2026 (per game)"]
+    labels = [t.get_text() for t in fig.axes[0].texts if "\n(" in t.get_text()]
+    assert labels == ["Pass yds\n(266.5)"]
+    plt.close(fig)
+    fig = plots.plot_player_radar({"2026": prof}, "2026", "Jared Goff")
+    assert not [t for t in fig.texts if "(per game)" in t.get_text()]
+    plt.close(fig)
+
+
 def test_plot_player_radar_defaults_focus_to_most_recent_when_unresolved():
     import matplotlib.pyplot as plt
 
@@ -895,3 +956,15 @@ def test_plot_player_radar_degrades_on_no_data():
     fig2 = plots.plot_player_radar({"2025": {"columns": []}}, "2025", "Nobody")
     assert fig2 is not None
     plt.close(fig2)
+
+
+def test_format_pizza_tick_value_per_game_is_short_and_keeps_decimals():
+    from sleepermetrics import plots
+    f = plots._format_pizza_tick_value
+    assert f("pass_yards", 266.5, True) == "266.5"
+    assert f("pass_yards", 26.0, True) == "26"          # trailing zero dropped
+    assert f("rush_td", 0.4, True) == "0.4"
+    assert f("rush_td", 0.0, True) == "0"
+    assert f("rush_td", 0.125, True) == "0.12" or f("rush_td", 0.125, True) == "0.13"
+    assert f("snap_share", 0.78, True) == "78%"          # shares stay percents
+    assert f("pass_yards", 533.0, False) == "533"        # totals unchanged

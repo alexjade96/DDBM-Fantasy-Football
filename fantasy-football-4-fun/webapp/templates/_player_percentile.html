@@ -73,7 +73,7 @@
 {{ ch.chart("player_radar", player_id=player_id, season_override=season_scope) }}
 <div class="tablewrap">
   <table class="dt-games">
-    <thead><tr><th>Stat</th><th class="n">Value</th><th class="n">Percentile</th><th class="n">Position rank</th></tr></thead>
+    <thead><tr><th>Stat</th><th class="n">Value</th><th class="n">Per game</th><th class="n">Percentile</th><th class="n">Position rank</th></tr></thead>
     <tbody>
     {% for c in percentile_profile.columns %}
       {% set p = c.percentile|round|int %}
@@ -81,6 +81,11 @@
       <tr>
         <td>{{ c.label }}</td>
         <td class="n">{{ c.value }}</td>
+        <td class="n">
+          {%- if c.per_game is defined and c.per_game is not none -%}
+          {{ "%.1f"|format(c.per_game) }}
+          {%- else %}&ndash;{% endif -%}
+        </td>
         <td class="n">{{ p }}{{ suffix }}</td>
         <td class="n">
           {%- if c.rank is defined and c.rank is not none -%}

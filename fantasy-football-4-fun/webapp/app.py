@@ -1049,7 +1049,7 @@ CHART_META = {
     "week_matchups": {"cap": "Every game this week: who played whom, and the margin.", "wide": True},
     "week_race": {"cap": "Table position after each week: where lines cross, the lead changed."},
     # Player profile (league-free)
-    "player_radar": {"cap": "Percentile at each stat, against every real NFL player at the position; other seasons ghosted behind the focused one."},
+    "player_radar": {"cap": "Per-game rates at each stat, scaled between the lowest and highest value among real NFL players at the position; other seasons ghosted behind the focused one."},
 }
 tpl.env.globals["CHART_META"] = CHART_META
 
@@ -1124,6 +1124,12 @@ def chart(name: str, league: str = DEFAULT_LEAGUE, season: str | None = None,
             profile = pp.player_profile(player_id, league_id=league or None)
             pname = (profile.get("identity") or {}).get("player_name") or f"Player {player_id}"
             focus = season or profile.get("focus_season")
+            # The radar plots PER-GAME rates (a short current season would
+            # otherwise be dwarfed by full ones); the stat table beside it
+            # keeps season totals and adds a per-game column.
+            per_game = profile.get("season_profiles_per_game")
+            if per_game:
+                return png(plots.plot_player_radar(per_game, focus, pname, per_game=True))
             return png(plots.plot_player_radar(profile.get("season_profiles"), focus, pname))
     if name == "player_overlay":
         # Player Comparison landing tab's shared snapshot/trend chart (see
