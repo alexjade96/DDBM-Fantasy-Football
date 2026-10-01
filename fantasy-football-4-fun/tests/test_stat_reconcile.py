@@ -843,3 +843,74 @@ def test_role_rows_for_metric_matches_real_team_profile_bucket_convention():
     ]}
     out2 = sr._role_rows_for_metric(snap_role_rows, "snaps_special_teams")
     assert set(out2) == {"snap_counts"}
+
+
+# --- real-data invariants (live nflverse data, skipped when unavailable) -------
+
+
+def _real_passing_sources():
+    """DET's real passing rows by source for the newest season that has any,
+    via the same loaders the team-profile page uses. Returns (season, rows)
+    or None when no data resolves (offline with an empty snapshot cache)."""
+    from webapp import team_profile as tp
+    for season in ("2026", "2025"):
+        try:
+            ds = tp._team_datasets("DET", [season])
+        except Exception:
+            continue
+        passing = tp._split_player_stats(ds.get("player_stats", [])).get("passing", [])
+        if passing:
+            return season, {"player_stats": passing,
+                            "ngs_passing": ds.get("ngs_passing", []),
+                            "pfr_pass": ds.get("pfr_pass", [])}
+    return None
+
+
+def test_real_data_season_total_equals_sum_of_weekly_consensus():
+    """Per-week is ground truth: for every real player, each season stat from
+    reconcile_season must equal the sum of that player's per-week consensus
+    values from reconcile_metric, and every weekly consensus must be a value
+    some source actually reported (a vote never invents a number)."""
+    import pytest
+    found = _real_passing_sources()
+    if found is None:
+        pytest.skip("no real passing data available (offline, empty snapshot cache)")
+    _, src = found
+    weeks = sorted({r["week"] for rows in src.values() for r in rows
+                    if r.get("week") not in (None, 0)})
+    assert weeks, "real data resolved but carried no weeks"
+    stats = [k for k in sr._ALL_METRIC_MAPS["passing"]]
+    weekly_sum: dict[tuple[str, str], float] = {}
+    for wk in weeks:
+        wk_rows = sr.reconcile_metric(
+            {s: [r for r in rows if r.get("week") == wk] for s, rows in src.items()},
+            "passing")
+        for row in wk_rows:
+            for stat in stats:
+                if row.get(stat) is None:
+                    continue
+                reported = set(row[f"{stat}_sources"].values())
+                assert row[stat] in reported, (row["player"], wk, stat)
+                key = (row["player"], stat)
+                weekly_sum[key] = weekly_sum.get(key, 0) + row[stat]
+    season_rows, _ = sr.reconcile_season(src, "passing")
+    assert season_rows
+    for row in season_rows:
+        for stat in stats:
+            if row.get(stat) is not None and (row["player"], stat) in weekly_sum:
+                assert row[stat] == weekly_sum[(row["player"], stat)], (row["player"], stat)
+
+
+def test_real_data_every_passer_with_attempts_survives_reconciliation():
+    """No player_stats passer with real attempts may vanish from the
+    reconciled season output (the silent-zero-rows failure mode that a wrong
+    name column produces)."""
+    import pytest
+    found = _real_passing_sources()
+    if found is None:
+        pytest.skip("no real passing data available (offline, empty snapshot cache)")
+    _, src = found
+    expected = {r["player_display_name"] for r in src["player_stats"]
+                if (r.get("attempts") or 0) > 0 and r.get("week") not in (None, 0)}
+    got = {r["player"] for r in sr.reconcile_season(src, "passing")[0]}
+    assert expected and expected <= got
