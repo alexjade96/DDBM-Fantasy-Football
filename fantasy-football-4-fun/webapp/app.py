@@ -12,6 +12,8 @@ from __future__ import annotations
 
 import contextlib
 import dataclasses
+import functools
+import inspect
 import io
 import json
 import os
@@ -36,6 +38,7 @@ import sleepermetrics as sm  # noqa: E402
 from sleepermetrics import draft, metrics, plots, scoring, summaries  # noqa: E402
 # Aliased: the `/report` route function below would otherwise shadow the module.
 from sleepermetrics import report as sm_report  # noqa: E402
+from webapp import assetcache  # noqa: E402
 from webapp import refresher as _refresher  # noqa: E402
 
 BASE = Path(__file__).resolve().parent
@@ -65,6 +68,7 @@ async def _lifespan(_app: "FastAPI"):
     # Same idea for the in-season data snapshots: plan a refresh at boot
     # (a no-op unless Sleeper's week moved or an nflverse file changed).
     _refresher.maybe_start()
+    assetcache.enabled = True      # loopback warm-up only under a real server
     yield
 
 
@@ -107,7 +111,20 @@ async def _stamp_asset_version(request: Request, call_next):
     path = request.url.path
     if not path.startswith(("/static", "/refresh/")):
         _refresher.maybe_start()
-    resp = await call_next(request)
+    # Tell the asset cache whether a real visitor is mid-request (the warm-up
+    # waits while one is) and hand the endpoint the If-None-Match header.  The
+    # warm-up's own loopback requests carry X-Warm and are not counted.
+    counted = (not path.startswith(("/static", "/refresh/", "/health"))
+               and request.headers.get("x-warm") != "1")
+    if counted:
+        assetcache.request_started()
+    token = assetcache.if_none_match.set(request.headers.get("if-none-match"))
+    try:
+        resp = await call_next(request)
+    finally:
+        assetcache.if_none_match.reset(token)
+        if counted:
+            assetcache.request_finished()
     resp.headers["X-Asset-V"] = asset_v()
     return resp
 
@@ -861,7 +878,15 @@ def tab_part_view(name: str, part: str, request: Request, league: str = DEFAULT_
     ctx = _base_ctx(league, key, s, theme, bracket, scope)
     ctx["manager"] = manager
     ctx["week"] = week
-    return fn(request, s, d, key, ctx)
+    # A finished section is kept with the league data it was built from.  A live
+    # week (explicit, or the default of an in-progress season) changes by the
+    # minute, so those are always built fresh.
+    if week == "live" or (week is None and s.in_progress):
+        return fn(request, s, d, key, ctx)
+    return assetcache.cached_response(
+        assetcache.store_for(d),
+        assetcache.make_key("part", name, part, league, key, theme, manager, week, scope, bracket),
+        d["at"], lambda: fn(request, s, d, key, ctx), validate=False)
 
 
 def _pushed(resp, ctx: dict, tab_name: str):
@@ -1115,7 +1140,34 @@ tpl.env.globals["roster_name_index"] = _team_profile.roster_name_index
 # decided.
 
 
+def _chart_cached(fn):
+    """Keep each rendered chart (see assetcache): league charts live on the
+    league's cached entry, league-free ones (player charts) in a TTL store.
+    Keyed on every parameter the chart takes, so nothing can cross-serve."""
+    sig = inspect.signature(fn)
+
+    @functools.wraps(fn)
+    def wrapper(*args, **kw):
+        bound = sig.bind_partial(*args, **kw)
+        bound.apply_defaults()
+        params = dict(bound.arguments)
+        key = assetcache.make_key("chart", *sorted((k, v) for k, v in params.items()))
+        inm = assetcache.if_none_match.get()
+        make = lambda: fn(*args, **kw)
+        league_free = params.get("name") in PLAYER_CHARTS or params.get("name") == "player_overlay"
+        if league_free:
+            return assetcache.cached_response(assetcache.store_for(None), key, None, make,
+                                              ttl=TTL, inm=inm)
+        try:
+            d = league_data(params.get("league") or DEFAULT_LEAGUE)
+        except Exception:
+            return make()
+        return assetcache.cached_response(assetcache.store_for(d), key, d["at"], make, inm=inm)
+    return wrapper
+
+
 @app.get("/chart/{name}")
+@_chart_cached
 def chart(name: str, league: str = DEFAULT_LEAGUE, season: str | None = None,
           matchup: str | None = None, scope: str = "title",
           theme: str = "light", manager: str | None = None,
@@ -1169,7 +1221,10 @@ def chart(name: str, league: str = DEFAULT_LEAGUE, season: str | None = None,
         pos = (position or "RB").upper()
         ids = [i for i in (player_ids or "").split(",") if i]
         labels = [l for l in (player_labels or "").split(",") if l]
-        sm = stat_mode if stat_mode in ("total", "per_game") else "total"
+        # Not named `sm`: that would shadow the sleepermetrics module for the whole
+        # function, and every later `sm.` call (the playoff bracket charts) would
+        # raise UnboundLocalError.
+        smode = stat_mode if stat_mode in ("total", "per_game") else "total"
         with _render_lock:
             plots.set_chart_theme(theme)
             if not ids or len(ids) != len(labels):
@@ -1183,8 +1238,8 @@ def chart(name: str, league: str = DEFAULT_LEAGUE, season: str | None = None,
                 stat_keys = pc._DEFAULT_TREND_KEYS.get(pos, ("pts_ppr",))[:1]
                 return png(plots.plot_player_overlay(
                     players, list(stat_keys), mode="trend", title=f"{pos} trend",
-                    stat_mode=sm))
-            profiles = pc.player_field_compare(sea, pos, ids, stat_mode=sm)
+                    stat_mode=smode))
+            profiles = pc.player_field_compare(sea, pos, ids, stat_mode=smode)
             players = {lab: profiles.get(pid) for pid, lab in zip(ids, labels)}
             # "Christian McCaffrey vs Jonathan Taylor" (or "vs ... vs ..." for
             # 3+) names every player directly in the title -- the radar has no
@@ -1193,7 +1248,7 @@ def chart(name: str, league: str = DEFAULT_LEAGUE, season: str | None = None,
             snap_title = " vs ".join(labels) if labels else f"{pos} comparison"
             return png(plots.plot_player_overlay(
                 players, [], mode="snapshot",
-                title=snap_title, position=pos, stat_mode=sm))
+                title=snap_title, position=pos, stat_mode=smode))
     d, s, key = pick(league, season)
     # A custom / rolled-back bracket (token) overrides this season's committed
     # one for every playoff chart, so the whole tab reflects it consistently.
@@ -3768,6 +3823,14 @@ def tab(name: str, request: Request, league: str = DEFAULT_LEAGUE,
     # the pushed URL, the header field and every chart <img> use the current
     # season's id rather than the older one that may have been pasted.
     league = d.get("resolved_league_id", league)
+    # Silently fill the asset cache for what this visitor is likely to open next
+    # (this tab first, then the others), once per league data.  A hit on the
+    # warm-up's own request, or a refresh, does nothing.
+    if not refresh:
+        assetcache.warm_async(
+            d, league, key, name, theme,
+            [t for t, _ in TABS if t not in ("report", "testing")],
+            lambda: _cache.get(str(league)))
     ctx = _base_ctx(league, key, s, theme, bracket, scope,
                      int(time.time()) if refresh else 0)
     if boot:
