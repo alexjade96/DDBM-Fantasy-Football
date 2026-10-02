@@ -30,7 +30,7 @@ from fastapi.templating import Jinja2Templates
 
 matplotlib.use("Agg")
 
-from repo_paths import REPO_ROOT, SEASON_DIR as _SEASON_DIR_PATH  # noqa: E402
+from repo_paths import REPO_ROOT, SEASON_DIR as _SEASON_DIR_PATH, release_memory  # noqa: E402
 
 import sleepermetrics as sm  # noqa: E402
 from sleepermetrics import draft, metrics, plots, scoring, summaries  # noqa: E402
@@ -933,6 +933,7 @@ def png(fig) -> Response:
     fig.savefig(buf, format="png", dpi=110, bbox_inches="tight",
                 facecolor=plots.T["bg"])
     matplotlib.pyplot.close(fig)
+    release_memory(collect=False)    # Render only; see repo_paths
     # Cacheable per (url incl. theme + bust): the browser reuses charts across
     # tab visits instead of re-fetching every switch. `bust` changes on a live
     # re-score, so a refreshed week is never served stale.
@@ -5382,7 +5383,7 @@ def player_page(request: Request, player_id: str, league: str | None = None,
         # `season` stays the real LEAGUE season (used by the back-link and by
         # every other chart key's `&season=`, per _chartmacro.html); the
         # page's own shared season scope rides separately as `season_scope`.
-        "league": resolved_league, "season": season, "theme": theme,
+        "league": resolved_league or "", "season": season, "theme": theme,
         "asset_v": asset_v(), "player_id": player_id, "bust": 0,
         "identity": ident, "league_name": league_name,
         "source_labels": stat_reconcile.SOURCE_LABELS,
@@ -5429,7 +5430,7 @@ def player_season_sections(request: Request, player_id: str,
     profile = pp.player_profile(player_id, league_id=resolved_league)
     scoped_ctx = _player_season_ctx(profile, season_scope)
     ctx = {
-        "league": resolved_league, "season": season, "theme": theme,
+        "league": resolved_league or "", "season": season, "theme": theme,
         "bust": 0, "player_id": player_id, "league_name": league_name,
         "league_history": profile["league"],
         "source_labels": stat_reconcile.SOURCE_LABELS,

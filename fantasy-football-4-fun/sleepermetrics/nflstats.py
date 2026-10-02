@@ -29,7 +29,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from repo_paths import SOURCES_DIR
+from repo_paths import SOURCES_DIR, on_render
 
 from . import scoring
 from .players import players
@@ -132,6 +132,16 @@ def _trim(lines: dict) -> dict:
     return out
 
 
+_RENDER_MAX_WEEK_LINES = 18   # cap on trimmed weeks held in memory when on_render()
+
+
+def _remember(key, rows) -> None:
+    _week_cache[key] = rows
+    if on_render():
+        while len(_week_cache) > _RENDER_MAX_WEEK_LINES:
+            _week_cache.pop(next(iter(_week_cache)))
+
+
 def raw_week(season, week, reload: bool = False) -> dict:
     """Trimmed usage lines for one week: {player_id: {key: value}}.
 
@@ -151,7 +161,7 @@ def raw_week(season, week, reload: bool = False) -> dict:
         try:
             rows = json.loads(path.read_text(encoding="utf-8"))
             if isinstance(rows, dict):
-                _week_cache[key] = rows
+                _remember(key, rows)
                 return rows
         except Exception:
             pass
@@ -171,7 +181,7 @@ def raw_week(season, week, reload: bool = False) -> dict:
             os.replace(tmp, path)
         except Exception:
             pass
-        _week_cache[key] = trimmed
+        _remember(key, trimmed)
         return trimmed
 
     # live pull produced nothing; last resort is a snapshot we skipped above
@@ -179,11 +189,11 @@ def raw_week(season, week, reload: bool = False) -> dict:
         try:
             rows = json.loads(path.read_text(encoding="utf-8"))
             if isinstance(rows, dict):
-                _week_cache[key] = rows
+                _remember(key, rows)
                 return rows
         except Exception:
             pass
-    _week_cache[key] = {}
+    _remember(key, {})
     return {}
 
 

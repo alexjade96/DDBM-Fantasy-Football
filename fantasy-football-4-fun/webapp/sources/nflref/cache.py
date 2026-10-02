@@ -15,7 +15,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from repo_paths import SOURCES_DIR
+from repo_paths import SOURCES_DIR, on_render
 
 # Same root + override as the rest of the durable source-scoped data
 # (data/sources/, a sibling of data/seasons/).
@@ -38,6 +38,8 @@ def load(dataset: str, season: str, force: bool = False) -> pd.DataFrame | None:
         return _mem[key].copy()
     try:
         df = pd.read_parquet(_path(dataset, season))
+        if on_render():
+            return df     # Render: re-read from disk rather than hold ~40MB of frames
         _mem[key] = df
         return df.copy()
     except Exception:
@@ -46,7 +48,8 @@ def load(dataset: str, season: str, force: bool = False) -> pd.DataFrame | None:
 
 def save(dataset: str, season: str, df: pd.DataFrame) -> None:
     """Write the snapshot (best-effort; a read-only FS is not fatal)."""
-    _mem[f"{dataset}:{season}"] = df
+    if not on_render():
+        _mem[f"{dataset}:{season}"] = df
     try:
         p = _path(dataset, season)
         p.parent.mkdir(parents=True, exist_ok=True)

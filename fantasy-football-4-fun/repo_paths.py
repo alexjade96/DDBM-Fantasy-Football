@@ -67,11 +67,37 @@ def on_render() -> bool:
 _heavy_build_lock = threading.Lock()
 
 
+def release_memory(collect: bool = True) -> None:
+    """Render only: hand freed heap back to the OS.  glibc keeps freed memory in
+    per-thread arenas, so after a big pandas build the container's footprint
+    stays high even though Python has released the objects.  No-op elsewhere
+    (and on a platform without glibc)."""
+    if not on_render():
+        return
+    if collect:
+        import gc
+        gc.collect()
+    try:
+        import ctypes
+        ctypes.CDLL("libc.so.6").malloc_trim(0)
+    except Exception:
+        pass
+
+
+@contextlib.contextmanager
 def heavy_build_guard():
     """Context manager for a memory-heavy cold build (a player/team profile).
     On Render it serialises them, since each holds ~190MB while building and two
-    at once exceed the 512MB instance; elsewhere it does nothing."""
-    return _heavy_build_lock if on_render() else contextlib.nullcontext()
+    at once exceed the 512MB instance, and trims the heap afterwards; elsewhere
+    it does nothing."""
+    if not on_render():
+        yield
+        return
+    with _heavy_build_lock:
+        try:
+            yield
+        finally:
+            release_memory()
 
 
 def prune_cache(cache: dict, ttl: float, max_entries: int = 4) -> None:
