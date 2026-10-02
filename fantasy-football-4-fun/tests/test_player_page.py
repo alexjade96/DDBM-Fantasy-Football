@@ -349,7 +349,7 @@ def test_player_percentile_part_falls_back_to_default_focus_on_unknown_season(
     assert "(2025)" in body
 
 
-def test_nflstats_table_links_only_rows_with_a_resolved_sleeper_id(monkeypatch):
+def test_nflstats_table_links_only_rows_with_a_resolved_sleeper_id(monkeypatch, tmp_path):
     """The NFL Stats tab is the Phase-2 link's first wiring point -- a row
     WITH a resolved sleeper_id must link to /player/<id>; a row without one
     must render plain text, never a link to a page that would just show
@@ -378,6 +378,11 @@ def test_nflstats_table_links_only_rows_with_a_resolved_sleeper_id(monkeypatch):
          "receiving_yards": 5, "fantasy_points_ppr": 1.0},
     ])
     monkeypatch.setattr(api, "read_release_parquet", lambda asset: df)
+    # reload=True writes a snapshot; keep it out of the real data/sources dir
+    # (this test once overwrote the committed 2024 player_stats file).
+    from webapp.sources.nflref import cache as nflref_cache
+    monkeypatch.setattr(nflref_cache, "_NFLVERSE_DIR", tmp_path / "nflverse")
+    nflref_cache.clear()
 
     # reload=True is required to actually exercise the mock: `load()`
     # (nflref/board.py) is snapshot-first, and a real committed
