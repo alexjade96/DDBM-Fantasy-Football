@@ -77,15 +77,11 @@ def _fake_profile(monkeypatch):
                                   "position": "RB", "season": "2025"}],
                 "past_rows": [], "best_effort": True},
         }
-        adp_history = [{"season": "2025", "sleeper_id": player_id, "consensus": 40.0,
-                        "final": 55, "diff": -15.0}]
         return {
             "identity": {"player_id": player_id, "player_name": "Justice Hill",
                          "position": "RB", "team": "BAL", "gsis_id": "00-0034975"},
             "seasons_covered": ["2025", "2024"],
             "real_nfl": real_nfl,
-            "adp_history": adp_history,
-            "adp_current": adp_history, "adp_past": [],
             "current_season": "2025",
             "league": league_section,
             "league_current": league_current, "league_past": league_past,
@@ -141,7 +137,6 @@ def test_player_page_shows_no_current_season_message_when_only_past_data_exists(
                     "best_effort": False},
             },
             "game_log": [], "game_log_stat_cols": [],
-            "adp_history": [],
             "current_season": "2026",
             "league": None,
         })
@@ -201,7 +196,7 @@ def test_player_page_unknown_player_renders_short_page(monkeypatch):
         lambda player_id, league_id=None, fresh=False: {
             "identity": {"player_id": player_id, "player_name": None,
                          "position": None, "team": None, "gsis_id": None},
-            "seasons_covered": [], "real_nfl": {}, "adp_history": [],
+            "seasons_covered": [], "real_nfl": {},
             "league": None,
         })
     resp = app.player_page(_Req(), player_id="999999999", render=1)
@@ -219,7 +214,7 @@ def test_player_page_refresh_param_forces_fresh_rebuild(monkeypatch):
         return {
             "identity": {"player_id": player_id, "player_name": "X",
                          "position": None, "team": None, "gsis_id": None},
-            "seasons_covered": [], "real_nfl": {}, "adp_history": [],
+            "seasons_covered": [], "real_nfl": {},
             "league": None,
         }
     monkeypatch.setattr(pp, "player_profile", _fake)
@@ -278,7 +273,7 @@ def test_player_page_refresh_shows_loader_even_when_warm(monkeypatch, _fake_prof
 # 2026-09: player_page's own "season pills" for the percentile chart alone
 # were replaced entirely by ONE shared season dropdown that re-renders EVERY
 # follow-up section (Percentile profile, {league} history, Game log,
-# Advanced & usage stats, Draft ADP history) in lockstep -- see
+# Advanced & usage stats) in lockstep -- see
 # webapp.app.player_season_sections's own docstring. The per-section
 # `focus=`-based `player_percentile_part()` route this file used to test no
 # longer exists at all (AttributeError on `webapp.app`); `season_scope=` on
@@ -311,7 +306,7 @@ def _fake_profile_with_seasons(monkeypatch):
                          "position": "RB", "team": "BAL", "gsis_id": "00-0034975"},
             "current_season": "2025", "seasons_covered": ["2025", "2024"],
             "real_nfl": {}, "game_log": [], "game_log_stat_cols": [],
-            "adp_history": [], "league": None,
+            "league": None,
             "season_profiles": season_profiles,
         }
     monkeypatch.setattr(pp, "player_profile", _fake)

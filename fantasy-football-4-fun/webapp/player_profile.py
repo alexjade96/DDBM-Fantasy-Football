@@ -24,8 +24,7 @@ Player identifier spaces are NOT unified across sources:
 Every section degrades independently: a data source that errors, has no
 snapshot, or simply doesn't cover this player leaves that section empty
 rather than failing the whole call. This mirrors the "never raises" degrade
-discipline `nflref.base.NflDataset.fetch()` and `ffadp.board.combine()`
-already follow.
+discipline `nflref.base.NflDataset.fetch()` already follows.
 """
 from __future__ import annotations
 
@@ -39,9 +38,8 @@ import pandas as pd
 from sleepermetrics import draft, metrics
 from sleepermetrics.players import players as sleeper_players
 
-# player_profile() calls into 10+ nflref datasets and loops
-# ffadp.board.combine() per season, none of which cache a single-player
-# result themselves (only the whole-board/whole-dataset fetch underneath is
+# player_profile() calls into 10+ nflref datasets per season, none of which
+# cache a single-player result themselves (only the whole-board/whole-dataset fetch underneath is
 # snapshot-cached) -- a cold call took 17-30s in practice, measured against
 # a real league. Same {key: {"data", "at"}} + TTL shape webapp.app's own
 # `_bracket_cache` uses (simpler than league_data()'s stale-while-revalidate
@@ -53,8 +51,8 @@ _PROFILE_TTL = 900  # 15 min, matches webapp.app.TTL's season-cache window
 
 # How many recent seasons of real-NFL data to pull when there is no league
 # history to scope the search from (a bare NFL-Stats-tab lookup, or a
-# player this league never rostered). Bounds the number of nflref.load /
-# ffadp.board.combine calls for the common case (an active player) rather
+# player this league never rostered). Bounds the number of nflref.load
+# calls for the common case (an active player) rather
 # than looping every season back to each dataset's own EARLIEST (2016-2018
 # depending on dataset), most of which would return empty for a player who
 # has only played a few years.
@@ -915,34 +913,11 @@ def _game_log(identity: dict, real_nfl: dict, seasons: list[str]) -> list[dict]:
     return out
 
 
-def _adp_history(sleeper_id: str, seasons: list[str],
-                  scoring: str = "ppr") -> list[dict]:
-    """This player's row from ffadp.board.combine() for each season in
-    `seasons` that has any ADP data at all -- multi-year draft-consensus
-    history. League-agnostic (ADP is platform-wide, not per-league), though
-    `scoring` should match the profile's league format when one is known."""
-    try:
-        from webapp.sources.ffadp import board as ffadp_board
-    except Exception:
-        return []
-    out = []
-    for season in seasons:
-        try:
-            combined = ffadp_board.combine(season, scoring=scoring)
-        except Exception:
-            continue
-        for row in combined.get("rows", []):
-            if str(row.get("sleeper_id")) == str(sleeper_id):
-                out.append({"season": season, **row})
-                break
-    return out
-
-
 def _percentile_profile_for(player_id: str, position: str | None,
                             season: str, stat_mode: str = "total") -> dict | None:
     """One thin, patchable seam around `nflref.summary.percentile_profile`
     (module-level so tests can `monkeypatch.setattr(pp, ...)` it exactly like
-    `_real_nfl_history`/`_adp_history` already are, rather than reaching
+    `_real_nfl_history` already is, rather than reaching
     through a function-local import) -- see those two for the established
     convention this mirrors. `source="sleeper"` since the leaderboard it
     reads already carries the real Sleeper `player_id` directly (no
@@ -1079,7 +1054,6 @@ def _build_profile(player_id: str, league_id: str | None = None) -> dict:
     real_nfl = _real_nfl_history(
         identity.get("gsis_id"), identity.get("player_name"),
         identity.get("position"), real_nfl_seasons)
-    adp = _adp_history(player_id, real_nfl_seasons)
     game_log = _game_log(identity, real_nfl, real_nfl_seasons)
 
     # Every season's full percentile profile, for the radar overlay -- the
@@ -1118,7 +1092,6 @@ def _build_profile(player_id: str, league_id: str | None = None) -> dict:
         # spec from at all (and every entry carries the identical spec
         # regardless, so re-deriving it per game would be redundant).
         "game_log_stat_cols": _log_stat_cols(identity.get("position")),
-        "adp_history": adp,
         "current_season": _current_season(),
         "league": league_section,
         "percentile_profile": percentile_profile,
@@ -1133,15 +1106,15 @@ def scope_profile(profile: dict, season: str | None) -> dict:
     """The `player_profile()` result, re-scoped to exactly ONE season for
     display -- the season dropdown's own filter, run fresh per request
     (cheap: this only filters already-fetched lists, no data pull) so
-    every "follow-up section" (game log, real-NFL history, league history,
-    ADP history) shows that one season's rows, all in lockstep, rather
+    every "follow-up section" (game log, real-NFL history, league history)
+    shows that one season's rows, all in lockstep, rather
     than each defaulting independently to today's real NFL season.
 
     `season=None` (or a season this player has no data for at all) falls
     back to `profile["current_season"]` -- the page's own default on first
     load, same as the old fixed "current season" split this replaced.
     Returns the SAME KEYS `player_profile.html` reads as flat top-level
-    context (`real_nfl`, `real_nfl_categories`, `game_log`, `adp_history`,
+    context (`real_nfl`, `real_nfl_categories`, `game_log`,
     `league_history`), values replaced with this season's rows only --
     `real_nfl_categories` (see `real_nfl_by_category`) is the "Advanced &
     usage stats" section's own per-category reconciliation (renamed from
@@ -1169,7 +1142,6 @@ def scope_profile(profile: dict, season: str | None) -> dict:
     # already being scoped to this one season.
     real_nfl_categories = real_nfl_by_category(real_nfl)
     game_log = _scope_to_season(profile.get("game_log") or [], season)
-    adp = _scope_to_season(profile.get("adp_history") or [], season)
 
     league_section = profile.get("league")
     league_scoped = None
@@ -1198,7 +1170,6 @@ def scope_profile(profile: dict, season: str | None) -> dict:
         "real_nfl": real_nfl,
         "game_log": game_log,
         "real_nfl_categories": real_nfl_categories,
-        "adp_history": adp,
         "league_scoped": league_scoped,
         "percentile_profile": percentile_profile,
     }
@@ -1230,13 +1201,13 @@ def player_profile(player_id: str, league_id: str | None = None,
 
     Always includes identity + real-NFL history (recent seasons, or every
     season this league has rostered him in if `league_id` is given -- see
-    `_build_profile`) + multi-year ADP consensus. Adds a `league` section
+    `_build_profile`). Adds a `league` section
     (this league's draft slot, roster history, honors, trades, waiver
     activity) only when `league_id` is given, since that's the only section
     that needs a Sleeper Season object at all.
 
-    A cold call is expensive (10+ nflref dataset loads and a
-    ffadp.board.combine() call per season, plus, with a league_id, a
+    A cold call is expensive (10+ nflref dataset loads per season,
+    plus, with a league_id, a
     draft_board/player_honors/etc. loop per league season -- measured
     17-30s against a real league). This is the first genuinely single-
     player page in the app (a real navigation, not an htmx panel swap), so

@@ -2,11 +2,11 @@
    html), in one file so it can be re-rendered as a single htmx fragment
    when the season dropdown changes: Percentile profile, {league} history,
    Game log, Advanced & usage stats (renamed from "Real-NFL history" to
-   match team_profile.html's identical section, 2026-09, user request),
-   Draft ADP history. Factored out specifically
+   match team_profile.html's identical section, 2026-09, user request).
+   Factored out specifically
    so a season switch re-renders ALL of these in lockstep (user request --
    previously only the Percentile chart followed the dropdown, while the
-   other four sections stayed fixed on today's real NFL season via their
+   other sections stayed fixed on today's real NFL season via their
    own separate current/past split).
 
    `webapp.player_profile.scope_profile(profile, season)` does the actual
@@ -20,7 +20,7 @@
 
    Needs in context: player_id, league, season, theme, league_history,
    league_name, league_scoped, season_scope, seasons_covered, game_log,
-   game_log_stat_cols, real_nfl, real_nfl_categories, adp_history,
+   game_log_stat_cols, real_nfl, real_nfl_categories,
    percentile_profile, plus whatever _player_percentile.html itself needs
    (bust). Served two ways:
    inline (`{% include %}` from player_profile.
@@ -267,30 +267,4 @@
 {% endfor %}
 {% if not flags.any_real_nfl %}
 <p class="empty">No real-NFL data found for this player in {{ season_scope }}.</p>
-{% endif %}
-
-<h2>Draft ADP history <span class="hint">({{ season_scope }})</span></h2>
-{# `adp_history` is already scoped to `season_scope` (see
-   webapp.player_profile.scope_profile) -- no separate current/past split
-   or "Past seasons" drilldown here any more, same as Advanced & usage
-   stats above. #}
-{% if adp_history %}
-<div class="tablewrap">
-  <table class="dt-games">
-    <thead><tr><th class="n">Consensus rank</th><th class="n">Final finish</th><th class="n">Diff</th></tr></thead>
-    <tbody>
-    {% for r in adp_history %}
-      <tr>
-        <td class="n">{{ r.consensus if r.consensus is not none else "&ndash;" }}</td>
-        <td class="n">{{ r.final if r.final is not none else "&ndash;" }}</td>
-        <td class="n {% if r.diff is not none and r.diff > 0 %}dv-pos{% elif r.diff is not none and r.diff < 0 %}dv-neg{% endif %}">
-          {{- r.diff if r.diff is not none else "&ndash;" -}}
-        </td>
-      </tr>
-    {% endfor %}
-    </tbody>
-  </table>
-</div>
-{% else %}
-<p class="empty">No ADP data for {{ season_scope }}.</p>
 {% endif %}

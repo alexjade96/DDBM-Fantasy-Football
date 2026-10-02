@@ -5319,7 +5319,6 @@ def _player_season_ctx(profile: dict, season_scope: str | None) -> dict:
         "real_nfl_categories": scoped["real_nfl_categories"],
         "game_log": scoped["game_log"],
         "game_log_stat_cols": profile.get("game_log_stat_cols") or [],
-        "adp_history": scoped["adp_history"],
         "league_scoped": scoped["league_scoped"],
         "percentile_profile": scoped["percentile_profile"],
         "season_scope": scoped["season_scope"],
@@ -5343,7 +5342,7 @@ def player_page(request: Request, player_id: str, league: str | None = None,
     `season_scope` is a SEPARATE concept from `season` (which, when a
     league is given, `pick()` below reassigns to that league's own
     season) -- it's the ONE season every "follow-up section" (percentile
-    radar, game log, league history, real-NFL history, ADP history) shows
+    radar, game log, league history, real-NFL history) shows
     at once, picked via a single shared dropdown on the page (see
     player_profile.scope_profile's own docstring). Defaults to the current
     real NFL season.
@@ -5401,7 +5400,7 @@ def player_season_sections(request: Request, player_id: str,
     """The player-profile page's shared "follow-up sections" container
     (Percentile profile, {league} history, Game log, Advanced & usage
     stats -- renamed from "Real-NFL history" to match team_profile.html's
-    identical section, 2026-09, user request --, Draft ADP history), as an
+    identical section, 2026-09, user request --), as an
     htmx fragment -- the season dropdown
     (`_player_percentile.html`) hx-gets this instead of a plain link, so
     picking a different season re-renders every one of those sections in

@@ -195,34 +195,6 @@ def test_real_nfl_history_degrades_on_nflref_import_failure(monkeypatch):
     assert pp._real_nfl_history("00-0034975", "X", "RB", ["2025"]) == {}
 
 
-# --- _adp_history ------------------------------------------------------
-
-def test_adp_history_filters_to_one_player(monkeypatch):
-    def _fake_combine(season, scoring="ppr", **kw):
-        return {"rows": [
-            {"sleeper_id": "5995", "player": "Justice Hill", "consensus": 40.0},
-            {"sleeper_id": "7564", "player": "Ja'Marr Chase", "consensus": 1.0},
-        ]}
-
-    import webapp.sources.ffadp.board as ffadp_board
-    monkeypatch.setattr(ffadp_board, "combine", _fake_combine)
-
-    out = pp._adp_history("5995", ["2025", "2024"])
-    assert len(out) == 2
-    assert all(r["sleeper_id"] == "5995" for r in out)
-    assert out[0]["season"] == "2025"
-
-
-def test_adp_history_skips_seasons_with_no_match(monkeypatch):
-    def _fake_combine(season, scoring="ppr", **kw):
-        return {"rows": [{"sleeper_id": "7564", "player": "Someone Else"}]}
-
-    import webapp.sources.ffadp.board as ffadp_board
-    monkeypatch.setattr(ffadp_board, "combine", _fake_combine)
-
-    assert pp._adp_history("5995", ["2025"]) == []
-
-
 # --- _game_log -----------------------------------------------------------
 #
 # 2026-09 (Phase 4): _game_log switched from calling team_profile's own
@@ -447,7 +419,6 @@ def test_league_history_degrades_when_no_league_data(monkeypatch):
 def test_player_profile_without_league_id_has_no_league_section(monkeypatch):
     monkeypatch.setattr(pp, "sleeper_players", _fake_players_df)
     monkeypatch.setattr(pp, "_real_nfl_history", lambda *a, **k: {})
-    monkeypatch.setattr(pp, "_adp_history", lambda *a, **k: [])
     monkeypatch.setattr(pp, "_recent_seasons", lambda n=5: ["2025"])
     monkeypatch.setattr(pp, "_percentile_profile_for", lambda *a, **k: None)
     monkeypatch.setattr(pp, "_all_season_profiles", lambda *a, **k: {})
@@ -460,7 +431,6 @@ def test_player_profile_without_league_id_has_no_league_section(monkeypatch):
 def test_player_profile_with_league_id_builds_league_section(monkeypatch):
     monkeypatch.setattr(pp, "sleeper_players", _fake_players_df)
     monkeypatch.setattr(pp, "_real_nfl_history", lambda *a, **k: {})
-    monkeypatch.setattr(pp, "_adp_history", lambda *a, **k: [])
     monkeypatch.setattr(pp, "_percentile_profile_for", lambda *a, **k: None)
     monkeypatch.setattr(pp, "_all_season_profiles", lambda *a, **k: {})
 
@@ -497,8 +467,8 @@ def test_player_profile_with_league_id_builds_league_section(monkeypatch):
 
 def test_player_profile_splits_current_vs_past_seasons(monkeypatch):
     """2026-09: `player_profile()`/`_build_profile` no longer bake ANY
-    current/past split into the cached result at all -- `real_nfl`,
-    `adp_history`, and the league section's own rows now carry EVERY
+    current/past split into the cached result at all -- `real_nfl`
+    and the league section's own rows now carry EVERY
     season at once (see `scope_profile`'s own docstring: "the template's
     own per-dataset current_rows/past_rows and *_current/*_past drilldown
     reads are gone along with the drilldowns themselves"). Re-scoping to
@@ -516,10 +486,6 @@ def test_player_profile_splits_current_vs_past_seasons(monkeypatch):
         lambda *a, **k: {"player_stats": {
             "rows": [{"season": "2026", "v": "new"}, {"season": "2024", "v": "old"}],
             "best_effort": False}})
-    monkeypatch.setattr(
-        pp, "_adp_history",
-        lambda *a, **k: [{"season": "2026", "consensus": 10},
-                         {"season": "2024", "consensus": 20}])
 
     fake_season = object()
     monkeypatch.setattr(
@@ -544,18 +510,15 @@ def test_player_profile_splits_current_vs_past_seasons(monkeypatch):
     assert out["current_season"] == "2026"
     # Unscoped: every season's rows present at once, no current/past split.
     assert [r["v"] for r in out["real_nfl"]["player_stats"]["rows"]] == ["new", "old"]
-    assert [r["consensus"] for r in out["adp_history"]] == [10, 20]
 
     scoped = pp.scope_profile(out, "2026")
     assert [r["v"] for r in scoped["real_nfl"]["player_stats"]["rows"]] == ["new"]
-    assert [r["consensus"] for r in scoped["adp_history"]] == [10]
 
     scoped_past = pp.scope_profile(out, "2024")
     assert [r["v"] for r in scoped_past["real_nfl"]["player_stats"]["rows"]] == ["old"]
-    assert [r["consensus"] for r in scoped_past["adp_history"]] == [20]
     # draft_board is stubbed identically for every season, so BOTH 2026 and
     # 2024 draft_picks exist in the unscoped `out["league"]` -- confirms
-    # league data covers every season too, same as real_nfl/adp_history.
+    # league data covers every season too, same as real_nfl.
     assert len(out["league"]["draft_picks"]) == 2
     assert {p["season"] for p in out["league"]["draft_picks"]} == {"2026", "2024"}
     # scope_profile()'s own "league_scoped" splits it to one season, same
@@ -569,7 +532,6 @@ def test_player_profile_splits_current_vs_past_seasons(monkeypatch):
 def test_player_profile_league_section_degrades_on_league_data_failure(monkeypatch):
     monkeypatch.setattr(pp, "sleeper_players", _fake_players_df)
     monkeypatch.setattr(pp, "_real_nfl_history", lambda *a, **k: {})
-    monkeypatch.setattr(pp, "_adp_history", lambda *a, **k: [])
     monkeypatch.setattr(pp, "_percentile_profile_for", lambda *a, **k: None)
     monkeypatch.setattr(pp, "_all_season_profiles", lambda *a, **k: {})
 
@@ -591,7 +553,6 @@ def test_player_profile_league_section_degrades_on_league_data_failure(monkeypat
 
 def test_player_profile_caches_repeat_calls(monkeypatch):
     monkeypatch.setattr(pp, "sleeper_players", _fake_players_df)
-    monkeypatch.setattr(pp, "_adp_history", lambda *a, **k: [])
     monkeypatch.setattr(pp, "_percentile_profile_for", lambda *a, **k: None)
     monkeypatch.setattr(pp, "_all_season_profiles", lambda *a, **k: {})
     calls = []
@@ -609,7 +570,6 @@ def test_player_profile_caches_repeat_calls(monkeypatch):
 
 def test_player_profile_fresh_bypasses_cache(monkeypatch):
     monkeypatch.setattr(pp, "sleeper_players", _fake_players_df)
-    monkeypatch.setattr(pp, "_adp_history", lambda *a, **k: [])
     monkeypatch.setattr(pp, "_percentile_profile_for", lambda *a, **k: None)
     monkeypatch.setattr(pp, "_all_season_profiles", lambda *a, **k: {})
     calls = []
@@ -627,7 +587,6 @@ def test_player_profile_fresh_bypasses_cache(monkeypatch):
 def test_player_profile_cache_keys_by_league_id_too(monkeypatch):
     monkeypatch.setattr(pp, "sleeper_players", _fake_players_df)
     monkeypatch.setattr(pp, "_real_nfl_history", lambda *a, **k: {})
-    monkeypatch.setattr(pp, "_adp_history", lambda *a, **k: [])
     monkeypatch.setattr(pp, "_percentile_profile_for", lambda *a, **k: None)
     monkeypatch.setattr(pp, "_all_season_profiles", lambda *a, **k: {})
     monkeypatch.setattr(
@@ -641,7 +600,6 @@ def test_player_profile_cache_keys_by_league_id_too(monkeypatch):
 
 def test_player_profile_cache_expires_after_ttl(monkeypatch):
     monkeypatch.setattr(pp, "sleeper_players", _fake_players_df)
-    monkeypatch.setattr(pp, "_adp_history", lambda *a, **k: [])
     monkeypatch.setattr(pp, "_percentile_profile_for", lambda *a, **k: None)
     monkeypatch.setattr(pp, "_all_season_profiles", lambda *a, **k: {})
     calls = []
@@ -668,7 +626,6 @@ def test_is_cached_false_before_any_call(monkeypatch):
 def test_is_cached_true_after_a_real_call(monkeypatch):
     monkeypatch.setattr(pp, "sleeper_players", _fake_players_df)
     monkeypatch.setattr(pp, "_real_nfl_history", lambda *a, **k: {})
-    monkeypatch.setattr(pp, "_adp_history", lambda *a, **k: [])
     monkeypatch.setattr(pp, "_percentile_profile_for", lambda *a, **k: None)
     monkeypatch.setattr(pp, "_all_season_profiles", lambda *a, **k: {})
     pp.player_profile("5995")
@@ -688,7 +645,6 @@ def test_is_cached_false_after_ttl_expiry():
 def test_player_profile_picks_most_recent_season_with_data(monkeypatch):
     monkeypatch.setattr(pp, "sleeper_players", _fake_players_df)
     monkeypatch.setattr(pp, "_real_nfl_history", lambda *a, **k: {})
-    monkeypatch.setattr(pp, "_adp_history", lambda *a, **k: [])
     monkeypatch.setattr(pp, "_recent_seasons", lambda n=5: ["2026", "2025", "2024"])
 
     # 2026 has no data yet (offseason); 2025 does -- the focus season should
@@ -710,7 +666,6 @@ def test_player_profile_picks_most_recent_season_with_data(monkeypatch):
 def test_player_profile_includes_season_profiles(monkeypatch):
     monkeypatch.setattr(pp, "sleeper_players", _fake_players_df)
     monkeypatch.setattr(pp, "_real_nfl_history", lambda *a, **k: {})
-    monkeypatch.setattr(pp, "_adp_history", lambda *a, **k: [])
     monkeypatch.setattr(
         pp, "_all_season_profiles",
         lambda *a, **k: {"2024": {"season": "2024", "columns": [], "n_population": 30},
@@ -902,7 +857,6 @@ def test_with_per_game_degrades_without_a_per_game_profile():
 def test_player_profile_builds_total_and_per_game_season_profiles(monkeypatch):
     monkeypatch.setattr(pp, "sleeper_players", _fake_players_df)
     monkeypatch.setattr(pp, "_real_nfl_history", lambda *a, **k: {})
-    monkeypatch.setattr(pp, "_adp_history", lambda *a, **k: [])
     monkeypatch.setattr(pp, "_recent_seasons", lambda n=5: ["2025"])
     modes = []
 
