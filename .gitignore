@@ -33,10 +33,11 @@ tools/parity/out_*.json
 
 .scratch_charts/
 
-# Runtime-only stat caches (regenerated on demand; NOT curated fallbacks,
-# unlike data/sources/adp/ which IS committed). Keep the dir markers.
-data/sources/sleeper_stats/*/
-data/sources/nflverse/
+# data/sources/nflverse/ and data/sources/sleeper_stats/ ARE committed now (like
+# data/sources/adp/): the Render image is built from git, so ignoring them left
+# a cold container with no cache and every first page view fetched live, which
+# exceeded the 512MB instance. Only the half-written temp files stay ignored.
+data/sources/**/*.tmp
 # When each snapshot source was last refreshed (webapp/refresher.py).
 data/sources/refresh_state.json
 data/sources/refresh_state.json.tmp

@@ -222,6 +222,23 @@ that a linear chart over the basic keys can't express; this is the same reason
 Not league-specific, not a parity artifact, hand-verified once and stable.
 Python-only for now.
 
+## What is committed, and how to keep it current
+
+Everything under `adp/`, `sleeper_stats/` and `nflverse/` is committed (about
+26MB), apart from `refresh_state.json` and `*.tmp` files, which are ignored.
+The Render image is built from git, so anything ignored is missing from a
+fresh container and every first page view fetched live.  That pushed a cold
+player profile to a 334MB peak and about 58 seconds on a 512MB instance; with
+these files in the image it is about 255MB and 4 seconds.
+
+The committed copy is a snapshot taken when you commit.  To update it, run the
+app locally with the refresher enabled (or `nflref.board.load(dataset, season,
+reload=True)` for one dataset), then commit the changed files.  In season that
+is roughly 1 to 2MB a week, because nflverse parquet files are rewritten whole.
+Set `DISABLE_REFRESH=1` on Render so the refresher does not rewrite files in a
+disk that is discarded.  A local dev server's refresher will show these files
+as modified in `git status`, same as the ADP snapshots.
+
 ## Location override
 
 Resolved from the environment variable `SLEEPERMETRICS_SOURCES_DIR` (default:
