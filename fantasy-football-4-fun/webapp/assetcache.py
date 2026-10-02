@@ -103,14 +103,25 @@ def cacheable(resp) -> bool:
     return isinstance(resp, Response) and resp.status_code == 200
 
 
+_inflight: dict = {}          # (store id, key) -> Event, for assets being built right now
+_inflight_lock = threading.Lock()
+
+
 def cached_response(store: dict, key: tuple, version, make, *, ttl: float | None = None,
-                    inm: str | None = None, validate: bool = True) -> Response:
+                    inm: str | None = None, validate: bool = True,
+                    _coalesce: bool = True) -> Response:
     """Serve `key` from `store`, or build it with `make()` and keep it.
 
     `version` ties an entry to the data it was built from (a changed version is
     a miss).  `ttl` bounds an entry that has no data version of its own (the
     league-free store).  With `validate`, a matching `If-None-Match` answers 304
     without touching the store at all, which is what makes a revisit free.
+
+    Concurrent requests for the same missing asset share ONE build: the first
+    renders it, the others wait and then take the stored result.  Without that a
+    visitor and the warm-up asking for the same chart at the same moment would
+    each draw it, doubling the work on a host where a chart takes seconds.
+    The `X-Cache` header says which path answered: hit, miss, shared or 304.
     """
     entry = store.get(key)
     if entry is not None:
@@ -121,28 +132,52 @@ def cached_response(store: dict, key: tuple, version, make, *, ttl: float | None
     if validate and ver is not None:
         etag = etag_for(key, ver)
         if _matches(inm, etag):
-            return Response(status_code=304, headers={"ETag": etag, "Cache-Control": CACHE_CONTROL})
+            return Response(status_code=304, headers={"ETag": etag, "Cache-Control": CACHE_CONTROL,
+                                                      "X-Cache": "304"})
     if entry is not None:
         headers = dict(entry["headers"])
+        headers["X-Cache"] = "hit"
         if validate:
             headers.update({"ETag": etag_for(key, ver), "Cache-Control": CACHE_CONTROL})
         return Response(entry["body"], media_type=entry["media_type"], headers=headers)
 
-    resp = make()
-    if not cacheable(resp):
+    token = (id(store), key)
+    mine = True
+    if _coalesce:
+        with _inflight_lock:
+            event = _inflight.get(token)
+            mine = event is None
+            if mine:
+                _inflight[token] = event = threading.Event()
+        if not mine:
+            event.wait()                    # someone else is drawing it; take their result
+            resp = cached_response(store, key, version, make, ttl=ttl, inm=inm,
+                                   validate=validate, _coalesce=False)
+            if resp.headers.get("x-cache") == "hit":
+                resp.headers["X-Cache"] = "shared"
+            return resp
+
+    try:
+        resp = make()
+        if cacheable(resp):
+            now = time.time()
+            drop = _NOT_STORED + (_VALIDATOR_HEADERS if validate else ())
+            keep = {k: v for k, v in resp.headers.items() if k.lower() not in drop}
+            store[key] = {"body": resp.body, "media_type": resp.media_type, "headers": keep,
+                          "ver": version, "at": now}
+            if ttl is not None:
+                prune_cache(store, ttl)
+                ver = now
+            if validate and ver is not None:
+                resp.headers["ETag"] = etag_for(key, ver)
+                resp.headers["Cache-Control"] = CACHE_CONTROL
+        resp.headers["X-Cache"] = "miss"
         return resp
-    now = time.time()
-    drop = _NOT_STORED + (_VALIDATOR_HEADERS if validate else ())
-    keep = {k: v for k, v in resp.headers.items() if k.lower() not in drop}
-    store[key] = {"body": resp.body, "media_type": resp.media_type, "headers": keep,
-                  "ver": version, "at": now}
-    if ttl is not None:
-        prune_cache(store, ttl)
-        ver = now
-    if validate and ver is not None:
-        resp.headers["ETag"] = etag_for(key, ver)
-        resp.headers["Cache-Control"] = CACHE_CONTROL
-    return resp
+    finally:
+        if _coalesce:
+            with _inflight_lock:
+                _inflight.pop(token, None)
+            event.set()
 
 
 # --- warm-up --------------------------------------------------------------------

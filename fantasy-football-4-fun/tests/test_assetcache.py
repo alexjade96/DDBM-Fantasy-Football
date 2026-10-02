@@ -243,3 +243,58 @@ def test_the_chart_route_keeps_its_signature_and_does_not_shadow_sm():
     params = inspect.signature(app.chart).parameters
     assert {"name", "league", "season", "theme", "player_ids", "stat_mode"} <= set(params)
     assert "sm" not in app.chart.__wrapped__.__code__.co_varnames
+
+
+# --- one build per asset, however many ask at once -------------------------------------
+
+def test_concurrent_requests_for_one_missing_asset_share_a_single_build():
+    store, calls = {}, []
+    gate = threading.Event()
+    def slow():
+        calls.append(1)
+        gate.wait(5)
+        return _png()
+    key = ac.make_key("chart", "slow")
+    out = []
+    def go():
+        out.append(ac.cached_response(store, key, "v1", slow))
+    threads = [threading.Thread(target=go) for _ in range(4)]
+    for t in threads:
+        t.start()
+    time.sleep(0.2)                       # all four are now waiting on the one build
+    gate.set()
+    for t in threads:
+        t.join(timeout=10)
+    assert len(calls) == 1 and len(out) == 4
+    assert sorted(r.headers["x-cache"] for r in out) == ["miss", "shared", "shared", "shared"]
+    assert len({r.body for r in out}) == 1
+
+
+def test_a_failed_build_does_not_leave_the_others_hanging():
+    store, calls = {}, []
+    def boom_then_ok():
+        calls.append(1)
+        if len(calls) == 1:
+            raise RuntimeError("draw failed")
+        return _png()
+    key = ac.make_key("chart", "flaky")
+    results = []
+    def first():
+        try:
+            ac.cached_response(store, key, "v1", boom_then_ok)
+        except RuntimeError:
+            results.append("raised")
+    t = threading.Thread(target=first)
+    t.start()
+    t.join(timeout=10)
+    ok = ac.cached_response(store, key, "v1", boom_then_ok)       # next caller builds normally
+    assert results == ["raised"] and ok.status_code == 200
+    assert not ac._inflight
+
+
+def test_x_cache_says_which_path_answered():
+    store = {}
+    key = ac.make_key("chart", "x")
+    assert ac.cached_response(store, key, "v1", _png).headers["x-cache"] == "miss"
+    assert ac.cached_response(store, key, "v1", _png).headers["x-cache"] == "hit"
+    assert ac.cached_response(store, key, "v1", _png, inm=ac.etag_for(key, "v1")).headers["x-cache"] == "304"
