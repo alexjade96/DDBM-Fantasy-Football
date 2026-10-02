@@ -298,3 +298,62 @@ def test_x_cache_says_which_path_answered():
     assert ac.cached_response(store, key, "v1", _png).headers["x-cache"] == "miss"
     assert ac.cached_response(store, key, "v1", _png).headers["x-cache"] == "hit"
     assert ac.cached_response(store, key, "v1", _png, inm=ac.etag_for(key, "v1")).headers["x-cache"] == "304"
+
+
+# --- start from the page the visitor already has -----------------------------------------
+
+def test_warm_with_the_entry_page_starts_from_its_charts_and_never_renders_it_again():
+    d, fetch = {}, _site()
+    entry = '<img src="/chart/overview?a=1"><div hx-get="/tab/overview/part/p"></div>'
+    ac._warm(d, "L", "2026", "overview", "light", ["overview", "draft"], lambda: d,
+             fetch=fetch, entry_html=entry)
+    assert fetch.log[0] == "/chart/overview?a=1"               # a chart, not the tab panel
+    assert "/tab/overview?league=L&season=2026&theme=light" not in fetch.log
+    assert any(u.startswith("/tab/draft?") for u in fetch.log)   # the other tabs follow
+
+
+def test_each_season_and_theme_is_warmed_once_per_league_entry(monkeypatch):
+    monkeypatch.setattr(ac, "enabled", True)
+    monkeypatch.delenv("DISABLE_ASSET_WARM", raising=False)
+    started = []
+    monkeypatch.setattr(ac.threading, "Thread",
+                        lambda **kw: type("T", (), {"start": lambda self: started.append(kw["args"][2:5])})())
+    d = {}
+    assert ac.warm_async(d, "L", "2026", "overview", "light", ["overview"], lambda: d) is True
+    assert ac.warm_async(d, "L", "2026", "weekly", "light", ["overview"], lambda: d) is False   # same season+theme
+    assert ac.warm_async(d, "L", "2025", "overview", "light", ["overview"], lambda: d) is True   # another season
+    assert ac.warm_async(d, "L", "2026", "overview", "dark", ["overview"], lambda: d) is True    # another theme
+    assert len(started) == 3
+
+
+def test_warm_after_hands_the_built_page_to_the_warm_up_and_skips_refreshes(monkeypatch):
+    from webapp import app
+    seen = []
+    league = {"at": 1, "seasons": {"2026": object(), "2025": object()}, "names": ["2025", "2026"],
+              "resolved_league_id": "RESOLVED"}
+    monkeypatch.setattr(app, "league_data", lambda lg: league)
+    monkeypatch.setattr(app.assetcache, "warm_async", lambda *a, **k: seen.append((a, k)))
+
+    def tab(name, request=None, league="L", season=None, refresh=0, theme="light"):
+        return HTMLResponse('<img src="/chart/x?a=1">')
+    wrapped = app._warm_after(tab)
+
+    assert wrapped("overview", league="L", season="2025").status_code == 200
+    (args, kwargs), = seen
+    assert args[1:5] == ("RESOLVED", "2025", "overview", "light")
+    assert "report" not in args[5] and "testing" not in args[5]
+    assert kwargs["entry_html"] == '<img src="/chart/x?a=1">'
+
+    seen.clear()
+    wrapped("overview", league="L", refresh=1)                  # a refresh never warms
+    assert seen == []
+
+    wrapped("overview", league="L", season="1999")              # unknown season -> latest
+    assert seen[0][0][2] == "2026"
+
+
+def test_warm_after_never_breaks_a_page(monkeypatch):
+    from webapp import app
+    monkeypatch.setattr(app, "league_data", lambda lg: (_ for _ in ()).throw(RuntimeError("down")))
+    wrapped = app._warm_after(lambda name, league="L", season=None, refresh=0, theme="light": HTMLResponse("ok"))
+    assert wrapped("overview").body == b"ok"

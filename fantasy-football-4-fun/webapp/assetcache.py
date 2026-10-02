@@ -233,22 +233,27 @@ class _Stop(Exception):
 
 
 def warm_async(d: dict, league: str, season: str, first_tab: str, theme: str,
-               tabs: list[str], current_d) -> bool:
-    """Start the warm-up for this data once.  `current_d()` returns the league's
-    live cache entry, so the worker can tell when `d` has been replaced.  The
-    marker lives on `d`, so a refreshed league is warmed again on its next visit."""
+               tabs: list[str], current_d, entry_html: str | None = None) -> bool:
+    """Start the warm-up for this season of this data once.  `current_d()`
+    returns the league's live cache entry, so the worker can tell when `d` has
+    been replaced.  The marker lives on `d`, so a refreshed league is warmed
+    again on its next visit.  `entry_html` is the page the visitor was just
+    given; the warm-up starts from its charts rather than rendering it again."""
     if not enabled or os.environ.get("DISABLE_ASSET_WARM") == "1":
         return False
     with _lock:
-        if d.get("_warming"):
+        marks = d.setdefault("_warming", set())
+        if (season, theme) in marks:
             return False
-        d["_warming"] = True
+        marks.add((season, theme))
     threading.Thread(target=_warm, name=f"warm-assets-{league}-{season}", daemon=True,
-                     args=(d, league, season, first_tab, theme, tabs, current_d)).start()
+                     args=(d, league, season, first_tab, theme, tabs, current_d),
+                     kwargs={"entry_html": entry_html}).start()
     return True
 
 
-def _warm(d, league, season, first_tab, theme, tabs, current_d, fetch=None) -> int:
+def _warm(d, league, season, first_tab, theme, tabs, current_d, fetch=None,
+          entry_html: str | None = None) -> int:
     base = f"http://127.0.0.1:{os.environ.get('PORT', '8000')}"
     worst = 0                       # largest growth in resident memory for one asset
     done = 0
@@ -272,20 +277,30 @@ def _warm(d, league, season, first_tab, theme, tabs, current_d, fetch=None) -> i
         done += 1
         return resp
 
-    order = [first_tab] + [t for t in tabs if t != first_tab]
     seen: set[str] = set()
+
+    def drain(queue):
+        while queue:
+            u = queue.popleft()
+            if u in seen:
+                continue
+            seen.add(u)
+            resp = get(u)
+            if "text/html" in resp.headers.get("content-type", ""):
+                queue.extend(x for x in extract_urls(resp.text) if x not in seen)
+
     try:
+        if entry_html is not None:
+            # The visitor already has this page and is about to ask for exactly
+            # these charts, so start there (a request for one that is being drawn
+            # waits for that draw instead of repeating it).
+            drain(deque(extract_urls(entry_html)))
+            order = [t for t in tabs if t != first_tab]
+        else:
+            order = [first_tab] + [t for t in tabs if t != first_tab]
         for t in order:
             panel = get(f"/tab/{t}?league={league}&season={season}&theme={theme}")
-            queue = deque(extract_urls(panel.text))
-            while queue:
-                u = queue.popleft()
-                if u in seen:
-                    continue
-                seen.add(u)
-                resp = get(u)
-                if "text/html" in resp.headers.get("content-type", ""):
-                    queue.extend(x for x in extract_urls(resp.text) if x not in seen)
+            drain(deque(extract_urls(panel.text)))
     except _Stop:
         pass
     except Exception:

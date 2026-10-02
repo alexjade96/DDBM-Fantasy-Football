@@ -3797,7 +3797,40 @@ def report_weekly(request: Request, league: str = DEFAULT_LEAGUE, season: str | 
     return tpl.TemplateResponse(request, "weekly_report.html", ctx)
 
 
+def _warm_after(fn):
+    """After a tab has been built, silently warm the asset cache for what the
+    visitor is likely to open next (see assetcache).  Runs AFTER the response
+    exists so the warm-up can start from that very page (its charts are what the
+    visitor requests next) instead of rendering the tab a second time, which on
+    a slow host competes with the visitor's own charts for the CPU."""
+    sig = inspect.signature(fn)
+
+    @functools.wraps(fn)
+    def wrapper(*args, **kw):
+        resp = fn(*args, **kw)
+        try:
+            bound = sig.bind_partial(*args, **kw)
+            bound.apply_defaults()
+            p = bound.arguments
+            if not p.get("refresh") and isinstance(resp, Response) and resp.status_code == 200:
+                league = p.get("league") or DEFAULT_LEAGUE
+                d = league_data(league)
+                league = d.get("resolved_league_id", league)
+                season = p.get("season")
+                key = season if season in d["seasons"] else d["names"][-1]
+                assetcache.warm_async(
+                    d, league, key, p["name"], p.get("theme") or "light",
+                    [t for t, _ in TABS if t not in ("report", "testing")],
+                    lambda: _cache.get(str(league)),
+                    entry_html=resp.body.decode("utf-8", "ignore"))
+        except Exception:
+            pass                        # a warm-up problem must never break a page
+        return resp
+    return wrapper
+
+
 @app.get("/tab/{name}", response_class=HTMLResponse)
+@_warm_after
 def tab(name: str, request: Request, league: str = DEFAULT_LEAGUE,
         season: str | None = None, refresh: int = 0, scope: str = "title",
         matchup: str | None = None, theme: str = "light",
@@ -3823,14 +3856,6 @@ def tab(name: str, request: Request, league: str = DEFAULT_LEAGUE,
     # the pushed URL, the header field and every chart <img> use the current
     # season's id rather than the older one that may have been pasted.
     league = d.get("resolved_league_id", league)
-    # Silently fill the asset cache for what this visitor is likely to open next
-    # (this tab first, then the others), once per league data.  A hit on the
-    # warm-up's own request, or a refresh, does nothing.
-    if not refresh:
-        assetcache.warm_async(
-            d, league, key, name, theme,
-            [t for t, _ in TABS if t not in ("report", "testing")],
-            lambda: _cache.get(str(league)))
     ctx = _base_ctx(league, key, s, theme, bracket, scope,
                      int(time.time()) if refresh else 0)
     if boot:
