@@ -616,14 +616,28 @@ def season(league_id, season: str | None = None, advance: bool = False) -> Seaso
     return assemble_season(link)
 
 
-def seasons(league_id, advance: bool = False) -> dict:
+def seasons(league_id, advance: bool = False, reuse: dict | None = None) -> dict:
     """Assemble every season in the chain -> {season: Season}.
 
     `advance=True` resolves `league_id` forward first (see `season()` /
     `current_season_league_id`). Default off -- verify.py and the R-parity
     exporters call this with a bare id and must keep today's behaviour.
+
+    `reuse` is an earlier result of this function.  A season that Sleeper
+    reports as complete, and that `reuse` already holds under the same league
+    id and also as complete, cannot change, so it is taken as is instead of
+    being fetched again (a refresh then only re-fetches the season in
+    progress).  Default off, for the same reason as `advance`.
     """
     if advance:
         league_id = current_season_league_id(league_id)
     chain = league_chain(league_id)
-    return {s: assemble_season(link) for s, link in chain.items()}
+    out = {}
+    for s, link in chain.items():
+        old = (reuse or {}).get(s)
+        if (old is not None and link.get("status") == "complete"
+                and old.status == "complete" and str(old.league_id) == str(link["league_id"])):
+            out[s] = old
+        else:
+            out[s] = assemble_season(link)
+    return out

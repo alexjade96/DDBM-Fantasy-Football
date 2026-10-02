@@ -32,7 +32,7 @@ from fastapi.templating import Jinja2Templates
 
 matplotlib.use("Agg")
 
-from repo_paths import REPO_ROOT, SEASON_DIR as _SEASON_DIR_PATH, release_memory  # noqa: E402
+from repo_paths import REPO_ROOT, SEASON_DIR as _SEASON_DIR_PATH, on_render, release_memory  # noqa: E402
 
 import sleepermetrics as sm  # noqa: E402
 from sleepermetrics import draft, metrics, plots, scoring, summaries  # noqa: E402
@@ -499,7 +499,12 @@ def _assemble_league(league_id: str) -> dict:
     # season. The entry is cached under BOTH ids, so a later paste of either
     # (or of any other older-season id for the same league) hits it.
     resolved = sm.current_season_league_id(league_id)
-    seasons = sm.apply_playoffs(sm.seasons(resolved), SEASON_DIR)
+    # A refresh only needs to re-fetch what can still change: a season Sleeper
+    # reports as complete is taken from the previous entry as it is.
+    old = _cache.get(str(league_id)) or _cache.get(str(resolved))
+    seasons = sm.apply_playoffs(
+        sm.seasons(resolved, reuse=old["seasons"] if old else None), SEASON_DIR)
+    reused = {k for k, s in seasons.items() if old and old["seasons"].get(k) is s}
     # Only this league's brackets -- a stored 2025.json belongs to a league, not
     # to the number 2025, so another league must not inherit DDBM's playoffs.
     playoffs = sm.load_playoffs(
@@ -515,6 +520,11 @@ def _assemble_league(league_id: str) -> dict:
     for k, s in seasons.items():
         if k in playoffs:
             continue
+        if k in reused and old["playoff_source"].get(k) == "sleeper" and k in old["playoffs"]:
+            # A finished season's Sleeper bracket cannot change: no new fetch.
+            playoffs[k] = old["playoffs"][k]
+            source[k] = "sleeper"
+            continue
         try:
             cfg = sm.sleeper_bracket(resolved, k)
             if cfg.get("rounds"):
@@ -528,10 +538,50 @@ def _assemble_league(league_id: str) -> dict:
          # which may differ from what the user pasted (see the forward resolve
          # above). `submitted` is kept only for diagnostics.
          "resolved_league_id": resolved, "submitted_league_id": str(league_id)}
+    if old and len(reused) == len(seasons) and set(old["seasons"]) == set(seasons):
+        # Nothing in this league can have changed (every season is finished
+        # and was reused), so the rendered charts and sections built from the
+        # old entry are still exactly right: keep them, and their version, so
+        # a refresh does not send every visitor back to a cold cache.  `at`
+        # still restarts the entry's age.
+        d["ver"] = old.get("ver", old["at"])
+        d["_assets"] = old.get("_assets", {})
+        d["_warming"] = old.get("_warming", set())
+    d["used"] = time.time()
     _cache[str(league_id)] = d
     if resolved != str(league_id):
         _cache[resolved] = d
+    _evict_leagues()
     return d
+
+
+#: Render only: how many distinct leagues are kept in memory.  Every league a
+#: visitor pastes otherwise stays for the life of the process, and one holds
+#: all its seasons' frames.
+_MAX_LEAGUES = 3
+
+
+def _evict_leagues(limit: int = _MAX_LEAGUES) -> None:
+    """Keep the `limit` most recently used leagues (Render only).  An entry can
+    sit under two ids (the pasted one and the forward-resolved one); they are one
+    league and go together.  The default league is never evicted."""
+    if not on_render():
+        return
+    with _cache_lock:
+        leagues = {id(d): d for d in _cache.values()}
+        if len(leagues) <= limit:
+            return
+        protected = {id(d) for k, d in _cache.items()
+                     if k == str(DEFAULT_LEAGUE) or d.get("resolved_league_id") == str(DEFAULT_LEAGUE)}
+        by_age = sorted(leagues.values(), key=lambda d: d.get("used", 0.0))
+        drop = set()
+        for d in by_age:
+            if len(leagues) - len(drop) <= limit:
+                break
+            if id(d) not in protected:
+                drop.add(id(d))
+        for k in [k for k, d in _cache.items() if id(d) in drop]:
+            del _cache[k]
 
 
 def _revalidate_async(league_id: str) -> None:
@@ -559,6 +609,7 @@ def _revalidate_async(league_id: str) -> None:
 def league_data(league_id: str, fresh: bool = False) -> dict:
     hit = _cache.get(league_id)
     if hit and not fresh:
+        hit["used"] = time.time()
         age = time.time() - hit["at"]
         if age < TTL:
             return hit
@@ -886,7 +937,7 @@ def tab_part_view(name: str, part: str, request: Request, league: str = DEFAULT_
     return assetcache.cached_response(
         assetcache.store_for(d),
         assetcache.make_key("part", name, part, league, key, theme, manager, week, scope, bracket),
-        d["at"], lambda: fn(request, s, d, key, ctx), validate=False)
+        d.get("ver", d["at"]), lambda: fn(request, s, d, key, ctx), validate=False)
 
 
 def _pushed(resp, ctx: dict, tab_name: str):
@@ -1162,7 +1213,7 @@ def _chart_cached(fn):
             d = league_data(params.get("league") or DEFAULT_LEAGUE)
         except Exception:
             return make()
-        return assetcache.cached_response(assetcache.store_for(d), key, d["at"], make, inm=inm)
+        return assetcache.cached_response(assetcache.store_for(d), key, d.get("ver", d["at"]), make, inm=inm)
     return wrapper
 
 
@@ -1189,9 +1240,11 @@ def chart(name: str, league: str = DEFAULT_LEAGUE, season: str | None = None,
         if not player_id:
             return Response(status_code=404)
         from webapp import player_profile as pp
+        # The data build (16 to 25s cold on Render) runs BEFORE the lock: only
+        # drawing needs it, and holding it here blocked every other chart.
+        profile = pp.player_profile(player_id, league_id=league or None)
         with _render_lock:
             plots.set_chart_theme(theme)
-            profile = pp.player_profile(player_id, league_id=league or None)
             pname = (profile.get("identity") or {}).get("player_name") or f"Player {player_id}"
             focus = season or profile.get("focus_season")
             # The radar plots PER-GAME rates (a short current season would
@@ -1225,27 +1278,33 @@ def chart(name: str, league: str = DEFAULT_LEAGUE, season: str | None = None,
         # function, and every later `sm.` call (the playoff bracket charts) would
         # raise UnboundLocalError.
         smode = stat_mode if stat_mode in ("total", "per_game") else "total"
-        with _render_lock:
-            plots.set_chart_theme(theme)
-            if not ids or len(ids) != len(labels):
-                # plot_player_overlay({}, ...) already degrades to its own
-                # titled blank panel -- no need for a separate 404/empty path.
+        # Data first, outside the lock (a cold build is slow and only drawing
+        # needs it), then draw under the lock with the requested theme.
+        if not ids or len(ids) != len(labels):
+            # plot_player_overlay({}, ...) already degrades to its own
+            # titled blank panel -- no need for a separate 404/empty path.
+            with _render_lock:
+                plots.set_chart_theme(theme)
                 return png(plots.plot_player_overlay({}, [], mode=mode))
-            sea = season or _current_nfl_season()
-            if mode == "trend":
-                by_id = pc.player_trend(ids, sea, position=pos)
-                players = {lab: by_id.get(pid, []) for pid, lab in zip(ids, labels)}
-                stat_keys = pc._DEFAULT_TREND_KEYS.get(pos, ("pts_ppr",))[:1]
+        sea = season or _current_nfl_season()
+        if mode == "trend":
+            by_id = pc.player_trend(ids, sea, position=pos)
+            players = {lab: by_id.get(pid, []) for pid, lab in zip(ids, labels)}
+            stat_keys = pc._DEFAULT_TREND_KEYS.get(pos, ("pts_ppr",))[:1]
+            with _render_lock:
+                plots.set_chart_theme(theme)
                 return png(plots.plot_player_overlay(
                     players, list(stat_keys), mode="trend", title=f"{pos} trend",
                     stat_mode=smode))
-            profiles = pc.player_field_compare(sea, pos, ids, stat_mode=smode)
-            players = {lab: profiles.get(pid) for pid, lab in zip(ids, labels)}
-            # "Christian McCaffrey vs Jonathan Taylor" (or "vs ... vs ..." for
-            # 3+) names every player directly in the title -- the radar has no
-            # legend (see plot_player_overlay's snapshot branch) to look up a
-            # color-to-player mapping from, so the title carries that instead.
-            snap_title = " vs ".join(labels) if labels else f"{pos} comparison"
+        profiles = pc.player_field_compare(sea, pos, ids, stat_mode=smode)
+        players = {lab: profiles.get(pid) for pid, lab in zip(ids, labels)}
+        # "Christian McCaffrey vs Jonathan Taylor" (or "vs ... vs ..." for
+        # 3+) names every player directly in the title -- the radar has no
+        # legend (see plot_player_overlay's snapshot branch) to look up a
+        # color-to-player mapping from, so the title carries that instead.
+        snap_title = " vs ".join(labels) if labels else f"{pos} comparison"
+        with _render_lock:
+            plots.set_chart_theme(theme)
             return png(plots.plot_player_overlay(
                 players, [], mode="snapshot",
                 title=snap_title, position=pos, stat_mode=smode))
