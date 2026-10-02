@@ -242,6 +242,37 @@ def _recent_seasons(n: int = _DEFAULT_WINDOW) -> list[str]:
     return [str(y) for y in range(current, current - n, -1)]
 
 
+_SEASONS_CACHE: dict[tuple[str, str], list[str]] = {}
+
+
+def _team_seasons(abbr: str) -> list[str]:
+    """Every season (most recent first) in which this abbreviation has at
+    least one scheduled game, from the schedules dataset's own floor to the
+    current season -- the season dropdown's option list. An abbreviation that
+    changed (a relocation) simply starts at its first season under that
+    code. Memoised per (team, current season); an unreadable schedule falls
+    back to the recent window so the page still renders."""
+    current = _current_season()
+    key = (abbr, current)
+    if key in _SEASONS_CACHE:
+        return _SEASONS_CACHE[key]
+    try:
+        from webapp.sources.nflref import summary as nflref_summary
+        from webapp.sources.nflref.schedules import EARLIEST
+    except Exception:
+        return _recent_seasons()
+    found = []
+    for y in range(int(current), EARLIEST - 1, -1):
+        try:
+            if not nflref_summary.schedule_grid(str(y), team=abbr).empty:
+                found.append(str(y))
+        except Exception:
+            continue
+    out = found or _recent_seasons()
+    _SEASONS_CACHE[key] = out
+    return out
+
+
 def _team_identity(abbr: str) -> dict:
     """{'abbr'} for a normalised team abbreviation -- validated against
     `nflref.summary.TEAMS` when that module resolves, but never raises: an
@@ -1965,7 +1996,7 @@ def _build_profile(abbr: str, season: str | None) -> dict:
     identity = _team_identity(abbr)
     tm = identity["abbr"]
 
-    seasons = _recent_seasons()
+    seasons = _team_seasons(tm)
     current_season = season or _current_season()
     if current_season not in seasons:
         seasons = sorted(set(seasons) | {current_season}, reverse=True)
@@ -2027,7 +2058,8 @@ def _build_profile(abbr: str, season: str | None) -> dict:
         "roster_by_position": _roster_by_position(roster),
         "schedule": _attach_week_stats(schedule, team_datasets, roster, tm,
                                       season=current_season),
-        "season_history": _season_history(tm, seasons),
+        "season_history": _season_history(tm, sorted(
+            set(_recent_seasons()) | {current_season}, reverse=True)),
         "team_datasets": team_datasets,
         "team_stats_grouped": _season_grouped_stats(team_datasets),
     }

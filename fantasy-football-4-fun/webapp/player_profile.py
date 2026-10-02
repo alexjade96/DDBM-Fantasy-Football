@@ -154,6 +154,74 @@ def _recent_seasons(n: int = _DEFAULT_WINDOW) -> list[str]:
     return [str(y) for y in range(current, current - n, -1)]
 
 
+_CAREER_FLOOR = 2016  # nflverse player_stats' own EARLIEST
+
+
+def _career_seasons(identity: dict) -> list[str]:
+    """Every season from this player's first to last season with a
+    `player_stats` row (gsis match, else normalised name + position), most
+    recent first -- the season dropdown's option list. Contiguous, so a gap
+    year (injury, an unreadable snapshot) stays selectable and just shows
+    empty sections. Falls back to the recent window when nothing resolves."""
+    try:
+        from webapp.sources.nflref import board as nflref_board
+    except Exception:
+        return _recent_seasons()
+    gsis = identity.get("gsis_id")
+    target = _norm_name(identity.get("player_name"))
+    pos = (identity.get("position") or "").upper()
+    current = int(_current_season())
+    hits = []
+    for y in range(_CAREER_FLOOR, current + 1):
+        try:
+            df = nflref_board.load("player_stats", str(y))
+            if df is None or df.empty:
+                continue
+            if gsis and "player_id" in df.columns:
+                found = (df["player_id"].astype(str) == str(gsis)).any()
+            else:
+                found = False
+            if not found and target and "player_display_name" in df.columns:
+                m = df["player_display_name"].apply(lambda v: _norm_name(v) == target)
+                if pos and "position" in df.columns:
+                    m &= df["position"].astype(str).str.upper() == pos
+                found = m.any()
+        except Exception:
+            continue
+        if found:
+            hits.append(y)
+    if not hits:
+        return _recent_seasons()
+    return [str(y) for y in range(max(hits), min(hits) - 1, -1)]
+
+
+def ensure_season_profiles(profile: dict, seasons) -> None:
+    """Fill `profile`'s per-season percentile profiles (total and per-game)
+    for just `seasons`, on first need. A season with no leaderboard row is
+    stored as None so it is not retried. The dicts live on the cached
+    profile, so they expire with it."""
+    ident = profile.get("identity") or {}
+    for key, mode in (("season_profiles", "total"),
+                      ("season_profiles_per_game", "per_game")):
+        store = profile.setdefault(key, {})
+        for s in seasons:
+            if s not in store:
+                store[s] = _percentile_profile_for(
+                    ident.get("player_id"), ident.get("position"), s, stat_mode=mode)
+
+
+def radar_profiles(profile: dict, focus: str | None, per_game: bool = True) -> dict:
+    """The `{season: profile}` dict the radar draws: only first, latest,
+    focus and the focus's neighbours (see `plots.radar_season_subset`), with
+    seasons that have no data dropped."""
+    from sleepermetrics.plots import radar_season_subset
+    wanted = radar_season_subset(profile.get("seasons_covered") or [], focus)
+    ensure_season_profiles(profile, wanted)
+    key = "season_profiles_per_game" if per_game else "season_profiles"
+    store = profile.get(key) or {}
+    return {s: store[s] for s in wanted if store.get(s)}
+
+
 def _current_season() -> str:
     """The current NFL season alone -- `_recent_seasons(1)[0]`, i.e. the same
     "today's real season" reference `_recent_seasons` already resolves, not
@@ -1033,7 +1101,7 @@ def _build_profile(player_id: str, league_id: str | None = None) -> dict:
     """The real aggregation logic -- see `player_profile()` (the cached
     public entry point) for the full contract."""
     identity = _player_identity(player_id)
-    real_nfl_seasons = _recent_seasons()
+    real_nfl_seasons = _career_seasons(identity)
 
     league_section = None
     if league_id:
@@ -1063,16 +1131,24 @@ def _build_profile(player_id: str, league_id: str | None = None) -> dict:
     # shared season dropdown (see `scope_profile`). `percentile_profile`
     # stays as the focused (most recent) season's own dict, for the stat
     # table rendered below the chart.
-    season_profiles = _all_season_profiles(
-        player_id, identity.get("position"), real_nfl_seasons)
-    # The same profiles ranked on PER-GAME rates: the radar plots these (a
-    # season only a few games old is not dwarfed by full seasons), while the
-    # stat table keeps the season-total profile above and adds the per-game
-    # figure as its own column.
-    season_profiles_per_game = _all_season_profiles(
-        player_id, identity.get("position"), real_nfl_seasons, stat_mode="per_game")
-    available_seasons = sorted(season_profiles, reverse=True)
-    focus_season = available_seasons[0] if available_seasons else None
+    # Profiles are filled on demand (see `ensure_season_profiles`): a long
+    # career would otherwise rank every season's field on every cold build,
+    # and the radar only ever draws first/latest/selected/neighbours. The
+    # PER-GAME set is what the radar plots (a short season is not dwarfed by
+    # full ones); the stat table keeps season totals plus a per-game column.
+    # The focus defaults to the most recent season WITH a profile, so walk
+    # back from the latest until one resolves.
+    profile = {"identity": identity, "season_profiles": {},
+               "season_profiles_per_game": {}}
+    season_profiles = profile["season_profiles"]
+    season_profiles_per_game = profile["season_profiles_per_game"]
+    focus_season = None
+    for s in real_nfl_seasons:
+        ensure_season_profiles(profile, [s])
+        if season_profiles.get(s):
+            focus_season = s
+            break
+    available_seasons = [s for s in real_nfl_seasons if season_profiles.get(s)]
     percentile_profile = season_profiles.get(focus_season) if focus_season else None
 
     # This dict is the FULL, UNSCOPED aggregation -- cached as-is (see
@@ -1161,6 +1237,7 @@ def scope_profile(profile: dict, season: str | None) -> dict:
     # the dropdown picked -- `.get()` degrades to None (no radar/table for
     # that season, same as any other absent-data case) rather than forcing
     # a fallback to a DIFFERENT season than every other section is showing.
+    ensure_season_profiles(profile, [season])
     percentile_profile = (profile.get("season_profiles") or {}).get(season)
     percentile_profile = _with_per_game(
         percentile_profile, (profile.get("season_profiles_per_game") or {}).get(season))

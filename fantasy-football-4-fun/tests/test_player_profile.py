@@ -666,15 +666,31 @@ def test_player_profile_picks_most_recent_season_with_data(monkeypatch):
 def test_player_profile_includes_season_profiles(monkeypatch):
     monkeypatch.setattr(pp, "sleeper_players", _fake_players_df)
     monkeypatch.setattr(pp, "_real_nfl_history", lambda *a, **k: {})
+    monkeypatch.setattr(pp, "_career_seasons", lambda ident: ["2026", "2025", "2024"])
     monkeypatch.setattr(
-        pp, "_all_season_profiles",
-        lambda *a, **k: {"2024": {"season": "2024", "columns": [], "n_population": 30},
-                         "2025": {"season": "2025", "columns": [], "n_population": 30}})
+        pp, "_percentile_profile_for",
+        lambda pid, pos, season, stat_mode="total": None if season == "2026" else
+        {"season": season, "columns": [], "n_population": 30})
 
     out = pp.player_profile("5995")
-    assert len(out["season_profiles"]) == 2
-    assert out["available_seasons"] == ["2025", "2024"]
+    # Profiles are filled lazily: the build walks back only to the first
+    # season with data, and the rest arrive on demand.
     assert out["focus_season"] == "2025"
+    assert set(out["season_profiles"]) == {"2026", "2025"}
+    pp.ensure_season_profiles(out, ["2024"])
+    assert out["season_profiles"]["2024"]["season"] == "2024"
+
+
+def test_radar_season_subset_caps_at_five():
+    from sleepermetrics.plots import radar_season_subset as sub
+    yrs = [str(y) for y in range(2016, 2027)]
+    assert sub(yrs, "2020") == ["2016", "2019", "2020", "2021", "2026"]
+    assert sub(yrs, "2016") == ["2016", "2026"]
+    assert sub(yrs, "2026") == ["2016", "2026"]
+    assert sub(yrs, "2017") == ["2016", "2017", "2018", "2026"]
+    assert sub(yrs, None) == ["2016", "2026"]
+    assert sub(["2024"], "2024") == ["2024"]
+    assert sub([], "2024") == []
 
 
 # --- plots.plot_player_radar (season-overlay radar) -------------------------
@@ -710,20 +726,20 @@ def test_plot_player_radar_overlays_multiple_seasons_with_focus():
     plt.close(fig)
 
 
-def test_plot_player_radar_multi_season_legend_sits_below_not_beside():
-    """Same layout fix as plot_player_overlay's own legend: centered BELOW
-    the radar, not off to the side pushing the polar axes off-center."""
+def test_plot_player_radar_multi_season_legend_sits_above_in_one_row():
+    """The season legend is a figure-level legend centered ABOVE the radar
+    (under the title/subtitle), one row, in season order."""
     import matplotlib.pyplot as plt
 
     from sleepermetrics import plots
     profiles = {"2023": _profile("2023", 40.0), "2024": _profile("2024", 55.0),
                "2025": _profile("2025", 72.0)}
     fig = plots.plot_player_radar(profiles, "2024", "Justice Hill")
-    ax = fig.axes[0]
-    legend = ax.get_legend()
-    assert legend is not None
-    bbox = legend.get_bbox_to_anchor()._bbox
-    assert bbox.y0 < 0
+    assert fig.axes[0].get_legend() is None
+    legend = fig.legends[0]
+    assert legend._ncols == 3
+    assert [t.get_text() for t in legend.get_texts()] == ["2023", "2024", "2025"]
+    assert legend.get_bbox_to_anchor()._bbox.y0 > 0.8
     plt.close(fig)
 
 

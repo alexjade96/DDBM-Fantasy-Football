@@ -4500,6 +4500,23 @@ def _scale_ticks(scale: dict) -> list[dict]:
     return out
 
 
+def radar_season_subset(seasons, focus: str | None) -> list[str]:
+    """The seasons the player radar may show, ascending: the first season,
+    the latest season, the focused (selected) season, and -- only when the
+    focus lies strictly between first and latest -- the season before and
+    after it. At most 5. `seasons` is any iterable of season strings."""
+    ss = sorted({str(s) for s in seasons})
+    if not ss:
+        return []
+    keep = {ss[0], ss[-1]}
+    if focus is not None and str(focus) in ss:
+        f = ss.index(str(focus))
+        keep.add(ss[f])
+        if 0 < f < len(ss) - 1:
+            keep.update((ss[f - 1], ss[f + 1]))
+    return sorted(keep)
+
+
 def plot_player_radar(season_profiles: dict | None, focus_season: str | None,
                       player_name: str, per_game: bool = False):
     """Every available season's percentile profile overlaid on one radar,
@@ -4558,8 +4575,8 @@ def plot_player_radar(season_profiles: dict | None, focus_season: str | None,
     # chronological order itself, not just "whichever order happens to be
     # fixed" -- see the loop below for why a FIXED order (any order) was
     # already required regardless of direction.
-    seasons = sorted(season_profiles)
-    focus = focus_season if focus_season in season_profiles else seasons[-1]
+    focus = focus_season if focus_season in season_profiles else sorted(season_profiles)[-1]
+    seasons = radar_season_subset(season_profiles, focus)
     focus_profile = season_profiles[focus]
     if not focus_profile or not focus_profile.get("columns"):
         return _no_data(f"No percentile data available for {player_name}.")
@@ -4592,7 +4609,8 @@ def plot_player_radar(season_profiles: dict | None, focus_season: str | None,
     # -- the focused polygon's FILL is a second, unlabelled draw afterward
     # so it layers on top without adding a duplicate legend entry.
     focus_vals = None
-    scales = _radar_scales(season_profiles, focus_profile, keys)
+    scales = _radar_scales({s: season_profiles[s] for s in seasons},
+                           focus_profile, keys)
     for season in seasons:
         prof = season_profiles.get(season) or {}
         # Plot by VALUE on the shared per-spoke scale (so every season lines
@@ -4633,9 +4651,11 @@ def plot_player_radar(season_profiles: dict | None, focus_season: str | None,
         # this function exists to add would otherwise only show on the
         # radar lines themselves, not the legend a reader actually reads
         # the season labels from.
-        ax.legend(loc="upper center", bbox_to_anchor=(0.5, -0.06),
-                  ncol=min(len(seasons), 4), fontsize=8.5,
-                  frameon=False, labelcolor="linecolor")
+        # (Now placed ABOVE the radar, one row under the subtitle, as a
+        # figure-level legend so it never shifts the polar axes.)
+        fig.legend(*ax.get_legend_handles_labels(), loc="upper center",
+                   bbox_to_anchor=(0.5, 0.915), ncol=len(seasons), fontsize=8.5,
+                   columnspacing=1.2, frameon=False, labelcolor="linecolor")
 
     pos = focus_profile["position"]
     n = focus_profile["n_population"]
@@ -4650,7 +4670,7 @@ def plot_player_radar(season_profiles: dict | None, focus_season: str | None,
     fig.text(0.5, 0.945, subtitle, fontsize=10, color=T["muted"],
              ha="center", va="top")
     fig.patch.set_facecolor(T["bg"])
-    fig.tight_layout(rect=(0, 0.04 if len(seasons) > 1 else 0, 1, 0.88))
+    fig.tight_layout(rect=(0, 0, 1, 0.86 if len(seasons) > 1 else 0.88))
     return fig
 
 

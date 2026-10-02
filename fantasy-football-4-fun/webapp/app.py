@@ -1243,17 +1243,19 @@ def chart(name: str, league: str = DEFAULT_LEAGUE, season: str | None = None,
         # The data build (16 to 25s cold on Render) runs BEFORE the lock: only
         # drawing needs it, and holding it here blocked every other chart.
         profile = pp.player_profile(player_id, league_id=league or None)
+        pname = (profile.get("identity") or {}).get("player_name") or f"Player {player_id}"
+        focus = season or profile.get("focus_season")
+        # The radar plots PER-GAME rates (a short current season would
+        # otherwise be dwarfed by full ones); the stat table beside it keeps
+        # season totals and adds a per-game column. Only first/latest/focus
+        # and the focus's neighbours are ranked, also before the lock.
+        per_game = pp.radar_profiles(profile, focus, per_game=True)
+        totals = None if per_game else pp.radar_profiles(profile, focus, per_game=False)
         with _render_lock:
             plots.set_chart_theme(theme)
-            pname = (profile.get("identity") or {}).get("player_name") or f"Player {player_id}"
-            focus = season or profile.get("focus_season")
-            # The radar plots PER-GAME rates (a short current season would
-            # otherwise be dwarfed by full ones); the stat table beside it
-            # keeps season totals and adds a per-game column.
-            per_game = profile.get("season_profiles_per_game")
             if per_game:
                 return png(plots.plot_player_radar(per_game, focus, pname, per_game=True))
-            return png(plots.plot_player_radar(profile.get("season_profiles"), focus, pname))
+            return png(plots.plot_player_radar(totals, focus, pname))
     if name == "player_overlay":
         # Player Comparison landing tab's shared snapshot/trend chart (see
         # sleepermetrics.plots.plot_player_overlay + webapp.player_compare).
