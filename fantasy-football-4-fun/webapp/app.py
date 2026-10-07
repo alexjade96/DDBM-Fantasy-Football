@@ -1227,7 +1227,7 @@ def chart(name: str, league: str = DEFAULT_LEAGUE, season: str | None = None,
           player_id: str | None = None,
           position: str | None = None, mode: str = "snapshot",
           player_ids: str | None = None, player_labels: str | None = None,
-          stat_mode: str = "total",
+          stat_mode: str = "total", trend_stat: str | None = None,
           _: str | None = None):
     # Player-profile charts are league-free (the player-profile page's
     # `league`/`season` are both genuinely optional, unlike every other
@@ -1290,13 +1290,22 @@ def chart(name: str, league: str = DEFAULT_LEAGUE, season: str | None = None,
                 return png(plots.plot_player_overlay({}, [], mode=mode))
         sea = season or _current_nfl_season()
         if mode == "trend":
-            by_id = pc.player_trend(ids, sea, position=pos)
+            # `trend_stat` is a comparison-table metric (e.g. "rush_yards"); an
+            # unknown or non-chartable one falls back to PPR points.  Counting
+            # stats are zero-filled for a week played (Sleeper omits zeros).
+            raw = pc.trend_raw_key(trend_stat, pos)
+            if raw:
+                stat_keys = (raw,)
+                by_id = pc.player_trend(ids, sea, position=pos, stat_keys=list(stat_keys),
+                                        zero_fill=True)
+            else:
+                by_id = pc.player_trend(ids, sea, position=pos)
+                stat_keys = pc._DEFAULT_TREND_KEYS.get(pos, ("pts_ppr",))[:1]
             players = {lab: by_id.get(pid, []) for pid, lab in zip(ids, labels)}
-            stat_keys = pc._DEFAULT_TREND_KEYS.get(pos, ("pts_ppr",))[:1]
             with _render_lock:
                 plots.set_chart_theme(theme)
                 return png(plots.plot_player_overlay(
-                    players, list(stat_keys), mode="trend", title=f"{pos} trend",
+                    players, list(stat_keys), mode="trend", title=f"{pos} {sea}",
                     stat_mode=smode))
         profiles = pc.player_field_compare(sea, pos, ids, stat_mode=smode)
         players = {lab: profiles.get(pid) for pid, lab in zip(ids, labels)}
@@ -2007,6 +2016,8 @@ def _playercompare_table_ctx(pos: str, sea: str, ids: list[str], labels: list[st
             pct_a, pct_b = col_a["percentile"], col_b["percentile"]
             ctx["rows"].append({
                 "label": col_a["label"],
+                # the metric this row charts when clicked (None: no weekly series)
+                "trend_key": col_a["key"] if pc.trend_raw_key(col_a["key"], pos) else None,
                 "a_value": plots._format_stat_value(col_a["key"], col_a["value"]),
                 "a_pct": pct_a,
                 "b_value": plots._format_stat_value(col_b["key"], col_b["value"]),
@@ -2065,6 +2076,8 @@ def playercompare_chart_section(request: Request, position: str = _PLAYERCOMPARE
         "n_selected": len(ids),
     }
     ctx.update(_playercompare_table_ctx(pos, sea, ids, labels, stat_mode="per_game"))
+    from webapp import player_compare as pc
+    ctx["trend_choices"] = pc.trend_choices(pos)      # the dropdown, when there is no table to click
     return tpl.TemplateResponse(request, "_playercompare_charts.html", ctx)
 
 

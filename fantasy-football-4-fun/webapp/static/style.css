@@ -1718,6 +1718,13 @@ footer code { font-family: ui-monospace, Consolas, monospace; }
 .compare-table td.compare-metric { width: 32%; text-align: center; font-weight: 500; }
 .compare-table .compare-pct { display: block; font-size: 11px;
   font-weight: 400; opacity: .75; }
+/* A row that charts its stat on click (see _playercompare_charts.html). */
+.compare-table tr.compare-clickable { cursor: pointer; }
+.compare-table tr.compare-clickable td.compare-metric { text-decoration: underline dotted;
+  text-underline-offset: 3px; }
+.compare-table tr.compare-clickable:hover td.compare-metric { color: var(--turf); }
+.compare-table tr.compare-selected td.compare-metric { color: var(--turf); font-weight: 700;
+  text-decoration: none; box-shadow: inset 0 -2px 0 var(--turf); }
 /* .dv-pos/.dv-neg (defined above) already give a colored pill background;
    this table applies them to the whole cell rather than an inline span, so
    the pill spans the value AND the percentile line beneath it. */

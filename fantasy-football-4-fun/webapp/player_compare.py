@@ -82,7 +82,8 @@ def player_field_compare(season: str, position: str, player_ids: list[str],
 
 def player_trend(player_ids: list[str], season: str, position: str | None = None,
                   stat_keys: list[str] | None = None,
-                  weeks: list[int] | None = None) -> dict:
+                  weeks: list[int] | None = None,
+                  zero_fill: bool = False) -> dict:
     """Week-by-week real-NFL production for `player_ids`, one row per week
     per player -- the week-by-week trend-line chart's input, and the data
     the week-range picker narrows for the snapshot views (see the Player
@@ -112,6 +113,12 @@ def player_trend(player_ids: list[str], season: str, position: str | None = None
     player's list sorted by week ascending. A stat key `raw_week` doesn't
     carry for that player/week (e.g. a QB-only key on a RB) is simply
     omitted from that week's dict rather than included as `None`.
+
+    `zero_fill=True` changes that for a week the player DID play (he has a
+    line): a requested key the line lacks becomes 0.0.  Sleeper omits a stat
+    that is zero (Gibbs's `rush_td` is absent in every week he scored none),
+    so without this a counting stat charted for one stat would show a gap in
+    every week it was zero.  A week with no line at all is still absent.
     """
     if stat_keys is None:
         keys = _DEFAULT_TREND_KEYS.get((position or "").upper(), ("pts_ppr",))
@@ -134,5 +141,31 @@ def player_trend(player_ids: list[str], season: str, position: str | None = None
             for key in keys:
                 if key in line:
                     row[key] = line[key]
+                elif zero_fill:
+                    row[key] = 0.0
             out[pid].append(row)
     return out
+
+
+def trend_raw_key(table_key: str | None, position: str | None) -> str | None:
+    """The weekly Sleeper key behind one of the comparison table's metrics, or
+    None when that metric has no simple weekly series (snap share, target
+    share, RZ touches, aDOT are rates or need team totals) or is not a table
+    metric at all.  Uses the same maps the leaderboard sums its season totals
+    from (`nflstats._LB_SUMS` / `_LB_DEF_SUMS`), so a table row and its trend
+    line can never disagree about what the stat is.  Fantasy points are not a
+    table metric: the trend chart's default (PPR points) is how you get back
+    to them."""
+    if not table_key or table_key == "fpts_ppr":
+        return None
+    sums = nflstats._LB_DEF_SUMS if (position or "").upper() == "DEF" else nflstats._LB_SUMS
+    return sums.get(table_key)
+
+
+def trend_choices(position: str | None) -> list[tuple[str, str]]:
+    """`[(table key, label)]` of every metric the trend chart can show for this
+    position, in leaderboard order (for the 3+ player dropdown, where there is
+    no table to click)."""
+    from webapp.sources.nflref import summary
+    return [(key, label) for key, label in summary.leaderboard_columns(position or "", "sleeper")
+            if key not in summary._RADAR_EXCLUDED_KEYS and trend_raw_key(key, position)]

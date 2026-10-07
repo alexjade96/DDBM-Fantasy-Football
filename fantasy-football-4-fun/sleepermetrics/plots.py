@@ -4390,6 +4390,132 @@ def _draw_pizza_ticks(ax, angles: list[float], keys: list[str], players: dict,
                     rotation_mode="anchor", va=va, **tick_style)
 
 
+# Readable names for the trend chart's y-axis and title (Sleeper's raw keys).
+_TREND_LABELS = {
+    "pts_ppr": "PPR points", "pass_yd": "passing yards", "pass_td": "passing TDs",
+    "pass_int": "interceptions", "rush_yd": "rushing yards", "rush_att": "carries",
+    "rec": "receptions", "rec_yd": "receiving yards", "rec_tgt": "targets",
+    "sack": "sacks", "int": "interceptions", "pts_allow": "points allowed",
+    "rush_td": "rushing TDs", "rec_td": "receiving TDs", "pass_att": "pass attempts",
+    "pass_cmp": "completions", "ff": "forced fumbles", "fum_rec": "fumble recoveries",
+    "def_td": "defensive TDs", "safe": "safeties", "blk_kick": "blocked kicks",
+    "tkl": "tackles", "qb_hit": "QB hits", "yds_allow": "yards allowed",
+}
+
+
+def _fmt_trend(v: float) -> str:
+    """A trend value for a label: whole number when large, one decimal otherwise."""
+    return f"{v:,.0f}" if abs(v) >= 100 else f"{v:.1f}"
+
+
+# Related stats sit next to each other on the radar, in this order clockwise
+# from the top; a stat not listed goes last.  The offensive groups match the
+# order the leaderboard columns already have; the defensive stats were a
+# single run of unrelated ones and are regrouped here.
+_SPOKE_GROUPS = [
+    ("Passing", ("pass_att", "pass_cmp", "pass_yards", "pass_td", "pass_int")),
+    ("Receiving", ("targets", "receptions", "rec_yards", "rec_td")),
+    ("Rushing", ("carries", "rush_yards", "rush_td")),
+    ("Usage", ("snap_share", "tgt_share", "rz_touches", "adot")),
+    ("Pass rush", ("sacks", "qb_hits", "tackles")),
+    ("Takeaways", ("ints", "forced_fumbles", "fumble_rec", "def_td")),
+    ("Allowed", ("pts_allow", "yds_allow")),
+    ("Rare", ("safeties", "blk_kick")),
+]
+_SPOKE_RANK = {k: (gi, ki) for gi, (_g, ks) in enumerate(_SPOKE_GROUPS) for ki, k in enumerate(ks)}
+
+
+# Which groups lead for each position: the first group starts at the top of the
+# radar and the rest follow clockwise, so it is the one the eye lands on.  Any
+# group not listed follows in `_SPOKE_GROUPS` order; an unknown position uses
+# `_SPOKE_GROUPS` order throughout.
+_POSITION_GROUP_ORDER = {
+    "QB": ("Passing", "Rushing", "Usage"),
+    "RB": ("Rushing", "Receiving", "Usage"),
+    "WR": ("Receiving", "Rushing", "Usage"),
+    "TE": ("Receiving", "Rushing", "Usage"),
+    "DEF": ("Allowed", "Takeaways", "Pass rush", "Rare"),
+}
+
+
+def _spoke_rank_for(position: str | None) -> dict:
+    """`{stat key: (group position, index inside the group)}` for a position."""
+    lead = _POSITION_GROUP_ORDER.get((position or "").upper(), ())
+    names = [g for g, _ks in _SPOKE_GROUPS]
+    where = {n: i for i, n in enumerate([*lead, *[n for n in names if n not in lead]])}
+    return {k: (where[g], ki) for g, ks in _SPOKE_GROUPS for ki, k in enumerate(ks)}
+
+
+def _grouped_spoke_order(keys: list[str], position: str | None = None) -> list[str]:
+    """`keys` with related stats adjacent (see `_SPOKE_GROUPS`) and the groups
+    in the order that matters for `position` (see `_POSITION_GROUP_ORDER`).
+    Stable: a key in no group keeps its relative position, after every grouped
+    one."""
+    rank = _spoke_rank_for(position)
+    unknown = (len(_SPOKE_GROUPS), 0)
+    return sorted(keys, key=lambda k: (*rank.get(k, unknown), keys.index(k)))
+
+
+def _spoke_group_runs(keys: list[str]) -> list[tuple[str, int, int]]:
+    """Consecutive spokes of one group as `(name, first_index, last_index)`.
+    Spokes outside every group are left out."""
+    runs: list[tuple[str, int, int]] = []
+    for i, k in enumerate(keys):
+        rank = _SPOKE_RANK.get(k)
+        if rank is None:
+            continue
+        name = _SPOKE_GROUPS[rank[0]][0]
+        if runs and runs[-1][0] == name and runs[-1][2] == i - 1:
+            runs[-1] = (name, runs[-1][1], i)
+        else:
+            runs.append((name, i, i))
+    return runs
+
+
+def _draw_group_separators(ax, angles: list[float], keys: list[str]) -> None:
+    """A faint radial line half way between the last spoke of one group and the
+    first of the next, so the groups read as wedges.  Not drawn for a chart
+    with a single group."""
+    runs = _spoke_group_runs(keys)
+    if len(runs) < 2 or len(angles) < 2:
+        return
+    step = angles[1] - angles[0]
+    for _name, first, _last in runs:
+        ang = angles[first] - step / 2
+        ax.plot([ang, ang], [0, 100], color=T["muted"], linewidth=0.9, linestyle=(0, (4, 3)),
+                alpha=0.55, zorder=1)
+
+
+# Stats where fewer is better even though the profile data flags them as
+# higher-is-better (the leaderboard's own direction list has only points and
+# yards allowed; an interception thrown is bad).  Used for the leader highlight
+# only, so the polygons and percentiles are unchanged.
+_FEWER_IS_BETTER = {"pass_int"}
+
+
+def _spoke_leaders(players: dict, key: str) -> set:
+    """Names of the player(s) with the BEST value on this stat: the highest,
+    or the lowest where lower is better (points and yards allowed).  Empty with
+    fewer than two values or when they are all equal, since nobody leads."""
+    vals = {}
+    higher = True
+    for name, prof in players.items():
+        col = next((c for c in (prof or {}).get("columns", []) if c["key"] == key), None)
+        if col is None or col.get("value") is None:
+            continue
+        try:
+            vals[name] = float(col["value"])
+        except (TypeError, ValueError):
+            continue
+        higher = col.get("higher_is_better", higher) and key not in _FEWER_IS_BETTER
+    if len(vals) < 2:
+        return set()
+    best = max(vals.values()) if higher else min(vals.values())
+    if all(math.isclose(v, best, abs_tol=1e-9) for v in vals.values()):
+        return set()
+    return {n for n, v in vals.items() if math.isclose(v, best, abs_tol=1e-9)}
+
+
 def _draw_spoke_values(ax, angles: list[float], keys: list[str], players: dict,
                        colors: dict, per_game: bool = False):
     """A second line under each spoke name on the comparison radar, e.g.
@@ -4411,17 +4537,20 @@ def _draw_spoke_values(ax, angles: list[float], keys: list[str], players: dict,
         return w
 
     for k_idx, key in enumerate(keys):
-        pieces = [("(", T["ink2"])]
+        pieces = [("(", T["ink2"], False)]
+        leaders = _spoke_leaders(players, key)
         for i, (name, prof) in enumerate(players.items()):
             if not prof:
                 continue
             col = next((c for c in prof.get("columns", []) if c["key"] == key), None)
             txt = _format_pizza_tick_value(key, col["value"], per_game) if col else "-"
             if len(pieces) > 1:
-                pieces.append((" | ", T["ink2"]))
-            pieces.append((txt, colors[name]))
-        pieces.append((")", T["ink2"]))
-        widths = [width_pt(s) for s, _ in pieces]
+                pieces.append((" | ", T["ink2"], False))
+            pieces.append((txt, colors[name], name in leaders))
+        pieces.append((")", T["ink2"], False))
+        # A leader is drawn as a filled pill, so it needs a little more room
+        # than its text to keep clear of the separators beside it.
+        widths = [width_pt(s) + (7 if lead else 0) for s, _, lead in pieces]
         total = sum(widths)
 
         ang = angles[k_idx]
@@ -4432,15 +4561,20 @@ def _draw_spoke_values(ax, angles: list[float], keys: list[str], players: dict,
         bx, by = math.cos(r), math.sin(r)          # along the baseline
         ux, uy = -math.sin(r), math.cos(r)         # the text's "up"
         pos = -total / 2
-        for (s, color), w in zip(pieces, widths):
+        for (s, color, lead), w in zip(pieces, widths):
             d = pos + w / 2
             pos += w
+            extra = {}
+            if lead:
+                # White on the player's own colour reads on both themes.
+                extra = {"bbox": {"boxstyle": "round,pad=0.22", "fc": color, "ec": "none"}}
             ax.annotate(s, xy=(ang, 112), xycoords="data",
                         xytext=(d * bx - line_gap * ux, d * by - line_gap * uy),
                         textcoords="offset points", annotation_clip=False,
                         rotation=rot,
                         rotation_mode="anchor", ha="center", va="center",
-                        fontsize=size, color=color, fontweight="bold")
+                        fontsize=size, color="#ffffff" if lead else color,
+                        fontweight="bold", **extra)
 
 
 def _radar_scales(season_profiles: dict, focus_profile: dict, keys: list[str]) -> dict:
@@ -4582,6 +4716,8 @@ def plot_player_radar(season_profiles: dict | None, focus_season: str | None,
         return _no_data(f"No percentile data available for {player_name}.")
 
     cols = focus_profile["columns"]
+    order = _grouped_spoke_order([c["key"] for c in cols], focus_profile.get("position"))
+    cols = sorted(cols, key=lambda c: order.index(c["key"]))
     keys = [c["key"] for c in cols]
     # Spoke name with the FOCUSED season's own value underneath, e.g.
     # "Pass yds" over "(533)": the rings carry the field's scale, this
@@ -4746,6 +4882,7 @@ def plot_player_overlay(players: dict, stat_keys: list[str], mode: str = "snapsh
                     break
         if not keys:
             return _no_data("No stat data available for this position.")
+        keys = _grouped_spoke_order(keys, position)
         label_by_key = {}
         for prof in players.values():
             if not prof:
@@ -4787,6 +4924,7 @@ def plot_player_overlay(players: dict, stat_keys: list[str], mode: str = "snapsh
         # Statsbomb/Ted Knutson radar style, rather than a shared 0-100
         # percentile axis with a "value (percentile)" badge floating at every
         # point -- the earlier design here, now superseded.
+        _draw_group_separators(ax, angles, keys)
         _draw_pizza_ticks(ax, angles, keys, players,
                           per_game=stat_mode == "per_game")
         _draw_spoke_values(ax, angles, keys, players, colors,
@@ -4814,9 +4952,13 @@ def plot_player_overlay(players: dict, stat_keys: list[str], mode: str = "snapsh
             subtitle = ("Each spoke: rings step evenly from the lowest to the highest "
                         f"value among real NFL {position}s")
         subtitle += (" (per-game rates)" if per_game else " (season totals)")
-        fig.text(0.5, 0.94, subtitle, fontsize=9, color=T["muted"], ha="center")
+        subtitle += ".  A filled value is the best in its category."
+        runs = _spoke_group_runs(keys)
+        if len(runs) > 1:
+            subtitle += "\nGroups, clockwise from the top: " + " | ".join(n for n, _a, _b in runs)
+        fig.text(0.5, 0.962, subtitle, fontsize=9, color=T["muted"], ha="center", va="top")
         fig.patch.set_facecolor(T["bg"])
-        fig.tight_layout(rect=(0, 0.02, 1, 0.90))
+        fig.tight_layout(rect=(0, 0.02, 1, 0.88 if len(runs) > 1 else 0.90))
         return fig
 
     if mode == "trend":
@@ -4826,7 +4968,8 @@ def plot_player_overlay(players: dict, stat_keys: list[str], mode: str = "snapsh
         cumulative = stat_mode == "total"
         fig, ax = plt.subplots(figsize=(9, 5.5))
         any_drawn = False
-        stat_label = stat_key
+        stat_label = _TREND_LABELS.get(stat_key, stat_key.replace("_", " "))
+        ends = []                      # (name, last x, last y, label) for the direct labels
         for name, rows in players.items():
             pts = [(r["week"], r[stat_key]) for r in (rows or [])
                    if stat_key in r and r[stat_key] is not None]
@@ -4835,6 +4978,7 @@ def plot_player_overlay(players: dict, stat_keys: list[str], mode: str = "snapsh
             pts.sort()
             xs = [p[0] for p in pts]
             ys = [p[1] for p in pts]
+            weekly = list(ys)
             # "Total" mode draws the running season total (a cumulative sum
             # through that week) rather than each week's own value -- the
             # per-game (weekly) reading is the default/base data already
@@ -4846,15 +4990,28 @@ def plot_player_overlay(players: dict, stat_keys: list[str], mode: str = "snapsh
             if cumulative:
                 total = 0.0
                 ys = [total := total + y for y in ys]
-            ax.plot(xs, ys, color=colors[name], linewidth=2, marker="o",
+                px, py = xs, ys        # a running total has no gaps: a missed week adds 0
+            else:
+                # A week with no row (bye, did not play) is a GAP, not a
+                # straight line to the next game: break the line there.
+                px, py = [], []
+                for i, (x, y) in enumerate(zip(xs, ys)):
+                    if i and x - xs[i - 1] > 1:
+                        px.append(float("nan"))
+                        py.append(float("nan"))
+                    px.append(x)
+                    py.append(y)
+            ax.plot(px, py, color=colors[name], linewidth=2, marker="o",
                     markersize=4, label=name)
+            tail = (f"avg {_fmt_trend(sum(weekly) / len(weekly))}" if not cumulative
+                    else _fmt_trend(ys[-1]))
+            ends.append((name, xs[-1], ys[-1], f"{name}  ({tail})"))
             any_drawn = True
         if not any_drawn:
             plt.close(fig)
             return _no_data("No week-by-week data available for this stat.")
         ax.set_facecolor(T["bg"])
-        ax.legend(loc="best", fontsize=8.5, frameon=False, labelcolor=T["ink2"])
-        chart_title = title or "Player trend"
+        chart_title = f"{title}: {stat_label}" if title else stat_label
         if cumulative:
             chart_title += " (season total)"
             stat_label = f"Cumulative {stat_label}"
@@ -4862,6 +5019,26 @@ def plot_player_overlay(players: dict, stat_keys: list[str], mode: str = "snapsh
             chart_title += " (per game)"
         _finish(fig, ax, chart_title, xlabel="Week",
                ylabel=stat_label, grid_axis="both")
+        # Whole-number week ticks, and each line labelled at its right end
+        # (name and season average, or final total) in place of a legend.
+        all_x = [x for _n, x, _y, _l in ends] + [x for ln in ax.get_lines() for x in ln.get_xdata()
+                                                if x == x]
+        lo, hi = int(min(all_x)), int(max(all_x))
+        ax.set_xticks(list(range(lo, hi + 1)) if hi - lo <= 22 else
+                      list(range(lo, hi + 1, 2)))
+        span = max(hi - lo, 1)
+        ax.set_xlim(lo - 0.04 * span, hi + 0.36 * span)
+        lo_y, hi_y = ax.get_ylim()
+        min_gap = (hi_y - lo_y) * 0.055
+        placed = []                    # vertical positions, nudged apart
+        for name, x, y, label in sorted(ends, key=lambda e: e[2]):
+            ty = y if not placed else max(y, placed[-1] + min_gap)
+            placed.append(ty)
+            ax.annotate(label, xy=(x, y), xytext=(hi + 0.35, ty), textcoords="data",
+                        ha="left", va="center", fontsize=9, fontweight="bold",
+                        color=colors[name], annotation_clip=False,
+                        arrowprops=dict(arrowstyle="-", color=colors[name], lw=0.8,
+                                        alpha=0.6, shrinkA=0, shrinkB=3))
         fig.patch.set_facecolor(T["bg"])
         return fig
 

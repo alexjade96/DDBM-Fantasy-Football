@@ -91,6 +91,8 @@
       </tbody>
     </table>
   </div>
+  <p class="hint">Click a stat to chart it week by week below; click it again to
+    return to PPR points.</p>
   {% else %}
   {# 3+ players (or a missing profile for one side): no 2-sided table, so the
      radar still needs to render somewhere -- falls back to a plain chart
@@ -102,6 +104,16 @@
     <figcaption>Percentile at each stat against every real NFL
       {{ position }} this season.</figcaption>
   </figure>
+  {% endif %}
+  {% if not rows and trend_choices %}
+  {# No table to click with 3+ players: the same choice as a dropdown. #}
+  <div class="rail" style="margin-top: 16px">
+    <label class="k" for="trend-stat-select">Trend stat</label>
+    <select id="trend-stat-select">
+      <option value="">PPR points</option>
+      {% for key, label in trend_choices %}<option value="{{ key }}">{{ label }}</option>{% endfor %}
+    </select>
+  </div>
   {% endif %}
   <figure class="card chart" style="aspect-ratio: 16 / 9; margin-top: 16px">
     <img data-chart="trend"
@@ -133,6 +145,44 @@
     var imgs = root ? root.querySelectorAll('img[data-chart]') : [];
     var tableBody = root && root.querySelector('#compare-table-body');
     if (!rail || !imgs.length) return;
+    // Which stat the trend chart shows ('' = the default, PPR points).  Set by
+    // clicking a table row (2 players) or the dropdown (3+); function
+    // declarations so the table-refresh callback below can call markTrend.
+    var trendStat = '';
+    var trendImg = root.querySelector('img[data-chart="trend"]');
+    function markTrend() {
+      root.querySelectorAll('tr[data-trend-stat]').forEach(function (tr) {
+        tr.classList.toggle('compare-selected', tr.getAttribute('data-trend-stat') === trendStat);
+      });
+      var sel = root.querySelector('#trend-stat-select');
+      if (sel) sel.value = trendStat;
+    }
+    function setTrendStat(stat) {
+      trendStat = stat || '';
+      if (trendImg) {
+        var fig = trendImg.closest('.card.chart');
+        if (fig) { fig.classList.add('skeleton'); fig.classList.remove('chart-failed'); }
+        trendImg.classList.remove('loaded');
+        var src = trendImg.src.replace(/([?&])trend_stat=[^&]*&?/, '$1').replace(/[?&]$/, '');
+        if (trendStat) src += (src.indexOf('?') > -1 ? '&' : '?') + 'trend_stat=' + encodeURIComponent(trendStat);
+        trendImg.src = src;
+      }
+      markTrend();
+    }
+    // Bound to the <section> inside this fragment (replaced on every swap), NOT
+    // to #playercompare-charts itself, which persists: a listener there would
+    // be added again on every Compare click and a row would toggle twice.
+    var card = root.querySelector('section.card');
+    if (card) {
+      card.addEventListener('click', function (e) {
+        var tr = e.target.closest('tr[data-trend-stat]');
+        if (!tr) return;
+        var s = tr.getAttribute('data-trend-stat');
+        setTrendStat(s === trendStat ? '' : s);
+      });
+      var sel = card.querySelector('#trend-stat-select');
+      if (sel) sel.addEventListener('change', function () { setTrendStat(sel.value); });
+    }
     var tableUrl = '/playercompare/table?position={{ position|urlencode }}&season={{ season|urlencode }}'
       + '&player_ids={{ player_ids|urlencode }}&player_labels={{ player_labels|urlencode }}';
     rail.querySelectorAll('button[data-stat-mode]').forEach(function (btn) {
@@ -158,7 +208,7 @@
           // Dim the old rows until the new ones land, so the pause reads as
           // loading rather than as a toggle that did nothing.
           tableBody.style.opacity = '0.45';
-          var done = function () { tableBody.style.opacity = ''; };
+          var done = function () { tableBody.style.opacity = ''; markTrend(); };
           window.htmx.ajax('GET', tableUrl + '&stat_mode=' + mode, {
             target: tableBody, swap: 'innerHTML',
           }).then(done, done);

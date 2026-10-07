@@ -165,6 +165,11 @@ def test_player_trend_unknown_position_falls_back_to_pts_ppr(monkeypatch):
 _FAKE_AXIS_TICKS = [{"percentile": p, "value": float(p * 2)} for p in (20, 40, 60, 80, 100)]
 
 
+def matplotlib_rgb(color):
+    import matplotlib.colors as mcolors
+    return mcolors.to_rgb(color)
+
+
 def _plain_texts(ax):
     """The axes' ordinary texts (spoke names, ring values), without the
     per-spoke colour-coded value annotations."""
@@ -186,8 +191,13 @@ def test_plot_player_overlay_snapshot_spoke_values_are_colour_coded_per_player()
     pieces = [t for t in ax.texts if isinstance(t, Annotation)]
     assert [t.get_text() for t in pieces] == ["(", "180.0", " | ", "150.0", ")"]
     colors = plots.palette(players.keys())
-    assert pieces[1].get_color() == colors["Alice"]
+    # Alice has the higher value, so hers is the filled pill (her colour as the
+    # fill, white text); Bob's stays plain text in his own colour.
+    assert pieces[1].get_bbox_patch().get_facecolor()[:3] == pytest.approx(
+        matplotlib_rgb(colors["Alice"]))
+    assert pieces[1].get_color() == "#ffffff"
     assert pieces[3].get_color() == colors["Bob"]
+    assert pieces[3].get_bbox_patch() is None
     plt.close(fig)
 
 
@@ -448,10 +458,10 @@ def test_plot_player_overlay_snapshot_plots_at_scaled_position_not_percentile():
     prof = {"columns": [
         {"key": "rush_yd", "label": "Rush yds", "value": 9.0, "percentile": 60.0,
          "scaled": 8.0, "axis_ticks": _FAKE_AXIS_TICKS},
-        {"key": "pass_td", "label": "Pass TD", "value": 3.0, "percentile": 55.0,
+        {"key": "other_td", "label": "Other TD", "value": 3.0, "percentile": 55.0,
          "axis_ticks": _FAKE_AXIS_TICKS},   # no `scaled` -> falls back
     ]}
-    fig = plots.plot_player_overlay({"Alice": prof}, ["rush_yd", "pass_td"],
+    fig = plots.plot_player_overlay({"Alice": prof}, ["rush_yd", "other_td"],
                                     mode="snapshot")
     ax = fig.axes[0]
     ys = list(ax.lines[0].get_ydata())
@@ -787,3 +797,263 @@ def test_plot_player_overlay_unrecognized_mode_degrades():
                                       ["fpts_ppr"], mode="bogus")
     assert fig is not None
     plt.close(fig)
+
+
+# --- radar: leader highlight and grouped spokes ----------------------------
+
+def _prof(**values):
+    return {"columns": [{"key": k, "label": k, "value": v, "percentile": 50.0,
+                         "higher_is_better": k not in ("pts_allow", "yds_allow"),
+                         "axis_ticks": _FAKE_AXIS_TICKS} for k, v in values.items()]}
+
+
+def test_spoke_leaders_best_ties_and_direction():
+    from sleepermetrics import plots
+    players = {"A": _prof(carries=10.0, pts_allow=20.0), "B": _prof(carries=14.0, pts_allow=24.0),
+               "C": _prof(carries=14.0, pts_allow=24.0)}
+    assert plots._spoke_leaders(players, "carries") == {"B", "C"}      # a tie leads together
+    assert plots._spoke_leaders(players, "pts_allow") == {"A"}         # lower is better
+
+
+def test_spoke_leaders_nobody_leads_with_one_value_or_all_equal():
+    from sleepermetrics import plots
+    assert plots._spoke_leaders({"A": _prof(carries=10.0)}, "carries") == set()
+    assert plots._spoke_leaders({"A": _prof(carries=10.0), "B": _prof(carries=10.0)}, "carries") == set()
+    assert plots._spoke_leaders({"A": _prof(carries=10.0), "B": None}, "carries") == set()
+
+
+def test_grouped_spoke_order_keeps_related_stats_adjacent():
+    from sleepermetrics import plots
+    jumbled = ["pts_allow", "sacks", "ints", "safeties", "qb_hits", "forced_fumbles", "tackles"]
+    out = plots._grouped_spoke_order(jumbled)
+    assert out == ["sacks", "qb_hits", "tackles", "ints", "forced_fumbles", "pts_allow", "safeties"]
+    # an offensive list already in group order is left exactly as it was
+    off = ["targets", "receptions", "rec_yards", "carries", "rush_yards", "snap_share"]
+    assert plots._grouped_spoke_order(off) == off
+    # a stat in no group goes last, in its original relative position
+    assert plots._grouped_spoke_order(["mystery", "carries", "other"]) == ["carries", "mystery", "other"]
+
+
+def test_spoke_group_runs():
+    from sleepermetrics import plots
+    keys = ["targets", "receptions", "carries", "snap_share", "mystery"]
+    assert plots._spoke_group_runs(keys) == [("Receiving", 0, 1), ("Rushing", 2, 2), ("Usage", 3, 3)]
+
+
+def test_snapshot_radar_orders_spokes_by_group_and_draws_separators():
+    import matplotlib.pyplot as plt
+
+    from sleepermetrics import plots
+    players = {"A": _prof(snap_share=0.7, carries=12.0, targets=5.0),
+               "B": _prof(snap_share=0.6, carries=9.0, targets=6.0)}
+    fig = plots.plot_player_overlay(players, ["snap_share", "carries", "targets"], mode="snapshot")
+    ax = fig.axes[0]
+    spoke_names = {"targets", "carries", "snap_share"}      # the fake profile labels each spoke by its key
+    names = [t.get_text() for t in _plain_texts(ax) if t.get_text() in spoke_names]
+    assert names == ["targets", "carries", "snap_share"]    # Receiving, Rushing, Usage
+    assert len(ax.lines) == 2 + 3                            # two players + three group boundaries
+    plt.close(fig)
+
+
+def test_snapshot_radar_single_group_has_no_separators():
+    import matplotlib.pyplot as plt
+
+    from sleepermetrics import plots
+    players = {"A": _prof(carries=12.0, rush_yards=50.0), "B": _prof(carries=9.0, rush_yards=70.0)}
+    fig = plots.plot_player_overlay(players, ["carries", "rush_yards"], mode="snapshot")
+    assert len(fig.axes[0].lines) == 2
+    plt.close(fig)
+
+
+# --- trend chart: readable axes, gaps, direct labels ------------------------
+
+def test_trend_axis_label_title_and_integer_week_ticks():
+    import matplotlib.pyplot as plt
+
+    from sleepermetrics import plots
+    players = {"Alice": [{"week": w, "pts_ppr": 10.0 + w} for w in (1, 2, 3, 4)]}
+    fig = plots.plot_player_overlay(players, ["pts_ppr"], mode="trend", title="RB 2025",
+                                    stat_mode="per_game")
+    ax = fig.axes[0]
+    assert ax.get_ylabel() == "PPR points"
+    title_texts = [t.get_text() for t in fig.texts] + [ax.get_title(loc="left"), ax.get_title()]
+    assert any("RB 2025: PPR points (per game)" in s for s in title_texts)
+    ticks = [t for t in ax.get_xticks() if 1 <= t <= 4]
+    assert ticks == [1, 2, 3, 4]
+    plt.close(fig)
+
+
+def test_trend_per_game_line_breaks_at_a_missed_week_but_cumulative_does_not():
+    import math
+
+    import matplotlib.pyplot as plt
+
+    from sleepermetrics import plots
+    rows = [{"week": 1, "pts_ppr": 10.0}, {"week": 2, "pts_ppr": 12.0}, {"week": 5, "pts_ppr": 9.0}]
+    fig = plots.plot_player_overlay({"Alice": rows}, ["pts_ppr"], mode="trend", stat_mode="per_game")
+    ys = list(fig.axes[0].lines[0].get_ydata())
+    assert len(ys) == 4 and math.isnan(ys[2])                 # gap before week 5
+    plt.close(fig)
+    fig = plots.plot_player_overlay({"Alice": rows}, ["pts_ppr"], mode="trend", stat_mode="total")
+    ys = list(fig.axes[0].lines[0].get_ydata())
+    assert ys == pytest.approx([10.0, 22.0, 31.0])            # a running total has no gaps
+    plt.close(fig)
+
+
+def test_trend_has_direct_labels_instead_of_a_legend():
+    import matplotlib.pyplot as plt
+    from matplotlib.text import Annotation
+
+    from sleepermetrics import plots
+    players = {"Alice": [{"week": 1, "pts_ppr": 10.0}, {"week": 2, "pts_ppr": 20.0}],
+               "Bob": [{"week": 1, "pts_ppr": 11.0}, {"week": 2, "pts_ppr": 12.0}]}
+    fig = plots.plot_player_overlay(players, ["pts_ppr"], mode="trend", stat_mode="per_game")
+    ax = fig.axes[0]
+    assert ax.get_legend() is None
+    labels = sorted(t.get_text() for t in ax.texts if isinstance(t, Annotation))
+    assert labels == ["Alice  (avg 15.0)", "Bob  (avg 11.5)"]
+    plt.close(fig)
+    fig = plots.plot_player_overlay(players, ["pts_ppr"], mode="trend", stat_mode="total")
+    labels = sorted(t.get_text() for t in fig.axes[0].texts if isinstance(t, Annotation))
+    assert labels == ["Alice  (30.0)", "Bob  (23.0)"]
+    plt.close(fig)
+
+
+def test_trend_direct_labels_do_not_overlap_when_lines_end_together():
+    import matplotlib.pyplot as plt
+    from matplotlib.text import Annotation
+
+    from sleepermetrics import plots
+    players = {n: [{"week": 1, "pts_ppr": 10.0}, {"week": 2, "pts_ppr": 10.0 + i * 0.01}]
+               for i, n in enumerate(["A", "B", "C"])}
+    fig = plots.plot_player_overlay(players, ["pts_ppr"], mode="trend", stat_mode="per_game")
+    ax = fig.axes[0]
+    ys = sorted(t.xyann[1] for t in ax.texts if isinstance(t, Annotation))
+    lo, hi = ax.get_ylim()
+    assert all(b - a >= 0.05 * (hi - lo) for a, b in zip(ys, ys[1:]))      # nudged apart
+    plt.close(fig)
+
+
+# --- radar: spoke groups lead with what matters for the position ------------
+
+_OFFENCE_KEYS = ["pass_att", "pass_yards", "targets", "receptions", "carries", "rush_yards",
+                 "snap_share"]
+
+
+def test_spoke_group_order_leads_with_the_positions_main_group():
+    from sleepermetrics import plots
+    first = lambda pos, keys=_OFFENCE_KEYS: plots._spoke_group_runs(
+        plots._grouped_spoke_order(keys, pos))[0][0]
+    assert first("QB") == "Passing"
+    assert first("RB") == "Rushing"
+    assert first("WR") == "Receiving"
+    assert first("TE") == "Receiving"
+    assert first("rb") == "Rushing"                       # case-insensitive
+    assert first("DEF", ["sacks", "ints", "pts_allow", "safeties"]) == "Allowed"
+
+
+def test_spoke_group_order_full_sequence_per_position():
+    from sleepermetrics import plots
+    groups = lambda pos, keys: [g for g, _a, _b in plots._spoke_group_runs(
+        plots._grouped_spoke_order(keys, pos))]
+    keys = ["targets", "carries", "snap_share", "pass_yards"]
+    # groups a position does not list follow the listed ones
+    assert groups("QB", keys) == ["Passing", "Rushing", "Usage", "Receiving"]
+    assert groups("RB", keys) == ["Rushing", "Receiving", "Usage", "Passing"]
+    assert groups("WR", keys) == ["Receiving", "Rushing", "Usage", "Passing"]
+
+
+def test_spoke_group_order_unknown_position_uses_the_default_order():
+    from sleepermetrics import plots
+    keys = ["carries", "targets", "snap_share"]
+    default = plots._grouped_spoke_order(keys)
+    assert default == ["targets", "carries", "snap_share"]
+    assert plots._grouped_spoke_order(keys, None) == default
+    assert plots._grouped_spoke_order(keys, "K") == default
+
+
+def test_spoke_group_order_keeps_stats_inside_a_group_in_order():
+    from sleepermetrics import plots
+    out = plots._grouped_spoke_order(["rec_td", "carries", "receptions", "rush_td", "targets",
+                                      "rush_yards", "rec_yards"], "RB")
+    assert out == ["carries", "rush_yards", "rush_td", "targets", "receptions", "rec_yards", "rec_td"]
+
+
+def test_snapshot_radar_starts_with_the_positions_main_group():
+    import matplotlib.pyplot as plt
+
+    from sleepermetrics import plots
+    players = {"A": _prof(targets=5.0, carries=12.0, snap_share=0.7),
+               "B": _prof(targets=6.0, carries=9.0, snap_share=0.6)}
+    spokes = {"targets", "carries", "snap_share"}
+    for pos, expected in (("RB", ["carries", "targets", "snap_share"]),
+                          ("WR", ["targets", "carries", "snap_share"])):
+        fig = plots.plot_player_overlay(players, ["snap_share", "carries", "targets"],
+                                        mode="snapshot", position=pos)
+        names = [t.get_text() for t in _plain_texts(fig.axes[0]) if t.get_text() in spokes]
+        assert names == expected
+        plt.close(fig)
+
+
+def test_spoke_leaders_fewer_interceptions_leads_even_though_data_says_higher_is_better():
+    from sleepermetrics import plots
+    players = {"A": _prof(pass_int=0.4), "B": _prof(pass_int=0.9)}
+    assert players["A"]["columns"][0]["higher_is_better"] is True        # the data's quirk
+    assert plots._spoke_leaders(players, "pass_int") == {"A"}
+
+
+# --- trend metric selector: table metric -> weekly key, zero fill ------------
+
+def test_trend_raw_key_maps_table_metrics_to_weekly_keys():
+    assert pc.trend_raw_key("rush_yards", "RB") == "rush_yd"
+    assert pc.trend_raw_key("carries", "RB") == "rush_att"
+    assert pc.trend_raw_key("targets", "WR") == "rec_tgt"
+    assert pc.trend_raw_key("pass_yards", "QB") == "pass_yd"
+    assert pc.trend_raw_key("sacks", "DEF") == "sack"
+    assert pc.trend_raw_key("pts_allow", "def") == "pts_allow"        # case-insensitive
+
+
+def test_trend_raw_key_has_none_for_rates_unknowns_and_fantasy_points():
+    for key in ("snap_share", "tgt_share", "rz_touches", "adot", "fpts_ppr", "ppg_ppr",
+                "games", "bogus", "", None):
+        assert pc.trend_raw_key(key, "RB") is None, key
+    assert pc.trend_raw_key("sacks", "RB") is None                    # a DEF stat on an offence request
+
+
+def test_trend_raw_key_every_offence_and_defence_choice_is_a_real_weekly_key():
+    from sleepermetrics import nflstats
+    for pos, real in (("RB", nflstats._USAGE_KEYS), ("QB", nflstats._USAGE_KEYS),
+                      ("DEF", nflstats._DEF_USAGE_KEYS)):
+        for key, _label in pc.trend_choices(pos):
+            assert pc.trend_raw_key(key, pos) in real, (pos, key)
+
+
+def test_trend_choices_per_position():
+    rb = [k for k, _ in pc.trend_choices("RB")]
+    assert "rush_yards" in rb and "targets" in rb
+    assert not {"snap_share", "tgt_share", "adot", "fpts_ppr", "games"} & set(rb)
+    assert "pass_yards" in [k for k, _ in pc.trend_choices("QB")]
+    assert "sacks" in [k for k, _ in pc.trend_choices("DEF")]
+
+
+def test_trend_labels_exist_for_every_chartable_weekly_key():
+    from sleepermetrics import plots
+    for pos in ("RB", "QB", "DEF"):
+        for key, _label in pc.trend_choices(pos):
+            raw = pc.trend_raw_key(key, pos)
+            assert raw in plots._TREND_LABELS, raw
+
+
+def test_player_trend_zero_fill_makes_a_played_week_zero_not_a_gap(monkeypatch):
+    """Sleeper omits a stat that is zero, so a played week lacking the key is a
+    real 0; a week with no line at all stays absent."""
+    def _raw(season, week):
+        return {1: {"1": {"rush_td": 1.0, "pts_ppr": 12.0}},
+                2: {"1": {"pts_ppr": 8.0}},                      # played, no rush TD
+                3: {}}.get(int(week), {})
+    monkeypatch.setattr(pc.nflstats, "raw_week", _raw)
+    plain = pc.player_trend(["1"], "2025", stat_keys=["rush_td"], weeks=[1, 2, 3])["1"]
+    assert plain == [{"week": 1, "rush_td": 1.0}, {"week": 2}]       # the default: key left out
+    filled = pc.player_trend(["1"], "2025", stat_keys=["rush_td"], weeks=[1, 2, 3],
+                             zero_fill=True)["1"]
+    assert filled == [{"week": 1, "rush_td": 1.0}, {"week": 2, "rush_td": 0.0}]

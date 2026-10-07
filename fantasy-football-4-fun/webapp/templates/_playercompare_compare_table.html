@@ -18,8 +18,11 @@
    refreshing just these rows on a toggle click leaves the header (and the
    live radar `<img>` inside it) completely untouched, rather than forcing
    an unnecessary rebuild/refetch of it. #}
+{# A row with a `trend_key` is clickable: _playercompare_charts.html's script
+   redraws the trend chart for that stat (data-trend-stat).  Rate stats have no
+   weekly series, so their rows stay plain. #}
 {% for r in rows %}
-<tr>
+<tr{% if r.trend_key %} class="compare-clickable" data-trend-stat="{{ r.trend_key }}" title="Click to chart {{ r.label }} week by week"{% endif %}>
   <td class="compare-side {{ 'dv-pos' if r.a_better else ('dv-neg' if r.b_better else '') }}">
     {{ r.a_value }}
     <span class="compare-pct">{{ r.a_pct }}%</span>

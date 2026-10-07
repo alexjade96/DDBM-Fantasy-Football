@@ -802,3 +802,92 @@ def test_playercompare_toggle_shows_skeleton_and_dims_the_table():
         player_ids="1,2", player_labels="Test RB,Test RB Two").body.decode()
     assert "classList.add('skeleton')" in body
     assert "tableBody.style.opacity" in body
+
+
+# -- trend metric selector: click a table row to chart that stat ----------------
+
+def _two_profiles(monkeypatch):
+    from webapp import player_compare as pc
+    cols = lambda a, b, c: [
+        {"key": "rush_yards", "label": "Rush yds", "value": a, "percentile": 55.0},
+        {"key": "snap_share", "label": "Snap share", "value": b, "percentile": 70.0},
+        {"key": "fpts_ppr", "label": "PPR pts", "value": c, "percentile": 80.0}]
+    monkeypatch.setattr(pc, "player_field_compare", lambda season, pos, ids, **k: {
+        "1": {"player_id": "1", "columns": cols(90.0, 0.7, 22.0)},
+        "2": {"player_id": "2", "columns": cols(110.0, 0.6, 18.0)}})
+
+
+def test_metric_table_rows_with_a_weekly_series_are_clickable(monkeypatch):
+    from webapp import app
+    _two_profiles(monkeypatch)
+    body = app.playercompare_chart_section(
+        _Req(), position="RB", season="2025", player_ids="1,2",
+        player_labels="Player A,Player B").body.decode()
+    assert 'data-trend-stat="rush_yards"' in body
+    assert 'class="compare-clickable"' in body
+    # a rate (snap share) and fantasy points have no weekly series: plain rows
+    assert 'data-trend-stat="snap_share"' not in body
+    assert 'data-trend-stat="fpts_ppr"' not in body
+    assert "Click a stat to chart it week by week" in body
+    assert 'id="trend-stat-select"' not in body            # the dropdown is only for 3+ players
+
+
+def test_metric_table_refresh_route_keeps_rows_clickable(monkeypatch):
+    from webapp import app
+    _two_profiles(monkeypatch)
+    body = app.playercompare_table(
+        _Req(), position="RB", season="2025", player_ids="1,2",
+        player_labels="A,B", stat_mode="total").body.decode()
+    assert 'data-trend-stat="rush_yards"' in body
+
+
+def test_three_players_get_a_trend_stat_dropdown_instead_of_a_table():
+    from webapp import app
+    body = app.playercompare_chart_section(
+        _Req(), position="RB", season="2025", player_ids="1,2,3",
+        player_labels="A,B,C").body.decode()
+    assert 'id="trend-stat-select"' in body
+    assert '<option value="">PPR points</option>' in body
+    assert '<option value="rush_yards">' in body
+    assert 'data-trend-stat=' not in body.split("<script>")[0]       # no table rows to click
+
+
+def test_charts_script_binds_the_row_click_to_the_fragment_not_the_persistent_root():
+    """#playercompare-charts persists across Compare clicks, so a listener bound
+    there would be added again each time and a row would toggle twice."""
+    from webapp import app
+    body = app.playercompare_chart_section(
+        _Req(), position="RB", season="2025", player_ids="1,2,3",
+        player_labels="A,B,C").body.decode()
+    assert "root.querySelector('section.card')" in body
+    assert "card.addEventListener('click'" in body
+    assert "root.addEventListener('click'" not in body
+
+
+def test_chart_trend_stat_requests_that_weekly_key_zero_filled(monkeypatch):
+    from webapp import app, player_compare as pc
+    seen = {}
+
+    def _trend(ids, season, position=None, stat_keys=None, weeks=None, zero_fill=False):
+        seen.update(stat_keys=stat_keys, zero_fill=zero_fill)
+        return {"1": [{"week": 1, "rush_yd": 80.0}, {"week": 2, "rush_yd": 0.0}]}
+    monkeypatch.setattr(pc, "player_trend", _trend)
+    resp = app.chart("player_overlay", position="RB", season="2025", mode="trend",
+                     player_ids="1", player_labels="Test RB", trend_stat="rush_yards")
+    assert resp.status_code == 200 and resp.media_type == "image/png"
+    assert seen == {"stat_keys": ["rush_yd"], "zero_fill": True}
+
+
+@pytest.mark.parametrize("bad", [None, "", "bogus", "snap_share", "fpts_ppr"])
+def test_chart_unknown_or_unchartable_trend_stat_falls_back_to_ppr_points(monkeypatch, bad):
+    from webapp import app, player_compare as pc
+    seen = {}
+
+    def _trend(ids, season, position=None, stat_keys=None, weeks=None, zero_fill=False):
+        seen.update(stat_keys=stat_keys, zero_fill=zero_fill)
+        return {"1": [{"week": 1, "pts_ppr": 10.0}]}
+    monkeypatch.setattr(pc, "player_trend", _trend)
+    resp = app.chart("player_overlay", position="RB", season="2025", mode="trend",
+                     player_ids="1", player_labels="Test RB", trend_stat=bad)
+    assert resp.status_code == 200
+    assert seen == {"stat_keys": None, "zero_fill": False}      # the default key set, no zero fill
