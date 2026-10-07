@@ -1091,3 +1091,20 @@ def test_game_log_defender_is_dnp_only_when_the_report_says_out(monkeypatch):
     # week 4 (nothing at all) are NOT guessed at: a defender can play without one.
     assert [(g["week"], g["dnp"]) for g in log] == [(1, False), (2, True), (5, False)]
     assert log[1]["injury_label"] == "DNP (Ankle)"
+
+
+def test_game_opponent_never_sends_a_float_season_to_the_schedule_loader(monkeypatch):
+    """'2016.0' (a float season some older nflverse files carry) must reach the
+    loader as '2016', or it fetches and snapshots a bogus '2016.0' file."""
+    import pandas as pd
+    import webapp.sources.nflref as nflref
+    seen = []
+
+    def fake_grid(season, week=None, team=None):
+        seen.append(season)
+        return pd.DataFrame([{"away_team": "SF", "home_team": "LA"}])
+
+    monkeypatch.setattr(nflref, "schedule_grid", fake_grid)
+    assert pp._game_opponent("SF", "2016.0", 3) == "LA"
+    assert pp._game_opponent("SF", "2016", 3) == "LA"
+    assert seen == ["2016", "2016"]

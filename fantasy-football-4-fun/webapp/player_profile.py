@@ -660,7 +660,9 @@ def _game_opponent(team: str | None, season: str, week: int) -> str | None:
     except Exception:
         return None
     try:
-        grid = schedule_grid(season, week=week, team=team)
+        # Canonical season: a float-style key ('2016.0') would otherwise make
+        # the loader fetch and snapshot a bogus '2016.0' schedule file.
+        grid = schedule_grid(_canon_season(season), week=week, team=team)
     except Exception:
         return None
     if grid.empty:
