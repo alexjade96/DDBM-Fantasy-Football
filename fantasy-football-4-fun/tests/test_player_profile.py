@@ -938,3 +938,156 @@ def test_format_pizza_tick_value_per_game_is_short_and_keeps_decimals():
     assert f("rush_td", 0.125, True) == "0.12" or f("rush_td", 0.125, True) == "0.13"
     assert f("snap_share", 0.78, True) == "78%"          # shares stay percents
     assert f("pass_yards", 533.0, False) == "533"        # totals unchanged
+
+
+# --- injury_summary ----------------------------------------------------------
+
+NAN = float("nan")
+
+
+def _inj(week, status=NAN, primary=NAN, secondary=NAN, practice=NAN,
+         p_primary=NAN, p_secondary=NAN, game_type="REG"):
+    return {"season": "2025", "week": week, "game_type": game_type,
+            "report_status": status, "report_primary_injury": primary,
+            "report_secondary_injury": secondary, "practice_status": practice,
+            "practice_primary_injury": p_primary, "practice_secondary_injury": p_secondary}
+
+
+def test_injury_summary_none_without_rows():
+    assert pp.injury_summary(None) is None
+    assert pp.injury_summary([]) is None
+
+
+def test_injury_summary_orders_newest_first_and_counts_statuses():
+    s = pp.injury_summary([
+        _inj(3, "Out", "Knee", practice="Did Not Participate In Practice"),
+        _inj(9, "Questionable", "Ankle", "Foot", practice="Limited Participation in Practice"),
+        _inj(5, "Out", "Knee"),
+    ])
+    assert [r["week"] for r in s["rows"]] == [9, 5, 3]
+    assert s["weeks"] == 3
+    assert s["counts"] == {"Out": 2, "Questionable": 1}
+    assert s["rows"][0]["injury"] == "Ankle, Foot"
+    assert s["rows"][2]["practice"] == "Did not practice"
+
+
+def test_injury_summary_lists_recurring_injuries_by_week_count():
+    s = pp.injury_summary([_inj(1, "Out", "Knee"), _inj(2, "Out", "Knee", "Ankle"),
+                           _inj(3, "Questionable", "Ankle"), _inj(4, "Out", "Hamstring")])
+    assert s["recurring"] == [("Ankle", 2), ("Knee", 2)]
+
+
+def test_injury_summary_blank_status_is_none_not_nan_and_falls_back_to_practice_injury():
+    s = pp.injury_summary([_inj(7, practice="Full Participation in Practice", p_primary="Knee")])
+    row = s["rows"][0]
+    assert row["status"] is None
+    assert row["injury"] == "Knee"
+    assert row["practice_injury"] is None          # would only repeat the injury shown
+    assert s["counts"] == {}
+
+
+def test_injury_summary_shows_practice_injury_only_when_it_differs():
+    s = pp.injury_summary([_inj(2, "Out", "Knee", p_primary="Hamstring")])
+    assert s["rows"][0]["practice_injury"] == "Hamstring"
+
+
+def test_injury_summary_marks_playoff_games_and_skips_bad_weeks():
+    s = pp.injury_summary([_inj(20, "Out", "Knee", game_type="DIV"), _inj("x", "Out", "Knee")])
+    assert [r["week"] for r in s["rows"]] == [20]
+    assert s["rows"][0]["stage"] == "Divisional"
+
+
+# --- game log: injury column and DNP rows ----------------------------------
+
+def _back_stats(week):
+    return {"season": "2025", "week": week, "player_id": "00-0000001",
+            "player_display_name": "Test Back", "position": "RB",
+            "recent_team": "SF", "attempts": 0, "carries": 10, "rushing_yards": 50,
+            "rushing_tds": 0, "targets": 1, "receptions": 1, "receiving_yards": 5,
+            "receiving_tds": 0}
+
+
+def _inj_row(week, season="2025", status="Questionable", primary="Knee"):
+    return {"season": season, "week": week, "game_type": "REG", "team": "SF",
+            "report_status": status, "report_primary_injury": primary,
+            "report_secondary_injury": NAN, "practice_status": "Limited Participation in Practice",
+            "practice_primary_injury": primary, "practice_secondary_injury": NAN}
+
+
+def _log_env(monkeypatch, bye_weeks=()):
+    _route_weeks_stub(monkeypatch)
+    monkeypatch.setattr(pp, "_sleeper_player_weeks", lambda *a, **k: [])
+    monkeypatch.setattr(pp, "_game_opponent",
+                        lambda team, season, wk: None if wk in bye_weeks else "LA")
+
+
+_BACK = {"player_id": "1", "gsis_id": "00-0000001", "player_name": "Test Back",
+         "position": "RB", "team": "SF"}
+
+
+def test_game_log_injury_column_names_the_injury_on_a_played_week(monkeypatch):
+    _log_env(monkeypatch)
+    real_nfl = {"player_stats": {"rows": [_back_stats(1)]},
+                "injuries": {"rows": [_inj_row(1)]}}
+    [g] = pp._game_log(_BACK, real_nfl, ["2025"])
+    assert g["dnp"] is False
+    assert g["injury_label"] == "Knee"                   # no status wording
+    assert g["injury_report"]["status"] == "Questionable"
+    assert g["merged_row"]
+
+
+def test_game_log_injury_only_week_is_a_dnp_row_naming_the_injury(monkeypatch):
+    _log_env(monkeypatch)
+    real_nfl = {"player_stats": {"rows": [_back_stats(1), _back_stats(3)]},
+                "injuries": {"rows": [_inj_row(2, status="Out")]}}
+    log = pp._game_log(_BACK, real_nfl, ["2025"])
+    assert [g["week"] for g in log] == [1, 2, 3]
+    dnp = log[1]
+    assert dnp["dnp"] is True and dnp["injury_label"] == "DNP (Knee)"
+    assert dnp["merged_row"] is None and dnp["opponent"] == "LA"
+    assert dnp["stat_values"] == [None] * len(dnp["stat_cols"])
+    assert log[0]["injury_label"] is None and log[2]["dnp"] is False
+
+
+def test_game_log_gap_week_is_a_plain_dnp_but_a_bye_is_not(monkeypatch):
+    _log_env(monkeypatch, bye_weeks=(3,))
+    real_nfl = {"player_stats": {"rows": [_back_stats(1), _back_stats(4)]}}
+    log = pp._game_log(_BACK, real_nfl, ["2025"])
+    assert [g["week"] for g in log] == [1, 2, 4]          # week 3 was a bye
+    assert log[1]["dnp"] and log[1]["injury_label"] == "DNP"
+    assert log[1]["injury_report"] is None
+
+
+def test_game_log_does_not_guess_weeks_outside_the_players_data(monkeypatch):
+    _log_env(monkeypatch)
+    real_nfl = {"player_stats": {"rows": [_back_stats(5), _back_stats(6)]}}
+    assert [g["week"] for g in pp._game_log(_BACK, real_nfl, ["2025"])] == [5, 6]
+
+
+def test_game_log_float_season_injury_row_does_not_fake_a_dnp(monkeypatch):
+    """Older nflverse files store 2025 as 2025.0; an injury row keyed that way
+    for a week the player DID play must attach to it, not become a DNP."""
+    _log_env(monkeypatch)
+    real_nfl = {"player_stats": {"rows": [_back_stats(1), _back_stats(2), _back_stats(3)]},
+                "injuries": {"rows": [_inj_row(2, season="2025.0")]}}
+    log = [g for g in pp._game_log(_BACK, real_nfl, ["2025"]) if g["season"] == "2025"]
+    assert [g["week"] for g in log] == [1, 2, 3]
+    assert not any(g["dnp"] for g in log)
+    assert log[1]["injury_label"] == "Knee"
+
+
+def test_game_log_defender_is_dnp_only_when_the_report_says_out(monkeypatch):
+    _log_env(monkeypatch)
+    ident = {"player_id": "2", "gsis_id": None, "player_name": "Test Backer",
+             "position": "LB", "team": "SF"}
+    pfr = lambda wk: {"season": "2025", "week": wk, "pfr_player_name": "Test Backer",
+                      "pfr_player_id": "BackTe00", "team": "SF", "def_tackles_combined": 5,
+                      "def_sacks": 0.0, "def_ints": 0}
+    real_nfl = {"pfr_def": {"rows": [pfr(1), pfr(5)], "best_effort": True},
+                "injuries": {"rows": [_inj_row(2, status="Out", primary="Ankle"),
+                                      _inj_row(3, status="Questionable", primary="Ankle")]}}
+    log = pp._game_log(ident, real_nfl, ["2025"])
+    # week 2 (Out) is a DNP; week 3 (merely Questionable, no stat line) and
+    # week 4 (nothing at all) are NOT guessed at: a defender can play without one.
+    assert [(g["week"], g["dnp"]) for g in log] == [(1, False), (2, True), (5, False)]
+    assert log[1]["injury_label"] == "DNP (Ankle)"

@@ -172,12 +172,12 @@
    dropdown), so there is no Season column and no "Past seasons"
    drilldown any more; a different season's games appear here directly
    when the dropdown changes, same as every other "follow-up section". #}
-{% set game_log_cols_style %}60px 64px{{ " minmax(48px,1fr)" * (game_log_stat_cols|length) }}{% endset %}
+{% set game_log_cols_style %}60px 64px minmax(96px,1.4fr){{ " minmax(48px,1fr)" * (game_log_stat_cols|length) }}{% endset %}
 {% if game_log %}
 <div class="tablewrap">
   <div class="drilltable" style="--cols: {{ game_log_cols_style }}">
     <div class="dt-head">
-      <span>Week</span><span>Opp</span>
+      <span>Week</span><span>Opp</span><span>Injury</span>
       {%- for cat, key, label in game_log_stat_cols %}<span class="n">{{ label }}</span>{% endfor -%}
     </div>
     {% for game in game_log %}
@@ -187,6 +187,11 @@
       <summary>
         <span>{{ game.week }}</span>
         <span>{% if game.opponent %}{{ idm.team_link(game.opponent) }}{% else %}&ndash;{% endif %}</span>
+        {# Injury column: the injury named on that week's report ("Knee"), or
+           "DNP" / "DNP (Knee)" for a week with no stats at all (did not play;
+           no injury is implied).  No game-status wording on purpose: the
+           expanded row carries the full report. #}
+        <span{% if game.injury_label %} title="{{ game.injury_label }}"{% endif %}>{% if game.injury_label %}{{ game.injury_label }}{% else %}&ndash;{% endif %}</span>
         {%- for v in game.stat_values %}<span class="n">{% if v is not none %}{{ v }}{% else %}&ndash;{% endif %}</span>{% endfor -%}
       </summary>
       <div class="dt-detail"><p class="hint">Loading&hellip;</p></div>
@@ -212,7 +217,7 @@
    same "integrate all major metrics into a single table... add a column
    stating the data source" treatment already applied to the per-game
    drilldown (_player_game_detail.html), extended here to this season-wide
-   section (user request). Injury reports / Snap counts / PFR advanced:
+   section (user request). Snap counts / PFR advanced:
    Defense are UNCHANGED, still one table per dataset: none of the three
    has a second source in this pipeline to merge against (see
    stat_reconcile's own docstring), so there is nothing to reconcile.
@@ -230,7 +235,7 @@
 {{ tsm.season_source_table(rows) }}
 {% endif %}
 {% endfor %}
-{% for ds, label in [("injuries", "Injury reports"), ("snap_counts", "Snap counts"),
+{% for ds, label in [("snap_counts", "Snap counts"),
                       ("pfr_def", "PFR advanced: Defense")] %}
 {% set d = real_nfl.get(ds) %}
 {% if d and d.rows %}
@@ -267,4 +272,38 @@
 {% endfor %}
 {% if not flags.any_real_nfl %}
 <p class="empty">No real-NFL data found for this player in {{ season_scope }}.</p>
+{% endif %}
+
+{# Injuries: its own section after Advanced & usage stats, scoped to the same
+   season_scope as everything above.  `injuries` is webapp.player_profile.
+   injury_summary() of the season's nflverse weekly injury reports (None when
+   the player was never listed).  The final game status is blank on about half
+   of all reports (practice report only), shown as an en dash. #}
+<h2>Injuries <span class="hint">({{ season_scope }})</span></h2>
+{% if injuries %}
+<p class="hint">
+  Listed on the injury report in {{ injuries.weeks }} week{{ "" if injuries.weeks == 1 else "s" }}{% if injuries.counts %}:
+  {% for s, n in injuries.counts.items() %}{{ n }} {{ s }}{{ ", " if not loop.last }}{% endfor %}{% endif %}.
+  {% if injuries.recurring %}Recurring: {% for name, n in injuries.recurring %}{{ name }} ({{ n }} weeks){{ ", " if not loop.last }}{% endfor %}.{% endif %}
+</p>
+<div class="tablewrap">
+  <table class="dt-games">
+    <thead><tr>
+      <th>Week</th><th>Game status</th><th>Injury</th><th>Practice</th><th>Practice injury</th>
+    </tr></thead>
+    <tbody>
+    {% for r in injuries.rows %}
+      <tr>
+        <td>{{ r.week }}{% if r.stage %} <span class="q">{{ r.stage }}</span>{% endif %}</td>
+        <td>{% if r.status %}{{ r.status }}{% else %}&ndash;{% endif %}</td>
+        <td>{% if r.injury %}{{ r.injury }}{% else %}&ndash;{% endif %}</td>
+        <td>{% if r.practice %}{{ r.practice }}{% else %}&ndash;{% endif %}</td>
+        <td>{% if r.practice_injury %}{{ r.practice_injury }}{% else %}&ndash;{% endif %}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<p class="empty">No injury reports for this player in {{ season_scope }}.</p>
 {% endif %}

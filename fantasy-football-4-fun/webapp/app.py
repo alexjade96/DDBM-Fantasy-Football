@@ -5466,6 +5466,7 @@ def _player_season_ctx(profile: dict, season_scope: str | None) -> dict:
     return {
         "real_nfl": scoped["real_nfl"],
         "real_nfl_categories": scoped["real_nfl_categories"],
+        "injuries": pp.injury_summary(((scoped["real_nfl"] or {}).get("injuries") or {}).get("rows")),
         "game_log": scoped["game_log"],
         "game_log_stat_cols": profile.get("game_log_stat_cols") or [],
         "league_scoped": scoped["league_scoped"],

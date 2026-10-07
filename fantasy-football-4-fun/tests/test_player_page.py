@@ -403,3 +403,96 @@ def test_nflstats_table_links_only_rows_with_a_resolved_sleeper_id(monkeypatch, 
     # opens in a new tab rather than replacing the tab the click came from
     assert 'target="_blank"' in body
     identity._idx = None
+
+
+def _with_injuries(monkeypatch, fake, rows):
+    """Wrap the stubbed profile so real_nfl also carries injury rows."""
+    def _wrapped(player_id, league_id=None, fresh=False):
+        prof = fake(player_id, league_id)
+        prof["real_nfl"]["injuries"] = {"rows": rows, "best_effort": False}
+        return prof
+    monkeypatch.setattr(pp, "player_profile", _wrapped)
+
+
+def test_player_page_shows_injuries_section_after_advanced_stats(monkeypatch, _fake_profile):
+    nan = float("nan")
+    _with_injuries(monkeypatch, _fake_profile, [
+        {"season": "2025", "week": 6, "game_type": "REG", "report_status": "Out",
+         "report_primary_injury": "Knee", "report_secondary_injury": nan,
+         "practice_status": "Did Not Participate In Practice",
+         "practice_primary_injury": "Knee", "practice_secondary_injury": nan}])
+    body = app.player_page(_Req(), player_id="5995", render=1).body.decode()
+    assert "<h2>Injuries" in body
+    assert body.index("<h2>Advanced") < body.index("<h2>Injuries")
+    sec = body[body.index("<h2>Injuries"):]
+    assert "1 Out" in sec and "Knee" in sec and "Did not practice" in sec
+    assert "nan" not in sec.lower().replace("&ndash;", "")
+    assert "Injury reports" not in body      # no longer a raw table in Advanced stats
+
+
+def test_player_page_injuries_section_empty_state(monkeypatch, _fake_profile):
+    body = app.player_page(_Req(), player_id="5995", render=1).body.decode()
+    assert "<h2>Injuries" in body
+    assert "No injury reports for this player in 2025" in body
+
+
+def test_player_season_fragment_injuries_follow_the_season(monkeypatch, _fake_profile_with_seasons):
+    def _wrapped(player_id, league_id=None, fresh=False):
+        prof = _fake_profile_with_seasons(player_id, league_id)
+        prof["real_nfl"]["injuries"] = {"rows": [
+            {"season": "2024", "week": 3, "game_type": "REG", "report_status": "Doubtful",
+             "report_primary_injury": "Hamstring", "report_secondary_injury": None,
+             "practice_status": None, "practice_primary_injury": None,
+             "practice_secondary_injury": None}], "best_effort": False}
+        return prof
+    monkeypatch.setattr(pp, "player_profile", _wrapped)
+    in_2024 = app.player_season_sections(_Req(), player_id="5995", season_scope="2024").body.decode()
+    in_2025 = app.player_season_sections(_Req(), player_id="5995", season_scope="2025").body.decode()
+    assert "Hamstring" in in_2024 and "1 Doubtful" in in_2024
+    assert "No injury reports for this player in 2025" in in_2025
+
+
+def _game_log_profile(monkeypatch, fake):
+    """Stub profile whose game log has a played-while-listed week and a DNP."""
+    def _wrapped(player_id, league_id=None, fresh=False):
+        prof = fake(player_id, league_id)
+        inj = {"week": 4, "stage": None, "status": "Out", "injury": "Knee",
+               "practice": "Did not practice", "practice_injury": None}
+        prof["game_log"] = [
+            {"season": "2025", "week": 3, "position": "RB", "opponent": "LA",
+             "stat_cols": [], "stat_values": [], "merged_row": {"rushing": {}},
+             "raw_by_category": {}, "route_summary": None, "route_unavailable": False,
+             "dnp": False, "injury_label": "Shoulder",
+             "injury_report": {**inj, "week": 3, "status": "Questionable", "injury": "Shoulder"}},
+            {"season": "2025", "week": 4, "position": "RB", "opponent": "SEA",
+             "stat_cols": [], "stat_values": [], "merged_row": None,
+             "raw_by_category": {}, "route_summary": None, "route_unavailable": False,
+             "dnp": True, "injury_label": "DNP (Knee)", "injury_report": inj},
+            {"season": "2025", "week": 6, "position": "RB", "opponent": "DAL",
+             "stat_cols": [], "stat_values": [], "merged_row": None,
+             "raw_by_category": {}, "route_summary": None, "route_unavailable": False,
+             "dnp": True, "injury_label": "DNP", "injury_report": None},
+        ]
+        return prof
+    monkeypatch.setattr(pp, "player_profile", _wrapped)
+
+
+def test_player_page_game_log_has_an_injury_column(monkeypatch, _fake_profile):
+    _game_log_profile(monkeypatch, _fake_profile)
+    body = app.player_page(_Req(), player_id="5995", render=1).body.decode()
+    log = body[body.index("<h2>Game log"):body.index("<h2>Advanced")]
+    assert "<span>Week</span><span>Opp</span><span>Injury</span>" in log
+    assert ">Shoulder<" in log and ">DNP (Knee)<" in log and ">DNP<" in log
+    assert "Questionable" not in log and "Out" not in log      # no status wording in the row
+
+
+def test_player_game_detail_shows_injury_card_and_dnp_note(monkeypatch, _fake_profile):
+    _game_log_profile(monkeypatch, _fake_profile)
+    dnp = app.player_game_detail(_Req(), "5995", "2025", 4).body.decode()
+    assert "Injury report" in dnp and "Did not practice" in dnp and "Out" in dnp
+    assert "Did not play" in dnp and "not on the injury report" not in dnp
+    plain = app.player_game_detail(_Req(), "5995", "2025", 6).body.decode()
+    assert "Did not play" in plain and "not on the injury report" in plain
+    assert "Injury report" not in plain
+    played = app.player_game_detail(_Req(), "5995", "2025", 3).body.decode()
+    assert "Injury report" in played and "Questionable" in played and "Did not play" not in played

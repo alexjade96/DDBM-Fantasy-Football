@@ -33,9 +33,32 @@
    param for the team_profile.html contrast (a whole roster per table,
    where the name IS the needed identifier). #}
 {% import "_teamstat_macros.html" as tsm %}
+{# Injury report for this game: nflverse has ONE practice status and ONE final
+   game status per player per week (no day-by-day sequence), so the card
+   reads practice -> game status.  A DNP row has no stat tables below it. #}
+{% if game.injury_report %}
+{% set ir = game.injury_report %}
+<h3 class="gd-block">Injury report{% if ir.stage %} <span class="q">{{ ir.stage }}</span>{% endif %}</h3>
+<div class="tablewrap">
+  <table class="dt-games">
+    <thead><tr><th>Injury</th><th>Practice</th><th>Practice injury</th><th>Game status</th></tr></thead>
+    <tbody><tr>
+      <td>{% if ir.injury %}{{ ir.injury }}{% else %}&ndash;{% endif %}</td>
+      <td>{% if ir.practice %}{{ ir.practice }}{% else %}&ndash;{% endif %}</td>
+      <td>{% if ir.practice_injury %}{{ ir.practice_injury }}{% else %}&ndash;{% endif %}</td>
+      <td>{% if ir.status %}{{ ir.status }}{% else %}&ndash;{% endif %}</td>
+    </tr></tbody>
+  </table>
+</div>
+{% endif %}
+{% if game.dnp %}
+<p class="hint">Did not play: no stats were recorded for this player in any source for this game{% if not game.injury_report %}, and he was not on the injury report{% endif %}.</p>
+{% endif %}
 {% set is_defense = identity.position in ("DL", "LB", "DB", "DE", "DT", "CB", "S") %}
 {% set group = [{"group": identity.position, "players": [game.merged_row]}] %}
-{% if is_defense %}
+{% if game.dnp %}
+{# nothing to tabulate #}
+{% elif is_defense %}
 {{ tsm.position_group_table(group, {identity.position: DEF_COLS.get(identity.position, DEF_COLS.get("DL"))}, source_labels, hide_player=true) }}
 {% else %}
 {{ tsm.position_group_table(group, {identity.position: OFF_POSITION_COLS.get(identity.position, [])}, source_labels, hide_player=true) }}

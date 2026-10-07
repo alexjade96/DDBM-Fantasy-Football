@@ -699,6 +699,25 @@ def _week_rows(rows: list[dict], season: str, week: int) -> list[dict]:
            if str(r.get("season")) == str(season) and str(r.get("week")) == str(week)]
 
 
+def _canon_season(s) -> str:
+    """'2016.0' (a float season some older nflverse files carry) and '2016'
+    are the same season."""
+    try:
+        return str(int(float(s)))
+    except (TypeError, ValueError):
+        return str(s)
+
+
+def _week_rows_canon(rows: list[dict], season, week) -> list[dict]:
+    """Like `_week_rows` but with seasons compared canonically, so a dataset
+    that stores 2016 as 2016.0 still counts as having data for 2016.  Used
+    only where "does ANY source have a row for this week" must be reliable
+    (the DNP check); rows are returned unscrubbed."""
+    cs = _canon_season(season)
+    return [r for r in rows
+            if _canon_season(r.get("season")) == cs and str(r.get("week")) == str(week)]
+
+
 def _player_week_role_rows(season: str, week: int, real_nfl: dict) -> dict[str, list[dict]]:
     """This player's own already-pulled `real_nfl[ds]["rows"]` (see
     `_real_nfl_history`), sliced down to ONE game and bucketed into the
@@ -833,7 +852,14 @@ def _player_route_weeks(gsis_id: str | None,
 
 def _game_log(identity: dict, real_nfl: dict, seasons: list[str]) -> list[dict]:
     """One entry per week this player has real box-score data for, each a
-    RECONCILED summary row -- the SAME shape/values
+    RECONCILED summary row, PLUS "DNP" entries (`dnp=True`, `merged_row`
+    None) for weeks with no stats from any source: a week on the injury
+    report, or a gap between the player's first and last data week in a
+    season when the team's schedule shows a game (a bye gets no row).  Every
+    entry carries `injury_label` ("Knee"; "DNP (Knee)" / "DNP" for a DNP)
+    and `injury_report` (the week's report fields, or None).  A defender is
+    a DNP only when the report says Out (his stat sources are too sparse to
+    infer it).  Each entry's summary is the SAME shape/values
     `team_profile._offense_players_via_shared`/`_defense_players_via_shared`
     produce for this player on the team page's own per-game drilldown
     (2026-09, Phase 4 of the reconciliation-layer migration: switched from
@@ -898,8 +924,24 @@ def _game_log(identity: dict, real_nfl: dict, seasons: list[str]) -> list[dict]:
 
     is_defense = position in ("DL", "LB", "DB", "DE", "DT", "CB", "S")
 
+    # Weeks with no data at all, between the first and last week this player
+    # has any data in a season, are candidates for a "DNP" row: the player's
+    # team played (the schedule says so, checked below) but nothing recorded
+    # him.  Weeks before the first / after the last data week are NOT
+    # guessed at, since there is no way to tell "not yet on a roster" or
+    # "retired" from "did not play".
+    canon_seen = {(_canon_season(s_), w_) for s_, w_ in weeks_seen}
+    by_season: dict[str, list[int]] = {}
+    for s_, w_ in canon_seen:
+        by_season.setdefault(s_, []).append(w_)
+    gap_weeks = {(s_, w_) for s_, ws in by_season.items()
+                 for w_ in range(min(ws), max(ws) + 1) if (s_, w_) not in canon_seen}
+    injury_rows = (real_nfl.get("injuries") or {}).get("rows", [])
+    stat_datasets = [ds for ds in real_nfl if ds != "injuries"]
+    last_team: dict[str, str | None] = {}      # the team as of the previous week, per season
+
     out: list[dict] = []
-    for season, wk in sorted(weeks_seen, key=lambda sw: (sw[0], sw[1])):
+    for season, wk in sorted(weeks_seen | gap_weeks, key=lambda sw: (sw[0], sw[1])):
         role_rows = _player_week_role_rows(season, wk, real_nfl)
         sleeper_hit = _week_rows(sleeper_rows, season, wk)
         if sleeper_hit:
@@ -915,7 +957,42 @@ def _game_log(identity: dict, real_nfl: dict, seasons: list[str]) -> list[dict]:
             players = tp._offense_players_via_shared(
                 role_rows, [{"player": name, "position": position}] if position else [])
         merged_row = players.get(tp._norm_name(name))
+        inj_raw = _week_rows_canon(injury_rows, season, wk)
+        inj = next((f for f in (_injury_fields(r) for r in inj_raw) if f), None)
         if not merged_row:
+            # Data in some stats dataset but no usable merged row: skipped, as
+            # before (e.g. a special-teams-only snap row).  NO data in any
+            # stats dataset: the player did not play.  That does not imply an
+            # injury, so the label is a bare "DNP" unless a report names one.
+            if sleeper_hit or route_hit or any(
+                    _week_rows_canon((real_nfl.get(ds) or {}).get("rows", []), season, wk)
+                    for ds in stat_datasets):
+                continue
+            # For a defender "no stat line" is weak evidence (PFR records only
+            # players with a box-score stat, and the snap-count name match
+            # often fails), so only an injury report that says Out makes it a
+            # DNP.  Offensive players always leave a trace if they played.
+            if is_defense and not (inj and inj["status"] == "Out"):
+                continue
+            inj_team = inj_raw[0].get("team") if inj_raw else None
+            dnp_team = ((inj_team if isinstance(inj_team, str) and inj_team else None)
+                        or last_team.get(season)
+                        or _SLEEPER_TEAM_ALIAS.get(identity.get("team"), identity.get("team")))
+            opponent = _game_opponent(dnp_team, season, wk)
+            if (season, wk) in gap_weeks and opponent is None:
+                continue                      # a bye (or no schedule): nothing was missed
+            last_team[season] = dnp_team
+            cols = _log_stat_cols(position)
+            out.append({
+                "season": _canon_season(season), "week": wk, "position": position,
+                "opponent": opponent,
+                "stat_cols": cols, "stat_values": [None] * len(cols),
+                "merged_row": None, "raw_by_category": {},
+                "route_summary": None, "route_unavailable": False,
+                "dnp": True,
+                "injury_label": "DNP" + (f" ({inj['injury']})" if inj and inj["injury"] else ""),
+                "injury_report": inj,
+            })
             continue
 
         # Each dataset's own rows are renamed to their CANONICAL column names
@@ -961,6 +1038,7 @@ def _game_log(identity: dict, real_nfl: dict, seasons: list[str]) -> list[dict]:
         if not team:
             team = _SLEEPER_TEAM_ALIAS.get(identity.get("team"), identity.get("team"))
         opponent = _game_opponent(team, season, wk)
+        last_team[season] = team
 
         stat_cols = _log_stat_cols(position)
         stat_values = _log_stat_values(merged_row, stat_cols)
@@ -977,6 +1055,9 @@ def _game_log(identity: dict, real_nfl: dict, seasons: list[str]) -> list[dict]:
             "merged_row": merged_row, "raw_by_category": raw_by_category,
             "route_summary": route_summary,
             "route_unavailable": season in route_unavailable_seasons,
+            "dnp": False,
+            "injury_label": inj["injury"] if inj else None,
+            "injury_report": inj,
         })
     return out
 
@@ -1250,6 +1331,78 @@ def scope_profile(profile: dict, season: str | None) -> dict:
         "league_scoped": league_scoped,
         "percentile_profile": percentile_profile,
     }
+
+
+_PRACTICE_SHORT = {
+    "Full Participation in Practice": "Full",
+    "Limited Participation in Practice": "Limited",
+    "Did Not Participate In Practice": "Did not practice",
+}
+_STATUS_ORDER = ("Out", "Doubtful", "Questionable")
+_PLAYOFF_TYPES = {"WC": "Wild card", "DIV": "Divisional", "CON": "Conference", "SB": "Super Bowl"}
+
+
+def _inj_text(*parts) -> str | None:
+    """'Knee, Ankle' from the primary and secondary injury; None when neither
+    is a real value (nflverse leaves them as NaN, which is truthy)."""
+    out = [p.strip() for p in parts if isinstance(p, str) and p.strip()]
+    return ", ".join(out) or None
+
+
+def _injury_fields(r: dict) -> dict | None:
+    """One nflverse injury-report row as display fields, or None when its
+    week is unusable.  `status` is the final game designation (blank on about
+    half of all reports), `injury` the injury shown (the report's, else the
+    practice report's), `practice_injury` only when it differs from that."""
+    status = r.get("report_status")
+    status = status if isinstance(status, str) and status else None
+    injury = _inj_text(r.get("report_primary_injury"), r.get("report_secondary_injury"))
+    practice_injury = _inj_text(r.get("practice_primary_injury"), r.get("practice_secondary_injury"))
+    practice = r.get("practice_status")
+    practice = _PRACTICE_SHORT.get(practice, practice) if isinstance(practice, str) and practice else None
+    try:
+        week = int(r.get("week"))
+    except (TypeError, ValueError):
+        return None
+    shown = injury or practice_injury
+    return {
+        "week": week,
+        "stage": _PLAYOFF_TYPES.get(r.get("game_type")),
+        "status": status,
+        "injury": shown,
+        "practice": practice,
+        "practice_injury": practice_injury if practice_injury and practice_injury != shown else None,
+    }
+
+
+def injury_summary(rows: list[dict] | None) -> dict | None:
+    """One season of a player's weekly injury reports, shaped for the page.
+
+    `rows` are the `real_nfl["injuries"]["rows"]` records already scoped to
+    one season.  Returns None when there are none.  `report_status` is the
+    final game designation and is blank on about half of all reports (the
+    player was on the practice report but never given a game status), so
+    `status` is None there rather than a guess.  The practice injury is shown
+    only when it differs from the final report's, since it is usually the same
+    words repeated.  `recurring` lists any injury named in 2+ weeks.
+    """
+    if not rows:
+        return None
+    out = [f for f in (_injury_fields(r) for r in rows) if f]
+    if not out:
+        return None
+    out.sort(key=lambda x: x["week"], reverse=True)
+    counts = {s: sum(1 for x in out if x["status"] == s) for s in _STATUS_ORDER}
+    weeks_by_injury: dict[str, set] = {}
+    for x in out:
+        for name in (x["injury"] or "").split(", "):
+            if name:
+                weeks_by_injury.setdefault(name, set()).add(x["week"])
+    recurring = sorted(((n, len(w)) for n, w in weeks_by_injury.items() if len(w) > 1),
+                       key=lambda t: (-t[1], t[0]))
+    return {"weeks": len({x["week"] for x in out}),
+            "counts": {k: v for k, v in counts.items() if v},
+            "recurring": recurring, "rows": out}
 
 
 def _with_per_game(total_profile: dict | None, per_game_profile: dict | None) -> dict | None:
