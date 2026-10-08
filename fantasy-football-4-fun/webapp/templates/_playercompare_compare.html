@@ -17,9 +17,6 @@
    the top level of this fragment, not a card-in-a-card. #}
 <section class="card">
   <h2>Player Comparison</h2>
-  <p class="hint">Compare same-position players against the real-NFL field,
-     and against each other week by week &mdash; built for lineup
-     decisions, not a season-end leaderboard. No league required.</p>
 
   {# Controls read as TWO groups -- filters (Position/Season/Load) and
      actions (Reset/Compare) -- separated by a thin vertical divider, rather
@@ -114,6 +111,80 @@
     var chipStrip = document.getElementById('playercompare-chip-strip');
     if (!board || !btn) return;
 
+    // The players in the comparison currently on screen, as [{id, label}], or
+    // null when none is shown (before the first Compare, after the board is
+    // reloaded, or once removals leave fewer than two).  Removing a player
+    // (chip x or unticking the box) refreshes the comparison from THIS set minus
+    // the removed one, never from the current ticks, so a player ticked after
+    // the last Compare is not pulled in by someone else's removal.
+    var shown = null;
+    var removalTimer = null;
+
+    function checkedIds() {
+      var ids = {};
+      board.querySelectorAll('input[data-playercompare-pick]:checked').forEach(function (b) {
+        ids[b.value] = true;
+      });
+      return ids;
+    }
+
+    function runCompare(items, keep) {
+      shown = items;
+      var form = new FormData(controls);
+      var src = loaded || { position: form.get('position'), season: form.get('season') };
+      // The new fragment's own script (the Total / Per game rail, the row clicks)
+      // runs while htmx settles the swap, so a refresh waits for that event
+      // before restoring the view; the promise alone resolves too early.
+      if (keep) {
+        charts.addEventListener('htmx:afterSettle', function restore() {
+          charts.removeEventListener('htmx:afterSettle', restore);
+          if (keep.mode === 'total') {
+            var t = charts.querySelector('button[data-stat-mode="total"]');
+            if (t) t.click();
+          }
+          if (keep.stat) {
+            var row = charts.querySelector('tr[data-trend-stat="' + keep.stat + '"]');
+            if (row) row.click();
+          }
+        });
+      }
+      window.htmx.ajax('GET', '/playercompare/compare', {
+        target: '#playercompare-charts', swap: 'innerHTML',
+        values: {
+          position: src.position, season: src.season,
+          player_ids: items.map(function (i) { return i.id; }).join(','),
+          player_labels: items.map(function (i) { return i.label; }).join(','),
+        },
+      });
+    }
+
+    // Called when a player is unticked (chip x or the checkbox).  Waits a
+    // moment so several removals in a row make one refresh.
+    function afterRemoval() {
+      if (!shown) return;
+      clearTimeout(removalTimer);
+      removalTimer = setTimeout(applyRemoval, 450);
+    }
+
+    function applyRemoval() {
+      if (!shown) return;
+      var on = checkedIds();
+      var remaining = shown.filter(function (i) { return on[i.id]; });
+      if (remaining.length === shown.length) return;     // nobody on screen was removed
+      if (remaining.length < 2) {
+        shown = null;
+        charts.innerHTML = '<p class="empty">Check at least 2 players above, then click ' +
+          '<strong>Compare</strong>.</p>';
+        return;
+      }
+      var onBtn = charts.querySelector('[data-stat-mode-rail] button.on');
+      var sel = charts.querySelector('tr.compare-selected');
+      runCompare(remaining, {
+        mode: onBtn ? onBtn.getAttribute('data-stat-mode') : 'per_game',
+        stat: sel ? sel.getAttribute('data-trend-stat') : '',
+      });
+    }
+
     // Checkboxes render fresh every time the leaderboard reloads (htmx swap),
     // so re-wire on every swap rather than once at page load.
     var wireCheckboxes = function () {
@@ -175,7 +246,7 @@
             var x = document.createElement('button');
             x.type = 'button'; x.className = 'playercompare-chip-x'; x.textContent = '×';
             x.setAttribute('aria-label', 'Remove ' + (b.dataset.label || 'player'));
-            x.onclick = function () { b.checked = false; sync(); };
+            x.onclick = function () { b.checked = false; sync(); afterRemoval(); };
             chip.appendChild(label);
             chip.appendChild(x);
             chipStrip.appendChild(chip);
@@ -186,6 +257,7 @@
         b.addEventListener('change', function (e) {
           e.stopPropagation();   // never reach the leaderboard form's own submit
           sync();
+          if (!b.checked) afterRemoval();
         });
       });
       if (clearBtn) {
@@ -211,9 +283,9 @@
     // chart, .compare-header-radar')` picks whichever ancestor actually
     // applies rather than needing two near-duplicate handlers.
     var fadeInCharts = function (root) {
-      root.querySelectorAll('.card.chart img:not([data-sk]), .compare-header-radar img:not([data-sk])').forEach(function (img) {
+      root.querySelectorAll('.card.chart img:not([data-sk]), .compare-header-radar img:not([data-sk]), .compare-trend-fig img:not([data-sk])').forEach(function (img) {
         img.setAttribute('data-sk', '1');
-        var fig = img.closest('.card.chart, .compare-header-radar');
+        var fig = img.closest('.card.chart, .compare-header-radar, .compare-trend-fig');
         var ok = function () {
           fig.classList.remove('skeleton', 'chart-failed'); img.classList.add('loaded');
         };
@@ -257,7 +329,7 @@
 
     wireCheckboxes();
     document.body.addEventListener('htmx:afterSwap', function (e) {
-      if (e.target === board) { wireCheckboxes(); charts.innerHTML = ''; }
+      if (e.target === board) { wireCheckboxes(); charts.innerHTML = ''; shown = null; }
       if (e.target === charts) { fadeInCharts(charts); }
     });
 
@@ -265,17 +337,7 @@
       var boxes = Array.prototype.slice.call(
         board.querySelectorAll('input[data-playercompare-pick]:checked'));
       if (boxes.length < 2) return;
-      var ids = boxes.map(function (b) { return b.value; }).join(',');
-      var labels = boxes.map(function (b) { return b.dataset.label; }).join(',');
-      var form = new FormData(controls);
-      var src = loaded || { position: form.get('position'), season: form.get('season') };
-      window.htmx.ajax('GET', '/playercompare/compare', {
-        target: '#playercompare-charts', swap: 'innerHTML',
-        values: {
-          position: src.position, season: src.season,
-          player_ids: ids, player_labels: labels,
-        },
-      });
+      runCompare(boxes.map(function (b) { return { id: b.value, label: b.dataset.label }; }));
     });
   })();
 </script>

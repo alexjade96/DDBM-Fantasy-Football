@@ -695,6 +695,14 @@ def test_plot_player_overlay_snapshot_no_ticks_for_spoke_missing_axis_ticks():
     plt.close(fig)
 
 
+def _series_of(ax, name):
+    """A running-total line's plotted points for one player (the points are one
+    scatter per player, labelled with the name; the segments between them are
+    separate lines so a no-game stretch can be dotted)."""
+    cs = [c for c in ax.collections if c.get_label() == name]
+    return [float(y) for _x, y in cs[0].get_offsets()] if cs else []
+
+
 def test_plot_player_overlay_trend_draws_one_line_per_player():
     import matplotlib.pyplot as plt
 
@@ -705,7 +713,7 @@ def test_plot_player_overlay_trend_draws_one_line_per_player():
     }
     fig = plots.plot_player_overlay(players, ["pts_ppr"], mode="trend")
     ax = fig.axes[0]
-    assert len(ax.lines) == 2
+    assert sorted(c.get_label() for c in ax.collections if c.get_label() in players) == sorted(players)
     plt.close(fig)
 
 
@@ -719,7 +727,7 @@ def test_plot_player_overlay_trend_skips_players_with_no_rows_for_stat():
     }
     fig = plots.plot_player_overlay(players, ["pts_ppr"], mode="trend")
     ax = fig.axes[0]
-    assert len(ax.lines) == 1
+    assert [c.get_label() for c in ax.collections if c.get_label() in players] == ["Alice's RB1"]
     plt.close(fig)
 
 
@@ -766,7 +774,7 @@ def test_plot_player_overlay_trend_total_plots_cumulative_sum():
                                {"week": 3, "pts_ppr": 5.0}]}
     fig = plots.plot_player_overlay(players, ["pts_ppr"], mode="trend", stat_mode="total")
     ax = fig.axes[0]
-    ys = list(ax.lines[0].get_ydata())
+    ys = _series_of(ax, "Alice's RB1")
     assert ys == pytest.approx([10.0, 25.0, 30.0])
     plt.close(fig)
 
@@ -783,9 +791,8 @@ def test_plot_player_overlay_trend_cumulative_is_per_player_independent():
     }
     fig = plots.plot_player_overlay(players, ["pts_ppr"], mode="trend", stat_mode="total")
     ax = fig.axes[0]
-    by_label = {line.get_label(): list(line.get_ydata()) for line in ax.lines}
-    assert by_label["Alice's RB1"] == pytest.approx([10.0, 20.0])
-    assert by_label["Bob's RB1"] == pytest.approx([3.0, 6.0])
+    assert _series_of(ax, "Alice's RB1") == pytest.approx([10.0, 20.0])
+    assert _series_of(ax, "Bob's RB1") == pytest.approx([3.0, 6.0])
     plt.close(fig)
 
 
@@ -895,7 +902,7 @@ def test_trend_per_game_line_breaks_at_a_missed_week_but_cumulative_does_not():
     assert len(ys) == 4 and math.isnan(ys[2])                 # gap before week 5
     plt.close(fig)
     fig = plots.plot_player_overlay({"Alice": rows}, ["pts_ppr"], mode="trend", stat_mode="total")
-    ys = list(fig.axes[0].lines[0].get_ydata())
+    ys = _series_of(fig.axes[0], "Alice")
     assert ys == pytest.approx([10.0, 22.0, 31.0])            # a running total has no gaps
     plt.close(fig)
 
@@ -917,7 +924,7 @@ def test_trend_has_direct_labels_instead_of_a_legend():
     plt.close(fig)
     fig = plots.plot_player_overlay(players, ["pts_ppr"], mode="trend", stat_mode="total")
     labels = sorted(t.get_text() for t in fig.axes[0].texts if isinstance(t, Annotation))
-    assert labels == ["Alice  (30.0)", "Bob  (23.0)"]
+    assert labels == ["Alice  (30)", "Bob  (23)"]          # whole-number totals print as integers
     plt.close(fig)
 
 
@@ -1118,3 +1125,127 @@ def test_radar_value_line_sits_on_the_inner_side_on_every_spoke():
     assert all(v < nm for v, nm in zip(value_d, name_d))
     assert max(name_d) - min(name_d) < 2          # the name is equally far out everywhere
     assert max(value_d) - min(value_d) < 2        # and so is the value line
+
+
+
+# --- running-total trend chart: dotted no-game gaps and the season projection -----
+
+def _total_fig(players, keys=("pts_ppr",), remaining=None):
+    from sleepermetrics import plots
+    fig = plots.plot_player_overlay(players, list(keys), mode="trend", stat_mode="total",
+                                    title="RB 2026", remaining=remaining)
+    fig.canvas.draw()
+    return fig
+
+
+def _end_label_texts(fig):
+    from matplotlib.text import Annotation
+    return [t for t in fig.axes[0].texts if isinstance(t, Annotation) and t.arrow_patch is not None]
+
+
+def test_total_chart_dots_a_week_with_no_game_and_solid_between_games():
+    players = {"A": [{"week": w, "pts_ppr": 10.0} for w in (1, 2, 4, 5)]}      # no game in week 3
+    fig = _total_fig(players)
+    gids = [ln.get_gid() for ln in fig.axes[0].get_lines()]
+    assert gids.count("no-game") == 1                # the one segment across the gap (2 -> 4)
+    assert len(gids) == 3                            # 1-2, 2-4 (dotted), 4-5
+    assert not [t for t in _end_label_texts(fig) if "on pace" in t.get_text()]
+
+
+def test_total_chart_projects_to_the_end_of_the_schedule_at_the_current_rate():
+    players = {"A": [{"week": w, "rec_yards": 25.0} for w in (1, 2, 3, 4)]}
+    fig = _total_fig(players, ("rec_yards",), {"A": {"games": 13, "end_week": 18}})
+    labels = [t.get_text() for t in _end_label_texts(fig)]
+    assert labels == ["A\n100, on pace for 425"]          # 100 over 4 games = 25 a game, plus 13 more
+    dashed = [ln for ln in fig.axes[0].get_lines() if ln.get_gid() == "projection"]
+    assert len(dashed) == 1 and list(dashed[0].get_xdata()) == [4, 18]
+
+
+def test_total_chart_has_no_projection_when_nothing_is_left_or_the_total_is_zero():
+    players = {"Done": [{"week": w, "pts_ppr": 5.0} for w in (1, 2, 3)],
+               "Zero": [{"week": w, "pts_ppr": 0.0} for w in (1, 2, 3)],
+               "Unknown": [{"week": w, "pts_ppr": 5.0} for w in (1, 2, 3)]}
+    fig = _total_fig(players, remaining={"Done": {"games": 0, "end_week": 18},
+                                         "Zero": {"games": 10, "end_week": 18}})
+    assert not [t for t in _end_label_texts(fig) if "on pace" in t.get_text()]
+    assert not [ln for ln in fig.axes[0].get_lines() if ln.get_gid() == "projection"]
+
+
+def test_total_chart_shows_counting_stats_as_integers_and_points_with_a_decimal():
+    count = _total_fig({"A": [{"week": w, "rush_td": 1.0} for w in (1, 2)]}, ("rush_td",),
+                       {"A": {"games": 15, "end_week": 18}})
+    assert [t.get_text() for t in _end_label_texts(count)] == ["A\n2, on pace for 17"]
+    pts = _total_fig({"A": [{"week": 1, "pts_ppr": 10.5}, {"week": 2, "pts_ppr": 11.0}]},
+                     remaining={"A": {"games": 15, "end_week": 18}})
+    assert "21.5, on pace for" in _end_label_texts(pts)[0].get_text()
+
+
+def test_per_game_chart_ignores_remaining_games():
+    from sleepermetrics import plots
+    players = {"A": [{"week": w, "pts_ppr": 10.0 + w} for w in (1, 2, 3)]}
+    fig = plots.plot_player_overlay(players, ["pts_ppr"], mode="trend", stat_mode="per_game",
+                                    remaining={"A": {"games": 10, "end_week": 18}})
+    assert not [t for t in _end_label_texts(fig) if "on pace" in t.get_text()]
+
+
+def test_total_chart_fits_its_labels_for_every_stat_at_every_position():
+    """The sweep as a regression test: every stat the trend chart can show for
+    every position, three players with long names and totals that are tied or
+    zero for some of them.  No label may run off the figure or sit on another."""
+    import matplotlib.pyplot as plt
+    from matplotlib.text import Text
+
+    from webapp import player_compare as pc
+    names = ["Amon-Ra St. Brown", "Jaxon Smith-Njigba", "Christian McCaffrey"]
+    checked = 0
+    for pos in ("QB", "RB", "WR", "TE", "DEF", "K"):
+        for key, _label in pc.trend_choices(pos):
+            raw = pc.trend_raw_key(key, pos)
+            if not raw:
+                continue
+            players = {names[0]: [{"week": w, raw: 4.0} for w in (1, 2, 3, 4)],
+                       names[1]: [{"week": w, raw: 4.0} for w in (1, 2, 3, 4)],     # tied with the first
+                       names[2]: [{"week": w, raw: 0.0} for w in (1, 2, 3, 4)]}     # zero throughout
+            left = {n: {"games": 13, "end_week": 18} for n in names}
+            fig = _total_fig(players, (raw,), left)
+            rend = fig.canvas.get_renderer()
+            boxes = sorted((Text.get_window_extent(t, rend) for t in _end_label_texts(fig)),
+                           key=lambda b: b.y0)
+            assert len(boxes) == 3, (pos, key)
+            assert all(b.x1 <= fig.bbox.width for b in boxes), (pos, key, "label past the figure")
+            assert all(b2.y0 >= b1.y1 - 1 for b1, b2 in zip(boxes, boxes[1:])), (pos, key, "labels overlap")
+            plt.close(fig)
+            checked += 1
+    assert checked >= 30                                  # the sweep really covered the categories
+
+
+
+def test_trend_chart_is_drawn_at_the_shape_the_page_gives_it():
+    """The Compare page puts the trend chart beside the square radar in a column
+    1.3 times as wide, so the image is drawn 1.3 wide to 1 tall (9.1 x 7.0) and
+    the two end up the same height."""
+    players = {"A": [{"week": w, "pts_ppr": 10.0} for w in (1, 2, 3)]}
+    fig = _total_fig(players)
+    w, h = fig.get_size_inches()
+    assert round(w / h, 2) == 1.3
+
+
+def test_radar_sits_close_under_its_title_block():
+    """No dead band between the subtitle and the top-most spoke label: the plot
+    is moved up until that gap is a few pixels."""
+    from matplotlib.text import Text
+
+    from sleepermetrics import plots
+    keys = ["targets", "receptions", "rec_yards", "rec_td", "carries", "rush_yards",
+            "rush_td", "snap_share"]
+    players = {"A": _prof(**{k: 10.0 + i for i, k in enumerate(keys)}),
+               "B": _prof(**{k: 12.0 + i for i, k in enumerate(keys)})}
+    fig = plots.plot_player_overlay(players, keys, mode="snapshot", position="WR",
+                                    stat_mode="per_game")
+    fig.canvas.draw()
+    rend = fig.canvas.get_renderer()
+    ax = fig.axes[0]
+    sub = [t for t in fig.texts if t.get_text().startswith("Filled value")][0]
+    label_top = max(Text.get_window_extent(t, rend).y1 for t in ax.texts)
+    gap = Text.get_window_extent(sub, rend).y0 - label_top
+    assert 0 <= gap <= 12, gap                 # was about 45px before the plot was moved up

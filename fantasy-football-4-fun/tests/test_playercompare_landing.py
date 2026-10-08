@@ -376,7 +376,8 @@ def test_playercompare_chart_section_no_profiles_shows_charts_without_matrix():
     assert "compare-header-row" not in body
     assert 'class="grid two"' not in body
     assert "card chart wide" not in body
-    assert body.count("card chart") == 1
+    assert "card chart" not in body                       # the trend chart is not a card
+    assert body.count('class="compare-trend-fig"') == 1
 
 
 def test_playercompare_chart_section_one_shared_rail_drives_both_charts():
@@ -536,28 +537,34 @@ def test_matrix_is_kept_out_of_the_shared_table_sorter(monkeypatch):
     assert "compare-matrix-scroll nosort" in wrapper
 
 
-def test_playercompare_chart_section_trend_chart_sits_below_table(monkeypatch):
-    """The trend line renders AFTER (below) the comparison table, not beside
-    it -- the table is the primary/centerpiece view now."""
-    from webapp import app, player_compare as pc
-
-    profiles = {
-        "1": {"player_id": "1", "columns": [
-            {"key": "fpts_ppr", "label": "PPR pts", "value": 22.5, "percentile": 80.0},
-        ]},
-        "2": {"player_id": "2", "columns": [
-            {"key": "fpts_ppr", "label": "PPR pts", "value": 18.0, "percentile": 60.0},
-        ]},
-    }
-    monkeypatch.setattr(pc, "player_field_compare",
-                        lambda season, pos, ids, **k: profiles)
-    resp = app.playercompare_chart_section(
+def test_trend_chart_shares_a_row_with_the_radar_above_the_matrix(monkeypatch):
+    """The radar and the trend chart sit in one row (side by side on a wide
+    window, stacked on a narrow one); the matrix comes after them."""
+    from webapp import app
+    _patch_profiles(monkeypatch, _profiles(
+        ("1", [("fpts_ppr", "PPR pts", 22.5, 80.0)]),
+        ("2", [("fpts_ppr", "PPR pts", 18.0, 60.0)])))
+    body = app.playercompare_chart_section(
         _Req(), position="RB", season="2024",
-        player_ids="1,2", player_labels="Player A,Player B")
-    body = resp.body.decode()
-    table_idx = body.index("compare-table")
-    trend_idx = body.index('data-chart="trend"')
-    assert table_idx < trend_idx
+        player_ids="1,2", player_labels="Player A,Player B").body.decode()
+    row = body.index('class="compare-charts-row"')
+    radar = body.index('data-chart="snapshot"')
+    trend = body.index('data-chart="trend"')
+    table = body.index('class="compare-table"')
+    assert row < radar < trend < table
+    row_html = body[row:table]
+    assert row_html.count("<img") == 2                    # exactly the two charts share the row
+    css = (app.BASE / "static" / "style.css").read_text(encoding="utf-8")
+    grid = css[css.index(".compare-charts-row {"):]
+    assert "grid-template-columns: 1fr;" in grid[:grid.index("}")]          # stacked by default
+    wide = css[css.index("@media (min-width: 900px)", css.index(".compare-charts-row {")):]
+    wide = wide[:wide.index("\n}\n") + 3]
+    # the trend chart's column is the wider one (the radar is square), and it
+    # is stretched to the radar's height with the image contained in it
+    assert "grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr)" in wide
+    assert "align-items: stretch" in wide and "object-fit: contain" in wide
+    radar = css[css.index(".compare-header-radar {"):]
+    assert "max-width" not in radar[:radar.index("}")]               # it fills its column
 
 
 def test_playercompare_chart_section_script_does_not_use_current_script():
@@ -830,7 +837,8 @@ def test_metric_table_rows_with_a_weekly_series_are_clickable(monkeypatch):
     # a rate (snap share) and fantasy points have no weekly series: plain rows
     assert 'data-trend-stat="snap_share"' not in body
     assert 'data-trend-stat="fpts_ppr"' not in body
-    assert "Click a stat to chart it week by week" in body
+    # the results carry no explanatory prose: no hint under the matrix, no caption
+    assert 'class="hint"' not in body and "<figcaption" not in body
     assert 'id="trend-stat-select"' not in body            # the dropdown is only for 3+ players
 
 
@@ -1051,3 +1059,135 @@ def test_page_locks_unticked_boxes_at_the_cap():
     assert "b.disabled = atCap && !b.checked" in body
     css = (app.BASE / "static" / "style.css").read_text(encoding="utf-8")
     assert ".playercompare-row-locked" in css
+
+
+
+# -- the corner cell resets the trend chart; the projection's remaining games ------
+
+def test_matrix_corner_cell_resets_the_trend_chart(monkeypatch):
+    from webapp import app
+    _patch_profiles(monkeypatch, _profiles(
+        ("1", [("rush_yards", "Rush yds", 90.0, 55.0)]),
+        ("2", [("rush_yards", "Rush yds", 110.0, 70.0)])))
+    body = app.playercompare_chart_section(
+        _Req(), position="RB", season="2025", player_ids="1,2",
+        player_labels="A,B").body.decode()
+    head = body.split("<thead>")[1].split("</thead>")[0]
+    assert 'class="compare-corner"' in head and "Stat &#8634;" in head
+    assert "Click to reset the trend chart to PPR points" in head
+    assert "e.target.closest('th.compare-corner')) { setTrendStat('')" in body
+    assert "corner.classList.toggle('on', !!trendStat)" in body
+    css = (app.BASE / "static" / "style.css").read_text(encoding="utf-8")
+    assert "th.compare-corner { cursor: pointer" in css
+
+
+def _fake_schedule(rows):
+    import pandas as pd
+    return pd.DataFrame(rows, columns=["week", "game_type", "home_team", "away_team",
+                                       "home_score", "away_score"])
+
+
+def test_remaining_games_counts_the_teams_unplayed_regular_season_games(monkeypatch):
+    import pandas as pd
+    import sleepermetrics as sm
+    from webapp import app
+    from webapp.sources import nflref
+    nan = float("nan")
+    sched = _fake_schedule([
+        (1, "REG", "SF", "LA", 7.0, 27.0), (2, "REG", "SF", "MIA", 35.0, 13.0),
+        (3, "REG", "SF", "SEA", nan, nan), (5, "REG", "ATL", "SF", nan, nan),   # week 4 is the bye
+        (5, "REG", "DET", "GB", nan, nan), (19, "POST", "SF", "DET", nan, nan)])
+    monkeypatch.setattr(nflref, "load", lambda name, season, **k: sched)
+    monkeypatch.setattr(sm, "players", lambda: pd.DataFrame(
+        {"player_id": ["1", "2", "3"], "team": ["SF", "DET", None]}))
+    got = app._remaining_games(["1", "2", "3", "9"], ["A", "B", "C", "D"], "2026")
+    assert got == {"A": {"games": 2, "end_week": 5}, "B": {"games": 1, "end_week": 5}}
+
+
+def test_remaining_games_is_empty_when_the_schedule_cannot_be_read(monkeypatch):
+    import pandas as pd
+    from webapp import app
+    from webapp.sources import nflref
+    monkeypatch.setattr(nflref, "load", lambda name, season, **k: pd.DataFrame())
+    assert app._remaining_games(["1"], ["A"], "2026") == {}
+
+    def _boom(*a, **k):
+        raise RuntimeError("no network")
+    monkeypatch.setattr(nflref, "load", _boom)
+    assert app._remaining_games(["1"], ["A"], "2026") == {}
+
+
+def test_chart_route_passes_remaining_games_only_for_the_running_total(monkeypatch):
+    from sleepermetrics import plots
+    from webapp import app, player_compare as pc
+    seen = []
+    monkeypatch.setattr(plots, "plot_player_overlay",
+                        lambda players, keys, **kw: (seen.append(kw.get("remaining")), plots._no_data("stub"))[1])
+    monkeypatch.setattr(pc, "player_trend", lambda ids, season, **k: {"1": [{"week": 1, "pts_ppr": 5.0}]})
+    monkeypatch.setattr(app, "_remaining_games",
+                        lambda ids, labels, season: {"A": {"games": 3, "end_week": 18}})
+    app.chart("player_overlay", position="RB", season="2026", mode="trend", stat_mode="total",
+              player_ids="1", player_labels="A")
+    app.chart("player_overlay", position="RB", season="2026", mode="trend", stat_mode="per_game",
+              player_ids="1", player_labels="A")
+    assert seen == [{"A": {"games": 3, "end_week": 18}}, None]
+
+
+
+# -- removing a player refreshes the comparison on screen ---------------------------
+
+def _shell():
+    from webapp import app
+    return app.playercompare(_Req()).body.decode()
+
+
+def test_removing_a_player_refreshes_the_comparison_from_the_shown_set():
+    """Chip x and unticking a box both call afterRemoval(); it waits a moment so
+    several removals make one request, then re-runs Compare for the players that
+    were on screen minus the removed ones (never the current ticks, so a player
+    ticked after the last Compare is not pulled in)."""
+    body = _shell()
+    assert "x.onclick = function () { b.checked = false; sync(); afterRemoval(); };" in body
+    assert "if (!b.checked) afterRemoval();" in body
+    assert "removalTimer = setTimeout(applyRemoval, 450)" in body
+    assert "shown.filter(function (i) { return on[i.id]; })" in body
+    assert "if (remaining.length === shown.length) return;" in body        # nobody on screen was removed
+    assert "shown = items;" in body                                          # set on every Compare
+
+
+def test_removal_below_two_players_clears_the_comparison_to_the_hint():
+    body = _shell()
+    assert "if (remaining.length < 2) {" in body
+    assert "Check at least 2 players above, then click" in body.split("function applyRemoval")[1]
+
+
+def test_removal_refresh_keeps_the_total_or_per_game_choice_and_the_selected_stat():
+    body = _shell()
+    assert "htmx:afterSettle" in body.split("function runCompare")[1].split("function afterRemoval")[0]
+    assert "[data-stat-mode-rail] button.on" in body
+    assert "tr.compare-selected" in body.split("function applyRemoval")[1]
+
+
+def test_reset_and_a_board_reload_do_not_trigger_a_removal_refresh():
+    body = _shell()
+    reset = body.split("clearBtn.onclick = function () {")[1].split("};")[0]
+    assert "afterRemoval" not in reset                       # Reset leaves the comparison on screen
+    assert "charts.innerHTML = ''; shown = null;" in body    # a new board forgets the shown set
+
+
+
+def test_trend_chart_is_not_a_nested_card():
+    """The results are ONE card; the radar and the trend chart sit inside it
+    as plain blocks (a card inside a card drew a second border and padding)."""
+    from webapp import app
+    body = app.playercompare_chart_section(
+        _Req(), position="RB", season="2025", player_ids="1,2",
+        player_labels="A,B").body.decode()
+    markup = body.split("<script>")[0]
+    assert markup.count('class="card') == 1                # only the outer results card
+    assert 'class="compare-trend-fig"' in markup and 'class="compare-trend-img"' in markup
+    css = (app.BASE / "static" / "style.css").read_text(encoding="utf-8")
+    for rule in (".compare-trend-img.loaded", ".compare-trend-fig.skeleton", ".compare-trend-fig.chart-failed"):
+        assert rule in css                                  # the same loading contract the radar has
+    shell = (app.BASE / "templates" / "_playercompare_compare.html").read_text(encoding="utf-8")
+    assert ".compare-trend-fig img:not([data-sk])" in shell     # fade-in and Retry reach it

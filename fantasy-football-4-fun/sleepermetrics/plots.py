@@ -4584,6 +4584,24 @@ def _draw_spoke_values(ax, angles: list[float], keys: list[str], players: dict,
                         fontweight="bold", **extra)
 
 
+def _close_title_gap(fig, ax, subtitle, keep_px: float = 8.0):
+    """Move a radar up under its title block until the white space between the
+    subtitle and the top-most label is `keep_px`.  `tight_layout` leaves a fixed
+    band above the plot that is wider than the labels need; the spoke labels are
+    drawn outside the axes, so the layout cannot see them.  Only the axes moves
+    (the saved PNG is cropped to its content, so the room freed at the bottom is
+    trimmed rather than left as blank space)."""
+    from matplotlib.text import Text
+    fig.canvas.draw()
+    rend = fig.canvas.get_renderer()
+    label_top = max(Text.get_window_extent(t, rend).y1 for t in ax.texts)
+    sub_bottom = Text.get_window_extent(subtitle, rend).y0
+    gap = sub_bottom - label_top - keep_px
+    if gap > 0:
+        pos = ax.get_position()
+        ax.set_position([pos.x0, pos.y0 + gap / fig.bbox.height, pos.width, pos.height])
+
+
 def _radar_scales(season_profiles: dict, focus_profile: dict, keys: list[str]) -> dict:
     """Per-spoke linear scale shared by EVERY season on the player-profile
     radar: `{key: {"lo", "hi", "higher"}}`.
@@ -4819,7 +4837,7 @@ def plot_player_radar(season_profiles: dict | None, focus_season: str | None,
 
 def plot_player_overlay(players: dict, stat_keys: list[str], mode: str = "snapshot",
                         title: str | None = None, position: str | None = None,
-                        stat_mode: str = "total"):
+                        stat_mode: str = "total", remaining: dict | None = None):
     """One shared chart for the Player Comparison view (webapp-only, see
     `webapp.player_compare`), covering both the within-team depth chart
     and the across-teams field comparison -- same function, same `players`
@@ -4872,6 +4890,13 @@ def plot_player_overlay(players: dict, stat_keys: list[str], mode: str = "snapsh
     straight from `drawn_names`/`colors` via `_colored_vs_title`, coloring
     each player's own name to match their polygon (a plain single-color
     title left it unclear which shape belonged to which player).
+
+    `remaining` (trend mode, running-total view only) is
+    `{player label: {"games": int, "end_week": int}}`: the regular-season games
+    that player's team still has to play and the week of the last one.  A player
+    with games left gets a dashed projection from his last game to `end_week` at
+    his current per-game rate; a player with none (season over), no entry, or a
+    total of zero gets none.
 
     Returns `_no_data(...)` for an empty `players` dict or an unrecognized
     `mode`, never raises.
@@ -4953,9 +4978,10 @@ def plot_player_overlay(players: dict, stat_keys: list[str], mode: str = "snapsh
         # was actually drawn, so the two can never disagree.
         _colored_vs_title(fig, drawn_names, colors)
         subtitle = "Filled value = best in category"
-        fig.text(0.5, 0.962, subtitle, fontsize=9, color=T["muted"], ha="center", va="top")
+        sub = fig.text(0.5, 0.962, subtitle, fontsize=9, color=T["muted"], ha="center", va="top")
         fig.patch.set_facecolor(T["bg"])
         fig.tight_layout(rect=(0, 0.02, 1, 0.90))
+        _close_title_gap(fig, ax, sub)
         return fig
 
     if mode == "trend":
@@ -4963,7 +4989,9 @@ def plot_player_overlay(players: dict, stat_keys: list[str], mode: str = "snapsh
             return _no_data("No stat selected for the trend chart.")
         stat_key = stat_keys[0]
         cumulative = stat_mode == "total"
-        fig, ax = plt.subplots(figsize=(9, 5.5))
+        # 9.1 x 7.0 (a 1.3 shape): the Compare page puts this beside the square radar in a
+        # column 1.3 times as wide, so both are the same height (style.css .compare-charts-row).
+        fig, ax = plt.subplots(figsize=(9.1, 7.0))
         any_drawn = False
         stat_label = _TREND_LABELS.get(stat_key, stat_key.replace("_", " "))
         ends = []                      # (name, last x, last y, label) for the direct labels
@@ -5001,8 +5029,31 @@ def plot_player_overlay(players: dict, stat_keys: list[str], mode: str = "snapsh
                     px.append(x)
                     py.append(y)
             if cumulative:
-                ax.plot(px, py, color=colors[name], linewidth=2, marker="o",
-                        markersize=4, label=name)
+                # Solid between consecutive game weeks, dotted across a week
+                # with no game (a bye or a missed game): the total just stays
+                # flat there, and a dotted line says so instead of reading as a
+                # bad week.
+                c = colors[name]
+                for i in range(len(xs) - 1):
+                    no_game = xs[i + 1] - xs[i] > 1
+                    ax.plot(xs[i:i + 2], ys[i:i + 2], color=c, linewidth=2,
+                            linestyle=(0, (1, 2)) if no_game else "-",
+                            gid="no-game" if no_game else None)
+                ax.scatter(xs, ys, s=16, color=c, zorder=3, label=name)
+                left = (remaining or {}).get(name) or {}
+                if left.get("games", 0) > 0 and ys[-1] != 0:
+                    # Dashed projection to the end of the team's schedule at
+                    # the current per-game rate (assumes he plays every game
+                    # that is left).
+                    proj = ys[-1] + (ys[-1] / len(xs)) * left["games"]
+                    end_wk = max(int(left.get("end_week") or xs[-1]), xs[-1])
+                    ax.plot([xs[-1], end_wk], [ys[-1], proj], color=c, linewidth=2,
+                            linestyle=(0, (4, 3)), alpha=0.85, gid="projection")
+                    ax.scatter([end_wk], [proj], s=40, facecolors=T["bg"],
+                               edgecolors=c, linewidths=1.8, zorder=4)
+                    proj_end = (end_wk, proj)
+                else:
+                    proj_end = None
             else:
                 # Per game: shaded middle half of games behind, the faint
                 # weekly line, a bold 3-game rolling average, the dashed
@@ -5030,9 +5081,19 @@ def plot_player_overlay(players: dict, stat_keys: list[str], mode: str = "snapsh
                                 fontsize=7.5, color=c, fontweight="bold",
                                 bbox=dict(boxstyle="round,pad=0.2", fc=T["bg"],
                                           ec="none", alpha=0.85))
-            tail = (f"avg {_fmt_trend(sum(weekly) / len(weekly))}" if not cumulative
-                    else _fmt_trend(ys[-1]))
-            ends.append((name, xs[-1], ys[-1], f"{name}  ({tail})"))
+            # A counting stat (every running total is a whole number) prints as
+            # an integer ("6", "1,007"); a fractional one (PPR points) keeps
+            # its decimal.
+            is_count = cumulative and all(float(v).is_integer() for v in ys)
+            fmt_total = (lambda v: f"{v:,.0f}") if is_count else _fmt_trend
+            if cumulative and proj_end:
+                drawn_x.append(proj_end[0])
+                ends.append((name, proj_end[0], proj_end[1],
+                             f"{name}\n{fmt_total(ys[-1])}, on pace for {fmt_total(proj_end[1])}"))
+            else:
+                tail = (f"avg {_fmt_trend(sum(weekly) / len(weekly))}" if not cumulative
+                        else fmt_total(ys[-1]))
+                ends.append((name, xs[-1], ys[-1], f"{name}  ({tail})"))
             any_drawn = True
         if not any_drawn:
             plt.close(fig)
@@ -5051,17 +5112,58 @@ def plot_player_overlay(players: dict, stat_keys: list[str], mode: str = "snapsh
                       list(range(lo, hi + 1, 2)))
         span = max(hi - lo, 1)
         ax.set_xlim(lo - 0.04 * span, hi + 0.36 * span)
+        # The projection ends at the schedule's last week, past the last game
+        # played, so the label column starts at the right-most x drawn.
+        hi = max(hi, int(max(x for _n, x, _y, _l in ends)))
+        ax.set_xlim(lo - 0.04 * max(hi - lo, 1), hi + 0.36 * max(hi - lo, 1))
         lo_y, hi_y = ax.get_ylim()
-        min_gap = (hi_y - lo_y) * 0.055
-        placed = []                    # vertical positions, nudged apart
-        for name, x, y, label in sorted(ends, key=lambda e: e[2]):
-            ty = y if not placed else max(y, placed[-1] + min_gap)
-            placed.append(ty)
-            ax.annotate(label, xy=(x, y), xytext=(hi + 0.35, ty), textcoords="data",
-                        ha="left", va="center", fontsize=9, fontweight="bold",
-                        color=colors[name], annotation_clip=False,
-                        arrowprops=dict(arrowstyle="-", color=colors[name], lw=0.8,
-                                        alpha=0.6, shrinkA=0, shrinkB=3))
+        # Spacing comes from the MEASURED height of a label (a projection label
+        # is two lines), not a fixed share of the axis: equal totals (a stat
+        # that is zero for everyone) or lines ending close together would
+        # otherwise print on top of each other.
+        rend = fig.canvas.get_renderer()
+        probe = ax.text(0, 0, "Ag", fontsize=9, fontweight="bold")
+        line_px = probe.get_window_extent(rend).height
+        probe.remove()
+        n_lines = max(l.count("\n") + 1 for _n, _x, _y, l in ends)
+        label_px = line_px * (n_lines * 1.1 + 0.25)
+        ax_px = ax.get_window_extent(rend).height
+        lo0, hi0 = lo_y, hi_y
+        order = sorted(ends, key=lambda e: e[2])
+        # Stacking labels can need more vertical room than the data spans, and
+        # widening the range makes each data unit fewer pixels (so the same
+        # data gap is a smaller gap on screen).  Repeat until the spacing, the
+        # positions and the range agree.
+        for _ in range(12):
+            min_gap = label_px / ax_px * (hi_y - lo_y)
+            placed = []                # vertical positions, nudged apart
+            for _name, _x, y, _label in order:
+                placed.append(y if not placed else max(y, placed[-1] + min_gap))
+            new_lo, new_hi = min(lo0, placed[0] - min_gap / 2), max(hi0, placed[-1] + min_gap / 2)
+            if abs(new_lo - lo_y) + abs(new_hi - hi_y) <= 1e-9 * max(hi_y - lo_y, 1e-12):
+                break
+            lo_y, hi_y = new_lo, new_hi
+        ax.set_ylim(lo_y, hi_y)
+        label_x = hi + 0.35
+        anns = []
+        for (name, x, y, label), ty in zip(order, placed):
+            anns.append(ax.annotate(label, xy=(x, y), xytext=(label_x, ty), textcoords="data",
+                                    ha="left", va="center", fontsize=9, fontweight="bold",
+                                    color=colors[name], annotation_clip=False, linespacing=1.15,
+                                    arrowprops=dict(arrowstyle="-", color=colors[name], lw=0.8,
+                                                    alpha=0.6, shrinkA=0, shrinkB=3)))
+        # A long name or label must never run off the figure: shrink the plot's
+        # right edge until the widest label fits (anchored in data coordinates,
+        # so only the share of the width left of the label column helps).
+        for _ in range(4):
+            fig.canvas.draw()
+            fw = fig.bbox.width
+            over = max(a.get_window_extent(rend).x1 for a in anns) - (fw - 6)
+            if over <= 0:
+                break
+            x0, x1 = ax.get_xlim()
+            share = max((label_x - x0) / (x1 - x0), 0.3)
+            fig.subplots_adjust(right=fig.subplotpars.right - (over / share) / fw)
         fig.patch.set_facecolor(T["bg"])
         return fig
 

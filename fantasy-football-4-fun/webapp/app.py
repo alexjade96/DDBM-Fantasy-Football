@@ -1301,11 +1301,13 @@ def chart(name: str, league: str = DEFAULT_LEAGUE, season: str | None = None,
                 by_id = pc.player_trend(ids, sea, position=pos)
                 stat_keys = pc._DEFAULT_TREND_KEYS.get(pos, ("pts_ppr",))[:1]
             players = {lab: by_id.get(pid, []) for pid, lab in zip(ids, labels)}
+            # Only the running-total view projects; a per-game chart does not.
+            left = _remaining_games(ids, labels, sea) if smode == "total" else None
             with _render_lock:
                 plots.set_chart_theme(theme)
                 return png(plots.plot_player_overlay(
                     players, list(stat_keys), mode="trend", title=f"{pos} {sea}",
-                    stat_mode=smode))
+                    stat_mode=smode, remaining=left))
         profiles = pc.player_field_compare(sea, pos, ids, stat_mode=smode)
         players = {lab: profiles.get(pid) for pid, lab in zip(ids, labels)}
         # "Christian McCaffrey vs Jonathan Taylor" (or "vs ... vs ..." for
@@ -1930,6 +1932,37 @@ _PLAYERCOMPARE_POS_DEFAULT = "RB"
 # best/worst labels pile up (viewed 2026-10).  This is a trial value: it is the
 # only place the number lives (the page reads it from `max_players`).
 _PLAYERCOMPARE_MAX = 4
+
+
+def _remaining_games(ids: list[str], labels: list[str], season: str) -> dict:
+    """`{label: {"games", "end_week"}}` for the running-total trend chart's
+    projection: how many regular-season games each player's team still has to
+    play and the week of the last one, read from the real schedule (so a bye
+    and a short schedule are exact).  A player with no team, a team with no
+    games left, or a schedule that cannot be read simply gets no entry, so the
+    chart draws no projection for him."""
+    out: dict = {}
+    try:
+        import sleepermetrics as _sm
+        from webapp.sources import nflref
+        sch = nflref.load("schedules", str(season))
+        if sch.empty or "week" not in sch.columns:
+            return out
+        if "game_type" in sch.columns:
+            sch = sch[sch["game_type"] == "REG"]
+        unplayed = sch[sch["home_score"].isna() | sch["away_score"].isna()]
+        pl = _sm.players()
+        team_of = dict(zip(pl["player_id"].astype(str), pl["team"]))
+        for pid, lab in zip(ids, labels):
+            team = team_of.get(str(pid))
+            if not team or not isinstance(team, str):
+                continue
+            left = unplayed[(unplayed["home_team"] == team) | (unplayed["away_team"] == team)]
+            if len(left):
+                out[lab] = {"games": int(len(left)), "end_week": int(left["week"].max())}
+    except Exception:
+        return {}
+    return out
 
 
 def _split_picks(player_ids, player_labels):

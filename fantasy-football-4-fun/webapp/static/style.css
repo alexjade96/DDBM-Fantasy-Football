@@ -1657,7 +1657,38 @@ footer code { font-family: ui-monospace, Consolas, monospace; }
    elsewhere): opacity 0 until loaded, a shimmer placeholder reserving a
    square box so nothing jumps when the PNG swaps in
    (_playercompare_compare.html's fadeInCharts() drives it). */
-.compare-header-radar { width: 100%; max-width: 560px; margin: 4px auto 0; padding: 0; }
+/* The radar and the trend chart share a row on a wide window, side by side and
+   centred against each other (the radar is square, the trend chart is wider than
+   tall); they stack on a narrow one. */
+.compare-charts-row { display: grid; grid-template-columns: 1fr; gap: 16px;
+  align-items: center; margin-top: 4px; }
+/* The trend chart is a plain block inside the results card (no card of its own),
+   with the same fade-in / shimmer / retry contract as the radar. */
+.compare-trend-fig { aspect-ratio: 91 / 70; margin: 0; width: 100%; min-width: 0; padding: 0; }
+.compare-trend-fig:not(.skeleton):not(.chart-failed) { aspect-ratio: auto; }
+.compare-trend-img { display: block; width: 100%; height: auto; opacity: 0;
+  transition: opacity .3s ease; border-radius: 8px; }
+.compare-trend-img.loaded { opacity: 1; }
+.compare-trend-fig.skeleton { aspect-ratio: 91 / 70; border-radius: 8px; }
+.compare-trend-fig.skeleton .compare-trend-img { opacity: 0; }
+.compare-trend-fig.chart-failed { display: grid; place-items: center; aspect-ratio: 91 / 70; }
+.compare-trend-fig.chart-failed .compare-trend-img { display: none; }
+@media (min-width: 900px) {
+  /* The radar is square, so the trend chart gets a column 1.3 times as wide and
+     its image is drawn at the same 1.3 shape (plots.py, figsize 9.1 x 7.0):
+     the two are exactly the same height at every window width, and the trend
+     chart is the longer of the two.  `minmax(0, ...)` lets a column shrink
+     below its content so a chart can never push the row past the card. */
+  .compare-charts-row { grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr); align-items: stretch; }
+  /* Stretched to the radar's height, the image contained inside it, so the two
+     are the same height even if a chart's own shape shifts a little with its
+     labels (the PNGs are cropped to their content). */
+  .compare-trend-fig, .compare-trend-fig.skeleton, .compare-trend-fig.chart-failed {
+    aspect-ratio: auto; display: flex; align-items: center; }
+  .compare-trend-fig.chart-failed { display: grid; }
+  .compare-trend-fig .compare-trend-img { width: 100%; height: 100%; object-fit: contain; }
+}
+.compare-header-radar { width: 100%; min-width: 0; margin: 0; padding: 0; }
 .compare-radar-img { width: 100%; height: auto; opacity: 0; transition: opacity .3s ease;
   border-radius: 8px; }
 .compare-radar-img.loaded { opacity: 1; }
@@ -1687,6 +1718,11 @@ footer code { font-family: ui-monospace, Consolas, monospace; }
   padding: 10px 8px; text-align: center; vertical-align: top; }
 .compare-table thead th.compare-corner { left: 0; z-index: 4; text-align: left;
   font-size: 12px; color: var(--muted); font-weight: 600; }
+/* The top-left cell resets the trend chart to PPR points; it takes the accent
+   while a stat row is selected, like the selected row's own name. */
+.compare-table thead th.compare-corner { cursor: pointer; user-select: none; }
+.compare-table thead th.compare-corner:hover { color: var(--turf); }
+.compare-table thead th.compare-corner.on { color: var(--turf); font-weight: 700; }
 .compare-table .compare-player .pface { display: block; width: 48px; height: 48px;
   margin: 0 auto 6px; }
 .compare-table .compare-player span, .compare-table .compare-player a {

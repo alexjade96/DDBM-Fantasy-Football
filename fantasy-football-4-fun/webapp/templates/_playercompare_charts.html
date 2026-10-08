@@ -25,15 +25,15 @@
    "Total"/"Per game" the same way from a reader's perspective, so one
    control drives all three rather than three that could drift out of sync.
 
-   Layout: the radar sits centered at the top (`.compare-header-radar`), then
-   a stat-by-player MATRIX: one row per stat, one column per player, for any
+   Layout: the radar and the trend chart share one row (`.compare-charts-row`,
+   stacked on a narrow window), then a stat-by-player MATRIX: one row per stat, one column per player, for any
    number of players.  Portraits and names are in the table's own <thead>, so
    they stay pinned above the values while the matrix scrolls (it scrolls both
    ways inside `.compare-matrix-scroll`, with the stat names pinned on the
    left; see style.css).  Each cell is tinted by percentile and the best value
    in a row is a filled pill.  Clicking a row with a weekly series charts that
    stat in the trend chart below and highlights the row.  The trend line
-   renders as its own chart card BELOW the matrix.  If no profile resolved
+   shares a row with the radar above the matrix.  If no profile resolved
    (`rows` empty) the matrix is skipped and only the charts show.
 
    `idm.headshot`/`idm.player_link` link each portrait/name to that player's
@@ -52,10 +52,20 @@
     <button type="button" class="year" data-stat-mode="total">Total</button>
     <button type="button" class="year on" data-stat-mode="per_game">Per game</button>
   </nav>
+  {# The radar and the trend chart share one row on a wide window (stacked on a
+     narrow one); the matrix sits below them at full width. #}
+  <div class="compare-charts-row">
   <div class="compare-header-radar">
     <img data-chart="snapshot" class="compare-radar-img"
          src="/chart/player_overlay?position={{ position }}&season={{ season }}&mode=snapshot&stat_mode=per_game&player_ids={{ player_ids|urlencode }}&player_labels={{ player_labels|urlencode }}"
          alt="{{ position }} comparison against the real-NFL field" loading="lazy">
+  </div>
+    <div class="compare-trend-fig"
+            title="Per game: each week&rsquo;s own value, a gap means no game.  Total: the running total, dotted where there was no game, with a dashed projection of the rest of the season at the current per-game rate (assuming he plays every game that is left).">
+      <img data-chart="trend" class="compare-trend-img"
+           src="/chart/player_overlay?position={{ position }}&season={{ season }}&mode=trend&stat_mode=per_game&player_ids={{ player_ids|urlencode }}&player_labels={{ player_labels|urlencode }}"
+           alt="{{ position }} weekly trend" loading="lazy">
+    </div>
   </div>
   {% if rows %}
   {# `nosort`: keeps the shared table sorter (table-sort.js) off this matrix,
@@ -64,7 +74,7 @@
     <table class="compare-table" style="--n: {{ players|length }}">
       <thead>
         <tr>
-          <th class="compare-corner" scope="col">Stat</th>
+          <th class="compare-corner" scope="col" title="Click to reset the trend chart to PPR points">Stat &#8634;</th>
           {% for p in players %}
           <th class="compare-player" scope="col">
             {{ idm.headshot(p.pid, link=True) }}<span>{{ idm.player_link(p.pid, p.label) }}</span>
@@ -77,17 +87,7 @@
       </tbody>
     </table>
   </div>
-  <p class="hint">Click a stat to chart it week by week below; click it again to
-    return to PPR points.  The filled value is the best in its row.</p>
   {% endif %}
-  <figure class="card chart" style="aspect-ratio: 16 / 9; margin-top: 16px">
-    <img data-chart="trend"
-         src="/chart/player_overlay?position={{ position }}&season={{ season }}&mode=trend&stat_mode=per_game&player_ids={{ player_ids|urlencode }}&player_labels={{ player_labels|urlencode }}"
-         alt="{{ position }} weekly trend" loading="lazy">
-    <figcaption>Per game shows each week&rsquo;s own value (a gap means no
-      game that week, not a zero); season total shows the running total
-      through that week.</figcaption>
-  </figure>
 </section>
 <script>
   (function () {
@@ -119,11 +119,13 @@
       root.querySelectorAll('tr[data-trend-stat]').forEach(function (tr) {
         tr.classList.toggle('compare-selected', tr.getAttribute('data-trend-stat') === trendStat);
       });
+      var corner = root.querySelector('th.compare-corner');
+      if (corner) corner.classList.toggle('on', !!trendStat);
     }
     function setTrendStat(stat) {
       trendStat = stat || '';
       if (trendImg) {
-        var fig = trendImg.closest('.card.chart');
+        var fig = trendImg.closest('.compare-trend-fig');
         if (fig) { fig.classList.add('skeleton'); fig.classList.remove('chart-failed'); }
         trendImg.classList.remove('loaded');
         var src = trendImg.src.replace(/([?&])trend_stat=[^&]*&?/, '$1').replace(/[?&]$/, '');
@@ -138,6 +140,8 @@
     var card = root.querySelector('section.card');
     if (card) {
       card.addEventListener('click', function (e) {
+        // The top-left "Stat" cell resets the trend chart to PPR points.
+        if (e.target.closest('th.compare-corner')) { setTrendStat(''); return; }
         var tr = e.target.closest('tr[data-trend-stat]');
         if (!tr) return;
         var s = tr.getAttribute('data-trend-stat');
@@ -156,7 +160,7 @@
           // Show the same shimmer a first load gets while the new PNG renders;
           // _playercompare_compare.html's fadeInCharts() already listens for
           // this <img>'s load/error and clears it (or offers a Retry).
-          var fig = img.closest('.card.chart, .compare-header-radar');
+          var fig = img.closest('.compare-trend-fig, .compare-header-radar');
           if (fig) { fig.classList.add('skeleton'); fig.classList.remove('chart-failed'); }
           img.classList.remove('loaded');
           img.src = img.src.replace(/([?&]stat_mode=)[^&]*/, '$1' + mode);
