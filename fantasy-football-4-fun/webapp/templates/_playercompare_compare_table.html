@@ -1,36 +1,35 @@
-{# The 2-player metric-by-metric comparison table's rows (just <tr>s, no
-   <table> wrapper -- the caller supplies that, see below) -- shared by TWO
-   callers: `playercompare_chart_section` (app.py) `{% include %}`s this
-   directly inside `<tbody id="compare-table-body">` for the initial
-   "Compare" render (stat_mode="per_game", _playercompare_charts.
-   html), and `playercompare_table` re-renders JUST this partial for the
-   Total/Per game toggle's own refresh, swapped into that same `<tbody>`'s
-   innerHTML (see that route's docstring for the bug this fixes -- the
-   toggle used to rewrite the chart PNGs' `stat_mode` query param
-   client-side but never touched this table, so the numbers silently never
-   changed regardless of which pill was selected).
+{# The comparison matrix's body rows (just <tr>s, no <table> wrapper -- the
+   caller supplies that, see below) -- shared by TWO callers:
+   `playercompare_chart_section` (app.py) `{% include %}`s this directly
+   inside `<tbody id="compare-table-body">` for the initial "Compare" render
+   (stat_mode="per_game", _playercompare_charts.html), and
+   `playercompare_table` re-renders JUST this partial for the Total/Per game
+   toggle's own refresh, swapped into that same `<tbody>`'s innerHTML.
 
-   Rows only, no header: the portrait+radar header now lives in its OWN
-   `.compare-header-row` ABOVE the table (_playercompare_charts.html, pulled
-   out of the table entirely for sizing -- see its own comment), so this
-   partial never had a header to begin with. That header doesn't depend on
-   `stat_mode` for its own identity -- only these metric VALUES do -- so
-   refreshing just these rows on a toggle click leaves the header (and the
-   live radar `<img>` inside it) completely untouched, rather than forcing
-   an unnecessary rebuild/refetch of it. #}
-{# A row with a `trend_key` is clickable: _playercompare_charts.html's script
-   redraws the trend chart for that stat (data-trend-stat).  Rate stats have no
-   weekly series, so their rows stay plain. #}
+   One row per stat, one cell per player (`row.cells`, in the same order as
+   the header's player columns; None where a player has no value for that
+   stat).  The best cell in a row carries `lead` (a filled pill around the
+   value); every cell is tinted relative to the other players in its row (`heat`/`amt`,
+   see style.css `.compare-cell`).  The header (portraits and names) lives in the
+   table's <thead> in _playercompare_charts.html and does not depend on
+   `stat_mode`, so a toggle refresh leaves it alone.
+
+   A row with a `trend_key` is clickable: _playercompare_charts.html's script
+   redraws the trend chart for that stat (data-trend-stat) and marks the row
+   `compare-selected`.  Rate stats have no weekly series, so their rows stay
+   plain. #}
 {% for r in rows %}
 <tr{% if r.trend_key %} class="compare-clickable" data-trend-stat="{{ r.trend_key }}" title="Click to chart {{ r.label }} week by week"{% endif %}>
-  <td class="compare-side {{ 'dv-pos' if r.a_better else ('dv-neg' if r.b_better else '') }}">
-    {{ r.a_value }}
-    <span class="compare-pct">{{ r.a_pct }}%</span>
+  <th scope="row" class="compare-metric">{{ r.label }}</th>
+  {% for c in r.cells %}
+  {% if c %}
+  <td class="compare-cell{% if c.heat %} heat-{{ c.heat }}{% endif %}" style="--h: {{ c.amt }}%">
+    <span class="compare-val{% if c.lead %} compare-lead{% endif %}">{{ c.value }}</span>
+    <span class="compare-pct">{{ c.pct }}%</span>
   </td>
-  <td class="compare-metric">{{ r.label }}</td>
-  <td class="compare-side {{ 'dv-pos' if r.b_better else ('dv-neg' if r.a_better else '') }}">
-    {{ r.b_value }}
-    <span class="compare-pct">{{ r.b_pct }}%</span>
-  </td>
+  {% else %}
+  <td class="compare-cell compare-missing">&ndash;</td>
+  {% endif %}
+  {% endfor %}
 </tr>
 {% endfor %}

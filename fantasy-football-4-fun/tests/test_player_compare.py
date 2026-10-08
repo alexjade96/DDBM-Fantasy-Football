@@ -877,7 +877,7 @@ def test_trend_axis_label_title_and_integer_week_ticks():
     ax = fig.axes[0]
     assert ax.get_ylabel() == "PPR points"
     title_texts = [t.get_text() for t in fig.texts] + [ax.get_title(loc="left"), ax.get_title()]
-    assert any("RB 2025: PPR points (per game)" in s for s in title_texts)
+    assert any("RB 2025: PPR points" in s for s in title_texts)
     ticks = [t for t in ax.get_xticks() if 1 <= t <= 4]
     assert ticks == [1, 2, 3, 4]
     plt.close(fig)
@@ -910,7 +910,9 @@ def test_trend_has_direct_labels_instead_of_a_legend():
     fig = plots.plot_player_overlay(players, ["pts_ppr"], mode="trend", stat_mode="per_game")
     ax = fig.axes[0]
     assert ax.get_legend() is None
-    labels = sorted(t.get_text() for t in ax.texts if isinstance(t, Annotation))
+    # End labels have a connector line; the best/worst week labels do not.
+    labels = sorted(t.get_text() for t in ax.texts
+                    if isinstance(t, Annotation) and t.arrow_patch is not None)
     assert labels == ["Alice  (avg 15.0)", "Bob  (avg 11.5)"]
     plt.close(fig)
     fig = plots.plot_player_overlay(players, ["pts_ppr"], mode="trend", stat_mode="total")
@@ -928,7 +930,8 @@ def test_trend_direct_labels_do_not_overlap_when_lines_end_together():
                for i, n in enumerate(["A", "B", "C"])}
     fig = plots.plot_player_overlay(players, ["pts_ppr"], mode="trend", stat_mode="per_game")
     ax = fig.axes[0]
-    ys = sorted(t.xyann[1] for t in ax.texts if isinstance(t, Annotation))
+    ys = sorted(t.xyann[1] for t in ax.texts
+                if isinstance(t, Annotation) and t.arrow_patch is not None)
     lo, hi = ax.get_ylim()
     assert all(b - a >= 0.05 * (hi - lo) for a, b in zip(ys, ys[1:]))      # nudged apart
     plt.close(fig)
@@ -1057,3 +1060,61 @@ def test_player_trend_zero_fill_makes_a_played_week_zero_not_a_gap(monkeypatch):
     filled = pc.player_trend(["1"], "2025", stat_keys=["rush_td"], weeks=[1, 2, 3],
                              zero_fill=True)["1"]
     assert filled == [{"week": 1, "rush_td": 1.0}, {"week": 2, "rush_td": 0.0}]
+
+
+def test_per_game_trend_marks_best_and_worst_week_and_rolling_average():
+    from matplotlib.text import Annotation
+
+    from sleepermetrics import plots
+    players = {"Alice": [{"week": w, "pts_ppr": v} for w, v in
+                         ((1, 10.0), (2, 30.0), (3, 20.0), (4, 5.0))]}
+    fig = plots.plot_player_overlay(players, ["pts_ppr"], mode="trend", stat_mode="per_game")
+    ax = fig.axes[0]
+    notes = [t.get_text() for t in ax.texts
+             if isinstance(t, Annotation) and t.arrow_patch is None]
+    assert "best 30.0 (wk 2)" in notes and "worst 5.0 (wk 4)" in notes
+    # bold rolling line: third point is the mean of the first three games
+    rolling = [ln for ln in ax.get_lines() if ln.get_linewidth() > 2.5][0]
+    assert list(rolling.get_ydata())[2] == 20.0
+    # no week-0 tick from the full-width band lines
+    assert 0 not in [int(t) for t in ax.get_xticks()]
+    # cumulative mode keeps the plain lines (no best/worst marks)
+    fig2 = plots.plot_player_overlay(players, ["pts_ppr"], mode="trend", stat_mode="total")
+    assert not [t for t in fig2.axes[0].texts if isinstance(t, Annotation) and t.arrow_patch is None]
+
+
+def test_radar_value_line_sits_on_the_inner_side_on_every_spoke():
+    """The name is at the same distance from the centre on every spoke and its
+    value line is always closer to the radar than the name: the bottom and left
+    labels are flipped to read upright, and the same offset used to put their
+    value line OUTSIDE the name, so the label block sat farther out there."""
+    import math
+
+    from matplotlib.text import Annotation
+
+    from sleepermetrics import plots
+    keys = ["targets", "receptions", "rec_yards", "rec_td", "carries", "rush_yards",
+            "rush_td", "snap_share"]
+    players = {"A": _prof(**{k: 10.0 + i for i, k in enumerate(keys)}),
+               "B": _prof(**{k: 12.0 + i for i, k in enumerate(keys)})}
+    fig = plots.plot_player_overlay(players, keys, mode="snapshot", position="WR",
+                                    stat_mode="per_game")
+    fig.canvas.draw()
+    ax = fig.axes[0]
+    rend = fig.canvas.get_renderer()
+    cx, cy = ax.transData.transform((0, 0))
+    ordered = plots._grouped_spoke_order(keys, "WR")
+    n = len(ordered)
+    name_d, value_d = [], []
+    for i, key in enumerate(ordered):
+        ang = i / n * 2 * math.pi
+        sx, sy = math.sin(ang), math.cos(ang)
+        radial = lambda t: (lambda b: (((b.x0 + b.x1) / 2 - cx) * sx + ((b.y0 + b.y1) / 2 - cy) * sy))(
+            t.get_window_extent(rend))
+        name = [t for t in ax.texts if not isinstance(t, Annotation) and t.get_text() == key][0]
+        pieces = [t for t in ax.texts if isinstance(t, Annotation) and abs(t.xy[0] - ang) < 1e-9]
+        name_d.append(radial(name))
+        value_d.append(sum(radial(t) for t in pieces) / len(pieces))
+    assert all(v < nm for v, nm in zip(value_d, name_d))
+    assert max(name_d) - min(name_d) < 2          # the name is equally far out everywhere
+    assert max(value_d) - min(value_d) < 2        # and so is the value line

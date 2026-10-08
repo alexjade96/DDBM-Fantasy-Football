@@ -297,6 +297,18 @@ def test_playercompare_data_degrades_on_exception(monkeypatch):
     assert "No RB data available" in body
 
 
+def _profiles(*specs):
+    """{"1": profile, ...} from (pid, [(key, label, value, pct), ...]) specs."""
+    return {pid: {"player_id": pid, "columns": [
+        {"key": k, "label": l, "value": v, "percentile": pc} for k, l, v, pc in cols]}
+        for pid, cols in specs}
+
+
+def _patch_profiles(monkeypatch, profiles):
+    from webapp import player_compare as pc
+    monkeypatch.setattr(pc, "player_field_compare", lambda season, pos, ids, **k: profiles)
+
+
 def test_playercompare_chart_section_below_two_players_shows_hint():
     from webapp import app
     resp = app.playercompare_chart_section(_Req(), position="RB", season="2024",
@@ -350,24 +362,21 @@ def test_playercompare_chart_section_results_are_their_own_card():
     assert body.strip().startswith('<section class="card">')
 
 
-def test_playercompare_chart_section_no_table_falls_back_to_stacked_cards():
-    """Without a 2-player metric table (3+ players, or a profile that never
-    resolved), the radar and trend charts fall back to their own stacked
-    .card.chart figures -- no `.grid two` side-by-side layout anymore (that
-    was an earlier session's layout; the table now replaces it for the
-    2-player case), and no `wide` class forcing either into its own row.
-    Also no `.compare-header-row` (the portrait+radar strip only exists
-    alongside the table)."""
+def test_playercompare_chart_section_no_profiles_shows_charts_without_matrix():
+    """When no profile resolved (network blocked in tests) there is no matrix,
+    but the radar still renders in its centered slot and the trend chart is the
+    only `.card.chart`; no side-by-side grid, no `wide` card."""
     from webapp import app
     resp = app.playercompare_chart_section(
         _Req(), position="RB", season="2024",
         player_ids="1,2,3", player_labels="A,B,C")
     body = resp.body.decode()
     assert 'class="compare-table"' not in body
+    assert body.count('class="compare-header-radar"') == 1
     assert "compare-header-row" not in body
     assert 'class="grid two"' not in body
     assert "card chart wide" not in body
-    assert body.count("card chart") == 2
+    assert body.count("card chart") == 1
 
 
 def test_playercompare_chart_section_one_shared_rail_drives_both_charts():
@@ -441,102 +450,90 @@ def test_playercompare_chart_section_metric_table_shows_headshots(monkeypatch):
     assert '/player/4239' in body
 
 
-def test_playercompare_chart_section_metric_table_tints_the_better_side(monkeypatch):
-    """Whichever side has the higher percentile at a stat gets the green
-    dv-pos tint, the other gets red dv-neg -- comparing PERCENTILE, not raw
-    value, since a lower-is-better stat (e.g. points allowed) already has
-    that direction baked into its percentile."""
-    from webapp import app, player_compare as pc
-
-    profiles = {
-        "1": {"player_id": "1", "columns": [
-            {"key": "fpts_ppr", "label": "PPR pts", "value": 22.5, "percentile": 80.0},
-        ]},
-        "2": {"player_id": "2", "columns": [
-            {"key": "fpts_ppr", "label": "PPR pts", "value": 18.0, "percentile": 60.0},
-        ]},
-    }
-    monkeypatch.setattr(pc, "player_field_compare",
-                        lambda season, pos, ids, **k: profiles)
-    resp = app.playercompare_chart_section(
+def test_matrix_marks_the_best_value_and_tints_by_percentile(monkeypatch):
+    """The higher percentile in a row is the lead (filled pill) and leans green,
+    the lowest leans red, comparing PERCENTILE not raw value, since a
+    lower-is-better stat already has its direction baked in."""
+    from webapp import app
+    _patch_profiles(monkeypatch, _profiles(
+        ("1", [("fpts_ppr", "PPR pts", 22.5, 80.0)]),
+        ("2", [("fpts_ppr", "PPR pts", 18.0, 30.0)])))
+    body = app.playercompare_chart_section(
         _Req(), position="RB", season="2024",
-        player_ids="1,2", player_labels="Player A,Player B")
-    body = resp.body.decode()
+        player_ids="1,2", player_labels="Player A,Player B").body.decode()
     row = body.split('id="compare-table-body"')[1].split("</tbody>")[0]
-    cells = row.split("<td")
-    assert "dv-pos" in cells[1]
-    assert "dv-neg" in cells[3]
+    cells = row.split("<td")[1:]
+    assert "compare-lead" in cells[0] and "compare-lead" not in cells[1]
+    assert "heat-pos" in cells[0] and "heat-neg" in cells[1]
 
 
-def test_playercompare_chart_section_header_row_is_outside_the_table(monkeypatch):
-    """Regression test for a real, shipped bug: the portrait+radar header
-    used to live INSIDE the comparison table's own <thead> as a <th> with
-    `display: flex` -- flex on a table cell pulls it OUT of the table's
-    column-sizing algorithm entirely (a flex container sizes to its own
-    content, ignoring `table-layout: fixed`'s computed column width), which
-    rendered the header ~3x narrower than the body cells in the same column,
-    with the portraits both squeezed AND not aligned to their column.
-
-    The fix moves the whole header (portrait | radar | portrait) OUT of the
-    table into its own `.compare-header-row` flex strip ABOVE it -- this also
-    doubles as the visibility improvement the user asked for separately
-    (bigger portraits/radar with no table-column constraint at all). The
-    table itself now has NO <thead>: `.compare-table` should contain no
-    `<th>` at all, and `.compare-header-row` must appear BEFORE it in the
-    document."""
-    from webapp import app, player_compare as pc
-
-    profiles = {
-        "1": {"player_id": "1", "columns": [
-            {"key": "fpts_ppr", "label": "PPR pts", "value": 22.5, "percentile": 80.0},
-        ]},
-        "2": {"player_id": "2", "columns": [
-            {"key": "fpts_ppr", "label": "PPR pts", "value": 18.0, "percentile": 60.0},
-        ]},
-    }
-    monkeypatch.setattr(pc, "player_field_compare",
-                        lambda season, pos, ids, **k: profiles)
-    resp = app.playercompare_chart_section(
+def test_matrix_header_carries_the_portraits_and_the_radar_sits_above(monkeypatch):
+    """Portraits and names are the matrix's own column headers (one <th> per
+    player, pinned on top), and the radar is centered ABOVE the table, not
+    flanked by portraits (the old 2-player header row is gone)."""
+    from webapp import app
+    _patch_profiles(monkeypatch, _profiles(
+        ("1", [("fpts_ppr", "PPR pts", 22.5, 80.0)]),
+        ("2", [("fpts_ppr", "PPR pts", 18.0, 60.0)])))
+    body = app.playercompare_chart_section(
         _Req(), position="RB", season="2024",
-        player_ids="1,2", player_labels="Player A,Player B")
-    body = resp.body.decode()
-    assert "<thead>" not in body
-    assert "<th" not in body
-    header_idx = body.index("compare-header-row")
-    table_idx = body.index('class="compare-table"')
-    assert header_idx < table_idx
-    # Portrait+name sides flank the radar in the header row.
-    assert body.count("compare-header-side") == 2
-    a_idx = body.index("compare-header-side")
-    radar_idx = body.index("compare-header-radar")
-    b_idx = body.rindex("compare-header-side")
-    assert a_idx < radar_idx < b_idx
+        player_ids="1,2", player_labels="Player A,Player B").body.decode()
+    head = body.split("<thead>")[1].split("</thead>")[0]
+    assert head.count('class="compare-player"') == 2
+    assert "pface" in head and "Player A" in head and "Player B" in head
+    assert "compare-header-row" not in body and "compare-header-side" not in body
+    assert body.index('class="compare-header-radar"') < body.index('class="compare-table"')
     assert "mode=snapshot" in body
-    assert ">Metric<" not in body
 
 
-def test_playercompare_chart_section_header_row_portraits_are_enlarged():
-    """The comparison view's whole point (per user request) is a more
-    visible portrait/radar row -- guard the actual enlarged .pface override
-    exists, is MEANINGFULLY bigger than the shared base size (not pinned to
-    one exact px value, which would make this test fragile against future
-    size tweaks), and is scoped to this row, not a change to the shared
-    .pface base rule used everywhere else in the app."""
+def test_matrix_portraits_are_enlarged_and_scoped():
+    """Header portraits are meaningfully bigger than the shared inline .pface
+    (22px) and the override is scoped to the matrix, not the shared rule."""
     import re
     from webapp import app
     css = (app.BASE / "static" / "style.css").read_text(encoding="utf-8")
-    idx = css.index(".compare-header-side .pface {")
+    idx = css.index(".compare-table .compare-player .pface {")
     block = css[idx:css.index("}", idx)]
-    override_px = int(re.search(r"width:\s*(\d+)px", block).group(1))
-    # The shared BARE base rule (used elsewhere, e.g. dense inline tables)
-    # must stay untouched -- search line-anchored (`\n.pface {`) so this
-    # doesn't match a scoped override like `.nfl-cmp .pface { width: 16px;
-    # ... }` earlier in the file.
+    assert int(re.search(r"width:\s*(\d+)px", block).group(1)) >= 44
     base_idx = css.index("\n.pface {") + 1
     base_block = css[base_idx:css.index("}", base_idx)]
-    base_px = int(re.search(r"width:\s*(\d+)px", base_block).group(1))
-    assert base_px == 22
-    assert override_px >= base_px * 2
+    assert int(re.search(r"width:\s*(\d+)px", base_block).group(1)) == 22
+
+
+def test_matrix_css_scrolls_and_pins_header_and_stat_column():
+    """A wide comparison scrolls sideways inside its own box with the stat
+    names pinned; sticky cells need an opaque background and
+    `border-collapse: separate` (collapsed borders do not travel with them)."""
+    from webapp import app
+    css = (app.BASE / "static" / "style.css").read_text(encoding="utf-8")
+    box = css[css.index(".compare-matrix-scroll {"):]
+    box = box[:box.index("}")]
+    assert "overflow-x: auto" in box          # sideways scroll
+    assert "max-height" not in box            # every row shows: no vertical scroll
+    table = css[css.index(".compare-table {"):]
+    table = table[:table.index("}")]
+    assert "border-collapse: separate" in table and "min-width" in table
+    head = css[css.index(".compare-table thead th {"):]
+    assert "position: sticky" in head[:head.index("}")]
+    metric = css[css.index(".compare-table th.compare-metric {"):]
+    metric = metric[:metric.index("}")]
+    assert "position: sticky" in metric and "left: 0" in metric and "background-color" in metric
+    sel = css[css.index(".compare-table tr.compare-selected td"):]
+    assert "background-image" in sel[:sel.index("}")]
+
+
+def test_matrix_is_kept_out_of_the_shared_table_sorter(monkeypatch):
+    """table-sort.js binds every `#panel table` that is not inside `.nosort`;
+    the matrix header cells are players, not sortable columns."""
+    from webapp import app
+    _patch_profiles(monkeypatch, _profiles(
+        ("1", [("fpts_ppr", "PPR pts", 22.5, 80.0)]),
+        ("2", [("fpts_ppr", "PPR pts", 18.0, 60.0)])))
+    body = app.playercompare_chart_section(
+        _Req(), position="RB", season="2024",
+        player_ids="1,2", player_labels="A,B").body.decode()
+    wrapper = body[:body.index('class="compare-table"')]
+    assert "compare-matrix-scroll nosort" in wrapper
 
 
 def test_playercompare_chart_section_trend_chart_sits_below_table(monkeypatch):
@@ -681,17 +678,22 @@ def test_playercompare_table_route_invalid_stat_mode_falls_back_to_per_game():
     assert resp.status_code == 200
 
 
-def test_playercompare_chart_section_three_players_skips_metric_table(monkeypatch):
-    from webapp import app, player_compare as pc
-
-    def _boom(*a, **k):
-        raise AssertionError("player_field_compare should not be called for 3+ players")
-    monkeypatch.setattr(pc, "player_field_compare", _boom)
-    resp = app.playercompare_chart_section(
+def test_three_players_get_a_matrix_with_three_columns(monkeypatch):
+    from webapp import app
+    _patch_profiles(monkeypatch, _profiles(
+        ("1", [("rush_yards", "Rush yds", 90.0, 55.0)]),
+        ("2", [("rush_yards", "Rush yds", 110.0, 70.0)]),
+        ("3", [("rush_yards", "Rush yds", 70.0, 40.0)])))
+    body = app.playercompare_chart_section(
         _Req(), position="RB", season="2024",
-        player_ids="1,2,3", player_labels="A,B,C")
-    body = resp.body.decode()
-    assert 'class="compare-table"' not in body
+        player_ids="1,2,3", player_labels="A,B,C").body.decode()
+    head = body.split("<thead>")[1].split("</thead>")[0]
+    assert head.count('class="compare-player"') == 3
+    assert "--n: 3" in body
+    row = body.split('id="compare-table-body"')[1].split("</tbody>")[0]
+    assert row.count("<td") == 3
+    assert row.count("compare-lead") == 1             # only the 70th percentile leads
+    assert row.split("<td")[2].count("compare-lead") == 1
 
 
 def test_playercompare_chart_section_metric_table_degrades_on_missing_profile(monkeypatch):
@@ -841,15 +843,67 @@ def test_metric_table_refresh_route_keeps_rows_clickable(monkeypatch):
     assert 'data-trend-stat="rush_yards"' in body
 
 
-def test_three_players_get_a_trend_stat_dropdown_instead_of_a_table():
+def test_three_players_have_clickable_rows_not_a_dropdown(monkeypatch):
     from webapp import app
+    _patch_profiles(monkeypatch, _profiles(
+        ("1", [("rush_yards", "Rush yds", 90.0, 55.0)]),
+        ("2", [("rush_yards", "Rush yds", 110.0, 70.0)]),
+        ("3", [("rush_yards", "Rush yds", 70.0, 40.0)])))
     body = app.playercompare_chart_section(
         _Req(), position="RB", season="2025", player_ids="1,2,3",
         player_labels="A,B,C").body.decode()
-    assert 'id="trend-stat-select"' in body
-    assert '<option value="">PPR points</option>' in body
-    assert '<option value="rush_yards">' in body
-    assert 'data-trend-stat=' not in body.split("<script>")[0]       # no table rows to click
+    assert 'data-trend-stat="rush_yards"' in body
+    assert 'id="trend-stat-select"' not in body
+
+
+def test_matrix_ties_and_missing_values(monkeypatch):
+    """All-equal rows lead nobody; tied best values all lead; a player with no
+    value for a stat gets a dash cell and the row still renders."""
+    from webapp import app
+    _patch_profiles(monkeypatch, _profiles(
+        ("1", [("rush_yards", "Rush yds", 90.0, 60.0), ("snap_share", "Snap share", 0.5, 50.0),
+               ("rush_td", "Rush TD", 2.0, 70.0)]),
+        ("2", [("rush_yards", "Rush yds", 91.0, 60.0), ("snap_share", "Snap share", 0.6, 80.0)]),
+        ("3", [("rush_yards", "Rush yds", 70.0, 60.0), ("snap_share", "Snap share", 0.6, 80.0)])))
+    body = app.playercompare_chart_section(
+        _Req(), position="RB", season="2025", player_ids="1,2,3",
+        player_labels="A,B,C").body.decode()
+    rows = body.split('id="compare-table-body"')[1].split("</tbody>")[0].split("</tr>")
+    by_label = {r.split('class="compare-metric">')[1].split("<")[0]: r
+                for r in rows if "compare-metric" in r}
+    assert "compare-lead" not in by_label["Rush yds"]            # all equal percentile
+    assert by_label["Snap share"].count("compare-lead") == 2     # tied best
+    assert "compare-missing" in by_label["Rush TD"]
+    assert by_label["Rush TD"].count("compare-lead") == 0        # one value only
+
+
+def test_matrix_rows_follow_the_radars_grouped_order(monkeypatch):
+    from webapp import app
+    _patch_profiles(monkeypatch, _profiles(
+        ("1", [("snap_share", "Snap share", 0.5, 50.0), ("receptions", "Rec", 3.0, 60.0),
+               ("rush_yards", "Rush yds", 90.0, 55.0)]),
+        ("2", [("snap_share", "Snap share", 0.6, 80.0), ("receptions", "Rec", 4.0, 70.0),
+               ("rush_yards", "Rush yds", 80.0, 45.0)])))
+    body = app.playercompare_chart_section(
+        _Req(), position="RB", season="2025", player_ids="1,2",
+        player_labels="A,B").body.decode()
+    labels = [x.split("<")[0] for x in body.split('class="compare-metric">')[1:]]
+    assert labels == ["Rush yds", "Rec", "Snap share"]     # RB: rushing, receiving, usage
+
+
+def test_selected_row_is_marked_and_survives_the_table_refresh(monkeypatch):
+    """The script marks the clicked row `compare-selected`, clears it on a
+    second click, and re-applies the mark after a Total/Per game swap."""
+    from webapp import app
+    _patch_profiles(monkeypatch, _profiles(
+        ("1", [("rush_yards", "Rush yds", 90.0, 55.0)]),
+        ("2", [("rush_yards", "Rush yds", 110.0, 70.0)])))
+    body = app.playercompare_chart_section(
+        _Req(), position="RB", season="2025", player_ids="1,2",
+        player_labels="A,B").body.decode()
+    assert "compare-selected" in body
+    assert "setTrendStat(s === trendStat ? '' : s)" in body
+    assert "tableBody.style.opacity = ''; markTrend();" in body
 
 
 def test_charts_script_binds_the_row_click_to_the_fragment_not_the_persistent_root():
@@ -891,3 +945,109 @@ def test_chart_unknown_or_unchartable_trend_stat_falls_back_to_ppr_points(monkey
                      player_ids="1", player_labels="Test RB", trend_stat=bad)
     assert resp.status_code == 200
     assert seen == {"stat_keys": None, "zero_fill": False}      # the default key set, no zero fill
+
+
+
+def _cells_of(body, label):
+    rows = body.split('id="compare-table-body"')[1].split("</tbody>")[0].split("</tr>")
+    row = [r for r in rows if f'class="compare-metric">{label}<' in r][0]
+    return row.split("<td")[1:]
+
+
+def test_matrix_tint_is_relative_to_the_players_in_the_row(monkeypatch):
+    """Best leans green, worst leans red, a middle player is neutral-ish (the
+    smallest tint), and the strength follows how far apart the players are:
+    close values give a faint tint, wide gaps a strong one.  All-equal rows
+    and single-value rows get no tint at all."""
+    import re
+    from webapp import app
+    _patch_profiles(monkeypatch, _profiles(
+        ("1", [("rush_yards", "Rush yds", 90.0, 99.0), ("rush_td", "Rush TD", 1.0, 97.0),
+               ("carries", "Car", 10.0, 60.0), ("targets", "Tgt", 5.0, 50.0)]),
+        ("2", [("rush_yards", "Rush yds", 70.0, 60.0), ("rush_td", "Rush TD", 1.0, 96.0),
+               ("carries", "Car", 10.0, 60.0)]),
+        ("3", [("rush_yards", "Rush yds", 50.0, 20.0), ("rush_td", "Rush TD", 0.0, 95.0),
+               ("carries", "Car", 10.0, 60.0)])))
+    body = app.playercompare_chart_section(
+        _Req(), position="RB", season="2025", player_ids="1,2,3",
+        player_labels="A,B,C").body.decode()
+    amt = lambda cell: int(re.search(r"--h: (\d+)%", cell).group(1))
+    wide = _cells_of(body, "Rush yds")
+    assert "heat-pos" in wide[0] and "heat-neg" in wide[2]
+    assert amt(wide[1]) <= 2 and amt(wide[0]) >= 20 and amt(wide[2]) >= 20   # middle ~neutral
+    close = _cells_of(body, "Rush TD")                                        # 95 to 97
+    assert amt(close[0]) < amt(wide[0]) / 2                                   # faint when close
+    equal = _cells_of(body, "Car")
+    assert all("heat-" not in c and amt(c) == 0 for c in equal)
+    single = _cells_of(body, "Tgt")
+    assert "heat-" not in single[0]
+
+
+def test_matrix_per_game_values_show_decimals_but_totals_and_shares_do_not(monkeypatch):
+    """Per game, rec TD is 0.12 and 0.25 a game, not "0" and "0" (the whole-
+    number format made rows of identical zeros carry different tints).  Totals
+    stay whole numbers and share stats keep their 3-decimal form."""
+    from webapp import app
+    _patch_profiles(monkeypatch, _profiles(
+        ("1", [("rec_td", "Rec TD", 0.12, 84.8), ("yds", "Yds", 36.24, 90.0),
+               ("snap_share", "Snap share", 0.83, 98.0)]),
+        ("2", [("rec_td", "Rec TD", 0.25, 94.6), ("yds", "Yds", 30.5, 80.0),
+               ("snap_share", "Snap share", 0.78, 96.0)])))
+    per_game = app.playercompare_chart_section(
+        _Req(), position="RB", season="2025", player_ids="1,2",
+        player_labels="A,B").body.decode()
+    rec = _cells_of(per_game, "Rec TD")
+    assert ">0.12<" in rec[0] and ">0.25<" in rec[1]
+    assert ">36.2<" in "".join(_cells_of(per_game, "Yds")) and ">30.5<" in "".join(_cells_of(per_game, "Yds"))
+    assert ">0.830<" in _cells_of(per_game, "Snap share")[0]
+    _patch_profiles(monkeypatch, _profiles(
+        ("1", [("rec_td", "Rec TD", 7.0, 100.0)]), ("2", [("rec_td", "Rec TD", 4.0, 95.9)])))
+    total = app.playercompare_table(
+        _Req(), position="RB", season="2025", player_ids="1,2",
+        player_labels="A,B", stat_mode="total").body.decode()
+    assert ">7<" in total and ">4<" in total and "7.0" not in total
+
+
+# -- the player cap (a trial value; one constant) ----------------------------------
+
+def test_split_picks_trims_to_the_cap():
+    from webapp import app
+    cap = app._PLAYERCOMPARE_MAX
+    ids = ",".join(str(i) for i in range(cap + 3))
+    labels = ",".join(f"P{i}" for i in range(cap + 3))
+    got_ids, got_labels = app._split_picks(ids, labels)
+    assert len(got_ids) == cap and len(got_labels) == cap
+    assert got_ids == [str(i) for i in range(cap)]
+    assert app._split_picks("", "") == ([], [])
+
+
+def test_compare_request_over_the_cap_renders_only_the_cap(monkeypatch):
+    """A hand-edited URL with more ids than the cap still gets the cap's worth
+    of matrix columns, and the charts' urls carry only those ids."""
+    from webapp import app
+    cap = app._PLAYERCOMPARE_MAX
+    ids = [str(i) for i in range(1, cap + 3)]
+    _patch_profiles(monkeypatch, _profiles(
+        *[(i, [("rush_yards", "Rush yds", 50.0 + int(i), 40.0 + int(i))]) for i in ids]))
+    body = app.playercompare_chart_section(
+        _Req(), position="RB", season="2025", player_ids=",".join(ids),
+        player_labels=",".join(f"P{i}" for i in ids)).body.decode()
+    head = body.split("<thead>")[1].split("</thead>")[0]
+    assert head.count('class="compare-player"') == cap
+    assert f"P{cap + 1}" not in body
+    refreshed = app.playercompare_table(
+        _Req(), position="RB", season="2025", player_ids=",".join(ids),
+        player_labels=",".join(f"P{i}" for i in ids), stat_mode="total").body.decode()
+    assert refreshed.split("</tr>")[0].count("<td") == cap
+
+
+def test_page_locks_unticked_boxes_at_the_cap():
+    """The shell reads the cap from the server (one number), disables the
+    unticked boxes at the cap and shows a note; a ticked box is never locked."""
+    from webapp import app
+    body = app.playercompare(_Req()).body.decode()
+    assert f'data-max="{app._PLAYERCOMPARE_MAX}"' in body
+    assert 'id="playercompare-cap-note"' in body
+    assert "b.disabled = atCap && !b.checked" in body
+    css = (app.BASE / "static" / "style.css").read_text(encoding="utf-8")
+    assert ".playercompare-row-locked" in css

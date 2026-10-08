@@ -1644,47 +1644,20 @@ footer code { font-family: ui-monospace, Consolas, monospace; }
   border-radius: 50%; background: var(--line); border: 0; color: var(--muted);
   font-size: 13px; line-height: 1; cursor: pointer; padding: 0; }
 .playercompare-chip-x:hover { background: var(--turf); color: #fff; filter: none; }
+/* At the player cap the unticked rows lock: dimmed, checkbox disabled. */
+.playercompare-row-locked { opacity: .5; }
+.playercompare-row-locked input { cursor: not-allowed; }
+.playercompare-cap-note { margin-top: 6px; }
 
-/* Player Comparison's header row (_playercompare_charts.html):
-   portrait+name | radar chart | portrait+name, its own 3-column flex strip
-   ABOVE the metric table (not inside the table's own <thead> -- an earlier
-   design had it there, and putting it back would reintroduce the very bug
-   fixed below: `table-layout: fixed`'s column math is tuned for aligning
-   METRIC VALUES, and fighting it to also host a big portrait/radar was what
-   made both look cramped/off-center in the first place). As an independent
-   flex row, the portrait and radar can both be sized generously (see
-   .compare-header-radar/.compare-header-side .pface below) with no table
-   column constraint at all. */
-.compare-header-row { display: flex; align-items: flex-start;
-  justify-content: center; gap: 18px; margin-top: 4px; }
-.compare-header-side { flex: 1 1 0; min-width: 0; display: flex;
-  flex-direction: column; align-items: center; gap: 6px; text-align: center;
-  padding-top: 8px; }
-/* A larger portrait than the ~22px inline convention used elsewhere in this
-   app (.pface's own base rule) -- this row exists specifically to make the
-   two players more visually prominent, per user request, so it gets its own
-   scoped override rather than changing the shared .pface size everywhere
-   else it's used (inline in dense tables, where a bigger face would break
-   row height). */
-.compare-header-side .pface { width: 72px; height: 72px; margin-right: 0; }
-.compare-header-side > span, .compare-header-side > span > a {
-  width: 100%; min-width: 0; font-weight: 600; font-size: 15px;
-  overflow-wrap: break-word; }
-/* The radar's own ring/spoke labels (_draw_pizza_ticks, plots.py) are real
-   text baked into the server-rendered PNG, so they only get more legible by
-   giving the whole image more ROOM to render at, not by any CSS text-size
-   trick -- confirmed with a real render at the previous 380px cap that the
-   ring numbers were nearly unreadable (a genuine, user-reported visibility
-   problem, not a subjective size preference). `flex: 2.2` (vs. 1 on each
-   side column) gives it the clear majority of the row's width, up to a
-   560px cap so it doesn't dwarf the portraits on a very wide viewport. */
-.compare-header-radar { flex: 2.2 1 0; min-width: 0; max-width: 560px; }
-/* Same fade-in/skeleton contract as any other chart image (.card.chart img
-   elsewhere) -- opacity 0 until loaded, a shimmer placeholder reserving a
+/* Player Comparison's radar (_playercompare_charts.html): centered above the
+   matrix.  The radar's ring/spoke labels are real text baked into the
+   server-rendered PNG, so they only get more legible by giving the whole image
+   ROOM to render at (up to 560px), not by any CSS text-size trick.  Same
+   fade-in/skeleton contract as any other chart image (.card.chart img
+   elsewhere): opacity 0 until loaded, a shimmer placeholder reserving a
    square box so nothing jumps when the PNG swaps in
-   (_playercompare_compare.html's fadeInCharts() drives both `.card.chart`
-   AND `.compare-header-radar` images identically). */
-.compare-header-radar { padding: 0; }
+   (_playercompare_compare.html's fadeInCharts() drives it). */
+.compare-header-radar { width: 100%; max-width: 560px; margin: 4px auto 0; padding: 0; }
 .compare-radar-img { width: 100%; height: auto; opacity: 0; transition: opacity .3s ease;
   border-radius: 8px; }
 .compare-radar-img.loaded { opacity: 1; }
@@ -1692,51 +1665,73 @@ footer code { font-family: ui-monospace, Consolas, monospace; }
 .compare-header-radar.skeleton .compare-radar-img { opacity: 0; }
 .compare-header-radar.chart-failed { display: grid; place-items: center; aspect-ratio: 1 / 1; }
 .compare-header-radar.chart-failed .compare-radar-img { display: none; }
-@media (max-width: 560px) {
-  .compare-header-row { gap: 8px; }
-  .compare-header-side .pface { width: 40px; height: 40px; }
-  .compare-header-side > span { font-size: 12px; }
-}
 
-/* Player Comparison's 2-player metric table (_playercompare_charts.html +
-   _playercompare_compare_table.html): a real 3-column layout -- Player A
-   value | metric name | Player B value -- rather than a normal left-aligned
-   data table, so the two players' numbers land in fixed, aligned columns
-   for direct side-by-side reading (the whole point of this view for exactly
-   2 players; 3+ players keep the radar/trend charts only, no natural
-   2-sided layout for more players). No <thead> -- the header row is now
-   `.compare-header-row` above the table (see its own comment block just
-   above), not part of this table at all. `table-layout: fixed` with three
-   equal columns keeps every row's value columns the same width regardless
-   of how long a metric label runs. */
-.compare-3col { margin-top: 14px; }
-.compare-table { width: 100%; table-layout: fixed; border-collapse: collapse; }
-.compare-table td { padding: 7px 10px; text-align: center;
-  border-bottom: 1px solid var(--line); }
-.compare-table td.compare-side { width: 34%; font-variant-numeric: tabular-nums;
-  font-weight: 600; }
-.compare-table td.compare-metric { width: 32%; text-align: center; font-weight: 500; }
+/* Player Comparison's matrix (_playercompare_charts.html +
+   _playercompare_compare_table.html): one row per stat, one column per
+   player, any number of players.  It scrolls SIDEWAYS only, inside its own box,
+   with the stat names pinned on the left; the stats are few, so every row
+   shows and the box is as tall as the table.  `border-collapse: separate` because
+   sticky cells and collapsed borders do not mix (the borders do not travel
+   with the cell); every sticky cell has an OPAQUE background so scrolled
+   content never shows through it.  Column width is a floor (`--n` players x
+   120px + the stat column), so a wide comparison scrolls sideways instead of
+   squashing. */
+.compare-matrix-scroll { margin-top: 14px; overflow-x: auto; overflow-y: hidden;
+  position: relative; border: 1px solid var(--line); border-radius: 8px;
+  background: var(--surface); }
+.compare-table { width: 100%; min-width: calc(150px + var(--n, 2) * 120px);
+  border-collapse: separate; border-spacing: 0; }
+.compare-table th, .compare-table td { border-bottom: 1px solid var(--line); }
+.compare-table thead th { position: sticky; top: 0; z-index: 2;
+  background: var(--surface); border-bottom: 2px solid var(--line);
+  padding: 10px 8px; text-align: center; vertical-align: top; }
+.compare-table thead th.compare-corner { left: 0; z-index: 4; text-align: left;
+  font-size: 12px; color: var(--muted); font-weight: 600; }
+.compare-table .compare-player .pface { display: block; width: 48px; height: 48px;
+  margin: 0 auto 6px; }
+.compare-table .compare-player span, .compare-table .compare-player a {
+  font-size: 13px; font-weight: 600; overflow-wrap: anywhere; text-transform: none;
+  letter-spacing: 0; color: var(--ink); }
+.compare-table th.compare-metric { position: sticky; left: 0; z-index: 1;
+  background-color: var(--surface); text-align: left; font-weight: 500;
+  padding: 7px 10px; white-space: nowrap; text-transform: none; letter-spacing: 0;
+  font-size: 14px; color: var(--ink); }
+.compare-table td.compare-cell { padding: 7px 10px; text-align: center;
+  font-variant-numeric: tabular-nums; }
+.compare-table td.heat-pos { background-color: color-mix(in srgb, #2f9e44 var(--h, 0%), transparent); }
+.compare-table td.heat-neg { background-color: color-mix(in srgb, #e03131 var(--h, 0%), transparent); }
+.compare-table td.compare-missing { color: var(--faint); }
+.compare-table .compare-val { font-weight: 600; }
+/* The best value in a row.  A literal dark-green fill with white text (not
+   var(--turf)), so it reads the same on the light and dark surface. */
+.compare-table .compare-lead { display: inline-block; background: #2f7d4f; color: #fff;
+  border-radius: 999px; padding: 1px 10px; }
 .compare-table .compare-pct { display: block; font-size: 11px;
   font-weight: 400; opacity: .75; }
 /* A row that charts its stat on click (see _playercompare_charts.html). */
 .compare-table tr.compare-clickable { cursor: pointer; }
-.compare-table tr.compare-clickable td.compare-metric { text-decoration: underline dotted;
+.compare-table tr.compare-clickable th.compare-metric { text-decoration: underline dotted;
   text-underline-offset: 3px; }
-.compare-table tr.compare-clickable:hover td.compare-metric { color: var(--turf); }
-.compare-table tr.compare-selected td.compare-metric { color: var(--turf); font-weight: 700;
-  text-decoration: none; box-shadow: inset 0 -2px 0 var(--turf); }
-/* .dv-pos/.dv-neg (defined above) already give a colored pill background;
-   this table applies them to the whole cell rather than an inline span, so
-   the pill spans the value AND the percentile line beneath it. */
-.compare-table td.compare-side.dv-pos, .compare-table td.compare-side.dv-neg {
-  border-radius: 6px; }
-@media (max-width: 720px) {
-  .compare-table td.compare-side { width: 40%; }
-  .compare-table td.compare-metric { width: 20%; }
-}
+.compare-table tr.compare-clickable:hover th.compare-metric { color: var(--turf); }
+.compare-table tr.compare-clickable:hover td,
+.compare-table tr.compare-clickable:hover th.compare-metric {
+  background-image: linear-gradient(color-mix(in srgb, var(--turf) 8%, transparent),
+                                    color-mix(in srgb, var(--turf) 8%, transparent)); }
+/* The row whose stat the trend chart is showing: the whole row is tinted
+   (a gradient overlay, so the cells' own percentile tint still shows through),
+   with an accent bar and bold name on the pinned stat cell. */
+.compare-table tr.compare-selected td,
+.compare-table tr.compare-selected th.compare-metric {
+  background-image: linear-gradient(color-mix(in srgb, var(--turf) 24%, transparent),
+                                    color-mix(in srgb, var(--turf) 24%, transparent)); }
+.compare-table tr.compare-selected th.compare-metric { color: var(--turf); font-weight: 700;
+  text-decoration: none; box-shadow: inset 4px 0 0 var(--turf); }
 @media (max-width: 560px) {
-  .compare-table th, .compare-table td { padding: 6px 4px; font-size: 13px; }
-  .compare-table thead th { font-size: 10px; }
+  .compare-table { min-width: calc(110px + var(--n, 2) * 96px); }
+  .compare-table th.compare-metric { padding: 6px 6px; font-size: 13px; }
+  .compare-table td.compare-cell { padding: 6px 4px; font-size: 13px; }
+  .compare-table .compare-player .pface { width: 36px; height: 36px; }
+  .compare-table .compare-player span, .compare-table .compare-player a { font-size: 11px; }
   .compare-table .compare-pct { font-size: 10px; }
 }
 

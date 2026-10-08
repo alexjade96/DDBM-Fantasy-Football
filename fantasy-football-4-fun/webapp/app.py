@@ -1274,8 +1274,7 @@ def chart(name: str, league: str = DEFAULT_LEAGUE, season: str | None = None,
         from webapp import player_compare as pc
 
         pos = (position or "RB").upper()
-        ids = [i for i in (player_ids or "").split(",") if i]
-        labels = [l for l in (player_labels or "").split(",") if l]
+        ids, labels = _split_picks(player_ids, player_labels)
         # Not named `sm`: that would shadow the sleepermetrics module for the whole
         # function, and every later `sm.` call (the playoff bracket charts) would
         # raise UnboundLocalError.
@@ -1926,6 +1925,19 @@ def nflstats_export_xlsx(view: str = _NFLSTATS_VIEW_DEFAULT, season: str | None 
 # a per-format leaderboard aggregation actually exists.
 _PLAYERCOMPARE_POS = ["QB", "RB", "WR", "TE", "K", "DEF"]
 _PLAYERCOMPARE_POS_DEFAULT = "RB"
+# The most players one comparison takes.  At 4 every chart rendered clean; at 5
+# and 6 the radar's per-spoke value lines collide and the trend chart's bands and
+# best/worst labels pile up (viewed 2026-10).  This is a trial value: it is the
+# only place the number lives (the page reads it from `max_players`).
+_PLAYERCOMPARE_MAX = 4
+
+
+def _split_picks(player_ids, player_labels):
+    """The comma-joined ids and labels of a request as two lists, trimmed to
+    the cap so a hand-edited URL cannot get past the page's own limit."""
+    ids = [i for i in (player_ids or "").split(",") if i]
+    labels = [l for l in (player_labels or "").split(",") if l]
+    return ids[:_PLAYERCOMPARE_MAX], labels[:_PLAYERCOMPARE_MAX]
 
 
 def _playercompare_params(position, season):
@@ -1955,6 +1967,7 @@ def playercompare(request: Request, position: str = _PLAYERCOMPARE_POS_DEFAULT,
     return tpl.TemplateResponse(request, "_playercompare_compare.html", {
         "asset_v": asset_v(), "position": pos, "season": sea,
         "positions": _PLAYERCOMPARE_POS, "seasons": seasons, "avatars": {},
+        "max_players": _PLAYERCOMPARE_MAX,
     })
 
 
@@ -1979,52 +1992,86 @@ def playercompare_data(request: Request, position: str = _PLAYERCOMPARE_POS_DEFA
     return tpl.TemplateResponse(request, "_playercompare_table.html", ctx)
 
 
+def _matrix_value(key: str, value, stat_mode: str) -> str:
+    """A matrix cell's value text.  Per game, a counting stat is a small
+    decimal (0.12 rec TD a game), and the whole-number format the leaderboard
+    uses printed every one of them as "0" while their percentiles differed, so
+    the row looked like unequal ties.  Per game uses the radar's per-game
+    format (two decimals under 10, one above, trailing zeros dropped); share
+    stats keep their 3-decimal form and totals stay whole numbers."""
+    if stat_mode == "per_game" and key not in plots._SHARE_STAT_KEYS:
+        return plots._format_pizza_tick_value(key, value, per_game=True)
+    return plots._format_stat_value(key, value)
+
+
 def _playercompare_table_ctx(pos: str, sea: str, ids: list[str], labels: list[str],
                              stat_mode: str = "per_game") -> dict:
-    """The 2-player metric-by-metric table's context (`rows` + the header
-    identity fields) -- shared by `playercompare_chart_section` (the initial
-    "Compare" render) and `playercompare_table` (the Total/Per game
-    toggle's own refresh, see that route's docstring for why the table needs
-    a SEPARATE endpoint from the charts). Pulled out as its own function so
-    the two routes can't drift: both call the identical `player_field_compare`
+    """The comparison MATRIX's context -- one row per stat, one cell per
+    player -- shared by `playercompare_chart_section` (the initial "Compare"
+    render) and `playercompare_table` (the Total/Per game toggle's own
+    refresh, see that route's docstring for why the table needs a SEPARATE
+    endpoint from the charts).  Both call the identical `player_field_compare`
     lookup and row-building logic, just with a different `stat_mode`.
 
-    Returns `{"rows": [...], "label_a", "label_b", "pid_a", "pid_b"}`, with
-    `rows` empty (and the pid/label fields blank) for anything other than
-    exactly 2 ids, or when either side's profile never resolved -- the
-    caller's template already treats an empty `rows` as "no table" (see
-    _playercompare_charts.html's own `{% if rows %}` guard).
+    Returns `{"players": [{"pid", "label"}, ...], "rows": [...]}`.  Each row is
+    `{"label", "trend_key", "cells": [cell or None, ...]}` with one entry per
+    player in order; a cell is `{"value", "pct", "lead", "heat", "amt"}`.
+    `lead` marks the best percentile in the row (every tied player; nobody
+    when fewer than two players have the stat or all are equal), and percentile
+    already folds in the stat's direction, so lowest points allowed leads.
+    `heat` ("pos" toward the best in the row, "neg" toward the worst, None for a
+    middle or all-equal cell) and `amt` (tint strength in percent, faint when the
+    players are close) drive the cell shading, relative to the compared players.  Rows follow the radar's grouped stat
+    order.  `rows` is empty for fewer than 2 ids or when no profile resolved.
     """
-    ctx = {"rows": [], "label_a": "", "label_b": "", "pid_a": "", "pid_b": ""}
-    if len(ids) != 2:
+    ctx = {"players": [{"pid": i, "label": l} for i, l in zip(ids, labels)], "rows": []}
+    if len(ids) < 2:
         return ctx
     from webapp import player_compare as pc
     profiles = pc.player_field_compare(sea, pos, ids, stat_mode=stat_mode)
-    prof_a, prof_b = profiles.get(ids[0]), profiles.get(ids[1])
-    ctx["label_a"], ctx["label_b"] = labels[0], labels[1]
-    # Player Comparison forces source="sleeper" throughout (see this
-    # module's own header comment), so `ids` ARE already real Sleeper
-    # player_ids -- no id-bridging needed for the table's headshots,
-    # unlike NFL Stats'/ADP's nflverse-sourced rows.
-    ctx["pid_a"], ctx["pid_b"] = ids[0], ids[1]
-    if prof_a and prof_b:
-        cols_b_by_key = {c["key"]: c for c in prof_b["columns"]}
-        for col_a in prof_a["columns"]:
-            col_b = cols_b_by_key.get(col_a["key"])
-            if col_b is None:
+    cols_by_player = []
+    for pid in ids:
+        prof = profiles.get(pid)
+        cols_by_player.append({c["key"]: c for c in prof["columns"]} if prof else {})
+    keys, label_of = [], {}
+    for cols in cols_by_player:
+        for k, c in cols.items():
+            if k not in label_of:
+                keys.append(k)
+                label_of[k] = c["label"]
+    for key in plots._grouped_spoke_order(keys, pos):
+        cells = []
+        for cols in cols_by_player:
+            c = cols.get(key)
+            if c is None:
+                cells.append(None)
                 continue
-            pct_a, pct_b = col_a["percentile"], col_b["percentile"]
-            ctx["rows"].append({
-                "label": col_a["label"],
-                # the metric this row charts when clicked (None: no weekly series)
-                "trend_key": col_a["key"] if pc.trend_raw_key(col_a["key"], pos) else None,
-                "a_value": plots._format_stat_value(col_a["key"], col_a["value"]),
-                "a_pct": pct_a,
-                "b_value": plots._format_stat_value(col_b["key"], col_b["value"]),
-                "b_pct": pct_b,
-                "a_better": pct_a > pct_b,
-                "b_better": pct_b > pct_a,
+            pct = c["percentile"]
+            cells.append({
+                "value": _matrix_value(key, c["value"], stat_mode),
+                "pct": pct, "lead": False, "heat": None, "amt": 0,
             })
+        have = [c for c in cells if c]
+        if len(have) >= 2:
+            top = max(c["pct"] for c in have)
+            low = min(c["pct"] for c in have)
+            spread = top - low
+            if spread > 0:
+                # Shade RELATIVE to the other players in this row: the best leans
+                # green, the worst red, the middle stays neutral.  A small gap
+                # (a few percentile points) is faint rather than a full tint.
+                strength = min(1.0, spread / 25)
+                for c in have:
+                    t = (c["pct"] - low) / spread
+                    c["lead"] = c["pct"] == top
+                    c["heat"] = "pos" if t >= 0.5 else "neg"
+                    c["amt"] = round(abs(t - 0.5) * 2 * 26 * strength)
+        ctx["rows"].append({
+            "label": label_of[key],
+            # the metric this row charts when clicked (None: no weekly series)
+            "trend_key": key if pc.trend_raw_key(key, pos) else None,
+            "cells": cells,
+        })
     return ctx
 
 
@@ -2052,15 +2099,12 @@ def playercompare_chart_section(request: Request, position: str = _PLAYERCOMPARE
     /playercompare/ instead of /chart/ sidesteps the collision structurally,
     rather than depending on registration order staying correct forever.
 
-    When exactly 2 players are selected, also builds `rows` -- a metric-by-
-    metric side-by-side table (Player A value | metric | Player B value),
-    the "ease of comparison" view for the 1-v-1 case the radar/trend charts
-    don't give you directly (a radar makes SHAPE comparable at a glance, not
-    exact numbers). Built from the same `player_field_compare()` profiles
-    the radar chart itself reads (see /chart/player_overlay above), so the
-    values always agree with what the radar plots. 3+ players skip this
-    entirely -- a 3-column table has no natural extension past 2 columns of
-    values, and the radar/trend charts already handle the N-player case.
+    Also builds `rows` -- a stat-by-player matrix (one row per stat, one
+    column per player, the best value in each row marked), the exact-numbers
+    view the radar does not give you.  Built from the same
+    `player_field_compare()` profiles the radar reads (see /chart/player_overlay
+    above), so the values always agree with what the radar plots.  Works for
+    any number of players; the template scrolls it.
 
     Always renders at `stat_mode="per_game"` (the toggle's own default) --
     the Total/Per game toggle refreshes the table separately afterward via
@@ -2068,16 +2112,13 @@ def playercompare_chart_section(request: Request, position: str = _PLAYERCOMPARE
     client-side without reloading this whole fragment.
     """
     pos, sea = _playercompare_params(position, season)
-    ids = [i for i in (player_ids or "").split(",") if i]
-    labels = [l for l in (player_labels or "").split(",") if l]
+    ids, labels = _split_picks(player_ids, player_labels)
     ctx = {
         "position": pos, "season": sea,
         "player_ids": ",".join(ids), "player_labels": ",".join(labels),
         "n_selected": len(ids),
     }
     ctx.update(_playercompare_table_ctx(pos, sea, ids, labels, stat_mode="per_game"))
-    from webapp import player_compare as pc
-    ctx["trend_choices"] = pc.trend_choices(pos)      # the dropdown, when there is no table to click
     return tpl.TemplateResponse(request, "_playercompare_charts.html", ctx)
 
 
@@ -2085,7 +2126,7 @@ def playercompare_chart_section(request: Request, position: str = _PLAYERCOMPARE
 def playercompare_table(request: Request, position: str = _PLAYERCOMPARE_POS_DEFAULT,
                         season: str | None = None, player_ids: str = "",
                         player_labels: str = "", stat_mode: str = "per_game"):
-    """Just the 2-player metric table's BODY ROWS (`<tr>`s, no `<table>`/
+    """Just the comparison matrix's BODY ROWS (`<tr>`s, no `<table>`/
     `<thead>`), for the Total/Per game toggle's own refresh -- a REAL,
     user-reported bug this route fixes: the toggle used to only rewrite the
     two chart `<img>` src's `stat_mode` query param client-side (no server
@@ -2106,8 +2147,7 @@ def playercompare_table(request: Request, position: str = _PLAYERCOMPARE_POS_DEF
     table's `<tbody>` in place, leaving the header untouched.
     """
     pos, sea = _playercompare_params(position, season)
-    ids = [i for i in (player_ids or "").split(",") if i]
-    labels = [l for l in (player_labels or "").split(",") if l]
+    ids, labels = _split_picks(player_ids, player_labels)
     sm = stat_mode if stat_mode in ("total", "per_game") else "per_game"
     ctx = _playercompare_table_ctx(pos, sea, ids, labels, stat_mode=sm)
     return tpl.TemplateResponse(request, "_playercompare_compare_table.html", ctx)

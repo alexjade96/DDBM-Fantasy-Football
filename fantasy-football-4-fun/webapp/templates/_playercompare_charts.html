@@ -25,40 +25,22 @@
    "Total"/"Per game" the same way from a reader's perspective, so one
    control drives all three rather than three that could drift out of sync.
 
-   Layout: a `.compare-header-row` sits ABOVE the metric table as its own
-   3-column flex/grid strip -- portrait+name | radar chart | portrait+name --
-   deliberately pulled OUT of the table's own <thead> (an earlier design had
-   it there) so the portraits and the radar chart can both render at a
-   generously large, fixed size without being constrained by the table's
-   `table-layout: fixed` column-width math (which exists to keep the METRIC
-   VALUE columns aligned, a different sizing job than "make the header
-   photogenic"). The plain <table> below has no header row of its own --
-   just <tbody> rows, Player A's value | metric name | Player B's value,
-   colored (.dv-pos/.dv-neg, the same green/red convention the rest of this
-   app uses for "beat the comparison") toward whichever side has the better
-   percentile at that stat.
+   Layout: the radar sits centered at the top (`.compare-header-radar`), then
+   a stat-by-player MATRIX: one row per stat, one column per player, for any
+   number of players.  Portraits and names are in the table's own <thead>, so
+   they stay pinned above the values while the matrix scrolls (it scrolls both
+   ways inside `.compare-matrix-scroll`, with the stat names pinned on the
+   left; see style.css).  Each cell is tinted by percentile and the best value
+   in a row is a filled pill.  Clicking a row with a weekly series charts that
+   stat in the trend chart below and highlights the row.  The trend line
+   renders as its own chart card BELOW the matrix.  If no profile resolved
+   (`rows` empty) the matrix is skipped and only the charts show.
 
-   The radar chart itself carries no legend (see plots.py's
-   plot_player_overlay snapshot branch) -- the PNG's own title names both
-   players directly ("Christian McCaffrey vs Jonathan Taylor", built by
-   app.py's chart route from `player_labels`), so the surrounding layout
-   doesn't need to restate who's who for the chart to read correctly on its
-   own.
-
-   The trend line renders as its own chart card BELOW the table (not beside
-   it -- the table is the primary view). 3+ players have no natural 2-sided
-   table layout, so `rows` is empty and BOTH the header row and the table
-   are skipped (see the `{% if rows %}` guard below); 3+ players still get
-   the radar (as a plain standalone chart card) and the trend chart,
-   unaffected by any of this.
-
-   `idm.headshot`/`idm.player_link` link each portrait/name to that
-   player's profile page -- `pid_a`/`pid_b` are already real Sleeper
-   player_ids (this whole tab forces source="sleeper", see
-   player_compare.py), so no id-bridging is needed the way NFL Stats/ADP
-   need for their nflverse-sourced rows. A player whose headshot 404s
-   degrades to plain text (`onerror="this.remove()"` in _ident.html), same
-   as every other headshot in this app. #}
+   `idm.headshot`/`idm.player_link` link each portrait/name to that player's
+   profile page -- the `pid`s are already real Sleeper player_ids (this whole
+   tab forces source="sleeper", see player_compare.py), so no id-bridging is
+   needed.  A headshot that 404s degrades to plain text (`onerror="this.
+   remove()"` in _ident.html), same as every other headshot in this app. #}
 {% if n_selected < 2 %}
 <p class="empty">Check at least 2 players above, then click
    <strong>Compare</strong>.</p>
@@ -70,50 +52,33 @@
     <button type="button" class="year" data-stat-mode="total">Total</button>
     <button type="button" class="year on" data-stat-mode="per_game">Per game</button>
   </nav>
-  {% if rows %}
-  <div class="compare-header-row">
-    <div class="compare-header-side">
-      {{ idm.headshot(pid_a, link=True) }}<span>{{ idm.player_link(pid_a, label_a) }}</span>
-    </div>
-    <div class="compare-header-radar">
-      <img data-chart="snapshot" class="compare-radar-img"
-           src="/chart/player_overlay?position={{ position }}&season={{ season }}&mode=snapshot&stat_mode=per_game&player_ids={{ player_ids|urlencode }}&player_labels={{ player_labels|urlencode }}"
-           alt="{{ position }} percentile comparison against the real-NFL field" loading="lazy">
-    </div>
-    <div class="compare-header-side">
-      {{ idm.headshot(pid_b, link=True) }}<span>{{ idm.player_link(pid_b, label_b) }}</span>
-    </div>
+  <div class="compare-header-radar">
+    <img data-chart="snapshot" class="compare-radar-img"
+         src="/chart/player_overlay?position={{ position }}&season={{ season }}&mode=snapshot&stat_mode=per_game&player_ids={{ player_ids|urlencode }}&player_labels={{ player_labels|urlencode }}"
+         alt="{{ position }} comparison against the real-NFL field" loading="lazy">
   </div>
-  <div class="tablewrap compare-3col">
-    <table class="compare-table">
+  {% if rows %}
+  {# `nosort`: keeps the shared table sorter (table-sort.js) off this matrix,
+     whose header cells are players, not sortable columns. #}
+  <div class="tablewrap compare-matrix-scroll nosort">
+    <table class="compare-table" style="--n: {{ players|length }}">
+      <thead>
+        <tr>
+          <th class="compare-corner" scope="col">Stat</th>
+          {% for p in players %}
+          <th class="compare-player" scope="col">
+            {{ idm.headshot(p.pid, link=True) }}<span>{{ idm.player_link(p.pid, p.label) }}</span>
+          </th>
+          {% endfor %}
+        </tr>
+      </thead>
       <tbody id="compare-table-body">
         {% include "_playercompare_compare_table.html" %}
       </tbody>
     </table>
   </div>
   <p class="hint">Click a stat to chart it week by week below; click it again to
-    return to PPR points.</p>
-  {% else %}
-  {# 3+ players (or a missing profile for one side): no 2-sided table, so the
-     radar still needs to render somewhere -- falls back to a plain chart
-     card, same as before this session's table redesign. #}
-  <figure class="card chart" style="aspect-ratio: 1 / 1">
-    <img data-chart="snapshot"
-         src="/chart/player_overlay?position={{ position }}&season={{ season }}&mode=snapshot&stat_mode=per_game&player_ids={{ player_ids|urlencode }}&player_labels={{ player_labels|urlencode }}"
-         alt="{{ position }} percentile comparison against the real-NFL field" loading="lazy">
-    <figcaption>Percentile at each stat against every real NFL
-      {{ position }} this season.</figcaption>
-  </figure>
-  {% endif %}
-  {% if not rows and trend_choices %}
-  {# No table to click with 3+ players: the same choice as a dropdown. #}
-  <div class="rail" style="margin-top: 16px">
-    <label class="k" for="trend-stat-select">Trend stat</label>
-    <select id="trend-stat-select">
-      <option value="">PPR points</option>
-      {% for key, label in trend_choices %}<option value="{{ key }}">{{ label }}</option>{% endfor %}
-    </select>
-  </div>
+    return to PPR points.  The filled value is the best in its row.</p>
   {% endif %}
   <figure class="card chart" style="aspect-ratio: 16 / 9; margin-top: 16px">
     <img data-chart="trend"
@@ -154,8 +119,6 @@
       root.querySelectorAll('tr[data-trend-stat]').forEach(function (tr) {
         tr.classList.toggle('compare-selected', tr.getAttribute('data-trend-stat') === trendStat);
       });
-      var sel = root.querySelector('#trend-stat-select');
-      if (sel) sel.value = trendStat;
     }
     function setTrendStat(stat) {
       trendStat = stat || '';
@@ -180,8 +143,6 @@
         var s = tr.getAttribute('data-trend-stat');
         setTrendStat(s === trendStat ? '' : s);
       });
-      var sel = card.querySelector('#trend-stat-select');
-      if (sel) sel.addEventListener('change', function () { setTrendStat(sel.value); });
     }
     var tableUrl = '/playercompare/table?position={{ position|urlencode }}&season={{ season|urlencode }}'
       + '&player_ids={{ player_ids|urlencode }}&player_labels={{ player_labels|urlencode }}';
@@ -215,6 +176,69 @@
         }
       });
     });
+
+    // Background prefetch: once the visible charts have loaded, quietly
+    // request the other Total / Per game versions of the radar and trend
+    // chart, and the trend chart for every clickable stat, so later toggles
+    // and row clicks find the PNG already rendered and cached.  URLs are
+    // built with the same string edits the click handlers above use, so the
+    // browser cache sees the identical URL.  One request at a time, only
+    // while no visible chart is still loading, and everything stops (and the
+    // in-flight request is aborted) when this fragment leaves the page.
+    if (!card || !window.fetch || !window.AbortController) return;
+    var ctrl = new AbortController();
+    var alive = function () { return card.isConnected; };
+    var guard = setInterval(function () {
+      if (!alive()) { clearInterval(guard); ctrl.abort(); }
+    }, 500);
+    window.addEventListener('pagehide', function () { ctrl.abort(); });
+
+    var radarImg = root.querySelector('img[data-chart="snapshot"]');
+    var withMode = function (src, mode) {
+      return src.replace(/([?&]stat_mode=)[^&]*/, '$1' + mode);
+    };
+    var withStat = function (src, stat) {
+      src = src.replace(/([?&])trend_stat=[^&]*&?/, '$1').replace(/[?&]$/, '');
+      return stat ? src + (src.indexOf('?') > -1 ? '&' : '?') + 'trend_stat=' + encodeURIComponent(stat) : src;
+    };
+    var stats = [];
+    root.querySelectorAll('tr[data-trend-stat]').forEach(function (tr) {
+      stats.push(tr.getAttribute('data-trend-stat'));
+    });
+    var visibleLoading = function () {
+      return Array.prototype.some.call(imgs, function (i) { return !(i.complete && i.naturalWidth); });
+    };
+
+    var buildQueue = function () {
+      var onBtn = rail.querySelector('button.on');
+      var cur = onBtn ? onBtn.getAttribute('data-stat-mode') : 'per_game';
+      var other = cur === 'per_game' ? 'total' : 'per_game';
+      var q = [];
+      if (radarImg) q.push(withMode(radarImg.src, other));
+      if (trendImg) {
+        var base = withStat(trendImg.src, '');
+        q.push(withMode(base, other));
+        stats.forEach(function (s) {
+          q.push(withMode(withStat(base, s), cur));
+          q.push(withMode(withStat(base, s), other));
+        });
+      }
+      return q;
+    };
+
+    var pump = function (queue) {
+      if (!alive() || ctrl.signal.aborted) return;
+      if (visibleLoading()) { setTimeout(function () { pump(queue); }, 800); return; }
+      var url = queue.shift();
+      if (!url) { clearInterval(guard); return; }
+      fetch(url, { signal: ctrl.signal }).then(function (r) {
+        return r.blob();   // read the body so the browser stores it
+      }).catch(function () {}).then(function () {
+        setTimeout(function () { pump(queue); }, 150);
+      });
+    };
+    // Start after the first charts have had a moment to paint.
+    setTimeout(function () { if (alive()) pump(buildQueue()); }, 1500);
   })();
 </script>
 {% endif %}

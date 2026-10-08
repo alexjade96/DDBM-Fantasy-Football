@@ -4555,11 +4555,18 @@ def _draw_spoke_values(ax, angles: list[float], keys: list[str], players: dict,
 
         ang = angles[k_idx]
         rot = -math.degrees(ang)
-        if 90 < rot % 360 < 270:
+        flipped = 90 < rot % 360 < 270
+        if flipped:
             rot += 180
         r = math.radians(rot)
         bx, by = math.cos(r), math.sin(r)          # along the baseline
         ux, uy = -math.sin(r), math.cos(r)         # the text's "up"
+        # The values always sit on the INNER side of the name.  On an upright
+        # label the text's up points outward, so "below the name" is inward; on
+        # a flipped label (bottom and left half) up points inward, so the same
+        # offset put the values OUTSIDE the name and the whole block sat
+        # farther from the radar than on the top half.
+        inward = 1 if not flipped else -1
         pos = -total / 2
         for (s, color, lead), w in zip(pieces, widths):
             d = pos + w / 2
@@ -4569,7 +4576,7 @@ def _draw_spoke_values(ax, angles: list[float], keys: list[str], players: dict,
                 # White on the player's own colour reads on both themes.
                 extra = {"bbox": {"boxstyle": "round,pad=0.22", "fc": color, "ec": "none"}}
             ax.annotate(s, xy=(ang, 112), xycoords="data",
-                        xytext=(d * bx - line_gap * ux, d * by - line_gap * uy),
+                        xytext=(d * bx - inward * line_gap * ux, d * by - inward * line_gap * uy),
                         textcoords="offset points", annotation_clip=False,
                         rotation=rot,
                         rotation_mode="anchor", ha="center", va="center",
@@ -4945,20 +4952,10 @@ def plot_player_overlay(players: dict, stat_keys: list[str], mode: str = "snapsh
         # is ignored here in favor of building the title straight from what
         # was actually drawn, so the two can never disagree.
         _colored_vs_title(fig, drawn_names, colors)
-        per_game = stat_mode == "per_game"
-        subtitle = ("Each spoke: rings step evenly from the lowest to the highest "
-                    "value among real NFL players at this position")
-        if position:
-            subtitle = ("Each spoke: rings step evenly from the lowest to the highest "
-                        f"value among real NFL {position}s")
-        subtitle += (" (per-game rates)" if per_game else " (season totals)")
-        subtitle += ".  A filled value is the best in its category."
-        runs = _spoke_group_runs(keys)
-        if len(runs) > 1:
-            subtitle += "\nGroups, clockwise from the top: " + " | ".join(n for n, _a, _b in runs)
+        subtitle = "Filled value = best in category"
         fig.text(0.5, 0.962, subtitle, fontsize=9, color=T["muted"], ha="center", va="top")
         fig.patch.set_facecolor(T["bg"])
-        fig.tight_layout(rect=(0, 0.02, 1, 0.88 if len(runs) > 1 else 0.90))
+        fig.tight_layout(rect=(0, 0.02, 1, 0.90))
         return fig
 
     if mode == "trend":
@@ -4970,6 +4967,7 @@ def plot_player_overlay(players: dict, stat_keys: list[str], mode: str = "snapsh
         any_drawn = False
         stat_label = _TREND_LABELS.get(stat_key, stat_key.replace("_", " "))
         ends = []                      # (name, last x, last y, label) for the direct labels
+        drawn_x = []                   # every week plotted (axhline spans must not count)
         for name, rows in players.items():
             pts = [(r["week"], r[stat_key]) for r in (rows or [])
                    if stat_key in r and r[stat_key] is not None]
@@ -4979,6 +4977,7 @@ def plot_player_overlay(players: dict, stat_keys: list[str], mode: str = "snapsh
             xs = [p[0] for p in pts]
             ys = [p[1] for p in pts]
             weekly = list(ys)
+            drawn_x.extend(xs)
             # "Total" mode draws the running season total (a cumulative sum
             # through that week) rather than each week's own value -- the
             # per-game (weekly) reading is the default/base data already
@@ -5001,8 +5000,36 @@ def plot_player_overlay(players: dict, stat_keys: list[str], mode: str = "snapsh
                         py.append(float("nan"))
                     px.append(x)
                     py.append(y)
-            ax.plot(px, py, color=colors[name], linewidth=2, marker="o",
-                    markersize=4, label=name)
+            if cumulative:
+                ax.plot(px, py, color=colors[name], linewidth=2, marker="o",
+                        markersize=4, label=name)
+            else:
+                # Per game: shaded middle half of games behind, the faint
+                # weekly line, a bold 3-game rolling average, the dashed
+                # season average, and the best and worst week ringed.
+                c = colors[name]
+                ax.axhspan(_pct(weekly, .25), _pct(weekly, .75), color=c,
+                           alpha=0.07, zorder=0)
+                ax.plot(px, py, color=c, linewidth=1, alpha=0.35, marker="o",
+                        markersize=3, label=name)
+                roll = [sum(weekly[max(0, i - 2):i + 1]) / len(weekly[max(0, i - 2):i + 1])
+                        for i in range(len(weekly))]
+                ax.plot(xs, roll, color=c, linewidth=2.8, zorder=3)
+                ax.axhline(sum(weekly) / len(weekly), color=c, linewidth=1.1,
+                           linestyle="--", alpha=0.75)
+                hi_i, lo_i = weekly.index(max(weekly)), weekly.index(min(weekly))
+                for i, word in ((hi_i, "best"), (lo_i, "worst")):
+                    if hi_i == lo_i and word == "worst":
+                        continue
+                    ax.scatter([xs[i]], [weekly[i]], s=130, facecolors="none",
+                               edgecolors=c, linewidths=2, zorder=5)
+                    ax.annotate(f"{word} {_fmt_trend(weekly[i])} (wk {xs[i]})",
+                                (xs[i], weekly[i]),
+                                xytext=(0, 11 if word == "best" else -15),
+                                textcoords="offset points", ha="center",
+                                fontsize=7.5, color=c, fontweight="bold",
+                                bbox=dict(boxstyle="round,pad=0.2", fc=T["bg"],
+                                          ec="none", alpha=0.85))
             tail = (f"avg {_fmt_trend(sum(weekly) / len(weekly))}" if not cumulative
                     else _fmt_trend(ys[-1]))
             ends.append((name, xs[-1], ys[-1], f"{name}  ({tail})"))
@@ -5013,16 +5040,12 @@ def plot_player_overlay(players: dict, stat_keys: list[str], mode: str = "snapsh
         ax.set_facecolor(T["bg"])
         chart_title = f"{title}: {stat_label}" if title else stat_label
         if cumulative:
-            chart_title += " (season total)"
             stat_label = f"Cumulative {stat_label}"
-        else:
-            chart_title += " (per game)"
         _finish(fig, ax, chart_title, xlabel="Week",
                ylabel=stat_label, grid_axis="both")
         # Whole-number week ticks, and each line labelled at its right end
         # (name and season average, or final total) in place of a legend.
-        all_x = [x for _n, x, _y, _l in ends] + [x for ln in ax.get_lines() for x in ln.get_xdata()
-                                                if x == x]
+        all_x = drawn_x
         lo, hi = int(min(all_x)), int(max(all_x))
         ax.set_xticks(list(range(lo, hi + 1)) if hi - lo <= 22 else
                       list(range(lo, hi + 1, 2)))
@@ -5045,3 +5068,12 @@ def plot_player_overlay(players: dict, stat_keys: list[str], mode: str = "snapsh
     return _no_data(f"Unrecognized chart mode: {mode!r}.")
 
 
+def _pct(vals: list, q: float) -> float:
+    """Linear-interpolated percentile (q in 0..1) of a non-empty list."""
+    s = sorted(vals)
+    if len(s) == 1:
+        return float(s[0])
+    pos = q * (len(s) - 1)
+    lo = int(pos)
+    hi = min(lo + 1, len(s) - 1)
+    return float(s[lo] + (s[hi] - s[lo]) * (pos - lo))

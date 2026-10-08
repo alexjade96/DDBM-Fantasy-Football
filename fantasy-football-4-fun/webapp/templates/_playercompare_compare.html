@@ -87,7 +87,7 @@
 
   {# The board does NOT auto-load -- opening this tab shows only the
      controls. Every load (first included) comes from clicking Load. #}
-  <div id="playercompare-board">
+  <div id="playercompare-board" data-max="{{ max_players or 4 }}">
     <p class="hint">Choose a position and season, then click <strong>Load</strong>.</p>
   </div>
   {# Selected-players chip strip (promoted from the Testing tab's "chip
@@ -97,6 +97,8 @@
      in the fixed controls row above, unaffected by whether any chips are
      showing (same "agnostic to the table" placement the demo settled on). #}
   <div class="playercompare-chips" id="playercompare-chip-strip" hidden></div>
+  {# Shown only while the cap is reached; see sync() below. #}
+  <p class="hint playercompare-cap-note" id="playercompare-cap-note" hidden></p>
 </section>
 
 <div id="playercompare-charts"></div>
@@ -125,6 +127,21 @@
         // `disabled` state changes, and it changes for BOTH on the
         // IDENTICAL condition (n < 2) so they become clickable at the same
         // moment, never one before the other.
+        var max = parseInt(board.dataset.max, 10) || 4;
+        var atCap = n >= max;
+        // At the cap the unticked boxes lock (their rows dim) until one is
+        // unticked; a ticked box is never locked, so a pick can always be undone.
+        boxes.forEach(function (b) {
+          b.disabled = atCap && !b.checked;
+          var tr = b.closest('tr');
+          if (tr) tr.classList.toggle('playercompare-row-locked', b.disabled);
+        });
+        var capNote = document.getElementById('playercompare-cap-note');
+        if (capNote) {
+          capNote.hidden = !atCap;
+          capNote.textContent = atCap
+            ? max + ' of ' + max + ' selected.  Untick one to swap in another player.' : '';
+        }
         var usable = n >= 2;
         btn.disabled = !usable;
         if (clearBtn) clearBtn.disabled = !usable;
@@ -225,6 +242,19 @@
       });
     };
 
+    // Position/Season the board on screen was loaded with. The picked
+    // player ids belong to THAT board, so Compare must send these, not the
+    // dropdowns' current values (changing a dropdown only stages the next
+    // Load; reading it live sent RB ids with position=WR and found nothing).
+    var loaded = null;
+    controls.addEventListener('htmx:configRequest', function (e) {
+      if (e.detail.path !== '/playercompare/data') return;
+      loaded = {
+        position: e.detail.parameters.position,
+        season: e.detail.parameters.season,
+      };
+    });
+
     wireCheckboxes();
     document.body.addEventListener('htmx:afterSwap', function (e) {
       if (e.target === board) { wireCheckboxes(); charts.innerHTML = ''; }
@@ -238,10 +268,11 @@
       var ids = boxes.map(function (b) { return b.value; }).join(',');
       var labels = boxes.map(function (b) { return b.dataset.label; }).join(',');
       var form = new FormData(controls);
+      var src = loaded || { position: form.get('position'), season: form.get('season') };
       window.htmx.ajax('GET', '/playercompare/compare', {
         target: '#playercompare-charts', swap: 'innerHTML',
         values: {
-          position: form.get('position'), season: form.get('season'),
+          position: src.position, season: src.season,
           player_ids: ids, player_labels: labels,
         },
       });
