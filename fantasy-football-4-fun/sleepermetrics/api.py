@@ -70,7 +70,21 @@ def sleeper_adp(season) -> list:
     url, params = adp_request(season)
     resp = _get_session().get(url, params=params, timeout=30)
     resp.raise_for_status()
-    return resp.json()
+    data = resp.json()
+    _keep_raw_adp(season, resp.content)     # the complete answer, before draft.py trims it
+    return data
+
+
+def _keep_raw_adp(season, content: bytes) -> None:
+    """data/sources/adp/sleeper/raw/raw_<season>.json.gz (not on Render)."""
+    try:
+        from repo_paths import SOURCES_DIR, on_render
+        if on_render():
+            return
+        from .rawfile import save_gz
+        save_gz(SOURCES_DIR / "adp" / "sleeper" / "raw" / f"raw_{season}.json.gz", content)
+    except Exception:
+        pass
 
 
 def adp_request(season) -> tuple[str, list]:

@@ -19,6 +19,8 @@ Historical depth: FFC has real data from 2010 on (2009 and earlier error).
 """
 from __future__ import annotations
 
+import json
+
 from . import api, cache
 from .base import AdpProvider, AdpRow
 
@@ -71,6 +73,9 @@ class FfcAdp(AdpProvider):
         rows: list[dict] | None = None
         if not reload:
             rows = cache.load(self.name, season, variant=fmt)
+        if not rows and not reload:
+            rows = cache.from_raw(self.name, season,
+                                  lambda b: _trim(json.loads(b)["players"]), variant=fmt)
         if not rows:
             try:
                 rows = _trim(api.ffc_adp(season, fmt))

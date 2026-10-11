@@ -26,7 +26,7 @@ from urllib.parse import quote
 
 import matplotlib
 from fastapi import FastAPI, Query, Request
-from fastapi.responses import HTMLResponse, JSONResponse, Response
+from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
@@ -39,6 +39,7 @@ from sleepermetrics import draft, metrics, plots, scoring, summaries  # noqa: E4
 # Aliased: the `/report` route function below would otherwise shadow the module.
 from sleepermetrics import report as sm_report  # noqa: E402
 from webapp import assetcache  # noqa: E402
+from webapp import loadmeter  # noqa: E402
 from webapp import refresher as _refresher  # noqa: E402
 
 BASE = Path(__file__).resolve().parent
@@ -119,14 +120,46 @@ async def _stamp_asset_version(request: Request, call_next):
     if counted:
         assetcache.request_started()
     token = assetcache.if_none_match.set(request.headers.get("if-none-match"))
+    # Local development only (see loadmeter.enabled): count the network calls
+    # this request causes and report them in X-Load-* headers and at /loadmeter.
+    meter = None
+    if counted and loadmeter.enabled() and not path.startswith("/loadmeter"):
+        loadmeter.ensure_installed()
+        meter = loadmeter.request(f"{request.method} {path}")
+        m = meter.__enter__()
     try:
         resp = await call_next(request)
     finally:
         assetcache.if_none_match.reset(token)
         if counted:
             assetcache.request_finished()
+        if meter is not None:
+            meter.__exit__(None, None, None)
+    if meter is not None:
+        resp.headers["X-Load-Calls"] = str(len(m.calls))
+        resp.headers["X-Load-MB"] = f"{m.total_bytes() / 1e6:.2f}"
+        resp.headers["X-Load-Net-Seconds"] = f"{m.total_seconds():.2f}"
     resp.headers["X-Asset-V"] = asset_v()
     return resp
+
+
+@app.get("/loadmeter")
+def loadmeter_view(request: Request, format: str = "json", limit: int = 50):
+    """Recent requests and the network calls each caused.  Local only: it is
+    not available on Render (the meter is off there) and refuses any client
+    that is not this machine."""
+    host = request.client.host if request.client else ""
+    if not loadmeter.enabled() or host not in ("127.0.0.1", "::1", "localhost"):
+        return JSONResponse({"error": "not found"}, status_code=404)
+    data = loadmeter.recent(limit)
+    if format == "text":
+        lines = [f"{r['calls']:>3} calls {r['bytes'] / 1e6:>7.2f} MB "
+                 f"{r['network_seconds']:>6.1f}s net {r['elapsed_seconds']:>6.1f}s total  "
+                 f"{r['label']}" for r in data["requests"]]
+        lines.append(f"background (no request): {data['background']['calls']} calls, "
+                     f"{data['background']['bytes'] / 1e6:.2f} MB")
+        return PlainTextResponse(chr(10).join(lines) + chr(10))
+    return JSONResponse(data, headers={"Cache-Control": "no-store"})
 
 
 @app.get("/refresh/status")

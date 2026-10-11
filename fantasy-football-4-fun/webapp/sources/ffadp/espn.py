@@ -10,13 +10,17 @@ therefore does not change the ESPN column.
 
 Snapshot-first: fetch() reads data/sources/adp/espn/<year>.json (trimmed to
 id/name/pos/adp) and only pulls the ~20 MB live payload when that snapshot is
-missing or `reload=True`. Degrades to [] when both are unavailable -- the
+missing or `reload=True`. A past season ESPN answered with nothing (2019, 2025) is stored as an empty
+list, which counts as "already checked" and is not downloaded again unless
+`reload=True`.  Degrades to [] when both are unavailable -- the
 board just drops the ESPN column.
 
 Historical depth: ESPN returns real ADP for ~2015..present, with gaps some
 years (e.g. 2019, 2025 come back all-sentinel).
 """
 from __future__ import annotations
+
+import json
 
 from repo_paths import on_render
 
@@ -33,6 +37,18 @@ _POS = {1: "QB", 2: "RB", 3: "WR", 4: "TE", 5: "K", 16: "DEF"}
 _SENTINEL = 168.0
 
 EARLIEST = 2004
+
+
+def _is_past_season(season: str) -> bool:
+    """True once the season's draft is over, so an empty ESPN answer for it
+    is final (a current or future season may simply not have ADP yet)."""
+    from datetime import date
+    today = date.today()
+    current = today.year if today.month >= 3 else today.year - 1
+    try:
+        return int(season) < current
+    except (TypeError, ValueError):
+        return False
 
 
 def _trim(raw: list) -> list[dict]:
@@ -72,16 +88,29 @@ class EspnAdp(AdpProvider):
         # Snapshot first, unless a reload is asked for.
         if not reload:
             rows = cache.load(self.name, season)
+        if rows == [] and not reload:
+            # Checked before and ESPN had nothing for this past season
+            # (2019, 2025: all-sentinel).  Do not download ~20 MB again.
+            return []
         if not rows and on_render() and not reload:
             # Render's 512MB instances: the live feed is ~20MB of JSON, and a
             # season with no usable ADP (2019, 2025: all-sentinel) never gets
             # a snapshot, so every call would re-download it. Only the ADP
             # tab's Refresh (reload=True) pulls live there.
             return []
+        if not rows and not reload:
+            rows = cache.from_raw(self.name, season, lambda b: _trim(json.loads(b)))
+            if rows is None and _is_past_season(season) \
+                    and cache.load_raw(self.name, season) is not None:
+                # raw is there and trims to nothing (2019, 2025): final
+                cache.save(self.name, season, [])
+                return []
         if not rows:
             try:
                 rows = _trim(api.espn_players(season))
-                if rows:
+                # Store an empty answer for a past season too, as a "checked,
+                # nothing there" marker so the next load skips the download.
+                if rows or _is_past_season(season):
                     cache.save(self.name, season, rows)
             except Exception:
                 rows = None

@@ -222,6 +222,113 @@ that a linear chart over the basic keys can't express; this is the same reason
 Not league-specific, not a parity artifact, hand-verified once and stable.
 Python-only for now.
 
+## Raw layer (`nflverse/raw/`)
+
+`data/sources/nflverse/raw/<release>/<asset>` holds each nflverse release file
+exactly as downloaded, for example `raw/player_stats/player_stats_2024.parquet`
+or `raw/schedules/games.parquet`.  The per-dataset folders next to it
+(`nflverse/<dataset>/<year>.parquet`) are DERIVED from these: trimmed to the
+columns the app uses.  Keeping the complete file means a change to what we
+derive needs no download.
+
+* A download stores the raw file first (`api.read_release_parquet`), then the
+  derived snapshot is built from it.  A missing derived snapshot is rebuilt from
+  the raw file with no network (`api.fetch_release_parquet`).
+* A refresh (`reload=True`) downloads again and replaces the raw file.  An
+  all-seasons file (schedules, Next Gen Stats) downloaded in the last 10
+  minutes by the same process is reused, so refreshing every season of it is
+  one download.
+* `pbp/play_by_play_<year>.parquet` (about 20 MB a season) and
+  `pbp_participation/pbp_participation_<year>.parquet` (3 to 5 MB) are kept raw
+  too, by decision (2026-10-10): 2016 to 2026 for play-by-play (2026 is partial and
+  grows weekly), 2016 to 2025 for participation (the 2026 file is not published
+  while the season runs).  `route_participation` is built from them and now reads
+  only the columns it uses.  `api.store_release` downloads one without parsing it.
+  Fetch them with `tools/dev/backfill_raw.py --only route_participation --include-pbp`
+  (about 250 MB).
+* Render never writes raw files (`on_render()`); the committed ones ship in the
+  image.
+* `raw/manifest.json` records each file's URL, fetch time and size.
+* `tools/dev/backfill_raw.py` downloads the raw file for every season already
+  derived on disk (83 files, about 14 MB at the time of writing).  Checked once:
+  rebuilding all 140 derived snapshots from raw, with the network disabled,
+  reproduced 138 exactly; the other two (schedules 2025 and 2026) differ only
+  where upstream has changed since the derived copy was written.
+
+See `docs/data-loading-refactor-plan.md` for the plan covering the other sources.
+
+## Raw layer for the Sleeper weekly feed (`sleeper_stats/raw/`)
+
+`data/sources/sleeper_stats/raw/<season>/week_<week>.json.gz` is the whole
+`/stats/nfl/regular/<season>/<week>` response (about 85 keys per player),
+gzip-compressed (about 0.06 MB a week; 180 weeks are 10.4 MB).  The trimmed
+usage files next to it (`<season>/week_<week>.json`) are derived from it.
+
+* `sleepermetrics.scoring.nfl_stats` is the one function that reads the feed.
+  It checks memory, then the raw week, then Sleeper, and stores what Sleeper
+  sends.  Everything else (`nflstats.raw_week`, the lineup scoring, the ADP
+  finish ranks, the kicker and defense rows on the team page) goes through it,
+  so each week is downloaded once.
+* An EMPTY answer is stored as a marker so it is not asked for again: final for a
+  past season (week 18 in 2016 to 2020, which those seasons never had), and
+  trusted for 6 hours for the current season (the week may not be played yet).
+* `nfl_stats(..., reload=True)` and `nflstats.raw_week(..., reload=True)` ask
+  Sleeper again and replace the raw week.
+* Render does not write raw files; the committed ones ship in the image.
+* `tools/dev/backfill_sleeper_raw.py` downloads the raw week for every week
+  already derived on disk.  Checked once: rebuilding the 180 trimmed files from
+  raw with the network blocked reproduced 179 exactly; 2026 week 4 differs
+  because the raw copy was downloaded after the trimmed one, so it is newer
+  (cause inferred, not confirmed).
+
+## Raw layer for ADP (`adp/<provider>/raw/`)
+
+Each ADP provider's response is kept exactly as received, gzip-compressed, before
+it is trimmed into the snapshots described above:
+
+```
+adp/sleeper/raw/raw_<season>.json.gz           Sleeper's own ADP (draft.py trims it)
+adp/espn/raw/raw_<season>.json.gz              the full ESPN player list (about 4 MB a season from 2018; under 0.4 MB before)
+adp/ffc/raw/<format>/raw_<season>.json.gz      std, half_ppr, ppr, 2qb
+adp/yahoo/raw/raw_<season>.json.gz             a JSON list of the page bodies (Yahoo is fetched in pages)
+adp/cbs/raw/raw_<season>.html.gz               the draft-averages page
+adp/rotowire/raw/<PPR|Standard>/raw_<season>.json.gz
+```
+
+* Written by the API functions on every successful live fetch (`ffadp/api.py`,
+  `sleepermetrics/api.py`), never on Render.
+* CBS and RotoWire serve only the current season, so the copy kept per season is
+  the latest one: an earlier year cannot be fetched again.
+* The `raw_` prefix keeps the season scanners (four-digit file names) from reading
+  these as snapshots.
+* A missing snapshot is rebuilt from the raw response with no network
+  (`ffadp.cache.from_raw`; Sleeper's own ADP in `draft._fetch_adp_raw`).  Not on
+  Render, where a 28 MB ESPN response should not be parsed on a 512 MB instance.
+  A refresh (`reload=True`) still goes to the provider.  Sleeper's ADP for a past
+  season is now read from the stored snapshot or raw and no longer asks Sleeper
+  each process (the current season still does).
+* ESPN: a past season whose raw response trims to nothing (2019, 2025) is stored
+  as an empty snapshot, the "checked, nothing there" marker.
+* `tools/dev/backfill_adp_raw.py` fetched all 92 responses for the seasons that had
+  snapshots (44.0 MB in total, 2026 ESPN being the largest at 8.2 MB).  Checked
+  once: re-trimming 84 of the stored responses reproduced 79 snapshots exactly.  The
+  five that differ are upstream drift since the snapshot was written: ESPN 2026
+  (363 against 372 rows), both RotoWire 2026 tables (live), and one player's `team`
+  in Yahoo 2023 and 2025 (Yahoo reports the current team, not the one at the time).
+  Those causes are inferred from the differing fields, not confirmed with the
+  providers.  Sleeper's own ADP and CBS were not part of this check.
+
+## Checking that nothing is pulled live
+
+`tools/dev/offline_check.py` runs the NFL-data actions with the network switched
+off (leaderboards, schedule, every nflverse dataset, route participation, player
+and team profiles, Player Comparison, the ADP board, the ADP finish ranks) and
+reports any that still tried to reach it.  `--state raw-only` first deletes every
+derived snapshot in a temporary copy, so it shows what rebuilds from raw alone.
+Result on 2026-10-10 (raw-only): everything rebuilt from raw; the only attempts
+were Sleeper's `/state/nfl` lookup (which season and week it is; it is not stored
+by design) and the 2026 participation file, which nflverse has not published.
+
 ## What is committed, and how to keep it current
 
 Everything under `adp/`, `sleeper_stats/` and `nflverse/` is committed (about

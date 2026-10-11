@@ -217,3 +217,107 @@ def test_player_leaderboard_def_empty_when_no_lines(monkeypatch, tmp_path):
     nflstats.clear_cache()
     df = nflstats.player_leaderboard("2025", pos="DEF")
     assert df.empty
+
+
+# --- raw layer: the complete Sleeper week is stored once -------------------
+
+@pytest.fixture
+def raw_env(monkeypatch, tmp_path):
+    from sleepermetrics import scoring
+    monkeypatch.setattr(scoring, "SOURCES_DIR", tmp_path)
+    scoring._stats_cache.clear()
+    calls = []
+    answer = {"p1": {"rec": 5.0, "an_unused_key": 1.0, "rec_tgt": 8.0}, "AAA": {"pts_allow": 17.0}}
+    monkeypatch.setattr(scoring, "sleeper_api",
+                        lambda path: calls.append(path) or dict(answer))
+    yield scoring, calls, answer, tmp_path
+    scoring._stats_cache.clear()
+
+
+def test_first_call_downloads_and_keeps_the_complete_week(raw_env):
+    scoring, calls, answer, root = raw_env
+    got = scoring.nfl_stats("2024", 3)
+    assert got == answer and calls == ["/stats/nfl/regular/2024/3"]
+    import gzip
+    stored = json.loads(gzip.open(root / "sleeper_stats/raw/2024/week_3.json.gz", "rt").read())
+    assert stored == answer                      # every key, not a trimmed subset
+
+
+def test_second_process_reads_raw_without_the_network(raw_env):
+    scoring, calls, answer, root = raw_env
+    scoring.nfl_stats("2024", 3)
+    scoring._stats_cache.clear()                 # a new process
+    assert scoring.nfl_stats("2024", 3) == answer
+    assert len(calls) == 1
+
+
+def test_reload_asks_sleeper_again_and_replaces_raw(raw_env):
+    scoring, calls, answer, root = raw_env
+    scoring.nfl_stats("2024", 3)
+    answer["p1"]["rec"] = 9.0
+    assert scoring.nfl_stats("2024", 3, reload=True)["p1"]["rec"] == 9.0
+    scoring._stats_cache.clear()
+    assert scoring.nfl_stats("2024", 3)["p1"]["rec"] == 9.0 and len(calls) == 2
+
+
+def test_an_empty_past_week_is_remembered_and_not_asked_again(raw_env):
+    scoring, calls, answer, root = raw_env
+    answer.clear()
+    assert scoring.nfl_stats("2016", 18) == {}            # a week that season never had
+    scoring._stats_cache.clear()
+    assert scoring.nfl_stats("2016", 18) == {}
+    assert len(calls) == 1                                 # marker, no second ask
+    assert (root / "sleeper_stats/raw/2016/week_18.json.gz").exists()
+
+
+def test_an_empty_current_season_week_is_rechecked_after_a_while(raw_env, monkeypatch):
+    import os, time
+    scoring, calls, answer, root = raw_env
+    year = str(scoring._current_nfl_season())
+    answer.clear()
+    scoring.nfl_stats(year, 17)
+    scoring._stats_cache.clear()
+    scoring.nfl_stats(year, 17)
+    assert len(calls) == 1                                 # trusted while fresh
+    p = root / f"sleeper_stats/raw/{year}/week_17.json.gz"
+    old = time.time() - 7 * 3600
+    os.utime(p, (old, old))
+    scoring._stats_cache.clear()
+    answer["p1"] = {"rec": 1.0}                            # the week has now been played
+    assert scoring.nfl_stats(year, 17) == {"p1": {"rec": 1.0}} and len(calls) == 2
+
+
+def test_render_does_not_write_raw(raw_env, monkeypatch):
+    scoring, calls, answer, root = raw_env
+    monkeypatch.setattr(scoring, "on_render", lambda: True)
+    scoring.nfl_stats("2024", 5)
+    assert not (root / "sleeper_stats/raw").exists()
+
+
+def test_raw_week_derives_trimmed_usage_from_the_stored_raw_week(raw_env, monkeypatch, tmp_path):
+    scoring, calls, answer, root = raw_env
+    scoring.nfl_stats("2024", 3)
+    scoring._stats_cache.clear()
+    monkeypatch.setattr(nflstats, "_STATS_DIR", tmp_path / "trimmed")
+    nflstats._week_cache.clear()
+    monkeypatch.setattr(nflstats, "players", lambda: pd.DataFrame({
+        "player_id": ["p1"], "player_name": ["P"], "position": ["WR"], "team": ["AAA"]}))
+    out = nflstats.raw_week("2024", 3)
+    assert out == {"p1": {"rec": 5.0, "rec_tgt": 8.0}} and len(calls) == 1   # no 2nd download
+    assert "an_unused_key" not in out["p1"]
+
+
+def test_refresher_path_raw_week_reload_replaces_the_stored_raw_week(raw_env, monkeypatch, tmp_path):
+    """webapp.refresher._do_sleeper calls raw_week(reload=True); that must reach
+    Sleeper again AND replace the raw copy, so a refresh keeps raw current."""
+    scoring, calls, answer, root = raw_env
+    monkeypatch.setattr(nflstats, "_STATS_DIR", tmp_path / "trimmed")
+    nflstats._week_cache.clear()
+    monkeypatch.setattr(nflstats, "players", lambda: pd.DataFrame({
+        "player_id": ["p1"], "player_name": ["P"], "position": ["WR"], "team": ["AAA"]}))
+    nflstats.raw_week("2024", 3)
+    answer["p1"]["rec"] = 11.0
+    nflstats.raw_week("2024", 3, reload=True)
+    assert len(calls) == 2
+    scoring._stats_cache.clear()
+    assert scoring.nfl_stats("2024", 3)["p1"]["rec"] == 11.0      # raw was replaced

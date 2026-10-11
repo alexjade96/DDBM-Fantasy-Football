@@ -1,7 +1,19 @@
 """Network-free tests for the cross-platform ADP layer (fantasy-football-4-fun/webapp/sources/ffadp)."""
+import pytest
+
 import webapp.sources.ffadp as ffadp
-from webapp.sources.ffadp import board, identity
+from webapp.sources.ffadp import board, cache as _adp_cache, identity
 from webapp.sources.ffadp.base import AdpProvider, AdpRow
+
+
+@pytest.fixture(autouse=True)
+def _empty_adp_folder(monkeypatch, tmp_path):
+    """Providers now rebuild a missing snapshot from the stored raw response, so
+    these tests must not see the repository's real data/sources/adp/ files."""
+    monkeypatch.setattr(_adp_cache, "_ADP_DIR", tmp_path / "adp")
+    _adp_cache._mem.clear()
+    yield
+    _adp_cache._mem.clear()
 
 
 # --- identity ---------------------------------------------------------------
@@ -849,3 +861,34 @@ def test_adp_data_route_renders_player_portrait(monkeypatch):
     assert 'class="pface" src="https://sleepercdn.com/content/nfl/players/100.jpg"' in body
     assert "Ja&#39;Marr Chase" in body or "Ja'Marr Chase" in body
     identity.reset()
+
+
+def test_espn_checked_empty_past_season_is_not_downloaded_again(monkeypatch):
+    from webapp.sources.ffadp import espn, cache
+    cache.clear()
+    saved, live = {}, []
+    monkeypatch.setattr(cache, "load", lambda src, sea, force=False: saved.get(sea))
+    monkeypatch.setattr(cache, "save", lambda src, sea, rows, variant=None: saved.__setitem__(sea, rows))
+    monkeypatch.setattr(espn.api, "espn_players",
+                        lambda season: live.append(season) or [])   # all-sentinel -> []
+    p = espn.EspnAdp()
+    assert p.fetch("2019", "ppr") == []          # first call checks ESPN
+    assert saved == {"2019": []}                  # and remembers it was empty
+    assert p.fetch("2019", "ppr") == []          # second call: no download
+    assert live == ["2019"]
+    p.fetch("2019", "ppr", reload=True)          # an explicit refresh still asks
+    assert live == ["2019", "2019"]
+    cache.clear()
+
+
+def test_espn_empty_answer_for_current_or_future_season_is_not_remembered(monkeypatch):
+    from webapp.sources.ffadp import espn, cache
+    cache.clear()
+    saved, live = {}, []
+    monkeypatch.setattr(cache, "load", lambda src, sea, force=False: saved.get(sea))
+    monkeypatch.setattr(cache, "save", lambda src, sea, rows, variant=None: saved.__setitem__(sea, rows))
+    monkeypatch.setattr(espn.api, "espn_players", lambda season: live.append(season) or [])
+    p = espn.EspnAdp()
+    p.fetch("2099", "ppr"); p.fetch("2099", "ppr")
+    assert saved == {} and live == ["2099", "2099"]   # ADP may simply not exist yet
+    cache.clear()

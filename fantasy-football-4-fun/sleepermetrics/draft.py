@@ -734,6 +734,71 @@ def _adp_snapshot_path(season) -> Path:
     return _ADP_CACHE_DIR / f"{season}.json"
 
 
+def _adp_season_is_past(season) -> bool:
+    from datetime import date
+    d = date.today()
+    try:
+        return int(season) < (d.year if d.month >= 3 else d.year - 1)
+    except (TypeError, ValueError):
+        return False
+
+
+def _adp_rows_to_dict(raw) -> dict:
+    """Sleeper's per-season ADP rows -> {player_id: {name, position, adp_*}},
+    keeping only players with a real ADP in at least one format."""
+    out = {}
+    for row in raw:
+        pid = row.get("player_id")
+        if not pid:
+            continue
+        stats = row.get("stats") or {}
+        vals = {f: stats.get(f) for f in _ADP_FIELDS}
+        if not any(v is not None and v < 999 for v in vals.values()):
+            continue
+        p = row.get("player") or {}
+        out[str(pid)] = {
+            "player_name": (" ".join(x for x in (p.get("first_name"), p.get("last_name"))
+                                     if x).strip() or None),
+            "position": p.get("position"),
+            **vals,
+        }
+    return out
+
+
+def _read_adp_snapshot(path) -> dict:
+    try:
+        out = json.loads(path.read_text(encoding="utf-8"))
+        return out if isinstance(out, dict) else {}
+    except Exception:
+        return {}
+
+
+def _write_adp_snapshot(path, out: dict) -> None:
+    _ADP_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(".json.tmp")      # atomic: no half-written file
+    tmp.write_text(json.dumps(out, indent=2, sort_keys=True), encoding="utf-8")
+    os.replace(tmp, path)
+
+
+def _adp_from_stored_raw(season, path) -> dict:
+    """Rebuild the snapshot from the raw response kept at
+    adp/sleeper/raw/raw_<season>.json.gz (no network).  {} when there is none."""
+    try:
+        from .rawfile import load_gz
+        blob = load_gz(_ADP_CACHE_DIR / "sleeper" / "raw" / f"raw_{season}.json.gz")
+        if blob is None:
+            return {}
+        out = _adp_rows_to_dict(json.loads(blob))
+        if out:
+            try:
+                _write_adp_snapshot(path, out)
+            except Exception:
+                pass
+        return out
+    except Exception:
+        return {}
+
+
 def _fetch_adp_raw(season) -> dict:
     """{player_id: {"player_name", "position", "adp_std", "adp_half_ppr",
     "adp_ppr", "adp_2qb"}} for a season, from Sleeper's undocumented
@@ -762,35 +827,20 @@ def _fetch_adp_raw(season) -> dict:
     if season in _adp_cache:
         return _adp_cache[season]
     path = _adp_snapshot_path(season)
+    if _adp_season_is_past(season):
+        # A finished draft's ADP does not change: use what is stored (the
+        # snapshot, else the raw response) and do not ask Sleeper again.
+        out = _read_adp_snapshot(path) or _adp_from_stored_raw(season, path)
+        if out:
+            return _adp_cache.setdefault(season, out)
     try:
         raw = sleeper_adp(season)
-        out = {}
-        for row in raw:
-            pid = row.get("player_id")
-            if not pid:
-                continue
-            stats = row.get("stats") or {}
-            vals = {f: stats.get(f) for f in _ADP_FIELDS}
-            if not any(v is not None and v < 999 for v in vals.values()):
-                continue
-            p = row.get("player") or {}
-            out[str(pid)] = {
-                "player_name": (" ".join(x for x in (p.get("first_name"), p.get("last_name"))
-                                         if x).strip() or None),
-                "position": p.get("position"),
-                **vals,
-            }
-        _ADP_CACHE_DIR.mkdir(parents=True, exist_ok=True)
-        tmp = path.with_suffix(".json.tmp")      # atomic: no half-written file
-        tmp.write_text(json.dumps(out, indent=2, sort_keys=True), encoding="utf-8")
-        os.replace(tmp, path)
+        out = _adp_rows_to_dict(raw)
+        _write_adp_snapshot(path, out)
         return _adp_cache.setdefault(season, out)
     except Exception:
         pass
-    try:
-        out = json.loads(path.read_text(encoding="utf-8"))
-    except Exception:
-        out = {}
+    out = _read_adp_snapshot(path) or _adp_from_stored_raw(season, path) or {}
     return _adp_cache.setdefault(season, out)
 
 

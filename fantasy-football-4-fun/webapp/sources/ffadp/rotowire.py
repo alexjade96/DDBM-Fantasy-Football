@@ -19,6 +19,7 @@ first+last / position (RotoWire's player id has no Sleeper cross-ref).
 from __future__ import annotations
 
 import datetime
+import json
 
 from . import api, cache
 from .base import AdpProvider, AdpRow
@@ -107,6 +108,8 @@ def _feed(season: str, scoring: str, reload: bool) -> list[dict]:
         return _feed_mem[key]
 
     rows = None if reload else cache.load("rotowire", season, variant=slug)
+    if not rows and not reload:
+        rows = cache.from_raw("rotowire", season, lambda b: _trim(json.loads(b)), variant=slug)
     if not rows:
         try:
             rows = _trim(api.rotowire_adp(slug))

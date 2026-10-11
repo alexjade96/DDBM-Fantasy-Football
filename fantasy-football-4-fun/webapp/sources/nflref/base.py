@@ -77,7 +77,7 @@ class NflDataset(abc.ABC):
 
         raw = None
         try:
-            raw = api.read_release_parquet(self._asset(season))
+            raw = api.fetch_release_parquet(self._asset(season), reload=reload)
         except Exception:
             raw = None
 

@@ -79,6 +79,8 @@ def read_release_parquet(asset: str, columns: list[str] | None = None) -> pd.Dat
     resp = requests.get(url, headers={"User-Agent": _UA}, timeout=60,
                         allow_redirects=True)
     resp.raise_for_status()
+    from . import cache
+    cache.save_raw(asset, resp.content)   # the complete file, before any parsing
     buf = BytesIO(resp.content)
     del resp
     if columns is None:
@@ -87,3 +89,47 @@ def read_release_parquet(asset: str, columns: list[str] | None = None) -> pd.Dat
     present = set(pq.ParquetFile(buf).schema_arrow.names)
     buf.seek(0)
     return pd.read_parquet(buf, columns=[c for c in columns if c in present])
+
+
+def store_release(asset: str) -> int:
+    """Download one release file and keep it raw WITHOUT parsing it (play-by-play
+    is 372 columns, about 176 MB once parsed).  Returns the size stored.  Raises
+    on a failed download."""
+    from . import cache
+    resp = requests.get(f"{_BASE}/{asset}", headers={"User-Agent": _UA},
+                        timeout=120, allow_redirects=True)
+    resp.raise_for_status()
+    cache.save_raw(asset, resp.content)
+    return len(resp.content)
+
+
+def _all_seasons(asset: str) -> bool:
+    """True for a file that holds every season (no year in its name)."""
+    import re
+    return re.search(r"(19|20)\d\d", asset.rsplit("/", 1)[-1]) is None
+
+
+def fetch_release_parquet(asset: str, columns: list[str] | None = None,
+                          reload: bool = False) -> pd.DataFrame:
+    """The release file, from the stored raw copy when there is one.
+
+    No raw copy, or `reload=True` (a refresh): download via
+    `read_release_parquet`, which stores the raw file as it arrives.  Raises
+    like `read_release_parquet` when the download fails.  Assets in
+    `cache.NO_RAW_PREFIXES` are never kept raw and always download.
+
+    An all-seasons file (schedules, Next Gen Stats) that this process already
+    downloaded in the last `cache.RELOAD_MEMO_SECONDS` is read from raw even
+    on a reload, so refreshing every season of it is one download.
+    """
+    from . import cache
+    if cache.wants_raw(asset):
+        use_raw = not reload or (_all_seasons(asset) and cache.recently_downloaded(asset))
+        if use_raw:
+            df = cache.load_raw(asset, columns)
+            if df is not None:
+                return df
+    out = read_release_parquet(asset, columns) if columns else read_release_parquet(asset)
+    if cache.wants_raw(asset):
+        cache.note_download(asset)
+    return out

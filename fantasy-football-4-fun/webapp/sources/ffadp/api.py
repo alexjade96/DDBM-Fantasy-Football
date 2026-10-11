@@ -12,6 +12,15 @@ import requests
 
 _UA = "sleepermetrics-ffadp/1.0 (+https://github.com/alexjade96/DDBM-Fantasy-Football)"
 
+def _keep_raw(source: str, season, content: bytes, variant: str | None = None,
+              ext: str = "json") -> None:
+    """Store the response as received (see cache.save_raw).  `season=None` is
+    for the current-season-only sources, which carry no year of their own."""
+    from . import cache
+    cache.save_raw(source, cache.current_season() if season is None else season,
+                   content, variant=variant, ext=ext)
+
+
 # ESPN's read replica. The public "players" list view carries
 # ownership.averageDraftPosition platform-wide -- no league id, no cookies.
 # Confirmed working for seasons 2004..present.
@@ -38,6 +47,7 @@ def espn_players(season) -> list:
     data = resp.json()
     if not isinstance(data, list):
         raise ValueError("unexpected ESPN players payload")
+    _keep_raw("espn", season, resp.content)
     return data
 
 
@@ -104,6 +114,7 @@ def ffc_adp(season, fmt: str = "ppr", teams: int = 12) -> list[dict]:
     data = resp.json()
     if not isinstance(data, dict) or data.get("status") != "Success":
         raise ValueError(f"FFC returned {data.get('status')!r} for {season}/{slug}")
+    _keep_raw("ffc", season, resp.content, variant=fmt)
     return data.get("players") or []
 
 
@@ -155,6 +166,7 @@ def yahoo_adp(season, scoring: str = "ppr", page: int = 100) -> list[dict]:
     """
     key = _yahoo_game_key(season)
     out: list[dict] = []
+    bodies: list = []        # every page as received, kept raw below
     start = 0
     while True:
         url = (f"{_YAHOO_BASE}/game/{key}/players;position=ALL;sort=AR;"
@@ -162,6 +174,7 @@ def yahoo_adp(season, scoring: str = "ppr", page: int = 100) -> list[dict]:
         resp = requests.get(url, headers={"User-Agent": _UA}, timeout=30)
         resp.raise_for_status()
         data = resp.json()
+        bodies.append(data)
         players = (data.get("fantasy_content", {}).get("game", {})
                    .get("players") or [])
         if not isinstance(players, list) or not players:
@@ -181,6 +194,8 @@ def yahoo_adp(season, scoring: str = "ppr", page: int = 100) -> list[dict]:
         start += len(players)
         if start >= 600:            # hard cap; a full board is ~250 rows
             break
+    if bodies:
+        _keep_raw("yahoo", season, json.dumps(bodies).encode())
     return out
 
 
@@ -197,6 +212,7 @@ def cbs_adp() -> str:
     non-2xx so the provider falls back to its snapshot."""
     resp = requests.get(_CBS_URL, headers={"User-Agent": _UA}, timeout=30)
     resp.raise_for_status()
+    _keep_raw("cbs", None, resp.content, ext="html")
     return resp.text
 
 
@@ -218,4 +234,5 @@ def rotowire_adp(scoring: str = "PPR") -> list[dict]:
     data = resp.json()
     if not isinstance(data, list):
         raise ValueError("unexpected RotoWire adp payload")
+    _keep_raw("rotowire", None, resp.content, variant=slug)
     return data

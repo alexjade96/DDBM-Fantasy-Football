@@ -34,6 +34,12 @@ venv/
 *.egg-info/
 fantasy-football-4-fun/tests/
 
+# Play-by-play raw files (about 230 MB): only a local route_participation build
+# reads them, and the site skips that build on Render.  Everything else under
+# data/sources/ ships.
+data/sources/nflverse/raw/pbp/
+data/sources/nflverse/raw/pbp_participation/
+
 # Secrets and local config -- never bake these into an image
 **/.env
 **/.env.*

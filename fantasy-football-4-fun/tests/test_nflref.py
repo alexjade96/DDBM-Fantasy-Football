@@ -1095,3 +1095,165 @@ class _Req:
 
     def __getattr__(self, _):
         return None
+
+
+# --- raw layer: the complete release file is kept before anything is derived ---
+
+def _parquet_bytes(df):
+    import io
+    b = io.BytesIO()
+    df.to_parquet(b, index=False)
+    return b.getvalue()
+
+
+def _fake_http(monkeypatch, payloads):
+    """Replace requests.get inside api; `payloads` maps asset -> bytes."""
+    calls = []
+
+    class _Resp:
+        def __init__(self, content):
+            self.content = content
+        def raise_for_status(self):
+            pass
+
+    def _get(url, **kw):
+        calls.append(url)
+        asset = url.split("/releases/download/")[1]
+        return _Resp(payloads[asset])
+
+    monkeypatch.setattr(api.requests, "get", _get)
+    return calls
+
+
+def test_download_keeps_the_complete_raw_file_then_derives(monkeypatch):
+    wide = pd.DataFrame({"season": [2024], "week": [1], "player_id": ["x"],
+                         "player_display_name": ["A B"], "position": ["WR"],
+                         "recent_team": ["DET"], "targets": [7],
+                         "an_unused_column": [1.5]})
+    calls = _fake_http(monkeypatch, {"player_stats/player_stats_2024.parquet":
+                                     _parquet_bytes(wide)})
+    df = nflref.load("player_stats", "2024")
+    assert len(calls) == 1
+    assert "an_unused_column" not in df.columns                  # derived is trimmed
+    raw = cache.load_raw("player_stats/player_stats_2024.parquet")
+    assert "an_unused_column" in raw.columns                      # raw is complete
+    assert cache.raw_path("player_stats/player_stats_2024.parquet").read_bytes() \
+        == _parquet_bytes(wide)                                   # byte for byte
+
+
+def test_missing_derived_is_rebuilt_from_raw_without_the_network(monkeypatch):
+    wide = pd.DataFrame({"season": [2024], "week": [1], "player_id": ["x"],
+                         "player_display_name": ["A B"], "position": ["WR"],
+                         "recent_team": ["DET"], "targets": [7]})
+    calls = _fake_http(monkeypatch, {"player_stats/player_stats_2024.parquet":
+                                     _parquet_bytes(wide)})
+    nflref.load("player_stats", "2024")
+    cache._path("player_stats", "2024").unlink()                  # lose the derived file
+    cache.clear()
+    df = nflref.load("player_stats", "2024")
+    assert len(calls) == 1 and len(df) == 1                       # no second download
+
+
+def test_reload_downloads_again_and_replaces_raw(monkeypatch):
+    a = pd.DataFrame({"season": [2024], "week": [1], "player_id": ["x"],
+                      "player_display_name": ["A B"], "position": ["WR"],
+                      "recent_team": ["DET"], "targets": [1]})
+    b = a.assign(targets=9)
+    pay = {"player_stats/player_stats_2024.parquet": _parquet_bytes(a)}
+    calls = _fake_http(monkeypatch, pay)
+    nflref.load("player_stats", "2024")
+    pay["player_stats/player_stats_2024.parquet"] = _parquet_bytes(b)
+    nflref.load("player_stats", "2024", reload=True)
+    assert len(calls) == 2
+    assert cache.load_raw("player_stats/player_stats_2024.parquet")["targets"].iloc[0] == 9
+
+
+def test_all_seasons_file_is_downloaded_once_for_a_refresh_loop(monkeypatch):
+    games = _fake_games()
+    calls = _fake_http(monkeypatch, {"schedules/games.parquet": _parquet_bytes(games)})
+    seasons = sorted({str(s) for s in games["season"]})
+    for s in seasons:
+        nflref.load("schedules", s, reload=True)
+    assert len(calls) == 1 and len(seasons) >= 1
+    cache.clear()                                                 # a new process / window
+    nflref.load("schedules", seasons[0], reload=True)
+    assert len(calls) == 2
+
+
+def test_play_by_play_is_kept_raw_like_everything_else(monkeypatch):
+    df = pd.DataFrame({"a": [1]})
+    _fake_http(monkeypatch, {"pbp/play_by_play_2024.parquet": _parquet_bytes(df)})
+    api.read_release_parquet("pbp/play_by_play_2024.parquet")
+    assert cache.raw_path("pbp/play_by_play_2024.parquet").exists()
+    assert cache.wants_raw("pbp_participation/pbp_participation_2024.parquet")
+
+
+def test_store_release_keeps_the_file_without_parsing_it(monkeypatch):
+    payload = _parquet_bytes(pd.DataFrame({"a": [1, 2]}))
+    _fake_http(monkeypatch, {"pbp/play_by_play_2024.parquet": payload})
+    monkeypatch.setattr(api.pd, "read_parquet",
+                        lambda *a, **k: pytest.fail("store_release must not parse"))
+    assert api.store_release("pbp/play_by_play_2024.parquet") == len(payload)
+    assert cache.raw_path("pbp/play_by_play_2024.parquet").read_bytes() == payload
+
+
+def _fake_route_inputs():
+    pbp = pd.DataFrame({
+        "game_id": ["G1", "G1", "G1"], "play_id": [1, 2, 3], "week": [1, 1, 1],
+        "season": [2024, 2024, 2024], "play_type": ["pass", "pass", "run"],
+        "receiver_player_id": ["00-W", None, None],
+        "receiver_player_name": ["Wide R", None, None],
+        "never_used_column": [9, 9, 9],
+    })
+    part = pd.DataFrame({
+        "nflverse_game_id": ["G1", "G1", "G1"], "play_id": [1, 2, 3],
+        "offense_players": ["00-W;00-Q", "00-W;00-Q", "00-W;00-Q"],
+        "offense_names": ["Wide R;Quarter B", "Wide R;Quarter B", "Wide R;Quarter B"],
+        "offense_positions": ["WR;QB", "WR;QB", "WR;QB"],
+        "route": ["GO", None, None],
+        "another_unused": [1, 1, 1],
+    })
+    return pbp, part
+
+
+def test_route_participation_builds_from_raw_without_the_network(monkeypatch):
+    pbp, part = _fake_route_inputs()
+    calls = _fake_http(monkeypatch, {
+        "pbp/play_by_play_2024.parquet": _parquet_bytes(pbp),
+        "pbp_participation/pbp_participation_2024.parquet": _parquet_bytes(part)})
+    monkeypatch.delenv("RENDER", raising=False)
+    out = nflref.load("route_participation", "2024")
+    assert len(calls) == 2 and not out.empty
+    row = out[out["gsis_id"] == "00-W"].iloc[0]
+    assert row["routes_run"] == 2 and row["targets"] == 1 and row["route_go"] == 1
+    # the complete files are kept, including columns the build never reads
+    assert "never_used_column" in cache.load_raw("pbp/play_by_play_2024.parquet").columns
+    assert "another_unused" in cache.load_raw(
+        "pbp_participation/pbp_participation_2024.parquet").columns
+    cache._path("route_participation", "2024").unlink()      # lose the derived table
+    cache.clear()
+    again = nflref.load("route_participation", "2024")
+    assert len(calls) == 2 and len(again) == len(out)          # rebuilt from raw
+
+
+def test_route_participation_reads_only_the_columns_it_uses(monkeypatch):
+    pbp, part = _fake_route_inputs()
+    _fake_http(monkeypatch, {
+        "pbp/play_by_play_2024.parquet": _parquet_bytes(pbp),
+        "pbp_participation/pbp_participation_2024.parquet": _parquet_bytes(part)})
+    nflref.load("route_participation", "2024")
+    seen = []
+    real = cache.load_raw
+    monkeypatch.setattr(cache, "load_raw",
+                        lambda asset, columns=None: seen.append((asset, columns)) or real(asset, columns))
+    cache._path("route_participation", "2024").unlink()
+    cache.clear()
+    nflref.load("route_participation", "2024")
+    assert all(cols is not None for _, cols in seen) and len(seen) == 2
+    assert not any("never_used_column" in cols or "another_unused" in cols for _, cols in seen)
+
+
+def test_render_does_not_write_raw_files(monkeypatch):
+    monkeypatch.setattr(cache, "on_render", lambda: True)
+    cache.save_raw("player_stats/player_stats_2024.parquet", b"x")
+    assert not cache.raw_path("player_stats/player_stats_2024.parquet").exists()

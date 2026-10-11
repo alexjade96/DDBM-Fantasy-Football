@@ -1,0 +1,678 @@
+[
+  {
+    "label": "league_load [cold]",
+    "elapsed_seconds": 10.438,
+    "calls": 230,
+    "repeats": 35,
+    "bytes": 22502925,
+    "network_seconds": 10.876,
+    "by_host": [
+      {
+        "host": "api.sleeper.app",
+        "calls": 230,
+        "bytes": 22502925,
+        "seconds": 10.876261598663405
+      }
+    ],
+    "by_endpoint": [
+      {
+        "caller": "fantasy-football-4-fun/sleepermetrics/players.py:players",
+        "host": "api.sleeper.app",
+        "endpoint": "/v1/players/nfl",
+        "calls": 1,
+        "bytes": 14660319,
+        "seconds": 0.33619880001060665
+      },
+      {
+        "caller": "fantasy-football-4-fun/sleepermetrics/scoring.py:nfl_stats",
+        "host": "api.sleeper.app",
+        "endpoint": "/v1/stats/nfl/regular/{season}/{week}",
+        "calls": 13,
+        "bytes": 6780647,
+        "seconds": 0.5356471003033221
+      },
+      {
+        "caller": "fantasy-football-4-fun/sleepermetrics/api.py:sleeper_api",
+        "host": "api.sleeper.app",
+        "endpoint": "/v1/league/{league}/transactions/{week}",
+        "calls": 75,
+        "bytes": 423994,
+        "seconds": 2.0461889994330704
+      },
+      {
+        "caller": "fantasy-football-4-fun/sleepermetrics/api.py:sleeper_api",
+        "host": "api.sleeper.app",
+        "endpoint": "/v1/league/{league}/matchups/{week}",
+        "calls": 75,
+        "bytes": 352631,
+        "seconds": 2.0675725985784084
+      },
+      {
+        "caller": "fantasy-football-4-fun/sleepermetrics/api.py:sleeper_api",
+        "host": "api.sleeper.app",
+        "endpoint": "/v1/user/{user}/leagues/{sport}/{season}",
+        "calls": 10,
+        "bytes": 90489,
+        "seconds": 4.031582199735567
+      },
+      {
+        "caller": "fantasy-football-4-fun/sleepermetrics/league.py:league_chain",
+        "host": "api.sleeper.app",
+        "endpoint": "/v1/league/{league}",
+        "calls": 29,
+        "bytes": 80554,
+        "seconds": 0.7866757004521787
+      },
+      {
+        "caller": "fantasy-football-4-fun/sleepermetrics/api.py:sleeper_api",
+        "host": "api.sleeper.app",
+        "endpoint": "/v1/league/{league}/rosters",
+        "calls": 6,
+        "bytes": 42847,
+        "seconds": 0.19012190005742013
+      },
+      {
+        "caller": "fantasy-football-4-fun/sleepermetrics/playoffs.py:_week_starters",
+        "host": "api.sleeper.app",
+        "endpoint": "/v1/league/{league}/matchups/{week}",
+        "calls": 3,
+        "bytes": 20421,
+        "seconds": 0.07765810028649867
+      },
+      {
+        "caller": "fantasy-football-4-fun/sleepermetrics/api.py:sleeper_api",
+        "host": "api.sleeper.app",
+        "endpoint": "/v1/league/{league}/users",
+        "calls": 6,
+        "bytes": 20363,
+        "seconds": 0.1747025998774916
+      },
+      {
+        "caller": "fantasy-football-4-fun/sleepermetrics/playoffs.py:_bracket_context",
+        "host": "api.sleeper.app",
+        "endpoint": "/v1/league/{league}/rosters",
+        "calls": 1,
+        "bytes": 9821,
+        "seconds": 0.05486029991880059
+      },
+      {
+        "caller": "fantasy-football-4-fun/sleepermetrics/league.py:current_season_league_id",
+        "host": "api.sleeper.app",
+        "endpoint": "/v1/league/{league}/rosters",
+        "calls": 1,
+        "bytes": 8252,
+        "seconds": 0.029619700042530894
+      },
+      {
+        "caller": "fantasy-football-4-fun/sleepermetrics/playoffs.py:_bracket_context",
+        "host": "api.sleeper.app",
+        "endpoint": "/v1/league/{league}/users",
+        "calls": 1,
+        "bytes": 4753,
+        "seconds": 0.03287789993919432
+      },
+      {
+        "caller": "fantasy-football-4-fun/sleepermetrics/season.py:assemble_season",
+        "host": "api.sleeper.app",
+        "endpoint": "/v1/league/{league}/winners_bracket",
+        "calls": 6,
+        "bytes": 4011,
+        "seconds": 0.16892329999245703
+      },
+      {
+        "caller": "fantasy-football-4-fun/sleepermetrics/playoffs.py:_bracket_context",
+        "host": "api.sleeper.app",
+        "endpoint": "/v1/league/{league}",
+        "calls": 1,
+        "bytes": 2694,
+        "seconds": 0.03425160003826022
+      },
+      {
+        "caller": "fantasy-football-4-fun/sleepermetrics/playoffs.py:sleeper_bracket",
+        "host": "api.sleeper.app",
+        "endpoint": "/v1/league/{league}/winners_bracket",
+        "calls": 1,
+        "bytes": 918,
+        "seconds": 0.029466700041666627
+      },
+      {
+        "caller": "fantasy-football-4-fun/sleepermetrics/league.py:nfl_state",
+        "host": "api.sleeper.app",
+        "endpoint": "/v1/state/nfl",
+        "calls": 1,
+        "bytes": 211,
+        "seconds": 0.2799140999559313
+      }
+    ],
+    "action": "league_load",
+    "pass_": "cold",
+    "measured_on": "2026-10-10"
+  },
+  {
+    "label": "league_load [warm]",
+    "elapsed_seconds": 0.0,
+    "calls": 0,
+    "repeats": 0,
+    "bytes": 0,
+    "network_seconds": 0,
+    "by_host": [],
+    "by_endpoint": [],
+    "action": "league_load",
+    "pass_": "warm",
+    "measured_on": "2026-10-10"
+  },
+  {
+    "label": "player_profile [cold]",
+    "elapsed_seconds": 34.945,
+    "calls": 42,
+    "repeats": 1,
+    "bytes": 279560137,
+    "network_seconds": 55.882,
+    "by_host": [
+      {
+        "host": "github.com",
+        "calls": 14,
+        "bytes": 139779849,
+        "seconds": 30.947553899837658
+      },
+      {
+        "host": "release-assets.githubusercontent.com",
+        "calls": 13,
+        "bytes": 139779840,
+        "seconds": 24.37411329941824
+      },
+      {
+        "host": "api.sleeper.app",
+        "calls": 15,
+        "bytes": 448,
+        "seconds": 0.5605679994914681
+      }
+    ],
+    "by_endpoint": [
+      {
+        "caller": "fantasy-football-4-fun/webapp/sources/nflref/route_participation.py:_build",
+        "host": "release-assets.githubusercontent.com",
+        "endpoint": "(nflverse release asset)",
+        "calls": 13,
+        "bytes": 139779840,
+        "seconds": 24.37411329941824
+      },
+      {
+        "caller": "fantasy-football-4-fun/webapp/sources/nflref/route_participation.py:_build",
+        "host": "github.com",
+        "endpoint": "/nflverse/nflverse-data/releases/download/pbp/play_by_play_2022.parquet",
+        "calls": 1,
+        "bytes": 20426548,
+        "seconds": 3.2633789000101388
+      },
+      {
+        "caller": "fantasy-football-4-fun/webapp/sources/nflref/route_participation.py:_build",
+        "host": "github.com",
+        "endpoint": "/nflverse/nflverse-data/releases/download/pbp/play_by_play_2021.parquet",
+        "calls": 1,
+        "bytes": 20249925,
+        "seconds": 4.3355143999215215
+      },
+      {
+        "caller": "fantasy-football-4-fun/webapp/sources/nflref/route_participation.py:_build",
+        "host": "github.com",
+        "endpoint": "/nflverse/nflverse-data/releases/download/pbp/play_by_play_2020.parquet",
+        "calls": 1,
+        "bytes": 19286459,
+        "seconds": 2.9299465999938548
+      },
+      {
+        "caller": "fantasy-football-4-fun/webapp/sources/nflref/route_participation.py:_build",
+        "host": "github.com",
+        "endpoint": "/nflverse/nflverse-data/releases/download/pbp/play_by_play_2019.parquet",
+        "calls": 1,
+        "bytes": 19119729,
+        "seconds": 4.174066400155425
+      },
+      {
+        "caller": "fantasy-football-4-fun/webapp/sources/nflref/route_participation.py:_build",
+        "host": "github.com",
+        "endpoint": "/nflverse/nflverse-data/releases/download/pbp/play_by_play_2018.parquet",
+        "calls": 1,
+        "bytes": 19072097,
+        "seconds": 2.9944209000095725
+      },
+      {
+        "caller": "fantasy-football-4-fun/webapp/sources/nflref/route_participation.py:_build",
+        "host": "github.com",
+        "endpoint": "/nflverse/nflverse-data/releases/download/pbp/play_by_play_2017.parquet",
+        "calls": 1,
+        "bytes": 19050401,
+        "seconds": 2.9674480000976473
+      },
+      {
+        "caller": "fantasy-football-4-fun/webapp/sources/nflref/route_participation.py:_build",
+        "host": "github.com",
+        "endpoint": "/nflverse/nflverse-data/releases/download/pbp/play_by_play_2026.parquet",
+        "calls": 1,
+        "bytes": 4920302,
+        "seconds": 1.3448595001827925
+      },
+      {
+        "caller": "fantasy-football-4-fun/webapp/sources/nflref/route_participation.py:_build",
+        "host": "github.com",
+        "endpoint": "/nflverse/nflverse-data/releases/download/pbp_participation/pbp_participation_2019.parquet",
+        "calls": 1,
+        "bytes": 2992048,
+        "seconds": 1.8570897998288274
+      },
+      {
+        "caller": "fantasy-football-4-fun/webapp/sources/nflref/route_participation.py:_build",
+        "host": "github.com",
+        "endpoint": "/nflverse/nflverse-data/releases/download/pbp_participation/pbp_participation_2018.parquet",
+        "calls": 1,
+        "bytes": 2978916,
+        "seconds": 1.1452075999695808
+      },
+      {
+        "caller": "fantasy-football-4-fun/webapp/sources/nflref/route_participation.py:_build",
+        "host": "github.com",
+        "endpoint": "/nflverse/nflverse-data/releases/download/pbp_participation/pbp_participation_2021.parquet",
+        "calls": 1,
+        "bytes": 2949474,
+        "seconds": 1.8718573998194188
+      },
+      {
+        "caller": "fantasy-football-4-fun/webapp/sources/nflref/route_participation.py:_build",
+        "host": "github.com",
+        "endpoint": "/nflverse/nflverse-data/releases/download/pbp_participation/pbp_participation_2017.parquet",
+        "calls": 1,
+        "bytes": 2943355,
+        "seconds": 1.1975034999195486
+      },
+      {
+        "caller": "fantasy-football-4-fun/webapp/sources/nflref/route_participation.py:_build",
+        "host": "github.com",
+        "endpoint": "/nflverse/nflverse-data/releases/download/pbp_participation/pbp_participation_2022.parquet",
+        "calls": 1,
+        "bytes": 2941018,
+        "seconds": 1.0901723999995738
+      },
+      {
+        "caller": "fantasy-football-4-fun/webapp/sources/nflref/route_participation.py:_build",
+        "host": "github.com",
+        "endpoint": "/nflverse/nflverse-data/releases/download/pbp_participation/pbp_participation_2020.parquet",
+        "calls": 1,
+        "bytes": 2849568,
+        "seconds": 1.3745095999911427
+      },
+      {
+        "caller": "fantasy-football-4-fun/sleepermetrics/league.py:nfl_state",
+        "host": "api.sleeper.app",
+        "endpoint": "/v1/state/nfl",
+        "calls": 2,
+        "bytes": 422,
+        "seconds": 0.05139009980484843
+      },
+      {
+        "caller": "fantasy-football-4-fun/sleepermetrics/scoring.py:nfl_stats",
+        "host": "api.sleeper.app",
+        "endpoint": "/v1/stats/nfl/regular/{season}/{week}",
+        "calls": 13,
+        "bytes": 26,
+        "seconds": 0.5091778996866196
+      },
+      {
+        "caller": "fantasy-football-4-fun/webapp/sources/nflref/route_participation.py:_build",
+        "host": "github.com",
+        "endpoint": "/nflverse/nflverse-data/releases/download/pbp_participation/pbp_participation_2026.parquet",
+        "calls": 1,
+        "bytes": 9,
+        "seconds": 0.4015788999386132
+      }
+    ],
+    "action": "player_profile",
+    "pass_": "cold",
+    "measured_on": "2026-10-10"
+  },
+  {
+    "label": "player_profile [warm]",
+    "elapsed_seconds": 0.0,
+    "calls": 0,
+    "repeats": 0,
+    "bytes": 0,
+    "network_seconds": 0,
+    "by_host": [],
+    "by_endpoint": [],
+    "action": "player_profile",
+    "pass_": "warm",
+    "measured_on": "2026-10-10"
+  },
+  {
+    "label": "player_profile_with_league [cold]",
+    "elapsed_seconds": 46.443,
+    "calls": 104,
+    "repeats": 1,
+    "bytes": 311776837,
+    "network_seconds": 57.077,
+    "by_host": [
+      {
+        "host": "github.com",
+        "calls": 14,
+        "bytes": 139779849,
+        "seconds": 29.516667800024152
+      },
+      {
+        "host": "release-assets.githubusercontent.com",
+        "calls": 13,
+        "bytes": 139779840,
+        "seconds": 23.688013699371368
+      },
+      {
+        "host": "api.sleeper.app",
+        "calls": 77,
+        "bytes": 32217148,
+        "seconds": 3.8720853994600475
+      }
+    ],
+    "by_endpoint": [
+      {
+        "caller": "fantasy-football-4-fun/webapp/sources/nflref/route_participation.py:_build",
+        "host": "release-assets.githubusercontent.com",
+        "endpoint": "(nflverse release asset)",
+        "calls": 13,
+        "bytes": 139779840,
+        "seconds": 23.688013699371368
+      },
+      {
+        "caller": "fantasy-football-4-fun/sleepermetrics/scoring.py:nfl_stats",
+        "host": "api.sleeper.app",
+        "endpoint": "/v1/stats/nfl/regular/{season}/{week}",
+        "calls": 60,
+        "bytes": 31897586,
+        "seconds": 2.1611200999468565
+      },
+      {
+        "caller": "fantasy-football-4-fun/webapp/sources/nflref/route_participation.py:_build",
+        "host": "github.com",
+        "endpoint": "/nflverse/nflverse-data/releases/download/pbp/play_by_play_2022.parquet",
+        "calls": 1,
+        "bytes": 20426548,
+        "seconds": 3.5455382999498397
+      },
+      {
+        "caller": "fantasy-football-4-fun/webapp/sources/nflref/route_participation.py:_build",
+        "host": "github.com",
+        "endpoint": "/nflverse/nflverse-data/releases/download/pbp/play_by_play_2021.parquet",
+        "calls": 1,
+        "bytes": 20249925,
+        "seconds": 3.194245900027454
+      },
+      {
+        "caller": "fantasy-football-4-fun/webapp/sources/nflref/route_participation.py:_build",
+        "host": "github.com",
+        "endpoint": "/nflverse/nflverse-data/releases/download/pbp/play_by_play_2020.parquet",
+        "calls": 1,
+        "bytes": 19286459,
+        "seconds": 3.0971073999535292
+      },
+      {
+        "caller": "fantasy-football-4-fun/webapp/sources/nflref/route_participation.py:_build",
+        "host": "github.com",
+        "endpoint": "/nflverse/nflverse-data/releases/download/pbp/play_by_play_2019.parquet",
+        "calls": 1,
+        "bytes": 19119729,
+        "seconds": 4.14370709983632
+      },
+      {
+        "caller": "fantasy-football-4-fun/webapp/sources/nflref/route_participation.py:_build",
+        "host": "github.com",
+        "endpoint": "/nflverse/nflverse-data/releases/download/pbp/play_by_play_2018.parquet",
+        "calls": 1,
+        "bytes": 19072097,
+        "seconds": 3.4568551999982446
+      },
+      {
+        "caller": "fantasy-football-4-fun/webapp/sources/nflref/route_participation.py:_build",
+        "host": "github.com",
+        "endpoint": "/nflverse/nflverse-data/releases/download/pbp/play_by_play_2017.parquet",
+        "calls": 1,
+        "bytes": 19050401,
+        "seconds": 3.1939742998220026
+      },
+      {
+        "caller": "fantasy-football-4-fun/webapp/sources/nflref/route_participation.py:_build",
+        "host": "github.com",
+        "endpoint": "/nflverse/nflverse-data/releases/download/pbp/play_by_play_2026.parquet",
+        "calls": 1,
+        "bytes": 4920302,
+        "seconds": 1.3265049001201987
+      },
+      {
+        "caller": "fantasy-football-4-fun/webapp/sources/nflref/route_participation.py:_build",
+        "host": "github.com",
+        "endpoint": "/nflverse/nflverse-data/releases/download/pbp_participation/pbp_participation_2019.parquet",
+        "calls": 1,
+        "bytes": 2992048,
+        "seconds": 1.5041337001603097
+      },
+      {
+        "caller": "fantasy-football-4-fun/webapp/sources/nflref/route_participation.py:_build",
+        "host": "github.com",
+        "endpoint": "/nflverse/nflverse-data/releases/download/pbp_participation/pbp_participation_2018.parquet",
+        "calls": 1,
+        "bytes": 2978916,
+        "seconds": 1.1261585000902414
+      },
+      {
+        "caller": "fantasy-football-4-fun/webapp/sources/nflref/route_participation.py:_build",
+        "host": "github.com",
+        "endpoint": "/nflverse/nflverse-data/releases/download/pbp_participation/pbp_participation_2021.parquet",
+        "calls": 1,
+        "bytes": 2949474,
+        "seconds": 1.0747723998501897
+      },
+      {
+        "caller": "fantasy-football-4-fun/webapp/sources/nflref/route_participation.py:_build",
+        "host": "github.com",
+        "endpoint": "/nflverse/nflverse-data/releases/download/pbp_participation/pbp_participation_2017.parquet",
+        "calls": 1,
+        "bytes": 2943355,
+        "seconds": 1.2040512000676244
+      },
+      {
+        "caller": "fantasy-football-4-fun/webapp/sources/nflref/route_participation.py:_build",
+        "host": "github.com",
+        "endpoint": "/nflverse/nflverse-data/releases/download/pbp_participation/pbp_participation_2022.parquet",
+        "calls": 1,
+        "bytes": 2941018,
+        "seconds": 1.1342503000050783
+      },
+      {
+        "caller": "fantasy-football-4-fun/webapp/sources/nflref/route_participation.py:_build",
+        "host": "github.com",
+        "endpoint": "/nflverse/nflverse-data/releases/download/pbp_participation/pbp_participation_2020.parquet",
+        "calls": 1,
+        "bytes": 2849568,
+        "seconds": 1.0210712000261992
+      },
+      {
+        "caller": "fantasy-football-4-fun/sleepermetrics/draft.py:draft_board",
+        "host": "api.sleeper.app",
+        "endpoint": "/v1/draft/{draft}/picks",
+        "calls": 5,
+        "bytes": 300644,
+        "seconds": 0.9086772997397929
+      },
+      {
+        "caller": "fantasy-football-4-fun/sleepermetrics/scoring.py:scoring_chart",
+        "host": "api.sleeper.app",
+        "endpoint": "/v1/league/{league}",
+        "calls": 5,
+        "bytes": 13712,
+        "seconds": 0.14052309980615973
+      },
+      {
+        "caller": "fantasy-football-4-fun/sleepermetrics/draft.py:draft_board",
+        "host": "api.sleeper.app",
+        "endpoint": "/v1/league/{league}/drafts",
+        "calls": 5,
+        "bytes": 4784,
+        "seconds": 0.6081388001330197
+      },
+      {
+        "caller": "fantasy-football-4-fun/sleepermetrics/league.py:nfl_state",
+        "host": "api.sleeper.app",
+        "endpoint": "/v1/state/nfl",
+        "calls": 2,
+        "bytes": 422,
+        "seconds": 0.05362609983421862
+      },
+      {
+        "caller": "fantasy-football-4-fun/webapp/sources/nflref/route_participation.py:_build",
+        "host": "github.com",
+        "endpoint": "/nflverse/nflverse-data/releases/download/pbp_participation/pbp_participation_2026.parquet",
+        "calls": 1,
+        "bytes": 9,
+        "seconds": 0.49429740011692047
+      }
+    ],
+    "action": "player_profile_with_league",
+    "pass_": "cold",
+    "measured_on": "2026-10-10"
+  },
+  {
+    "label": "player_profile_with_league [warm]",
+    "elapsed_seconds": 0.0,
+    "calls": 0,
+    "repeats": 0,
+    "bytes": 0,
+    "network_seconds": 0,
+    "by_host": [],
+    "by_endpoint": [],
+    "action": "player_profile_with_league",
+    "pass_": "warm",
+    "measured_on": "2026-10-10"
+  },
+  {
+    "label": "team_profile [cold]",
+    "elapsed_seconds": 0.472,
+    "calls": 2,
+    "repeats": 1,
+    "bytes": 422,
+    "network_seconds": 0.06,
+    "by_host": [
+      {
+        "host": "api.sleeper.app",
+        "calls": 2,
+        "bytes": 422,
+        "seconds": 0.05989110027439892
+      }
+    ],
+    "by_endpoint": [
+      {
+        "caller": "fantasy-football-4-fun/sleepermetrics/league.py:nfl_state",
+        "host": "api.sleeper.app",
+        "endpoint": "/v1/state/nfl",
+        "calls": 2,
+        "bytes": 422,
+        "seconds": 0.05989110027439892
+      }
+    ],
+    "action": "team_profile",
+    "pass_": "cold",
+    "measured_on": "2026-10-10"
+  },
+  {
+    "label": "team_profile [warm]",
+    "elapsed_seconds": 0.0,
+    "calls": 0,
+    "repeats": 0,
+    "bytes": 0,
+    "network_seconds": 0,
+    "by_host": [],
+    "by_endpoint": [],
+    "action": "team_profile",
+    "pass_": "warm",
+    "measured_on": "2026-10-10"
+  },
+  {
+    "label": "adp_board [cold]",
+    "elapsed_seconds": 1.566,
+    "calls": 1,
+    "repeats": 0,
+    "bytes": 22683698,
+    "network_seconds": 1.004,
+    "by_host": [
+      {
+        "host": "lm-api-reads.fantasy.espn.com",
+        "calls": 1,
+        "bytes": 22683698,
+        "seconds": 1.003626899793744
+      }
+    ],
+    "by_endpoint": [
+      {
+        "caller": "fantasy-football-4-fun/webapp/sources/ffadp/espn.py:fetch",
+        "host": "lm-api-reads.fantasy.espn.com",
+        "endpoint": "/apis/v3/games/ffl/seasons/2025/players",
+        "calls": 1,
+        "bytes": 22683698,
+        "seconds": 1.003626899793744
+      }
+    ],
+    "action": "adp_board",
+    "pass_": "cold",
+    "measured_on": "2026-10-10"
+  },
+  {
+    "label": "adp_board [warm]",
+    "elapsed_seconds": 1.105,
+    "calls": 1,
+    "repeats": 0,
+    "bytes": 22683698,
+    "network_seconds": 0.722,
+    "by_host": [
+      {
+        "host": "lm-api-reads.fantasy.espn.com",
+        "calls": 1,
+        "bytes": 22683698,
+        "seconds": 0.7220405999105424
+      }
+    ],
+    "by_endpoint": [
+      {
+        "caller": "fantasy-football-4-fun/webapp/sources/ffadp/espn.py:fetch",
+        "host": "lm-api-reads.fantasy.espn.com",
+        "endpoint": "/apis/v3/games/ffl/seasons/2025/players",
+        "calls": 1,
+        "bytes": 22683698,
+        "seconds": 0.7220405999105424
+      }
+    ],
+    "action": "adp_board",
+    "pass_": "warm",
+    "measured_on": "2026-10-10"
+  },
+  {
+    "label": "player_compare [cold]",
+    "elapsed_seconds": 0.099,
+    "calls": 0,
+    "repeats": 0,
+    "bytes": 0,
+    "network_seconds": 0,
+    "by_host": [],
+    "by_endpoint": [],
+    "action": "player_compare",
+    "pass_": "cold",
+    "measured_on": "2026-10-10"
+  },
+  {
+    "label": "player_compare [warm]",
+    "elapsed_seconds": 0.006,
+    "calls": 0,
+    "repeats": 0,
+    "bytes": 0,
+    "network_seconds": 0,
+    "by_host": [],
+    "by_endpoint": [],
+    "action": "player_compare",
+    "pass_": "warm",
+    "measured_on": "2026-10-10"
+  }
+]

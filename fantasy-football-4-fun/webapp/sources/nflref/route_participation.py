@@ -50,9 +50,15 @@ template to render as sortable table columns). A player who ran routes but
 was never targeted still gets a `routes_run` row with `targets == 0` and
 every `route_*` column 0.
 
-**`EARLIEST = 2016`** for BOTH source releases (verified live: 2015 and
-earlier both 404 on `pbp_participation`; `pbp` itself goes back further but
-is gated by the newer, narrower release here). **2026 (the current live
+**`EARLIEST = 2023`.**  The participation files exist from 2016, but before
+2023 they carry only `offense_players` (ids): no `offense_names` or
+`offense_positions`, so there is no way to tell which on-field players are
+receivers, and the build yields zero rows (checked 2026-10-10 by building
+2016-2022 from the stored raw files; 2023-2025 build fine).  Starting at 2016
+made every profile of a long-career player download about 140 MB of `pbp` for
+seasons that could never produce a row, and cache nothing, so it repeated.
+The raw `pbp` files for 2016-2022 are still kept (they serve other analysis).
+**2026 (the current live
 season, as of this writing) is not yet published** (verified live: 404) --
 degrades to an empty frame like any other pre-EARLIEST or offline case, not
 a bug; check back once nflverse publishes the season's file.
@@ -65,7 +71,7 @@ import pandas as pd
 
 from .base import NflDataset
 
-EARLIEST = 2016
+EARLIEST = 2023
 
 _SKILL_POS = {"WR", "RB", "TE", "FB"}
 
@@ -80,7 +86,7 @@ _PART_COLS = [
     "offense_positions", "route",
 ]
 
-# Every charted route value seen live in pbp_participation (2016-2025;
+# Every charted route value seen live in pbp_participation (2023-2025;
 # verified against a real season, not assumed) -- a NEW value nflverse adds
 # later simply won't get its own route_* column until this list is updated
 # (it will still count toward `targets`, just not broken out by type).
@@ -150,20 +156,17 @@ def _targets_by_route(pass_plays: pd.DataFrame) -> pd.DataFrame:
     return out
 
 
-def _build(season: str) -> pd.DataFrame:
+def _build(season: str, reload: bool = False) -> pd.DataFrame:
+    """Reads the stored raw release files when present (`reload` downloads them
+    again).  Only the columns used are parsed: play-by-play alone is 372
+    columns, about 176 MB.  The participation file is read first, since it is
+    the one that 404s for an in-progress season."""
     from . import api
 
     pbp_asset = f"pbp/play_by_play_{season}.parquet"
     part_asset = f"pbp_participation/pbp_participation_{season}.parquet"
-    if api.on_render():
-        # Render's 512MB instances: parse only the columns used (play-by-play
-        # alone is 372 columns / ~176MB), and fetch the participation file
-        # first, since it is the one that 404s for an in-progress season.
-        part = api.read_release_parquet(part_asset, columns=_PART_COLS)
-        pbp = api.read_release_parquet(pbp_asset, columns=_PBP_COLS)
-    else:
-        pbp = api.read_release_parquet(pbp_asset)
-        part = api.read_release_parquet(part_asset)
+    part = api.fetch_release_parquet(part_asset, columns=_PART_COLS, reload=reload)
+    pbp = api.fetch_release_parquet(pbp_asset, columns=_PBP_COLS, reload=reload)
     if pbp is None or pbp.empty or part is None or part.empty:
         return pd.DataFrame()
 
@@ -193,6 +196,13 @@ def _build(season: str) -> pd.DataFrame:
     for col in _ROUTE_COLS.values():
         out[col] = out[col].fillna(0).astype(int)
     return out.reset_index(drop=True)
+
+
+# A season whose build came back empty (the in-progress season: nflverse freezes
+# the participation file until the postseason ends) is not asked for again for a
+# while.  In this process only; nothing is written.
+_UNAVAILABLE: dict[str, float] = {}
+_RETRY_SECONDS = 6 * 3600
 
 
 class RouteParticipation(NflDataset):
@@ -231,10 +241,15 @@ class RouteParticipation(NflDataset):
             # available" instead; set ROUTES_LIVE_BUILD=1 to allow it.
             return pd.DataFrame()
 
+        import time
+        if not reload and time.time() - _UNAVAILABLE.get(season, 0.0) < _RETRY_SECONDS:
+            return pd.DataFrame()           # asked recently and nothing was there
         try:
-            out = _build(season)
+            out = _build(season, reload=reload)
         except Exception:
             out = pd.DataFrame()
+        if out.empty and not reload:
+            _UNAVAILABLE[season] = time.time()
 
         if out.empty:
             if reload:

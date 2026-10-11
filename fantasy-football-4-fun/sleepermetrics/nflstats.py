@@ -146,8 +146,9 @@ def raw_week(season, week, reload: bool = False) -> dict:
     """Trimmed usage lines for one week: {player_id: {key: value}}.
 
     Snapshot-first: the in-process cache, then
-    `data/sources/sleeper_stats/<season>/week_<week>.json`, then a live pull via
-    `scoring.nfl_stats` (which itself caches + hits the Sleeper API). A
+    `data/sources/sleeper_stats/<season>/week_<week>.json`, then
+    `scoring.nfl_stats`, which reads the complete stored week (`raw/`) or
+    pulls Sleeper and stores it.  The trimmed file here is derived from it. A
     successful live pull rewrites the snapshot. Degrades to `{}` -- never
     raises -- when neither the network nor a snapshot is available.
     `reload=True` skips both caches and re-pulls live.
@@ -167,7 +168,11 @@ def raw_week(season, week, reload: bool = False) -> dict:
             pass
 
     try:
-        trimmed = _trim(scoring.nfl_stats(str(season), int(week)))
+        # `reload` must reach Sleeper again (and replace the raw week), not
+        # be answered from the stored raw copy.
+        full = (scoring.nfl_stats(str(season), int(week), reload=True) if reload
+                else scoring.nfl_stats(str(season), int(week)))
+        trimmed = _trim(full)
     except Exception:
         trimmed = {}
     if trimmed:

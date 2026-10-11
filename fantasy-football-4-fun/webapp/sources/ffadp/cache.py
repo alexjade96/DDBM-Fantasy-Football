@@ -11,7 +11,7 @@ import json
 import os
 from pathlib import Path
 
-from repo_paths import SOURCES_DIR
+from repo_paths import SOURCES_DIR, on_render
 
 # Same root + override as sleepermetrics.draft, so all durable source-scoped
 # data lives in one tree (data/sources/, a sibling of data/seasons/).
@@ -76,3 +76,67 @@ def save(source: str, season: str, rows: list[dict],
 
 def clear() -> None:
     _mem.clear()
+
+
+# -- raw layer ---------------------------------------------------------------
+# The provider's response exactly as received, gzip-compressed, kept before it
+# is trimmed:  data/sources/adp/<provider>/raw/[<variant>/]raw_<season>.<ext>.gz
+# (Sleeper's own: data/sources/adp/sleeper/raw/).  The "raw_" prefix keeps the
+# season scanners (which read four-digit file names) from mistaking these for
+# snapshots.  A source that serves only the current season (CBS, RotoWire) keeps
+# the latest copy per season: it cannot be fetched again for an earlier year.
+# Yahoo's raw file is a JSON list of its page bodies (it is fetched in pages).
+
+
+def current_season() -> str:
+    """The NFL season whose draft is under way: the calendar year from March,
+    the previous one in January and February."""
+    from datetime import date
+    d = date.today()
+    return str(d.year if d.month >= 3 else d.year - 1)
+
+
+def raw_path(source: str, season, variant: str | None = None, ext: str = "json") -> Path:
+    base = _ADP_DIR / source / "raw"
+    if variant:
+        base = base / variant
+    return base / f"raw_{season}.{ext}.gz"
+
+
+def save_raw(source: str, season, content: bytes, variant: str | None = None,
+             ext: str = "json") -> None:
+    """Keep the response bytes untouched.  Not on Render (its disk is discarded;
+    the committed files ship in the image)."""
+    if on_render():
+        return
+    from sleepermetrics.rawfile import save_gz
+    save_gz(raw_path(source, season, variant, ext), content)
+
+
+def load_raw(source: str, season, variant: str | None = None,
+             ext: str = "json") -> bytes | None:
+    from sleepermetrics.rawfile import load_gz
+    return load_gz(raw_path(source, season, variant, ext))
+
+
+def from_raw(source: str, season, parse, variant: str | None = None,
+             ext: str = "json") -> list[dict] | None:
+    """Rebuild a missing snapshot from the stored raw response, with no network.
+
+    `parse(bytes)` returns the trimmed rows.  Writes the snapshot and returns
+    the rows; None when there is no raw copy, it cannot be parsed, or it trims
+    to nothing.  Skipped on Render, where a 28 MB ESPN response should not be
+    parsed on a 512 MB instance (the committed snapshots are there instead)."""
+    if on_render():
+        return None
+    blob = load_raw(source, season, variant, ext)
+    if blob is None:
+        return None
+    try:
+        rows = parse(blob)
+    except Exception:
+        return None
+    if not rows:
+        return None
+    save(source, season, rows, variant=variant)
+    return rows

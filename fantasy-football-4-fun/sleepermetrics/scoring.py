@@ -42,11 +42,85 @@ def scoring_chart(league_id: str) -> pd.DataFrame:
     return _chart_cache[league_id]
 
 
-def nfl_stats(season: str, week: int) -> dict:
-    """Raw NFL stat lines for one week: {player_id: {stat: value}} (cached)."""
+def _raw_stats_path(season, week):
+    """data/sources/sleeper_stats/raw/<season>/week_<week>.json.gz -- the whole
+    week as Sleeper sent it (about 0.6 MB of JSON), gzip-compressed."""
+    return SOURCES_DIR / "sleeper_stats" / "raw" / str(season) / f"week_{int(week)}.json.gz"
+
+
+#: how long an EMPTY answer for the current season is trusted before Sleeper is
+#: asked again (the week may simply not have been played yet)
+_EMPTY_RECHECK_SECONDS = 6 * 3600
+
+
+def _current_nfl_season() -> int:
+    """The NFL season under way: the calendar year from March, else the last."""
+    from datetime import date
+    d = date.today()
+    return d.year if d.month >= 3 else d.year - 1
+
+
+def _load_raw_stats(season, week) -> dict | None:
+    """The stored week, or None when Sleeper must be asked.
+
+    A stored EMPTY week ({}) means "asked, nothing there".  For a past season
+    that is final (e.g. a week 18 that season never had), so it is never asked
+    again.  For the current season it is trusted for `_EMPTY_RECHECK_SECONDS`,
+    since the week may just not have been played."""
+    import gzip, time
+    p = _raw_stats_path(season, week)
+    try:
+        with gzip.open(p, "rt", encoding="utf-8") as f:
+            data = json.load(f)
+        if not isinstance(data, dict):
+            return None
+        if data:
+            return data
+        try:
+            past = int(season) < _current_nfl_season()
+        except (TypeError, ValueError):
+            past = False
+        if past or time.time() - p.stat().st_mtime < _EMPTY_RECHECK_SECONDS:
+            return {}
+        return None
+    except Exception:
+        return None
+
+
+def _save_raw_stats(season, week, lines: dict) -> None:
+    """Keep the complete week (best-effort, atomic); an empty answer is kept as
+    a marker so it is not asked for again.  Not on Render: its disk is
+    discarded, and the committed raw files ship in the image instead."""
+    if on_render():
+        return
+    import gzip, os
+    try:
+        p = _raw_stats_path(season, week)
+        p.parent.mkdir(parents=True, exist_ok=True)
+        tmp = p.with_suffix(p.suffix + ".tmp")
+        with gzip.open(tmp, "wt", encoding="utf-8", compresslevel=6) as f:
+            json.dump(lines, f, separators=(",", ":"))
+        os.replace(tmp, p)
+    except Exception:
+        pass
+
+
+def nfl_stats(season: str, week: int, reload: bool = False) -> dict:
+    """Raw NFL stat lines for one week: {player_id: {stat: value}} (cached).
+
+    Order: memory, then the stored raw week, then Sleeper (and the complete
+    answer is stored as raw).  `reload=True` skips both caches and asks
+    Sleeper again, replacing the raw week.  Everything that needs a week of
+    stat lines goes through here, so each week is downloaded once."""
     key = (str(season), int(week))
+    if reload:
+        _stats_cache.pop(key, None)
     if key not in _stats_cache:
-        _stats_cache[key] = sleeper_api(f"/stats/nfl/regular/{season}/{week}") or {}
+        lines = None if reload else _load_raw_stats(season, week)
+        if lines is None:
+            lines = sleeper_api(f"/stats/nfl/regular/{season}/{week}") or {}
+            _save_raw_stats(season, week, lines)
+        _stats_cache[key] = lines
         # Render's 512MB instances: each untrimmed week is ~2.3MB held, and
         # callers sweep weeks one at a time, so keep only the most recent few.
         if on_render():

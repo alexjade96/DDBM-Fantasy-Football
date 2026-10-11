@@ -19,6 +19,8 @@ missing or reload=True; degrades to [] when both are unavailable.
 """
 from __future__ import annotations
 
+import json
+
 from . import api, cache
 from .base import AdpProvider, AdpRow
 
@@ -81,6 +83,17 @@ def _trim(raw: list[dict]) -> list[dict]:
     return out
 
 
+def _rows_from_pages(bodies: list) -> list[dict]:
+    """The flattened player dicts `api.yahoo_adp` returns, from the page bodies
+    its raw file keeps."""
+    out: list[dict] = []
+    for body in bodies:
+        players = (body.get("fantasy_content", {}).get("game", {}).get("players") or [])
+        if isinstance(players, list):
+            out.extend(p.get("player") or {} for p in players)
+    return out
+
+
 class YahooAdp(AdpProvider):
     name = "yahoo"
     label = "Yahoo"
@@ -100,6 +113,8 @@ class YahooAdp(AdpProvider):
         rows: list[dict] | None = None
         if not reload:
             rows = cache.load(self.name, season)
+        if not rows and not reload:
+            rows = cache.from_raw(self.name, season, lambda b: _trim(_rows_from_pages(json.loads(b))))
         if not rows:
             try:
                 rows = _trim(api.yahoo_adp(season, scoring))

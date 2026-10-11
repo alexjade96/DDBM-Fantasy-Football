@@ -1,0 +1,522 @@
+{
+  "injuries/injuries_2009.parquet": {
+    "bytes": 83939,
+    "fetched": "2026-10-10T17:24:47+00:00",
+    "url": "https://github.com/nflverse/nflverse-data/releases/download/injuries/injuries_2009.parquet"
+  },
+  "injuries/injuries_2010.parquet": {
+    "bytes": 107893,
+    "fetched": "2026-10-10T17:24:48+00:00",
+    "url": "https://github.com/nflverse/nflverse-data/releases/download/injuries/injuries_2010.parquet"
+  },
+  "injuries/injuries_2011.parquet": {
+    "bytes": 115104,
+    "fetched": "2026-10-10T17:24:48+00:00",
+    "url": "https://github.com/nflverse/nflverse-data/releases/download/injuries/injuries_2011.parquet"
+  },
+  "injuries/injuries_2012.parquet": {
+    "bytes": 120441,
+    "fetched": "2026-10-10T17:24:49+00:00",
+    "url": "https://github.com/nflverse/nflverse-data/releases/download/injuries/injuries_2012.parquet"
+  },
+  "injuries/injuries_2013.parquet": {
+    "bytes": 114312,
+    "fetched": "2026-10-10T17:24:50+00:00",
+    "url": "https://github.com/nflverse/nflverse-data/releases/download/injuries/injuries_2013.parquet"
+  },
+  "injuries/injuries_2014.parquet": {
+    "bytes": 115033,
+    "fetched": "2026-10-10T17:24:51+00:00",
+    "url": "https://github.com/nflverse/nflverse-data/releases/download/injuries/injuries_2014.parquet"
+  },
+  "injuries/injuries_2015.parquet": {
+    "bytes": 117594,
+    "fetched": "2026-10-10T17:24:54+00:00",
+    "url": "https://github.com/nflverse/nflverse-data/releases/download/injuries/injuries_2015.parquet"
+  },
+  "injuries/injuries_2016.parquet": {
+    "bytes": 112500,
+    "fetched": "2026-10-10T17:24:56+00:00",
+    "url": "https://github.com/nflverse/nflverse-data/releases/download/injuries/injuries_2016.parquet"
+  },
+  "injuries/injuries_2017.parquet": {
+    "bytes": 114559,
+    "fetched": "2026-10-10T17:24:56+00:00",
+    "url": "https://github.com/nflverse/nflverse-data/releases/download/injuries/injuries_2017.parquet"
+  },
+  "injuries/injuries_2018.parquet": {
+    "bytes": 113740,
+    "fetched": "2026-10-10T17:24:57+00:00",
+    "url": "https://github.com/nflverse/nflverse-data/releases/download/injuries/injuries_2018.parquet"
+  },
+  "injuries/injuries_2019.parquet": {
+    "bytes": 119388,
+    "fetched": "2026-10-10T17:24:58+00:00",
+    "url": "https://github.com/nflverse/nflverse-data/releases/download/injuries/injuries_2019.parquet"
+  },
+  "injuries/injuries_2020.parquet": {
+    "bytes": 125134,
+    "fetched": "2026-10-10T17:24:59+00:00",
+    "url": "https://github.com/nflverse/nflverse-data/releases/download/injuries/injuries_2020.parquet"
+  },
+  "injuries/injuries_2021.parquet": {
+    "bytes": 126242,
+    "fetched": "2026-10-10T17:25:00+00:00",
+    "url": "https://github.com/nflverse/nflverse-data/releases/download/injuries/injuries_2021.parquet"
+  },
+  "injuries/injuries_2022.parquet": {
+    "bytes": 129611,
+    "fetched": "2026-10-10T17:25:01+00:00",
+    "url": "https://github.com/nflverse/nflverse-data/releases/download/injuries/injuries_2022.parquet"
+  },
+  "injuries/injuries_2023.parquet": {
+    "bytes": 126566,
+    "fetched": "2026-10-10T17:25:02+00:00",
+    "url": "https://github.com/nflverse/nflverse-data/releases/download/injuries/injuries_2023.parquet"
+  },
+  "injuries/injuries_2024.parquet": {
+    "bytes": 139253,
+    "fetched": "2026-10-10T17:25:02+00:00",
+    "url": "https://github.com/nflverse/nflverse-data/releases/download/injuries/injuries_2024.parquet"
+  },
+  "injuries/injuries_2025.parquet": {
+    "bytes": 97472,
+    "fetched": "2026-10-10T17:25:03+00:00",
+    "url": "https://github.com/nflverse/nflverse-data/releases/download/injuries/injuries_2025.parquet"
+  },
+  "injuries/injuries_2026.parquet": {
+    "bytes": 40596,
+    "fetched": "2026-10-10T17:25:04+00:00",
+    "url": "https://github.com/nflverse/nflverse-data/releases/download/injuries/injuries_2026.parquet"
+  },
+  "nextgen_stats/ngs_passing.parquet": {
+    "bytes": 744133,
+    "fetched": "2026-10-10T17:25:05+00:00",
+    "url": "https://github.com/nflverse/nflverse-data/releases/download/nextgen_stats/ngs_passing.parquet"
+  },
+  "nextgen_stats/ngs_receiving.parquet": {
+    "bytes": 1148515,
+    "fetched": "2026-10-10T17:25:06+00:00",
+    "url": "https://github.com/nflverse/nflverse-data/releases/download/nextgen_stats/ngs_receiving.parquet"
+  },
+  "nextgen_stats/ngs_rushing.parquet": {
+    "bytes": 393557,
+    "fetched": "2026-10-10T17:25:07+00:00",
+    "url": "https://github.com/nflverse/nflverse-data/releases/download/nextgen_stats/ngs_rushing.parquet"
+  },
+  "pbp/play_by_play_2016.parquet": {
+    "bytes": 19344382,
+    "fetched": "2026-10-10T18:41:09+00:00",
+    "url": "https://github.com/nflverse/nflverse-data/releases/download/pbp/play_by_play_2016.parquet"
+  },
+  "pbp/play_by_play_2017.parquet": {
+    "bytes": 19050401,
+    "fetched": "2026-10-10T18:41:13+00:00",
+    "url": "https://github.com/nflverse/nflverse-data/releases/download/pbp/play_by_play_2017.parquet"
+  },
+  "pbp/play_by_play_2018.parquet": {
+    "bytes": 19072097,
+    "fetched": "2026-10-10T18:41:16+00:00",
+    "url": "https://github.com/nflverse/nflverse-data/releases/download/pbp/play_by_play_2018.parquet"
+  },
+  "pbp/play_by_play_2019.parquet": {
+    "bytes": 19119729,
+    "fetched": "2026-10-10T18:41:19+00:00",
+    "url": "https://github.com/nflverse/nflverse-data/releases/download/pbp/play_by_play_2019.parquet"
+  },
+  "pbp/play_by_play_2020.parquet": {
+    "bytes": 19286459,
+    "fetched": "2026-10-10T18:41:22+00:00",
+    "url": "https://github.com/nflverse/nflverse-data/releases/download/pbp/play_by_play_2020.parquet"
+  },
+  "pbp/play_by_play_2021.parquet": {
+    "bytes": 20249925,
+    "fetched": "2026-10-10T18:41:26+00:00",
+    "url": "https://github.com/nflverse/nflverse-data/releases/download/pbp/play_by_play_2021.parquet"
+  },
+  "pbp/play_by_play_2022.parquet": {
+    "bytes": 20426548,
+    "fetched": "2026-10-10T18:41:29+00:00",
+    "url": "https://github.com/nflverse/nflverse-data/releases/download/pbp/play_by_play_2022.parquet"
+  },
+  "pbp/play_by_play_2023.parquet": {
+    "bytes": 20534088,
+    "fetched": "2026-10-10T18:41:32+00:00",
+    "url": "https://github.com/nflverse/nflverse-data/releases/download/pbp/play_by_play_2023.parquet"
+  },
+  "pbp/play_by_play_2024.parquet": {
+    "bytes": 20597560,
+    "fetched": "2026-10-10T18:41:36+00:00",
+    "url": "https://github.com/nflverse/nflverse-data/releases/download/pbp/play_by_play_2024.parquet"
+  },
+  "pbp/play_by_play_2025.parquet": {
+    "bytes": 20337029,
+    "fetched": "2026-10-10T18:41:39+00:00",
+    "url": "https://github.com/nflverse/nflverse-data/releases/download/pbp/play_by_play_2025.parquet"
+  },
+  "pbp/play_by_play_2026.parquet": {
+    "bytes": 4920302,
+    "fetched": "2026-10-10T18:41:41+00:00",
+    "url": "https://github.com/nflverse/nflverse-data/releases/download/pbp/play_by_play_2026.parquet"
+  },
+  "pbp_participation/pbp_participation_2016.parquet": {
+    "bytes": 3076917,
+    "fetched": "2026-10-10T18:41:42+00:00",
+    "url": "https://github.com/nflverse/nflverse-data/releases/download/pbp_participation/pbp_participation_2016.parquet"
+  },
+  "pbp_participation/pbp_participation_2017.parquet": {
+    "bytes": 2943355,
+    "fetched": "2026-10-10T18:41:43+00:00",
+    "url": "https://github.com/nflverse/nflverse-data/releases/download/pbp_participation/pbp_participation_2017.parquet"
+  },
+  "pbp_participation/pbp_participation_2018.parquet": {
+    "bytes": 2978916,
+    "fetched": "2026-10-10T18:41:45+00:00",
+    "url": "https://github.com/nflverse/nflverse-data/releases/download/pbp_participation/pbp_participation_2018.parquet"
+  },
+  "pbp_participation/pbp_participation_2019.parquet": {
+    "bytes": 2992048,
+    "fetched": "2026-10-10T18:41:46+00:00",
+    "url": "https://github.com/nflverse/nflverse-data/releases/download/pbp_participation/pbp_participation_2019.parquet"
+  },
+  "pbp_participation/pbp_participation_2020.parquet": {
+    "bytes": 2849568,
+    "fetched": "2026-10-10T18:41:48+00:00",
+    "url": "https://github.com/nflverse/nflverse-data/releases/download/pbp_participation/pbp_participation_2020.parquet"
+  },
+  "pbp_participation/pbp_participation_2021.parquet": {
+    "bytes": 2949474,
+    "fetched": "2026-10-10T18:41:49+00:00",
+    "url": "https://github.com/nflverse/nflverse-data/releases/download/pbp_participation/pbp_participation_2021.parquet"
+  },
+  "pbp_participation/pbp_participation_2022.parquet": {
+    "bytes": 2941018,
+    "fetched": "2026-10-10T18:41:50+00:00",
+    "url": "https://github.com/nflverse/nflverse-data/releases/download/pbp_participation/pbp_participation_2022.parquet"
+  },
+  "pbp_participation/pbp_participation_2023.parquet": {
+    "bytes": 4700238,
+    "fetched": "2026-10-10T18:41:51+00:00",
+    "url": "https://github.com/nflverse/nflverse-data/releases/download/pbp_participation/pbp_participation_2023.parquet"
+  },
+  "pbp_participation/pbp_participation_2024.parquet": {
+    "bytes": 4644767,
+    "fetched": "2026-10-10T18:41:53+00:00",
+    "url": "https://github.com/nflverse/nflverse-data/releases/download/pbp_participation/pbp_participation_2024.parquet"
+  },
+  "pbp_participation/pbp_participation_2025.parquet": {
+    "bytes": 4741443,
+    "fetched": "2026-10-10T18:41:54+00:00",
+    "url": "https://github.com/nflverse/nflverse-data/releases/download/pbp_participation/pbp_participation_2025.parquet"
+  },
+  "pfr_advstats/advstats_week_def_2018.parquet": {
+    "bytes": 149299,
+    "fetched": "2026-10-10T17:25:08+00:00",
+    "url": "https://github.com/nflverse/nflverse-data/releases/download/pfr_advstats/advstats_week_def_2018.parquet"
+  },
+  "pfr_advstats/advstats_week_def_2019.parquet": {
+    "bytes": 149600,
+    "fetched": "2026-10-10T17:25:09+00:00",
+    "url": "https://github.com/nflverse/nflverse-data/releases/download/pfr_advstats/advstats_week_def_2019.parquet"
+  },
+  "pfr_advstats/advstats_week_def_2020.parquet": {
+    "bytes": 154292,
+    "fetched": "2026-10-10T17:25:10+00:00",
+    "url": "https://github.com/nflverse/nflverse-data/releases/download/pfr_advstats/advstats_week_def_2020.parquet"
+  },
+  "pfr_advstats/advstats_week_def_2021.parquet": {
+    "bytes": 166280,
+    "fetched": "2026-10-10T17:25:11+00:00",
+    "url": "https://github.com/nflverse/nflverse-data/releases/download/pfr_advstats/advstats_week_def_2021.parquet"
+  },
+  "pfr_advstats/advstats_week_def_2022.parquet": {
+    "bytes": 157000,
+    "fetched": "2026-10-10T17:25:12+00:00",
+    "url": "https://github.com/nflverse/nflverse-data/releases/download/pfr_advstats/advstats_week_def_2022.parquet"
+  },
+  "pfr_advstats/advstats_week_def_2023.parquet": {
+    "bytes": 157972,
+    "fetched": "2026-10-10T17:25:13+00:00",
+    "url": "https://github.com/nflverse/nflverse-data/releases/download/pfr_advstats/advstats_week_def_2023.parquet"
+  },
+  "pfr_advstats/advstats_week_def_2024.parquet": {
+    "bytes": 156075,
+    "fetched": "2026-10-10T17:25:13+00:00",
+    "url": "https://github.com/nflverse/nflverse-data/releases/download/pfr_advstats/advstats_week_def_2024.parquet"
+  },
+  "pfr_advstats/advstats_week_def_2025.parquet": {
+    "bytes": 155798,
+    "fetched": "2026-10-10T17:25:14+00:00",
+    "url": "https://github.com/nflverse/nflverse-data/releases/download/pfr_advstats/advstats_week_def_2025.parquet"
+  },
+  "pfr_advstats/advstats_week_def_2026.parquet": {
+    "bytes": 59159,
+    "fetched": "2026-10-10T17:25:15+00:00",
+    "url": "https://github.com/nflverse/nflverse-data/releases/download/pfr_advstats/advstats_week_def_2026.parquet"
+  },
+  "pfr_advstats/advstats_week_pass_2018.parquet": {
+    "bytes": 29871,
+    "fetched": "2026-10-10T17:25:16+00:00",
+    "url": "https://github.com/nflverse/nflverse-data/releases/download/pfr_advstats/advstats_week_pass_2018.parquet"
+  },
+  "pfr_advstats/advstats_week_pass_2019.parquet": {
+    "bytes": 29651,
+    "fetched": "2026-10-10T17:25:17+00:00",
+    "url": "https://github.com/nflverse/nflverse-data/releases/download/pfr_advstats/advstats_week_pass_2019.parquet"
+  },
+  "pfr_advstats/advstats_week_pass_2020.parquet": {
+    "bytes": 30168,
+    "fetched": "2026-10-10T17:25:18+00:00",
+    "url": "https://github.com/nflverse/nflverse-data/releases/download/pfr_advstats/advstats_week_pass_2020.parquet"
+  },
+  "pfr_advstats/advstats_week_pass_2021.parquet": {
+    "bytes": 31021,
+    "fetched": "2026-10-10T17:25:18+00:00",
+    "url": "https://github.com/nflverse/nflverse-data/releases/download/pfr_advstats/advstats_week_pass_2021.parquet"
+  },
+  "pfr_advstats/advstats_week_pass_2022.parquet": {
+    "bytes": 30328,
+    "fetched": "2026-10-10T17:25:19+00:00",
+    "url": "https://github.com/nflverse/nflverse-data/releases/download/pfr_advstats/advstats_week_pass_2022.parquet"
+  },
+  "pfr_advstats/advstats_week_pass_2023.parquet": {
+    "bytes": 30594,
+    "fetched": "2026-10-10T17:25:20+00:00",
+    "url": "https://github.com/nflverse/nflverse-data/releases/download/pfr_advstats/advstats_week_pass_2023.parquet"
+  },
+  "pfr_advstats/advstats_week_pass_2024.parquet": {
+    "bytes": 27663,
+    "fetched": "2026-10-10T17:25:21+00:00",
+    "url": "https://github.com/nflverse/nflverse-data/releases/download/pfr_advstats/advstats_week_pass_2024.parquet"
+  },
+  "pfr_advstats/advstats_week_pass_2025.parquet": {
+    "bytes": 28520,
+    "fetched": "2026-10-10T17:25:22+00:00",
+    "url": "https://github.com/nflverse/nflverse-data/releases/download/pfr_advstats/advstats_week_pass_2025.parquet"
+  },
+  "pfr_advstats/advstats_week_pass_2026.parquet": {
+    "bytes": 16641,
+    "fetched": "2026-10-10T17:25:22+00:00",
+    "url": "https://github.com/nflverse/nflverse-data/releases/download/pfr_advstats/advstats_week_pass_2026.parquet"
+  },
+  "pfr_advstats/advstats_week_rec_2018.parquet": {
+    "bytes": 52583,
+    "fetched": "2026-10-10T17:25:23+00:00",
+    "url": "https://github.com/nflverse/nflverse-data/releases/download/pfr_advstats/advstats_week_rec_2018.parquet"
+  },
+  "pfr_advstats/advstats_week_rec_2019.parquet": {
+    "bytes": 51540,
+    "fetched": "2026-10-10T17:25:24+00:00",
+    "url": "https://github.com/nflverse/nflverse-data/releases/download/pfr_advstats/advstats_week_rec_2019.parquet"
+  },
+  "pfr_advstats/advstats_week_rec_2020.parquet": {
+    "bytes": 53420,
+    "fetched": "2026-10-10T17:25:25+00:00",
+    "url": "https://github.com/nflverse/nflverse-data/releases/download/pfr_advstats/advstats_week_rec_2020.parquet"
+  },
+  "pfr_advstats/advstats_week_rec_2021.parquet": {
+    "bytes": 55378,
+    "fetched": "2026-10-10T17:25:26+00:00",
+    "url": "https://github.com/nflverse/nflverse-data/releases/download/pfr_advstats/advstats_week_rec_2021.parquet"
+  },
+  "pfr_advstats/advstats_week_rec_2022.parquet": {
+    "bytes": 53560,
+    "fetched": "2026-10-10T17:25:26+00:00",
+    "url": "https://github.com/nflverse/nflverse-data/releases/download/pfr_advstats/advstats_week_rec_2022.parquet"
+  },
+  "pfr_advstats/advstats_week_rec_2023.parquet": {
+    "bytes": 53510,
+    "fetched": "2026-10-10T17:25:27+00:00",
+    "url": "https://github.com/nflverse/nflverse-data/releases/download/pfr_advstats/advstats_week_rec_2023.parquet"
+  },
+  "pfr_advstats/advstats_week_rec_2024.parquet": {
+    "bytes": 50503,
+    "fetched": "2026-10-10T17:25:28+00:00",
+    "url": "https://github.com/nflverse/nflverse-data/releases/download/pfr_advstats/advstats_week_rec_2024.parquet"
+  },
+  "pfr_advstats/advstats_week_rec_2025.parquet": {
+    "bytes": 51764,
+    "fetched": "2026-10-10T17:25:29+00:00",
+    "url": "https://github.com/nflverse/nflverse-data/releases/download/pfr_advstats/advstats_week_rec_2025.parquet"
+  },
+  "pfr_advstats/advstats_week_rec_2026.parquet": {
+    "bytes": 24056,
+    "fetched": "2026-10-10T17:25:30+00:00",
+    "url": "https://github.com/nflverse/nflverse-data/releases/download/pfr_advstats/advstats_week_rec_2026.parquet"
+  },
+  "pfr_advstats/advstats_week_rush_2018.parquet": {
+    "bytes": 43218,
+    "fetched": "2026-10-10T17:25:31+00:00",
+    "url": "https://github.com/nflverse/nflverse-data/releases/download/pfr_advstats/advstats_week_rush_2018.parquet"
+  },
+  "pfr_advstats/advstats_week_rush_2019.parquet": {
+    "bytes": 42791,
+    "fetched": "2026-10-10T17:25:31+00:00",
+    "url": "https://github.com/nflverse/nflverse-data/releases/download/pfr_advstats/advstats_week_rush_2019.parquet"
+  },
+  "pfr_advstats/advstats_week_rush_2020.parquet": {
+    "bytes": 44537,
+    "fetched": "2026-10-10T17:25:32+00:00",
+    "url": "https://github.com/nflverse/nflverse-data/releases/download/pfr_advstats/advstats_week_rush_2020.parquet"
+  },
+  "pfr_advstats/advstats_week_rush_2021.parquet": {
+    "bytes": 45640,
+    "fetched": "2026-10-10T17:25:33+00:00",
+    "url": "https://github.com/nflverse/nflverse-data/releases/download/pfr_advstats/advstats_week_rush_2021.parquet"
+  },
+  "pfr_advstats/advstats_week_rush_2022.parquet": {
+    "bytes": 45757,
+    "fetched": "2026-10-10T17:25:34+00:00",
+    "url": "https://github.com/nflverse/nflverse-data/releases/download/pfr_advstats/advstats_week_rush_2022.parquet"
+  },
+  "pfr_advstats/advstats_week_rush_2023.parquet": {
+    "bytes": 45384,
+    "fetched": "2026-10-10T17:25:35+00:00",
+    "url": "https://github.com/nflverse/nflverse-data/releases/download/pfr_advstats/advstats_week_rush_2023.parquet"
+  },
+  "pfr_advstats/advstats_week_rush_2024.parquet": {
+    "bytes": 42939,
+    "fetched": "2026-10-10T17:25:35+00:00",
+    "url": "https://github.com/nflverse/nflverse-data/releases/download/pfr_advstats/advstats_week_rush_2024.parquet"
+  },
+  "pfr_advstats/advstats_week_rush_2025.parquet": {
+    "bytes": 43492,
+    "fetched": "2026-10-10T17:25:36+00:00",
+    "url": "https://github.com/nflverse/nflverse-data/releases/download/pfr_advstats/advstats_week_rush_2025.parquet"
+  },
+  "pfr_advstats/advstats_week_rush_2026.parquet": {
+    "bytes": 19170,
+    "fetched": "2026-10-10T17:25:37+00:00",
+    "url": "https://github.com/nflverse/nflverse-data/releases/download/pfr_advstats/advstats_week_rush_2026.parquet"
+  },
+  "player_stats/player_stats_2016.parquet": {
+    "bytes": 325341,
+    "fetched": "2026-10-10T17:25:38+00:00",
+    "url": "https://github.com/nflverse/nflverse-data/releases/download/player_stats/player_stats_2016.parquet"
+  },
+  "player_stats/player_stats_2017.parquet": {
+    "bytes": 321117,
+    "fetched": "2026-10-10T17:25:39+00:00",
+    "url": "https://github.com/nflverse/nflverse-data/releases/download/player_stats/player_stats_2017.parquet"
+  },
+  "player_stats/player_stats_2018.parquet": {
+    "bytes": 325344,
+    "fetched": "2026-10-10T17:25:40+00:00",
+    "url": "https://github.com/nflverse/nflverse-data/releases/download/player_stats/player_stats_2018.parquet"
+  },
+  "player_stats/player_stats_2019.parquet": {
+    "bytes": 321410,
+    "fetched": "2026-10-10T17:25:42+00:00",
+    "url": "https://github.com/nflverse/nflverse-data/releases/download/player_stats/player_stats_2019.parquet"
+  },
+  "player_stats/player_stats_2020.parquet": {
+    "bytes": 327982,
+    "fetched": "2026-10-10T17:25:42+00:00",
+    "url": "https://github.com/nflverse/nflverse-data/releases/download/player_stats/player_stats_2020.parquet"
+  },
+  "player_stats/player_stats_2021.parquet": {
+    "bytes": 345691,
+    "fetched": "2026-10-10T17:25:43+00:00",
+    "url": "https://github.com/nflverse/nflverse-data/releases/download/player_stats/player_stats_2021.parquet"
+  },
+  "player_stats/player_stats_2022.parquet": {
+    "bytes": 338789,
+    "fetched": "2026-10-10T17:25:44+00:00",
+    "url": "https://github.com/nflverse/nflverse-data/releases/download/player_stats/player_stats_2022.parquet"
+  },
+  "player_stats/player_stats_2023.parquet": {
+    "bytes": 332923,
+    "fetched": "2026-10-10T17:25:46+00:00",
+    "url": "https://github.com/nflverse/nflverse-data/releases/download/player_stats/player_stats_2023.parquet"
+  },
+  "player_stats/player_stats_2024.parquet": {
+    "bytes": 330816,
+    "fetched": "2026-10-10T17:25:47+00:00",
+    "url": "https://github.com/nflverse/nflverse-data/releases/download/player_stats/player_stats_2024.parquet"
+  },
+  "schedules/games.parquet": {
+    "bytes": 522027,
+    "fetched": "2026-10-10T17:25:48+00:00",
+    "url": "https://github.com/nflverse/nflverse-data/releases/download/schedules/games.parquet"
+  },
+  "snap_counts/snap_counts_2013.parquet": {
+    "bytes": 209550,
+    "fetched": "2026-10-10T17:25:49+00:00",
+    "url": "https://github.com/nflverse/nflverse-data/releases/download/snap_counts/snap_counts_2013.parquet"
+  },
+  "snap_counts/snap_counts_2014.parquet": {
+    "bytes": 211616,
+    "fetched": "2026-10-10T17:25:49+00:00",
+    "url": "https://github.com/nflverse/nflverse-data/releases/download/snap_counts/snap_counts_2014.parquet"
+  },
+  "snap_counts/snap_counts_2015.parquet": {
+    "bytes": 211957,
+    "fetched": "2026-10-10T17:25:51+00:00",
+    "url": "https://github.com/nflverse/nflverse-data/releases/download/snap_counts/snap_counts_2015.parquet"
+  },
+  "snap_counts/snap_counts_2016.parquet": {
+    "bytes": 212500,
+    "fetched": "2026-10-10T17:25:51+00:00",
+    "url": "https://github.com/nflverse/nflverse-data/releases/download/snap_counts/snap_counts_2016.parquet"
+  },
+  "snap_counts/snap_counts_2017.parquet": {
+    "bytes": 212468,
+    "fetched": "2026-10-10T17:25:52+00:00",
+    "url": "https://github.com/nflverse/nflverse-data/releases/download/snap_counts/snap_counts_2017.parquet"
+  },
+  "snap_counts/snap_counts_2018.parquet": {
+    "bytes": 211973,
+    "fetched": "2026-10-10T17:25:53+00:00",
+    "url": "https://github.com/nflverse/nflverse-data/releases/download/snap_counts/snap_counts_2018.parquet"
+  },
+  "snap_counts/snap_counts_2019.parquet": {
+    "bytes": 213089,
+    "fetched": "2026-10-10T17:25:54+00:00",
+    "url": "https://github.com/nflverse/nflverse-data/releases/download/snap_counts/snap_counts_2019.parquet"
+  },
+  "snap_counts/snap_counts_2020.parquet": {
+    "bytes": 233598,
+    "fetched": "2026-10-10T17:25:55+00:00",
+    "url": "https://github.com/nflverse/nflverse-data/releases/download/snap_counts/snap_counts_2020.parquet"
+  },
+  "snap_counts/snap_counts_2021.parquet": {
+    "bytes": 240680,
+    "fetched": "2026-10-10T17:25:56+00:00",
+    "url": "https://github.com/nflverse/nflverse-data/releases/download/snap_counts/snap_counts_2021.parquet"
+  },
+  "snap_counts/snap_counts_2022.parquet": {
+    "bytes": 237678,
+    "fetched": "2026-10-10T17:25:57+00:00",
+    "url": "https://github.com/nflverse/nflverse-data/releases/download/snap_counts/snap_counts_2022.parquet"
+  },
+  "snap_counts/snap_counts_2023.parquet": {
+    "bytes": 237882,
+    "fetched": "2026-10-10T17:25:58+00:00",
+    "url": "https://github.com/nflverse/nflverse-data/releases/download/snap_counts/snap_counts_2023.parquet"
+  },
+  "snap_counts/snap_counts_2024.parquet": {
+    "bytes": 240862,
+    "fetched": "2026-10-10T17:25:59+00:00",
+    "url": "https://github.com/nflverse/nflverse-data/releases/download/snap_counts/snap_counts_2024.parquet"
+  },
+  "snap_counts/snap_counts_2025.parquet": {
+    "bytes": 242046,
+    "fetched": "2026-10-10T17:26:00+00:00",
+    "url": "https://github.com/nflverse/nflverse-data/releases/download/snap_counts/snap_counts_2025.parquet"
+  },
+  "snap_counts/snap_counts_2026.parquet": {
+    "bytes": 84300,
+    "fetched": "2026-10-10T17:26:01+00:00",
+    "url": "https://github.com/nflverse/nflverse-data/releases/download/snap_counts/snap_counts_2026.parquet"
+  },
+  "stats_player/stats_player_week_2025.parquet": {
+    "bytes": 855077,
+    "fetched": "2026-10-10T17:26:02+00:00",
+    "url": "https://github.com/nflverse/nflverse-data/releases/download/stats_player/stats_player_week_2025.parquet"
+  },
+  "stats_player/stats_player_week_2026.parquet": {
+    "bytes": 309541,
+    "fetched": "2026-10-10T17:26:02+00:00",
+    "url": "https://github.com/nflverse/nflverse-data/releases/download/stats_player/stats_player_week_2026.parquet"
+  }
+}

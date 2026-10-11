@@ -101,6 +101,9 @@ class CbsAdp(AdpProvider):
         rows: list[dict] | None = None
         if not reload:
             rows = cache.load(self.name, season)
+        if not rows and not reload:
+            rows = cache.from_raw(self.name, season, lambda b: _parse(b.decode("utf-8")),
+                                  ext="html")
         if not rows:
             try:
                 rows = _parse(api.cbs_adp())
