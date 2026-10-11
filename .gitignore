@@ -41,3 +41,9 @@ data/sources/**/*.tmp
 # When each snapshot source was last refreshed (webapp/refresher.py).
 data/sources/refresh_state.json
 data/sources/refresh_state.json.tmp
+
+# Play-by-play raw (about 230 MB) stays local: only a local route_participation
+# build reads it, Render skips that build, and the Docker image excludes it.
+# Re-fetch with tools/dev/backfill_raw.py --only route_participation --include-pbp
+data/sources/nflverse/raw/pbp/
+data/sources/nflverse/raw/pbp_participation/

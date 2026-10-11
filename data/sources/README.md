@@ -246,6 +246,8 @@ derive needs no download.
   only the columns it uses.  `api.store_release` downloads one without parsing it.
   Fetch them with `tools/dev/backfill_raw.py --only route_participation --include-pbp`
   (about 250 MB).
+  These two folders are gitignored (decision 2026-10-11): they stay local, and the
+  manifest lists entries for files that exist only on the machine that fetched them.
 * Render never writes raw files (`on_render()`); the committed ones ship in the
   image.
 * `raw/manifest.json` records each file's URL, fetch time and size.
