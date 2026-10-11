@@ -374,14 +374,15 @@ def test_adp_waits_a_day_in_the_preseason(monkeypatch):
     assert "adp/sleeper/2026" in _adp_keys(items)
 
 
-def test_adp_slows_to_weekly_once_the_season_is_underway(monkeypatch):
-    monkeypatch.setattr(rp, "_now", lambda: 1000.0)
-    rp.record_refresh("adp/sleeper/2026", validators={"etag": '"e"'})
-    monkeypatch.setattr(rp, "_now", lambda: 1000.0 + 2 * 86400)
-    items, _ = _adp_plan(monkeypatch, _state(week=4))
-    assert "adp/sleeper/2026" not in _adp_keys(items)
-    monkeypatch.setattr(rp, "_now", lambda: 1000.0 + 8 * 86400)
-    items, _ = _adp_plan(monkeypatch, _state(week=4))
+def test_adp_is_frozen_from_the_start_of_week_1(monkeypatch):
+    # never recorded, so every source would be due, yet nothing is planned or probed
+    for st in (_state(week=1), _state(week=4), _state(week=1, season_type="post")):
+        items, calls = _adp_plan(monkeypatch, st)
+        assert items == [] and calls == []
+
+
+def test_adp_still_refreshes_before_week_1(monkeypatch):
+    items, _ = _adp_plan(monkeypatch, _state(week=0, season_type="pre"))
     assert "adp/sleeper/2026" in _adp_keys(items)
 
 

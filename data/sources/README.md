@@ -309,6 +309,8 @@ adp/rotowire/raw/<PPR|Standard>/raw_<season>.json.gz
   A refresh (`reload=True`) still goes to the provider.  Sleeper's ADP for a past
   season is now read from the stored snapshot or raw and no longer asks Sleeper
   each process (the current season still does).
+* The refresher stops refreshing ADP from the start of week 1 (`season_type` regular or
+  post): the sources are live feeds, so the last pre-season fetch stays as the board.
 * ESPN: a past season whose raw response trims to nothing (2019, 2025) is stored
   as an empty snapshot, the "checked, nothing there" marker.
 * `tools/dev/backfill_adp_raw.py` fetched all 92 responses for the seasons that had

@@ -166,13 +166,19 @@ _DAY, _WEEK = 86400, 7 * 86400
 
 
 def _adp_interval(name: str, state: dict) -> int:
-    """Daily while the draft season is live; weekly once the regular season is
-    past week 1. ESPN's ~20MB file is weekly regardless."""
+    """Daily while the draft season is live. ESPN's ~20MB file is weekly
+    regardless. (Once the regular season starts nothing is planned at all, see
+    `_adp_frozen`.)"""
     if name == "espn":
         return _WEEK
-    if state["season_type"] == "regular" and state["week"] > 1:
-        return _WEEK
     return _DAY
+
+
+def _adp_frozen(state: dict) -> bool:
+    """True from the start of week 1: the last pre-season fetch is kept as the
+    season's draft board. These feeds are live (only Yahoo's field is pinned), so
+    refreshing in season would rewrite the board with post-draft numbers."""
+    return state["season_type"] in ("regular", "post")
 
 
 def _adp_key(name: str, fmt: str, season: str) -> str:
@@ -194,6 +200,8 @@ def _adp_probe(kind, season, fmt, validators):
 
 
 def plan_adp(state: dict) -> list[Item]:
+    if _adp_frozen(state):
+        return []
     season = state["season"]
     items: list[Item] = []
     for name, fmts, kind in _ADP_TARGETS:
