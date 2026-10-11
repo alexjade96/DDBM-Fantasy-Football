@@ -226,12 +226,16 @@ def raw_env(monkeypatch, tmp_path):
     from sleepermetrics import scoring
     monkeypatch.setattr(scoring, "SOURCES_DIR", tmp_path)
     scoring._stats_cache.clear()
+    scoring._state_memo = None
     calls = []
     answer = {"p1": {"rec": 5.0, "an_unused_key": 1.0, "rec_tgt": 8.0}, "AAA": {"pts_allow": 17.0}}
     monkeypatch.setattr(scoring, "sleeper_api",
                         lambda path: calls.append(path) or dict(answer))
+    # unknown state = fail open (ask Sleeper), so the tests below never hit the network
+    monkeypatch.setattr(scoring, "_nfl_state", lambda: {})
     yield scoring, calls, answer, tmp_path
     scoring._stats_cache.clear()
+    scoring._state_memo = None
 
 
 def test_first_call_downloads_and_keeps_the_complete_week(raw_env):
@@ -285,6 +289,71 @@ def test_an_empty_current_season_week_is_rechecked_after_a_while(raw_env, monkey
     scoring._stats_cache.clear()
     answer["p1"] = {"rec": 1.0}                            # the week has now been played
     assert scoring.nfl_stats(year, 17) == {"p1": {"rec": 1.0}} and len(calls) == 2
+
+
+def _state(monkeypatch, scoring, **st):
+    scoring._state_memo = None
+    monkeypatch.setattr(scoring, "_nfl_state", lambda: dict(st))
+
+
+def test_a_week_that_has_not_started_is_neither_asked_for_nor_stored(raw_env, monkeypatch):
+    scoring, calls, answer, root = raw_env
+    year = str(scoring._current_nfl_season())
+    _state(monkeypatch, scoring, season=year, season_type="regular", week=5)
+    assert scoring.nfl_stats(year, 6) == {} and scoring.nfl_stats(year, 18) == {}
+    assert calls == []                                    # no Sleeper call
+    assert not (root / "sleeper_stats/raw").exists()      # and no marker
+    assert (scoring._stats_cache == {})                   # and not remembered in memory
+
+
+def test_the_current_week_and_earlier_weeks_are_still_asked_for(raw_env, monkeypatch):
+    scoring, calls, answer, root = raw_env
+    year = str(scoring._current_nfl_season())
+    _state(monkeypatch, scoring, season=year, season_type="regular", week=5)
+    assert scoring.nfl_stats(year, 5) == answer and scoring.nfl_stats(year, 2) == answer
+    assert len(calls) == 2
+
+
+def test_preseason_weeks_have_not_started_either(raw_env, monkeypatch):
+    scoring, calls, answer, root = raw_env
+    year = str(scoring._current_nfl_season())
+    _state(monkeypatch, scoring, season=year, season_type="pre", week=0)
+    assert scoring.nfl_stats(year, 1) == {} and calls == []
+
+
+def test_postseason_and_older_seasons_are_never_skipped(raw_env, monkeypatch):
+    scoring, calls, answer, root = raw_env
+    year = str(scoring._current_nfl_season())
+    _state(monkeypatch, scoring, season=year, season_type="post", week=19)
+    assert scoring.nfl_stats(year, 18) == answer
+    _state(monkeypatch, scoring, season=year, season_type="regular", week=1)
+    assert scoring.nfl_stats(str(int(year) - 1), 17) == answer     # an older season
+    assert len(calls) == 2
+
+
+def test_an_unreadable_state_asks_sleeper_as_before(raw_env, monkeypatch):
+    scoring, calls, answer, root = raw_env
+    year = str(scoring._current_nfl_season())
+    scoring._state_memo = None
+
+    def boom():
+        raise ConnectionError("down")
+    monkeypatch.setattr(scoring, "_nfl_state", boom)
+    assert scoring.nfl_stats(year, 12) == answer and len(calls) == 1
+
+
+def test_the_state_lookup_is_reused_and_clear_stats_cache_resets_it(raw_env, monkeypatch):
+    scoring, calls, answer, root = raw_env
+    year = str(scoring._current_nfl_season())
+    n = []
+    scoring._state_memo = None
+    monkeypatch.setattr(scoring, "_nfl_state",
+                        lambda: n.append(1) or {"season": year, "season_type": "regular", "week": 3})
+    scoring.nfl_stats(year, 10); scoring.nfl_stats(year, 11); scoring.nfl_stats(year, 12)
+    assert len(n) == 1                                     # one lookup for three weeks
+    scoring.clear_stats_cache()
+    scoring.nfl_stats(year, 10)
+    assert len(n) == 2
 
 
 def test_render_does_not_write_raw(raw_env, monkeypatch):

@@ -4,6 +4,7 @@ from __future__ import annotations
 import datetime
 import os
 import pickle
+import warnings
 
 import pandas as pd
 
@@ -30,9 +31,19 @@ def players(refresh: bool = False, cache_path: str = "sleeperPlayerData_py.pkl")
         with open(cache_path, "rb") as fh:
             raw = pickle.load(fh)
     else:
-        raw = sleeper_api("/players/nfl")
-        with open(cache_path, "wb") as fh:
-            pickle.dump(raw, fh)
+        try:
+            raw = sleeper_api("/players/nfl")
+        except Exception:
+            # Sleeper unreachable: yesterday's dump beats an error (names and
+            # teams move slowly). An explicit refresh, or no dump at all, still raises.
+            if refresh or not os.path.exists(cache_path):
+                raise
+            warnings.warn("Sleeper player dump could not be refreshed; using the stored copy.")
+            with open(cache_path, "rb") as fh:
+                raw = pickle.load(fh)
+        else:
+            with open(cache_path, "wb") as fh:
+                pickle.dump(raw, fh)
     rows = []
     for pid, p in raw.items():
         if not isinstance(p, dict):

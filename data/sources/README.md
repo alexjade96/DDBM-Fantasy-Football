@@ -311,6 +311,10 @@ adp/rotowire/raw/<PPR|Standard>/raw_<season>.json.gz
   each process (the current season still does).
 * The refresher stops refreshing ADP from the start of week 1 (`season_type` regular or
   post): the sources are live feeds, so the last pre-season fetch stays as the board.
+* `scoring.nfl_stats` does not ask Sleeper for a week of the current season that is past
+  Sleeper's current week (checked against `/state/nfl`, reused for 10 minutes): it returns
+  empty and stores no marker. Any uncertainty (older season, postseason, failed lookup)
+  asks Sleeper as before.
 * ESPN: a past season whose raw response trims to nothing (2019, 2025) is stored
   as an empty snapshot, the "checked, nothing there" marker.
 * `tools/dev/backfill_adp_raw.py` fetched all 92 responses for the seasons that had

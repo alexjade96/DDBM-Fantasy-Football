@@ -53,6 +53,43 @@ def _raw_stats_path(season, week):
 _EMPTY_RECHECK_SECONDS = 6 * 3600
 
 
+#: how long `/state/nfl` is reused when deciding whether a week has started; short,
+#: so a new week is noticed within minutes. A failed lookup is remembered too, so a
+#: blocked network is not retried for every week.
+_STATE_TTL_SECONDS = 600
+_state_memo: tuple | None = None
+
+
+def _nfl_state() -> dict:
+    from .league import nfl_state
+    return nfl_state() or {}
+
+
+def _week_not_started(season, week) -> bool:
+    """True when `week` of the CURRENT season is past Sleeper's current week, so
+    no stat lines can exist yet and asking (or storing an empty marker) is wasted.
+    Anything uncertain (an older season, a lookup that fails, another phase)
+    answers False and the caller asks Sleeper as before."""
+    global _state_memo
+    import time
+    try:
+        if int(season) != _current_nfl_season():
+            return False
+        now = time.time()
+        if _state_memo is None or now - _state_memo[0] > _STATE_TTL_SECONDS:
+            try:
+                st = _nfl_state()
+            except Exception:
+                st = {}
+            _state_memo = (now, st if isinstance(st, dict) else {})
+        st = _state_memo[1]
+        if str(st.get("season")) != str(season) or st.get("season_type") not in ("pre", "regular"):
+            return False
+        return int(week) > int(st.get("week") or 0)
+    except Exception:
+        return False
+
+
 def _current_nfl_season() -> int:
     """The NFL season under way: the calendar year from March, else the last."""
     from datetime import date
@@ -118,6 +155,8 @@ def nfl_stats(season: str, week: int, reload: bool = False) -> dict:
     if key not in _stats_cache:
         lines = None if reload else _load_raw_stats(season, week)
         if lines is None:
+            if _week_not_started(season, week):
+                return {}          # not cached or stored: the week may start any time
             lines = sleeper_api(f"/stats/nfl/regular/{season}/{week}") or {}
             _save_raw_stats(season, week, lines)
         _stats_cache[key] = lines
@@ -132,7 +171,9 @@ def nfl_stats(season: str, week: int, reload: bool = False) -> dict:
 def clear_stats_cache() -> None:
     """Drop cached stat lines. Call before re-scoring a week still in progress,
     otherwise a live playoff would keep showing stale points."""
+    global _state_memo
     _stats_cache.clear()
+    _state_memo = None
 
 
 def score_player(player_id: str, season: str, week: int, rules: dict) -> float:
