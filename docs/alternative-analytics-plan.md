@@ -91,9 +91,8 @@ Phase 3:
 
 ## Open questions
 
-- Search scope: limit the builder to QB, RB, WR, TE and FB, or leave kickers and defenders in (their measures are all greyed).  Not decided.
 - Position-based defaults beyond the measures (Show per game, Group by Season, a pre-applied chip).  Not decided.
 - Does the builder need a saved or shareable query URL?  Not decided.
 - Neutral-site games (international games, Super Bowls) are labelled Neutral for Site; confirm that is the wording wanted.
 
-Decided: the 2026 partial season counts in career totals, and the covered range shows as a tooltip.  Results carry no explanatory prose.
+Decided: kickers are in (2026-10-13).  `player_games` is built from the combined `stats_player` release for every season, which carries kicker data back to 1999 (the older `player_stats` release has none), and keeps only QB, RB, FB, WR, TE and K rows with at least one recorded stat.  Defenders and punters are not searchable.  The raw files stay whole under `data/sources/nflverse/raw/`.  Targets not recorded by nflverse (2005 to 2008) are blank, not zero.  Longest field goal is a maximum, not a sum.  The 2026 partial season counts in career totals, and the covered range shows as a tooltip.  Results carry no explanatory prose.

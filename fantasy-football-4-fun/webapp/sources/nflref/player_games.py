@@ -3,11 +3,20 @@
 The base table for the Alternative Analytics section.  Built from two stored
 nflverse files:
 
-  * the raw weekly player stats (`player_stats` release through 2024,
-    `stats_player` from 2025), which keep POST rows that the shared
-    `player_stats` dataset drops, back to 1999;
+  * the raw weekly player stats from the `stats_player` release, for EVERY
+    season (1999 on).  The older `player_stats` release has no kicker data and
+    stops after 2024; `stats_player` carries the field goal and extra point
+    columns back to 1999.  Both keep POST rows that the shared `player_stats`
+    dataset drops;
   * the raw `schedules` file, which supplies opponent, home or away, game type
     and result.
+
+The raw files are kept whole under `data/sources/nflverse/raw/`; this dataset
+is the trimmed extract.  It keeps only the positions the builder has measures
+for (QB, RB, FB, WR, TE, K) and, within them, only rows with at least one
+recorded stat, which matches what the older release listed (the newer one also
+lists every player who was on the field and recorded nothing).  Defenders,
+punters and linemen are left out because no measure reads them.
 
 Facts this module depends on (checked against the stored files, 2026-10-11):
 
@@ -32,7 +41,7 @@ from __future__ import annotations
 import pandas as pd
 
 from .base import NflDataset
-from .player_stats import _KEEP as _STAT_COLS, _RENAMES, PlayerStats
+from .player_stats import _KEEP as _STAT_COLS, _RENAMES
 
 EARLIEST = 1999
 
@@ -44,6 +53,54 @@ _ALIAS = {"OAK": "LV", "SD": "LAC", "STL": "LA"}
 _IDENTITY = {"player_id", "player_display_name", "position", "recent_team",
              "season", "week", "season_type"}
 _STATS = [c for c in _STAT_COLS if c not in _IDENTITY]
+
+#: Kicking columns kept (counts only; percentages are computed from them).
+_KICK = ["fg_made", "fg_att", "fg_missed", "fg_long",
+         "fg_made_0_19", "fg_made_20_29", "fg_made_30_39", "fg_made_40_49",
+         "fg_made_50_59", "fg_made_60_",
+         "pat_made", "pat_att", "pat_missed"]
+
+#: Positions the builder has measures for.
+_POSITIONS = {"QB", "RB", "FB", "WR", "TE", "K"}
+
+#: A row is kept when any of these is non-zero (the player recorded something).
+_ACTIVITY = ["targets", "receptions", "receiving_yards", "receiving_tds", "carries",
+             "rushing_yards", "rushing_tds", "attempts", "completions", "passing_yards",
+             "passing_tds", "interceptions", "fantasy_points", "fantasy_points_ppr",
+             "fg_att", "fg_made", "fg_missed", "pat_att", "pat_made", "pat_missed"]
+
+
+#: Receiving columns that depend on target tracking.  nflverse records no
+#: targets for 2005 to 2008 (and almost none for 2004), so those seasons come
+#: through as zeros.  A zero there would read as "no targets", so the season is
+#: blanked instead (NaN = not recorded), and the engine leaves NaN out of every
+#: total and ratio.
+_TARGET_COLS = ["targets", "receiving_air_yards", "target_share", "air_yards_share",
+                "wopr", "racr"]
+_MIN_LEAGUE_TARGETS = 100
+
+
+def _blank_unrecorded(df: pd.DataFrame) -> pd.DataFrame:
+    if "targets" not in df.columns:
+        return df
+    if pd.to_numeric(df["targets"], errors="coerce").fillna(0).sum() >= _MIN_LEAGUE_TARGETS:
+        return df
+    df = df.copy()
+    for c in _TARGET_COLS:
+        if c in df.columns:
+            df[c] = float("nan")
+    return df
+
+
+def _extract(df: pd.DataFrame) -> pd.DataFrame:
+    """The relevant rows of one season's raw player file: a position the builder
+    knows and at least one recorded stat."""
+    df = df[df["position"].isin(_POSITIONS)]
+    cols = [c for c in _ACTIVITY if c in df.columns]
+    if not cols:
+        return df.iloc[0:0]
+    active = (df[cols].apply(pd.to_numeric, errors="coerce").fillna(0) != 0).any(axis=1)
+    return df[active]
 
 
 def team_games(sched: pd.DataFrame) -> pd.DataFrame:
@@ -93,8 +150,8 @@ def build(players: pd.DataFrame, sched: pd.DataFrame, season: int) -> pd.DataFra
         return pd.DataFrame()
     df = players.rename(columns={k: v for k, v in _RENAMES.items()
                                  if k in players.columns and v not in players.columns})
-    keep = [c for c in (*_IDENTITY, "opponent_team", *_STATS) if c in df.columns]
-    df = df[keep].copy()
+    keep = [c for c in (*_IDENTITY, "opponent_team", *_STATS, *_KICK) if c in df.columns]
+    df = _blank_unrecorded(_extract(df[keep]).copy())
     df["recent_team"] = df["recent_team"].replace(_ALIAS)
     games = team_games(sched[sched["season"] == season])
     m = df.merge(games, left_on=["season", "week", "recent_team"],
@@ -115,9 +172,10 @@ class PlayerGames(NflDataset):
     EARLIEST = EARLIEST
 
     def _asset(self, season: str) -> str:
-        # The player-stats file is what changes during a season, so it is the
+        # The combined release for every season (the older `player_stats` release
+        # has no kicker data).  It is what changes during a season, so it is the
         # asset the refresher probes for this dataset too.
-        return PlayerStats()._asset(season)
+        return f"stats_player/stats_player_week_{season}.parquet"
 
     def fetch(self, season: str, reload: bool = False) -> pd.DataFrame:
         from . import api, cache

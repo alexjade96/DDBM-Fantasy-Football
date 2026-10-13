@@ -51,6 +51,24 @@ _COUNTS = {
     "receiving_air_yards": ("Air yds", "receiving_air_yards"),
     "fantasy_points_ppr": ("PPR pts", "fantasy_points_ppr"),
     "fantasy_points": ("Std pts", "fantasy_points"),
+    "fg_made": ("FG made", "fg_made"),
+    "fg_att": ("FG att", "fg_att"),
+    "fg_missed": ("FG missed", "fg_missed"),
+    "fg_made_0_19": ("FG 0-19", "fg_made_0_19"),
+    "fg_made_20_29": ("FG 20-29", "fg_made_20_29"),
+    "fg_made_30_39": ("FG 30-39", "fg_made_30_39"),
+    "fg_made_40_49": ("FG 40-49", "fg_made_40_49"),
+    "fg_made_50_59": ("FG 50-59", "fg_made_50_59"),
+    "fg_made_60_": ("FG 60+", "fg_made_60_"),
+    "pat_made": ("PAT made", "pat_made"),
+    "pat_att": ("PAT att", "pat_att"),
+    "pat_missed": ("PAT missed", "pat_missed"),
+}
+
+#: Best-single-game measures: key -> (label, source column).  The value is the
+#: maximum over the games in the group, whatever "Show" says.
+_MAXES = {
+    "fg_long": ("Long FG", "fg_long"),
 }
 
 #: Ratio measures: key -> (label, numerator, denominator).  Always sum / sum.
@@ -61,10 +79,13 @@ _RATIOS = {
     "yards_per_carry": ("Yds/carry", "rushing_yards", "carries"),
     "yards_per_attempt": ("Yds/att", "passing_yards", "attempts"),
     "completion_rate": ("Cmp %", "completions", "attempts"),
+    "fg_pct": ("FG %", "fg_made", "fg_att"),
+    "pat_pct": ("PAT %", "pat_made", "pat_att"),
 }
-_PERCENT = {"catch_rate", "completion_rate"}
+_PERCENT = {"catch_rate", "completion_rate", "fg_pct", "pat_pct"}
 
 MEASURES = {**{k: v[0] for k, v in _COUNTS.items()},
+            **{k: v[0] for k, v in _MAXES.items()},
             **{k: v[0] for k, v in _RATIOS.items()}}
 
 #: what each position cares about first
@@ -77,6 +98,7 @@ _DEFAULT_MEASURES = {
            "yards_per_target", "catch_rate"],
     "TE": ["targets", "receptions", "receiving_yards", "receiving_tds",
            "yards_per_target", "catch_rate"],
+    "K": ["fg_made", "fg_att", "fg_pct", "fg_long", "pat_made", "pat_att"],
 }
 
 AGGS = {"total": "Total", "per_game": "Per game"}
@@ -185,6 +207,9 @@ def available_measures(games: pd.DataFrame) -> list[str]:
     for key, (_, col) in _COUNTS.items():
         if col in games.columns and pd.to_numeric(games[col], errors="coerce").fillna(0).abs().sum() > 0:
             out.append(key)
+    for key, (_, col) in _MAXES.items():
+        if col in games.columns and pd.to_numeric(games[col], errors="coerce").fillna(0).max() > 0:
+            out.append(key)
     for key, (_, num, den) in _RATIOS.items():
         if key and all(c in games.columns for c in (num, den)) and \
                 pd.to_numeric(games[den], errors="coerce").fillna(0).sum() > 0:
@@ -200,6 +225,9 @@ MEASURE_GROUPS = [
     ("Receiving", ["targets", "receptions", "receiving_yards", "receiving_tds",
                    "receiving_air_yards", "yards_per_target", "yards_per_reception",
                    "catch_rate"]),
+    ("Kicking", ["fg_made", "fg_att", "fg_missed", "fg_pct", "fg_long", "fg_made_0_19",
+                 "fg_made_20_29", "fg_made_30_39", "fg_made_40_49", "fg_made_50_59",
+                 "fg_made_60_", "pat_made", "pat_att", "pat_missed", "pat_pct"]),
     ("Fantasy", ["fantasy_points_ppr", "fantasy_points"]),
 ]
 
@@ -214,7 +242,7 @@ def grouped_measures(games: pd.DataFrame, position: str | None = None) -> list[d
     groups = [{"label": name, "items": [(k, MEASURES[k], k in have) for k in keys]}
               for name, keys in MEASURE_GROUPS]
     lead = {"QB": "Passing", "RB": "Rushing", "FB": "Rushing",
-            "WR": "Receiving", "TE": "Receiving"}.get(position or "")
+            "WR": "Receiving", "TE": "Receiving", "K": "Kicking"}.get(position or "")
     groups.sort(key=lambda g: g["label"] != lead)   # stable: lead group first
     return groups
 
@@ -297,18 +325,29 @@ def apply_filters(games: pd.DataFrame, filters: dict) -> pd.DataFrame:
 
 
 def _value(sub: pd.DataFrame, key: str, agg: str) -> float | None:
-    games = len(sub)
+    """One measure over a group of games.  NaN means "not recorded" (for example
+    targets before 2009) and is left out, never read as zero: a total over
+    nothing recorded is None, a ratio uses only games where both parts exist,
+    and a per-game rate divides by the games that have the stat."""
     if key in _RATIOS:
         _, num, den = _RATIOS[key]
-        d = pd.to_numeric(sub[den], errors="coerce").fillna(0).sum()
+        both = sub[[num, den]].apply(pd.to_numeric, errors="coerce").dropna()
+        d = both[den].sum()
         if d == 0:
             return None
-        v = float(pd.to_numeric(sub[num], errors="coerce").fillna(0).sum() / d)
+        v = float(both[num].sum() / d)
         return v * 100 if key in _PERCENT else v
-    total = pd.to_numeric(sub[_COUNTS[key][1]], errors="coerce").fillna(0).sum()
+    if key in _MAXES:
+        best = pd.to_numeric(sub[_MAXES[key][1]], errors="coerce").max()
+        return None if pd.isna(best) else float(best)
+    col = pd.to_numeric(sub[_COUNTS[key][1]], errors="coerce")
+    recorded = int(col.notna().sum())
+    if recorded == 0:
+        return None
+    total = float(col.sum())
     if agg == "per_game":
-        return float(total / games) if games else None
-    return float(total)
+        return total / recorded
+    return total
 
 
 def run_query(games: pd.DataFrame, spec: dict) -> dict:
@@ -380,6 +419,11 @@ _FAMILIES["TE"] = {                    # no rushing: a tight end's carries are n
     "scoring": ["receiving_tds"],
     "efficiency": ["yards_per_target", "yards_per_reception", "catch_rate"]}
 _FAMILIES["FB"] = _FAMILIES["RB"]
+_FAMILIES["K"] = {
+    "volume": ["fg_att", "fg_made", "pat_att", "pat_made"],
+    "yardage": ["fg_long", "fg_made_30_39", "fg_made_40_49", "fg_made_50_59", "fg_made_60_"],
+    "scoring": ["fg_made", "pat_made"],
+    "efficiency": ["fg_pct", "pat_pct"]}
 _FANTASY = {"fantasy": ["fantasy_points_ppr", "fantasy_points"],
             "ppr": ["fantasy_points_ppr"]}
 _PLAYOFF_TYPES = ["WC", "DIV", "CON", "SB"]

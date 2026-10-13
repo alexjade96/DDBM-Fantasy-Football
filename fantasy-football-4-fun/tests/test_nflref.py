@@ -1273,6 +1273,7 @@ def _pg_players():
         "season_type": ["REG", "REG", "REG", "POST"],
         "targets": [5, 0, 7, 9],
         "receiving_yards": [60, 0, 80, 101],
+        "carries": [0, 3, 0, 0],                        # 00-2 needs a stat to be kept
     })
 
 
@@ -1360,5 +1361,49 @@ def test_player_games_on_render_never_rebuilds(monkeypatch):
 
 
 def test_player_games_probes_the_player_stats_asset_for_refresh():
-    assert DATASETS["player_games"]._asset("2024") == "player_stats/player_stats_2024.parquet"
+    # one source for every season: only the combined release carries kicker data
+    assert DATASETS["player_games"]._asset("2000") == "stats_player/stats_player_week_2000.parquet"
+    assert DATASETS["player_games"]._asset("2024") == "stats_player/stats_player_week_2024.parquet"
     assert DATASETS["player_games"]._asset("2025") == "stats_player/stats_player_week_2025.parquet"
+
+
+def _pg_wide():
+    """A season in the combined release's shape: a receiver, a zero-stat receiver,
+    a kicker, a kicker who did not kick, and a defender."""
+    n = 5
+    base = {"player_id": [f"00-{i}" for i in range(n)],
+            "player_display_name": list("ABCDE"),
+            "position": ["WR", "WR", "K", "K", "LB"],
+            "recent_team": ["AAA"] * n, "opponent_team": ["BBB"] * n,
+            "season": [2016] * n, "week": [1] * n, "season_type": ["REG"] * n,
+            "targets": [6, 0, 0, 0, 0], "receptions": [4, 0, 0, 0, 0],
+            "receiving_yards": [50, 0, 0, 0, 0],
+            "fg_att": [0, 0, 3, 0, 0], "fg_made": [0, 0, 2, 0, 0],
+            "fg_long": [float("nan"), float("nan"), 48, float("nan"), float("nan")],
+            "pat_att": [0, 0, 2, 0, 0], "pat_made": [0, 0, 2, 0, 0],
+            "fg_pct": [0.0, 0.0, 0.667, 0.0, 0.0], "def_tackles": [0, 0, 0, 0, 9]}
+    return pd.DataFrame(base)
+
+
+def test_player_games_keeps_only_offense_and_kickers_with_a_stat():
+    from webapp.sources.nflref import player_games as pg
+    sched = pd.DataFrame({
+        "game_id": ["g1"], "season": [2016], "week": [1], "game_type": ["REG"],
+        "gameday": ["2016-09-11"], "away_team": ["AAA"], "home_team": ["BBB"],
+        "away_score": [10], "home_score": [7], "location": ["Home"], "spread_line": [1.0],
+        "roof": ["outdoors"], "surface": ["grass"]})
+    df = pg.build(_pg_wide(), sched, 2016)
+    assert sorted(df.player_display_name) == ["A", "C"]      # receiver and the kicker who kicked
+    assert "fg_made" in df.columns and "fg_long" in df.columns
+    assert "def_tackles" not in df.columns and "fg_pct" not in df.columns
+
+
+def test_player_games_blanks_targets_for_a_season_with_none_recorded():
+    from webapp.sources.nflref import player_games as pg
+    df = _pg_wide()
+    out = pg._blank_unrecorded(df[df.position == "WR"])      # 6 targets league-wide
+    assert out["targets"].isna().all()                       # not recorded, not zero
+    assert out["receiving_yards"].tolist() == [50, 0]        # other stats untouched
+    full = df.copy()
+    full["targets"] = [150, 0, 0, 0, 0]
+    assert pg._blank_unrecorded(full)["targets"].tolist() == [150, 0, 0, 0, 0]

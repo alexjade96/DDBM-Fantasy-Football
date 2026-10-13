@@ -165,6 +165,17 @@ rather than take a library dependency.
   daily practice-report detail. Context data (explains a bad week, tracks a
   recurring injury) rather than a rankable stat. `gsis_id` join key verified
   zero-null across this league's real seasons. `EARLIEST = 2009`.
+- **`player_games`** -- one row per player-game, regular season AND playoffs,
+  1999 on, with the game's opponent, home or away, game type, result and
+  spread (the base table for the Alternative Analytics builder).  Derived from
+  the raw `stats_player` release for EVERY season (the older `player_stats`
+  release has no kicker data and stops after 2024) joined to the raw
+  `schedules` file.  The raw files stay whole under `raw/`; this snapshot is the
+  extract: only QB, RB, FB, WR, TE and K rows with at least one recorded stat,
+  and only the offensive and kicking columns the builder reads (percentages are
+  computed from counts).  Targets nflverse did not record (2005 to 2008, almost
+  none in 2004) are stored as blank, not zero.  `EARLIEST = 1999`.  On Render a
+  missing snapshot is never rebuilt from raw.
 
 It surfaces on the opening screen as the **NFL Stats** landing tab (next to
 ADP Comparison): a per-season player leaderboard (from EITHER nflverse's own

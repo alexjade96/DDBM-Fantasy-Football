@@ -372,10 +372,48 @@ def test_grouped_measures_keep_every_measure_and_flag_unused():
                           "carries": [1, 0], "rushing_yards": [3, 0],
                           "fantasy_points_ppr": [9.0, 12.0]})
     groups = aa.grouped_measures(games, "WR")
-    assert [g["label"] for g in groups] == ["Receiving", "Passing", "Rushing", "Fantasy"]
+    assert [g["label"] for g in groups] == ["Receiving", "Passing", "Rushing", "Kicking", "Fantasy"]
     keys = [k for g in groups for k, _, _ in g["items"]]
     assert set(keys) == set(aa.MEASURES)              # nothing hidden
     used = {k: u for g in groups for k, _, u in g["items"]}
     assert used["targets"] and used["rushing_yards"] and not used["passing_yards"]
     assert aa.grouped_measures(games, "RB")[0]["label"] == "Rushing"
     assert not any(u for g in aa.grouped_measures(games.iloc[0:0], "WR") for *_, u in g["items"])
+
+
+def _kicker_games():
+    return pd.DataFrame({
+        "season": [2024, 2024, 2025], "week": [1, 2, 1],
+        "fg_att": [3, 2, 4], "fg_made": [2, 2, 3], "fg_long": [48, 52, 44],
+        "pat_att": [2, 1, 3], "pat_made": [2, 1, 3],
+        "fg_made_50_59": [0, 1, 0], "fg_missed": [1, 0, 1], "pat_missed": [0, 0, 0],
+        "targets": [None, None, None], "opponent": ["X", "Y", "X"],
+        "home_away": ["Home", "Away", "Home"], "game_type": ["REG"] * 3})
+
+
+def test_kicker_measures_and_longest_field_goal():
+    g = _kicker_games()
+    have = aa.available_measures(g)
+    assert {"fg_made", "fg_pct", "fg_long", "pat_pct", "fg_made_50_59"} <= set(have)
+    assert "targets" not in have and "passing_yards" not in have
+    r = aa.run_query(g, {"measures": ["fg_made", "fg_pct", "fg_long"], "agg": "total"})
+    t = r["rows"][0]
+    assert t["fg_made"] == 7 and t["fg_long"] == 52               # a maximum, not a sum
+    assert abs(t["fg_pct"] - 7 / 9 * 100) < 1e-6
+    assert aa.default_measures("K", g)[:2] == ["fg_made", "fg_att"]
+    assert aa.grouped_measures(g, "K")[0]["label"] == "Kicking"
+
+
+def test_unrecorded_values_are_left_out_not_read_as_zero():
+    g = pd.DataFrame({"season": [2006, 2010], "week": [1, 1],
+                      "targets": [float("nan"), 10.0], "receptions": [5, 6],
+                      "receiving_yards": [50, 70]})
+    r = aa.run_query(g, {"measures": ["targets", "catch_rate"], "agg": "per_game",
+                         "group_by": "season"})
+    by = {row["group"]: row for row in r["rows"]}
+    assert by[2006]["targets"] is None and by[2006]["catch_rate"] is None
+    assert by[2010]["targets"] == 10.0
+    career = aa.run_query(g, {"measures": ["targets", "catch_rate"], "agg": "per_game"})
+    c = career["rows"][0]
+    assert c["targets"] == 10.0                    # divided by the games that recorded it
+    assert abs(c["catch_rate"] - 60.0) < 1e-6      # 6 of 10, not 11 of 10
