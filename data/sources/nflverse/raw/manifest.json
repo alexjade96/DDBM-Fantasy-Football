@@ -599,6 +599,136 @@
     "fetched": "2026-10-10T17:26:01+00:00",
     "url": "https://github.com/nflverse/nflverse-data/releases/download/snap_counts/snap_counts_2026.parquet"
   },
+  "stats_player/stats_player_week_1999.parquet": {
+    "bytes": 675820,
+    "fetched": "2026-10-13T16:52:01+00:00",
+    "url": "https://github.com/nflverse/nflverse-data/releases/download/stats_player/stats_player_week_1999.parquet"
+  },
+  "stats_player/stats_player_week_2000.parquet": {
+    "bytes": 660236,
+    "fetched": "2026-10-13T16:52:02+00:00",
+    "url": "https://github.com/nflverse/nflverse-data/releases/download/stats_player/stats_player_week_2000.parquet"
+  },
+  "stats_player/stats_player_week_2001.parquet": {
+    "bytes": 668365,
+    "fetched": "2026-10-13T16:52:03+00:00",
+    "url": "https://github.com/nflverse/nflverse-data/releases/download/stats_player/stats_player_week_2001.parquet"
+  },
+  "stats_player/stats_player_week_2002.parquet": {
+    "bytes": 691681,
+    "fetched": "2026-10-13T16:52:04+00:00",
+    "url": "https://github.com/nflverse/nflverse-data/releases/download/stats_player/stats_player_week_2002.parquet"
+  },
+  "stats_player/stats_player_week_2003.parquet": {
+    "bytes": 612769,
+    "fetched": "2026-10-13T16:52:05+00:00",
+    "url": "https://github.com/nflverse/nflverse-data/releases/download/stats_player/stats_player_week_2003.parquet"
+  },
+  "stats_player/stats_player_week_2004.parquet": {
+    "bytes": 610185,
+    "fetched": "2026-10-13T16:52:06+00:00",
+    "url": "https://github.com/nflverse/nflverse-data/releases/download/stats_player/stats_player_week_2004.parquet"
+  },
+  "stats_player/stats_player_week_2005.parquet": {
+    "bytes": 608102,
+    "fetched": "2026-10-13T16:52:07+00:00",
+    "url": "https://github.com/nflverse/nflverse-data/releases/download/stats_player/stats_player_week_2005.parquet"
+  },
+  "stats_player/stats_player_week_2006.parquet": {
+    "bytes": 635750,
+    "fetched": "2026-10-13T16:52:08+00:00",
+    "url": "https://github.com/nflverse/nflverse-data/releases/download/stats_player/stats_player_week_2006.parquet"
+  },
+  "stats_player/stats_player_week_2007.parquet": {
+    "bytes": 641428,
+    "fetched": "2026-10-13T16:52:09+00:00",
+    "url": "https://github.com/nflverse/nflverse-data/releases/download/stats_player/stats_player_week_2007.parquet"
+  },
+  "stats_player/stats_player_week_2008.parquet": {
+    "bytes": 637257,
+    "fetched": "2026-10-13T16:52:10+00:00",
+    "url": "https://github.com/nflverse/nflverse-data/releases/download/stats_player/stats_player_week_2008.parquet"
+  },
+  "stats_player/stats_player_week_2009.parquet": {
+    "bytes": 788930,
+    "fetched": "2026-10-13T16:52:11+00:00",
+    "url": "https://github.com/nflverse/nflverse-data/releases/download/stats_player/stats_player_week_2009.parquet"
+  },
+  "stats_player/stats_player_week_2010.parquet": {
+    "bytes": 786509,
+    "fetched": "2026-10-13T16:52:12+00:00",
+    "url": "https://github.com/nflverse/nflverse-data/releases/download/stats_player/stats_player_week_2010.parquet"
+  },
+  "stats_player/stats_player_week_2011.parquet": {
+    "bytes": 786918,
+    "fetched": "2026-10-13T16:52:13+00:00",
+    "url": "https://github.com/nflverse/nflverse-data/releases/download/stats_player/stats_player_week_2011.parquet"
+  },
+  "stats_player/stats_player_week_2012.parquet": {
+    "bytes": 799792,
+    "fetched": "2026-10-13T16:52:14+00:00",
+    "url": "https://github.com/nflverse/nflverse-data/releases/download/stats_player/stats_player_week_2012.parquet"
+  },
+  "stats_player/stats_player_week_2013.parquet": {
+    "bytes": 789175,
+    "fetched": "2026-10-13T16:52:15+00:00",
+    "url": "https://github.com/nflverse/nflverse-data/releases/download/stats_player/stats_player_week_2013.parquet"
+  },
+  "stats_player/stats_player_week_2014.parquet": {
+    "bytes": 801610,
+    "fetched": "2026-10-13T16:52:16+00:00",
+    "url": "https://github.com/nflverse/nflverse-data/releases/download/stats_player/stats_player_week_2014.parquet"
+  },
+  "stats_player/stats_player_week_2015.parquet": {
+    "bytes": 802993,
+    "fetched": "2026-10-13T16:52:17+00:00",
+    "url": "https://github.com/nflverse/nflverse-data/releases/download/stats_player/stats_player_week_2015.parquet"
+  },
+  "stats_player/stats_player_week_2016.parquet": {
+    "bytes": 802210,
+    "fetched": "2026-10-13T16:52:18+00:00",
+    "url": "https://github.com/nflverse/nflverse-data/releases/download/stats_player/stats_player_week_2016.parquet"
+  },
+  "stats_player/stats_player_week_2017.parquet": {
+    "bytes": 799029,
+    "fetched": "2026-10-13T16:52:19+00:00",
+    "url": "https://github.com/nflverse/nflverse-data/releases/download/stats_player/stats_player_week_2017.parquet"
+  },
+  "stats_player/stats_player_week_2018.parquet": {
+    "bytes": 800576,
+    "fetched": "2026-10-13T16:52:20+00:00",
+    "url": "https://github.com/nflverse/nflverse-data/releases/download/stats_player/stats_player_week_2018.parquet"
+  },
+  "stats_player/stats_player_week_2019.parquet": {
+    "bytes": 799261,
+    "fetched": "2026-10-13T16:52:21+00:00",
+    "url": "https://github.com/nflverse/nflverse-data/releases/download/stats_player/stats_player_week_2019.parquet"
+  },
+  "stats_player/stats_player_week_2020.parquet": {
+    "bytes": 813828,
+    "fetched": "2026-10-13T16:52:22+00:00",
+    "url": "https://github.com/nflverse/nflverse-data/releases/download/stats_player/stats_player_week_2020.parquet"
+  },
+  "stats_player/stats_player_week_2021.parquet": {
+    "bytes": 854980,
+    "fetched": "2026-10-13T16:52:23+00:00",
+    "url": "https://github.com/nflverse/nflverse-data/releases/download/stats_player/stats_player_week_2021.parquet"
+  },
+  "stats_player/stats_player_week_2022.parquet": {
+    "bytes": 847572,
+    "fetched": "2026-10-13T16:52:24+00:00",
+    "url": "https://github.com/nflverse/nflverse-data/releases/download/stats_player/stats_player_week_2022.parquet"
+  },
+  "stats_player/stats_player_week_2023.parquet": {
+    "bytes": 846050,
+    "fetched": "2026-10-13T16:52:25+00:00",
+    "url": "https://github.com/nflverse/nflverse-data/releases/download/stats_player/stats_player_week_2023.parquet"
+  },
+  "stats_player/stats_player_week_2024.parquet": {
+    "bytes": 849243,
+    "fetched": "2026-10-13T16:52:25+00:00",
+    "url": "https://github.com/nflverse/nflverse-data/releases/download/stats_player/stats_player_week_2024.parquet"
+  },
   "stats_player/stats_player_week_2025.parquet": {
     "bytes": 855077,
     "fetched": "2026-10-10T17:26:02+00:00",
