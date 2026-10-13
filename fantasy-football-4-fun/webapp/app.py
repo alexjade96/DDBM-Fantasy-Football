@@ -1604,6 +1604,79 @@ def landing_testing(request: Request, league: str = "", season: str | None = Non
     return tpl.TemplateResponse(request, "tab_testing.html", {"league": ""})
 
 
+# -- Alternative Analytics prototypes (Testing tab) -----------------------------
+# The builder over the engine in webapp/alt_analytics.py.  League-free; it swaps
+# its whole panel (outerHTML) so a search, a chosen player and a result are one
+# round trip each.  Preset chips only fill its controls in the browser.
+
+def _alt_player(player_id: str):
+    """(info, games) for a chosen player, or (None, empty) when unknown."""
+    from webapp import alt_analytics as aa
+    games = aa.load_player(player_id) if player_id else None
+    if games is None or games.empty:
+        return None, None
+    last = games.iloc[-1]
+    cov = aa.coverage(games)
+    info = {"player_id": player_id, "name": last["player_display_name"],
+            "position": last["position"], "team": last["team"], "coverage": cov,
+            "coverage_text": (f"{cov['first_season']} to {cov['last_season']}"
+                              f" (through week {cov['last_week']} of {cov['last_season']}),"
+                              f" {cov['games']} games")}
+    return info, games
+
+
+def _alt_ctx(q: str, player_id: str) -> tuple[dict, "pd.DataFrame | None"]:
+    from webapp import alt_analytics as aa
+    q = (q or "").strip()
+    info, games = _alt_player((player_id or "").strip())
+    ctx = {"q": q, "player": info, "matches": [], "error": None, "result": None,
+           "seasons_all": [], "opponents": [], "measures_all": [], "aa": aa}
+    if info is None:
+        if q:
+            ctx["matches"] = aa.search_players(q)
+        return ctx, None
+    ctx["seasons_all"] = list(range(info["coverage"]["first_season"],
+                                    info["coverage"]["last_season"] + 1))
+    ctx["opponents"] = aa.opponents_faced(games)
+    ctx["measures_all"] = [(m, aa.MEASURES[m]) for m in aa.available_measures(games)]
+    ctx["measure_groups"] = aa.grouped_measures(games, info["position"])
+    return ctx, games
+
+
+@app.get("/testing/alt/builder", response_class=HTMLResponse)
+def alt_builder(request: Request, q: str = "", player_id: str = "", run: int = 0,
+                measures: list[str] = Query(default=[]), agg: str = "total",
+                group_by: str = "", opponent: str = "", season_from: str = "",
+                season_to: str = "", home_away: str = "",
+                game_types: list[str] = Query(default=[])):
+    """The builder panel: pick measures, filters and a grouping, then run."""
+    from webapp import alt_analytics as aa
+    ctx, games = _alt_ctx(q, player_id)
+    sel = measures or (aa.default_measures(ctx["player"]["position"], games)
+                       if games is not None else [])
+    if games is not None:
+        ctx["chips"] = aa.preset_chips(games, ctx["player"]["position"])
+    ctx.update({"sel_measures": sel, "agg": agg, "group_by": group_by,
+                "opponent": opponent, "season_from": season_from,
+                "season_to": season_to, "home_away": home_away,
+                "sel_game_types": game_types})
+    if games is not None and run:
+        try:
+            seasons = None
+            if season_from or season_to:
+                cov = ctx["player"]["coverage"]
+                seasons = [int(season_from or cov["first_season"]),
+                           int(season_to or cov["last_season"])]
+            spec = {"measures": sel, "agg": agg, "group_by": group_by or None,
+                    "filters": {"opponent": opponent or None, "seasons": seasons,
+                                "home_away": home_away or None,
+                                "game_types": game_types or None}}
+            ctx["result"] = aa.table_view(aa.run_query(games, spec))
+        except ValueError as exc:
+            ctx["error"] = str(exc)
+    return tpl.TemplateResponse(request, "_alt_builder.html", ctx)
+
+
 def _adp_params(season, scoring, pos):
     sea = str(season).strip() if season else _current_nfl_season()
     scoring = scoring if scoring in {k for k, _ in _ADP_SCORING} else _ADP_SCORING_DEFAULT

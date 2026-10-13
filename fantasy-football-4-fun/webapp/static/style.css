@@ -2550,3 +2550,29 @@ h3.gd-block + .tablewrap, h3.gd-block + p.empty { margin-top: 6px; }
   color: var(--ink); cursor: pointer; }
 .refresh-reload:hover { border-color: var(--turf); }
 .refresh-reload[hidden] { display: none; }
+
+/* Alternative Analytics builder (Testing tab): preset chips that fill the form. */
+/* The chosen player under the search box (name, position, team). */
+.alt-player { margin: 4px 0 8px; font-size: 15px; }
+.alt-chips { display: flex; flex-wrap: wrap; gap: 8px; margin: 4px 0 12px; }
+.alt-chip { border-radius: 999px; padding: 4px 12px; font-size: 13px;
+  background: transparent; color: var(--ink); border: 1px solid var(--line); }
+.alt-chip:hover { border-color: var(--turf); }
+.alt-chip.on { background: var(--turf); color: #fff; border-color: var(--turf); }
+#alt-builder .controls { flex-wrap: wrap; }
+#alt-builder .alt-section { margin: 0 0 14px; }
+#alt-builder .alt-section h4 { margin: 0 0 6px; font-size: 12px; font-weight: 600;
+  text-transform: uppercase; letter-spacing: .04em; color: var(--muted, var(--ink)); }
+#alt-builder .alt-groups { display: flex; flex-wrap: wrap; gap: 10px; }
+#alt-builder .alt-group { display: flex; flex-wrap: wrap; gap: 2px 12px; margin: 0;
+  padding: 6px 12px 8px; border: 1px solid var(--line); border-radius: 8px; min-width: 0; }
+#alt-builder .alt-group legend { padding: 0 6px; font-size: 13px; font-weight: 600; }
+#alt-builder .alt-types { margin-left: 8px; }
+@media (max-width: 640px) {
+  #alt-builder .alt-group { flex: 1 1 100%; }
+}
+#alt-builder .alt-cap { display: block; font-size: 11px; text-transform: uppercase;
+  letter-spacing: .04em; color: var(--faint); margin-bottom: 4px; }
+#alt-builder .alt-run { margin-bottom: 16px; }
+#alt-builder .adp-check.alt-unused { opacity: .4; cursor: not-allowed; }
+#alt-builder .adp-check.alt-unused input { cursor: not-allowed; }

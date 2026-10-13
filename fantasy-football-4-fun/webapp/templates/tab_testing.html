@@ -8,6 +8,8 @@
    season carried via hx-include) -- see webapp.app.landing_testing()'s own
    docstring for how the two paths share this one template.
 
+   2026-10 (later): the Alternative Analytics builder is under review here.
+
    2026-10: the Player Comparison prototypes (trend-chart looks, the matrix
    corner cell, the total-chart looks and the games-played header) were
    reviewed.  The "Stat" reset corner and the pace-and-projection total chart
@@ -17,4 +19,7 @@
 <h2>Testing</h2>
 <p class="hint"><strong>Prototypes under review, not a finished feature.</strong> Items
    here may be adopted, reworked, or dropped.</p>
-<p class="empty">Nothing under review right now.</p>
+{# 2026-10: Alternative Analytics (docs/alternative-analytics-plan.md).  The
+   builder won over the preset picker; preset chips fill its controls.
+   League-free and loads an empty panel; nothing is fetched until a search. #}
+<div id="alt-builder" hx-get="/testing/alt/builder" hx-trigger="load" hx-swap="outerHTML"></div>

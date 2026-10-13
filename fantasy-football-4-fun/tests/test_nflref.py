@@ -61,7 +61,7 @@ def _fake_schedules():
 
 def test_registry_lists_the_datasets():
     assert set(DATASETS) == {
-        "player_stats", "schedules", "snap_counts",
+        "player_stats", "schedules", "player_games", "snap_counts",
         "ngs_passing", "ngs_receiving", "ngs_rushing",
         "pfr_pass", "pfr_rec", "pfr_rush", "pfr_def",
         "injuries", "route_participation",
@@ -1257,3 +1257,108 @@ def test_render_does_not_write_raw_files(monkeypatch):
     monkeypatch.setattr(cache, "on_render", lambda: True)
     cache.save_raw("player_stats/player_stats_2024.parquet", b"x")
     assert not cache.raw_path("player_stats/player_stats_2024.parquet").exists()
+
+
+# -- player_games: player rows joined to the schedule ---------------------------
+
+def _pg_players():
+    return pd.DataFrame({
+        "player_id": ["00-1", "00-2", "00-3", "00-4"],
+        "player_display_name": ["A B", "C D", "E F", "G H"],
+        "position": ["WR", "RB", "WR", "WR"],
+        "recent_team": ["LV", "DDD", "AAA", "AAA"],     # LV: current code for OAK
+        "opponent_team": ["AAA", "DDD", "CCC", "BBB"],  # 00-2 is its own team (bad)
+        "season": [2016, 2016, 2016, 2016],
+        "week": [1, 1, 2, 22],
+        "season_type": ["REG", "REG", "REG", "POST"],
+        "targets": [5, 0, 7, 9],
+        "receiving_yards": [60, 0, 80, 101],
+    })
+
+
+def _pg_schedule():
+    return pd.DataFrame({
+        "game_id": ["g1", "g2", "g3", "g4"],
+        "season": [2016] * 4,
+        "week": [1, 1, 2, 22],
+        "game_type": ["REG", "REG", "REG", "SB"],
+        "gameday": ["2016-09-11"] * 4,
+        "away_team": ["AAA", "CCC", "AAA", "AAA"],
+        "home_team": ["OAK", "DDD", "CCC", "BBB"],      # OAK on the schedule
+        "away_score": [20, 10, 3, 24],
+        "home_score": [17, 10, 9, 24],
+        "location": ["Home", "Home", "Home", "Neutral"],
+        "spread_line": [3.0, -1.0, 2.5, -4.0],
+        "roof": ["outdoors"] * 4, "surface": ["grass"] * 4,
+    })
+
+
+def test_player_games_joins_schedule_and_maps_old_team_codes():
+    from webapp.sources.nflref import player_games as pg
+    df = pg.build(_pg_players(), _pg_schedule(), 2016)
+    assert len(df) == 4                                  # the join never multiplies rows
+    r1 = df[df.player_id == "00-1"].iloc[0]
+    assert (r1.team, r1.opponent, r1.home_away) == ("LV", "AAA", "Home")
+    assert r1.result == "L" and r1.team_score == 17 and r1.opp_score == 20
+    assert r1.spread == -3.0                             # home favoured => negative for home
+
+
+def test_player_games_takes_opponent_from_schedule_not_source():
+    from webapp.sources.nflref import player_games as pg
+    df = pg.build(_pg_players(), _pg_schedule(), 2016).set_index("player_id")
+    assert df.loc["00-2", "opponent"] == "CCC"           # source said its own team
+    assert df.loc["00-2", "opponent_src"] == "DDD"
+
+
+def test_player_games_keeps_playoffs_and_marks_neutral_sites():
+    from webapp.sources.nflref import player_games as pg
+    df = pg.build(_pg_players(), _pg_schedule(), 2016).set_index("player_id")
+    assert df.loc["00-4", "season_type"] == "POST"
+    assert df.loc["00-4", "game_type"] == "SB"
+    assert df.loc["00-4", "home_away"] == "Neutral"
+    assert df.loc["00-3", "home_away"] == "Away"
+    assert df.loc["00-4", "result"] == "T"
+
+
+def test_player_games_falls_back_to_source_opponent_without_a_game():
+    from webapp.sources.nflref import player_games as pg
+    players = _pg_players()
+    players.loc[0, "week"] = 9                           # no scheduled game that week
+    df = pg.build(players, _pg_schedule(), 2016)
+    row = df[df.player_id == "00-1"].iloc[0]
+    assert row.opponent == "AAA" and pd.isna(row.home_away)
+
+
+def test_player_games_renames_the_2025_team_columns():
+    from webapp.sources.nflref import player_games as pg
+    players = _pg_players().rename(columns={"recent_team": "team"})
+    df = pg.build(players, _pg_schedule(), 2016)
+    assert "team" in df.columns and df.player_id.tolist().count("00-1") == 1
+
+
+def test_player_games_fetch_snapshots_and_serves_it(monkeypatch):
+    def fake(asset, columns=None):
+        return _pg_schedule() if asset.endswith("games.parquet") else _pg_players()
+    monkeypatch.setattr(api, "read_release_parquet", fake)
+    first = nflref.load("player_games", "2016")
+    assert len(first) == 4
+    monkeypatch.setattr(api, "read_release_parquet",
+                        lambda *a, **k: (_ for _ in ()).throw(RuntimeError("offline")))
+    cache._mem.clear()
+    assert len(nflref.load("player_games", "2016")) == 4        # from the snapshot
+
+
+def test_player_games_before_earliest_is_empty():
+    assert nflref.load("player_games", "1998").empty
+
+
+def test_player_games_on_render_never_rebuilds(monkeypatch):
+    monkeypatch.setattr(api, "on_render", lambda: True)
+    monkeypatch.setattr(api, "read_release_parquet",
+                        lambda *a, **k: (_ for _ in ()).throw(AssertionError("no download")))
+    assert nflref.load("player_games", "2016").empty
+
+
+def test_player_games_probes_the_player_stats_asset_for_refresh():
+    assert DATASETS["player_games"]._asset("2024") == "player_stats/player_stats_2024.parquet"
+    assert DATASETS["player_games"]._asset("2025") == "stats_player/stats_player_week_2025.parquet"
