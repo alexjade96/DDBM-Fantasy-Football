@@ -71,7 +71,7 @@ def test_landing_testing_no_league_renders_shell():
     assert resp.status_code == 200
     assert "<h2>Testing</h2>" in body
     assert "Prototypes under review" in body
-    assert 'id="alt-builder"' in body
+    assert 'id="alt-builder"' not in body       # promoted to the Player Analytics tab
 
 
 def test_landing_testing_empty_league_string_behaves_like_no_league():
@@ -80,7 +80,7 @@ def test_landing_testing_empty_league_string_behaves_like_no_league():
     route's `if league:` guard, same as None/absent."""
     resp = app.landing_testing(_Req(), league="")
     body = resp.body.decode()
-    assert 'id="alt-builder"' in body
+    assert 'id="alt-builder"' not in body
 
 
 def test_landing_testing_bad_league_degrades_to_shell(monkeypatch):
@@ -92,7 +92,7 @@ def test_landing_testing_bad_league_degrades_to_shell(monkeypatch):
     resp = app.landing_testing(_Req(), league="bad-id")
     body = resp.body.decode()
     assert resp.status_code == 200
-    assert 'id="alt-builder"' in body
+    assert 'id="alt-builder"' not in body
 
 
 def test_landing_testing_with_league_delegates_into_tab_testing(monkeypatch):
@@ -107,7 +107,7 @@ def test_landing_testing_with_league_delegates_into_tab_testing(monkeypatch):
     body = resp.body.decode()
     assert resp.status_code == 200
     assert "<h2>Testing</h2>" in body
-    assert 'id="alt-builder"' in body
+    assert 'id="alt-builder"' not in body
 
 
 def test_landing_testing_with_league_carries_pushed_url(monkeypatch):

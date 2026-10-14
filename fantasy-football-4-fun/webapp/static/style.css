@@ -2560,19 +2560,85 @@ h3.gd-block + .tablewrap, h3.gd-block + p.empty { margin-top: 6px; }
 .alt-chip:hover { border-color: var(--turf); }
 .alt-chip.on { background: var(--turf); color: #fff; border-color: var(--turf); }
 #alt-builder .controls { flex-wrap: wrap; }
-#alt-builder .alt-section { margin: 0 0 14px; }
-#alt-builder .alt-section h4 { margin: 0 0 6px; font-size: 12px; font-weight: 600;
-  text-transform: uppercase; letter-spacing: .04em; color: var(--muted, var(--ink)); }
-#alt-builder .alt-groups { display: flex; flex-wrap: wrap; gap: 10px; }
-#alt-builder .alt-group { display: flex; flex-wrap: wrap; gap: 2px 12px; margin: 0;
-  padding: 6px 12px 8px; border: 1px solid var(--line); border-radius: 8px; min-width: 0; }
-#alt-builder .alt-group legend { padding: 0 6px; font-size: 13px; font-weight: 600; }
-#alt-builder .alt-types { margin-left: 8px; }
-@media (max-width: 640px) {
-  #alt-builder .alt-group { flex: 1 1 100%; }
-}
-#alt-builder .alt-cap { display: block; font-size: 11px; text-transform: uppercase;
-  letter-spacing: .04em; color: var(--faint); margin-bottom: 4px; }
-#alt-builder .alt-run { margin-bottom: 16px; }
+#alt-builder .alt-block { margin: 0 0 12px; }
+#alt-builder .alt-block h4 { margin: 0 0 6px; font-size: 12px; font-weight: 600;
+  text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
+/* Measures: one row per group, label column on the left, boxes flowing right. */
+#alt-builder .alt-mrow { display: grid; grid-template-columns: 84px 1fr; gap: 0 10px;
+  align-items: baseline; padding: 5px 0; border-top: 1px solid var(--line); }
+#alt-builder .alt-mlabel { font-size: 13px; font-weight: 600; }
+#alt-builder .alt-mboxes { display: flex; flex-wrap: wrap; gap: 2px 14px; min-width: 0; }
+#alt-builder .alt-mrow-off .alt-mlabel { color: var(--faint); font-weight: 500; }
 #alt-builder .adp-check.alt-unused { opacity: .4; cursor: not-allowed; }
 #alt-builder .adp-check.alt-unused input { cursor: not-allowed; }
+/* Show and Filters: a label column, then one wrapping line of controls. */
+#alt-builder .alt-line { display: grid; grid-template-columns: 84px 1fr; gap: 0 10px;
+  align-items: center; }
+#alt-builder .alt-line h4 { margin: 0; }
+#alt-builder .alt-ctl { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+#alt-builder .alt-inl { display: inline-flex; align-items: center; gap: 6px;
+  font-size: 13px; color: var(--muted); }
+#alt-builder .alt-word { font-size: 13px; color: var(--muted); }
+#alt-builder .alt-types { gap: 10px; }
+#alt-builder .alt-run { margin-bottom: 0; margin-left: auto !important; }
+@media (max-width: 640px) {
+  #alt-builder .alt-mrow, #alt-builder .alt-line { grid-template-columns: 1fr; gap: 2px 0; }
+  #alt-builder .alt-line h4 { margin-bottom: 2px; }
+  #alt-builder .alt-run { margin-left: 0 !important; }
+}
+#alt-builder .alt-ctl select { font-size: 14px; color: var(--ink); }
+/* Player search results: a list of rows, not a wrap of buttons. */
+#alt-builder .alt-matches { border: 1px solid var(--line); border-radius: 8px;
+  overflow: hidden; margin: 6px 0 4px; }
+#alt-builder .alt-match { display: grid; width: 100%; text-align: left;
+  grid-template-columns: minmax(150px, 2fr) 48px 56px minmax(110px, 1.2fr) 64px;
+  gap: 0 12px; align-items: center; padding: 8px 12px; font-size: 14px;
+  background: transparent; color: var(--ink); border: 0; border-radius: 0;
+  border-top: 1px solid var(--line); cursor: pointer; }
+#alt-builder .alt-match:first-child { border-top: 0; }
+#alt-builder .alt-match:hover, #alt-builder .alt-match:focus-visible {
+  background: color-mix(in srgb, var(--turf) 12%, transparent); outline: none; }
+#alt-builder .alt-match-head { cursor: default; font-size: 11px; font-weight: 600;
+  text-transform: uppercase; letter-spacing: .04em; color: var(--muted);
+  background: transparent !important; }
+#alt-builder .alt-match-name { font-weight: 600; }
+#alt-builder .alt-match .n { text-align: right; }
+#alt-builder .alt-count { margin: 2px 0 8px; font-size: 12px; color: var(--muted); }
+@media (max-width: 640px) {
+  #alt-builder .alt-match { grid-template-columns: 1fr 40px 48px 56px; }
+  #alt-builder .alt-match > span:nth-child(4) { display: none; }
+}
+/* Search result sorting and paging. */
+#alt-builder .alt-sort { background: transparent; border: 0; padding: 0; margin: 0;
+  font: inherit; letter-spacing: inherit; text-transform: inherit; color: inherit;
+  cursor: pointer; }
+#alt-builder .alt-sort:hover, #alt-builder .alt-sort.on { color: var(--ink); }
+#alt-builder .alt-arrow { font-size: 9px; }
+#alt-builder .alt-foot { display: flex; flex-wrap: wrap; align-items: center;
+  justify-content: space-between; gap: 6px 14px; margin: 2px 0 8px; }
+#alt-builder .alt-foot .alt-count { margin: 0; }
+#alt-builder .alt-pager { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+#alt-builder .alt-page { border-radius: 6px; min-width: 32px; padding: 4px 8px;
+  font-size: 13px; background: transparent; color: var(--ink);
+  border: 1px solid var(--line); cursor: pointer; }
+#alt-builder .alt-page:hover:not(:disabled) { border-color: var(--turf); }
+#alt-builder .alt-page.on { background: var(--turf); color: #fff; border-color: var(--turf); }
+#alt-builder .alt-page:disabled { opacity: .4; cursor: default; }
+#alt-builder .alt-gap { color: var(--muted); padding: 0 2px; }
+/* Quick picks row, Reset chip, and filters that are off their default. */
+#alt-builder .alt-quick { display: grid; grid-template-columns: 84px 1fr; gap: 0 10px;
+  align-items: start; margin: 4px 0 12px; }
+#alt-builder .alt-quick-label { font-size: 12px; font-weight: 600; text-transform: uppercase;
+  letter-spacing: .04em; color: var(--muted); padding-top: 6px; }
+#alt-builder .alt-quick .alt-chips { margin: 0; }
+#alt-builder .alt-reset { border-style: dashed; color: var(--muted); }
+#alt-builder .alt-ctl select.alt-narrow { border-color: var(--turf);
+  box-shadow: 0 0 0 1px var(--turf); }
+#alt-builder .alt-types.alt-narrow { color: var(--turf); font-weight: 600; }
+#alt-builder .alt-clear { background: transparent; border: 0; padding: 0; font-size: 13px;
+  color: var(--turf); text-decoration: underline; cursor: pointer; }
+#alt-builder .alt-clear[hidden] { display: none; }
+@media (max-width: 640px) {
+  #alt-builder .alt-quick { grid-template-columns: 1fr; gap: 4px 0; }
+  #alt-builder .alt-quick-label { padding-top: 0; }
+}

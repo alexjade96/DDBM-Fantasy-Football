@@ -88,6 +88,60 @@ MEASURES = {**{k: v[0] for k, v in _COUNTS.items()},
             **{k: v[0] for k, v in _MAXES.items()},
             **{k: v[0] for k, v in _RATIOS.items()}}
 
+#: Hover text for every measure (what it counts, in plain words).
+MEASURE_HINTS = {
+    "attempts": "Pass attempts",
+    "completions": "Pass completions",
+    "passing_yards": "Passing yards",
+    "passing_tds": "Passing touchdowns",
+    "interceptions": "Interceptions thrown",
+    "completion_rate": "Completions per pass attempt",
+    "yards_per_attempt": "Passing yards per attempt",
+    "carries": "Rushing attempts",
+    "rushing_yards": "Rushing yards",
+    "rushing_tds": "Rushing touchdowns",
+    "yards_per_carry": "Rushing yards per carry",
+    "targets": "Times targeted with a pass",
+    "receptions": "Catches",
+    "receiving_yards": "Receiving yards",
+    "receiving_tds": "Receiving touchdowns",
+    "receiving_air_yards": "Yards the ball traveled in the air on his targets, caught or not",
+    "yards_per_target": "Receiving yards per target",
+    "yards_per_reception": "Receiving yards per catch",
+    "catch_rate": "Catches per target",
+    "fg_made": "Field goals made",
+    "fg_att": "Field goals attempted",
+    "fg_missed": "Field goals missed",
+    "fg_made_0_19": "Field goals made from 0 to 19 yards",
+    "fg_made_20_29": "Field goals made from 20 to 29 yards",
+    "fg_made_30_39": "Field goals made from 30 to 39 yards",
+    "fg_made_40_49": "Field goals made from 40 to 49 yards",
+    "fg_made_50_59": "Field goals made from 50 to 59 yards",
+    "fg_made_60_": "Field goals made from 60 yards or more",
+    "pat_made": "Extra points made",
+    "pat_att": "Extra points attempted",
+    "pat_missed": "Extra points missed",
+    "fg_pct": "Field goals made per attempt",
+    "pat_pct": "Extra points made per attempt",
+    "fg_long": "Longest field goal made (a maximum, not a total)",
+    "fantasy_points_ppr": "Fantasy points with one point per catch (full PPR)",
+    "fantasy_points": "Fantasy points with no points for catches (standard)",
+}
+
+#: Hover text for the form controls.
+CONTROL_HINTS = {
+    "agg": "Total adds the numbers up.  Per game divides by the games that recorded the stat.",
+    "group_by": "One row per opponent, season, site, game type or week.  Career gives a single row.",
+    "opponent": "Only games against this team.  Oakland, San Diego and St. Louis count as LV, LAC and LA.",
+    "home_away": "Home, Away, or Neutral (Super Bowls and international games).",
+    "season_from": "First season to include.",
+    "season_to": "Last season to include.",
+    "game_types": "None ticked means all games.",
+    "clear_filters": "Back to every opponent, site, season and game type.",
+    "reset": "Clear every measure, filter and grouping back to this player's defaults.",
+}
+
+
 #: what each position cares about first
 _DEFAULT_MEASURES = {
     "QB": ["attempts", "completions", "passing_yards", "passing_tds", "interceptions",
@@ -153,9 +207,24 @@ def _player_index() -> pd.DataFrame:
     return idx
 
 
-def search_players(query: str, limit: int = 12) -> list[dict]:
+#: Search results per page.
+PAGE_SIZE = 12
+
+#: Search result columns that can be sorted: key -> (label, first direction).
+SEARCH_SORTS = {
+    "name": ("Player", "asc"), "position": ("Pos", "asc"), "team": ("Team", "asc"),
+    "seasons": ("Seasons", "desc"), "games": ("Games", "desc"),
+}
+SEARCH_SORT_DEFAULT = ("seasons", "desc")
+
+#: Fantasy order for the Pos column (anything else sorts after these).
+_POS_ORDER = {p: i for i, p in enumerate(["QB", "RB", "FB", "WR", "TE", "K"])}
+
+
+def search_players(query: str, limit: int | None = None) -> list[dict]:
     """Players whose name contains every word of `query`, most recent and most
-    games first.  Needs at least two characters."""
+    games first, all of them unless `limit` is given.  Needs at least two
+    characters."""
     q = (query or "").strip().lower()
     if len(q) < 2:
         return []
@@ -166,11 +235,57 @@ def search_players(query: str, limit: int = 12) -> list[dict]:
     mask = pd.Series(True, index=idx.index)
     for word in q.split():
         mask &= names.str.contains(word, regex=False)
-    hit = idx[mask].sort_values(["last_season", "games"], ascending=False).head(limit)
+    hit = idx[mask].sort_values(["last_season", "games"], ascending=False)
+    if limit:
+        hit = hit.head(limit)
     return [{"player_id": r.player_id, "name": r.name, "position": r.position,
              "team": r.team, "first_season": int(r.first_season),
              "last_season": int(r.last_season), "games": int(r.games)}
             for r in hit.itertuples()]
+
+
+def search_page(query: str, sort: str = "", direction: str = "", page: int = 1,
+                per_page: int = PAGE_SIZE) -> dict:
+    """One page of search results, sorted.  The sort covers the WHOLE result set
+    before it is cut into pages, so page 2 continues page 1's order.
+
+    `sort` is a key of SEARCH_SORTS (an unknown one falls back to the default)
+    and `direction` is asc or desc (blank means that column's first direction).
+    Ties never move: equal rows fall back to most games, then name A to Z, so
+    two clicks on the same header show the same rows in the same places.
+
+    Returns {rows, total, page, pages, per_page, first, last, sort, direction}
+    with `first` and `last` the 1-based positions of the rows on this page.
+    """
+    found = search_players(query)
+    if sort not in SEARCH_SORTS:
+        sort, direction = SEARCH_SORT_DEFAULT
+    if direction not in ("asc", "desc"):
+        direction = SEARCH_SORTS[sort][1]
+
+    def main_key(r: dict):
+        if sort == "name":
+            return (r["name"] or "").casefold()
+        if sort == "position":
+            return _POS_ORDER.get(r["position"], len(_POS_ORDER)), r["position"] or ""
+        if sort == "team":
+            return (r["team"] or "").casefold()
+        if sort == "seasons":
+            return r["last_season"], r["first_season"]
+        return r["games"]
+
+    rows = sorted(found, key=lambda r: (r["name"] or "").casefold())     # last tie-break
+    rows.sort(key=lambda r: r["games"], reverse=True)                    # then most games
+    rows.sort(key=main_key, reverse=(direction == "desc"))               # then the column
+    total = len(rows)
+    per_page = max(1, int(per_page))
+    pages = max(1, -(-total // per_page))
+    page = min(max(1, int(page or 1)), pages)
+    start = (page - 1) * per_page
+    return {"rows": rows[start:start + per_page], "total": total, "page": page,
+            "pages": pages, "per_page": per_page,
+            "first": start + 1 if total else 0, "last": min(start + per_page, total),
+            "sort": sort, "direction": direction}
 
 
 def load_player(player_id: str) -> pd.DataFrame:
@@ -225,32 +340,42 @@ MEASURE_GROUPS = [
     ("Receiving", ["targets", "receptions", "receiving_yards", "receiving_tds",
                    "receiving_air_yards", "yards_per_target", "yards_per_reception",
                    "catch_rate"]),
-    ("Kicking", ["fg_made", "fg_att", "fg_missed", "fg_pct", "fg_long", "fg_made_0_19",
-                 "fg_made_20_29", "fg_made_30_39", "fg_made_40_49", "fg_made_50_59",
-                 "fg_made_60_", "pat_made", "pat_att", "pat_missed", "pat_pct"]),
+    ("Kicking", ["fg_made", "fg_att", "fg_missed", "fg_made_0_19", "fg_made_20_29",
+                 "fg_made_30_39", "fg_made_40_49", "fg_made_50_59", "fg_made_60_",
+                 "pat_made", "pat_att", "pat_missed", "fg_pct", "pat_pct", "fg_long"]),
     ("Fantasy", ["fantasy_points_ppr", "fantasy_points"]),
 ]
 
 
 def grouped_measures(games: pd.DataFrame, position: str | None = None) -> list[dict]:
-    """Every measure under Passing / Rushing / Receiving / Fantasy headings, as
-    [{label, items: [(key, label, used)]}].  `used` is False for a measure the
-    player has no production in, so the builder can grey it out instead of
-    hiding it.  The position's own group comes first (a receiver sees Receiving
-    before Rushing)."""
+    """Every measure under Passing / Rushing / Receiving / Kicking / Fantasy
+    headings, as [{label, used, items: [(key, label, used)]}].  The order is the
+    same for every player (so the form never moves around); counts come first
+    in each group, then rates, then a maximum.  `used` is False for a measure
+    the player has no production in (the builder greys it out instead of hiding
+    it), and a group's `used` is True when any of its measures is.  `position`
+    is accepted for callers that pass it and does not change the order."""
     have = set(available_measures(games))
-    groups = [{"label": name, "items": [(k, MEASURES[k], k in have) for k in keys]}
-              for name, keys in MEASURE_GROUPS]
-    lead = {"QB": "Passing", "RB": "Rushing", "FB": "Rushing",
-            "WR": "Receiving", "TE": "Receiving", "K": "Kicking"}.get(position or "")
-    groups.sort(key=lambda g: g["label"] != lead)   # stable: lead group first
-    return groups
+    out = []
+    for name, keys in MEASURE_GROUPS:
+        items = [(k, MEASURES[k], k in have) for k in keys]
+        out.append({"label": name, "used": any(u for _, _, u in items), "items": items})
+    return out
 
 
 def default_measures(position: str | None, games: pd.DataFrame) -> list[str]:
     have = set(available_measures(games))
     base = [m for m in _DEFAULT_MEASURES.get(position or "", []) if m in have]
     return base or [m for m in MEASURES if m in have][:6]
+
+
+def reset_fill(games: pd.DataFrame, position: str | None) -> dict:
+    """The builder control values when a player is first opened: the position's
+    default measures, a total, no grouping and no filters.  Same shape as a
+    preset's fill, so the Reset chip is applied by the same script."""
+    return {"measures": default_measures(position, games), "agg": "total",
+            "group_by": "", "opponent": "", "season_from": "", "season_to": "",
+            "home_away": "", "game_types": []}
 
 
 def opponents_faced(games: pd.DataFrame) -> list[str]:
@@ -428,6 +553,18 @@ _FANTASY = {"fantasy": ["fantasy_points_ppr", "fantasy_points"],
             "ppr": ["fantasy_points_ppr"]}
 _PLAYOFF_TYPES = ["WC", "DIV", "CON", "SB"]
 
+#: Hover text for each preset chip: what it fills in.
+PRESET_HINTS = {
+    "workload": "Volume per game, by season",
+    "production": "Yards and scores, season totals by season",
+    "efficiency": "Per-play rates (yards per carry, catch rate and the like), by season",
+    "fantasy": "Fantasy points per game, by season",
+    "recent": "Volume, yards and scores per game, last three seasons",
+    "home_away": "Yards and scores per game, split by home, away and neutral",
+    "by_opponent": "Yards and scores totals against each opponent",
+    "playoffs": "Playoff games only, per game, split by round",
+}
+
 #: id -> (label, measure families, Show, Group by, extra)
 #: `extra` may set "recent" (last three seasons) or "game_types".
 _PRESET_CFG = {
@@ -474,7 +611,7 @@ def preset_fill(preset_id: str, games: pd.DataFrame, position: str | None) -> di
 
 def preset_chips(games: pd.DataFrame, position: str | None) -> list[dict]:
     """Every preset with its fill, ready to put on a chip."""
-    return [{"id": p["id"], "label": p["label"],
+    return [{"id": p["id"], "label": p["label"], "hint": PRESET_HINTS.get(p["id"], ""),
              "fill": preset_fill(p["id"], games, position)} for p in PRESETS]
 
 

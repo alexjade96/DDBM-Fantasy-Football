@@ -1604,7 +1604,7 @@ def landing_testing(request: Request, league: str = "", season: str | None = Non
     return tpl.TemplateResponse(request, "tab_testing.html", {"league": ""})
 
 
-# -- Alternative Analytics prototypes (Testing tab) -----------------------------
+# -- Alternative Analytics (the "Player Analytics" landing tab) ------------------
 # The builder over the engine in webapp/alt_analytics.py.  League-free; it swaps
 # its whole panel (outerHTML) so a search, a chosen player and a result are one
 # round trip each.  Preset chips only fill its controls in the browser.
@@ -1625,15 +1625,23 @@ def _alt_player(player_id: str):
     return info, games
 
 
-def _alt_ctx(q: str, player_id: str) -> tuple[dict, "pd.DataFrame | None"]:
+def _alt_ctx(q: str, player_id: str, sort: str = "", direction: str = "",
+             page: int = 1) -> tuple[dict, "pd.DataFrame | None"]:
     from webapp import alt_analytics as aa
     q = (q or "").strip()
     info, games = _alt_player((player_id or "").strip())
-    ctx = {"q": q, "player": info, "matches": [], "error": None, "result": None,
+    ctx = {"q": q, "player": info, "matches": [], "match_page": None,
+           "error": None, "result": None,
            "seasons_all": [], "opponents": [], "measures_all": [], "aa": aa}
+    if info is None and q and not player_id:
+        pg = aa.search_page(q, sort, direction, page)
+        if pg["total"] == 1:                      # one match: no click needed
+            info, games = _alt_player(pg["rows"][0]["player_id"])
+            ctx["player"] = info
+        else:
+            ctx["matches"] = pg["rows"]
+            ctx["match_page"] = pg
     if info is None:
-        if q:
-            ctx["matches"] = aa.search_players(q)
         return ctx, None
     ctx["seasons_all"] = list(range(info["coverage"]["first_season"],
                                     info["coverage"]["last_season"] + 1))
@@ -1643,19 +1651,32 @@ def _alt_ctx(q: str, player_id: str) -> tuple[dict, "pd.DataFrame | None"]:
     return ctx, games
 
 
-@app.get("/testing/alt/builder", response_class=HTMLResponse)
+@app.get("/altanalytics", response_class=HTMLResponse)
+def altanalytics(request: Request):
+    """Player Analytics landing tab: the builder panel with only its search box.
+    Nothing is read until a search, same as the other landing tabs."""
+    ctx, _ = _alt_ctx("", "")
+    ctx.update({"sel_measures": [], "agg": "total", "group_by": "", "opponent": "",
+                "season_from": "", "season_to": "", "home_away": "",
+                "sel_game_types": []})
+    return tpl.TemplateResponse(request, "_alt_builder.html", ctx)
+
+
+@app.get("/altanalytics/builder", response_class=HTMLResponse)
 def alt_builder(request: Request, q: str = "", player_id: str = "", run: int = 0,
+                sort: str = "", direction: str = "", page: int = 1,
                 measures: list[str] = Query(default=[]), agg: str = "total",
                 group_by: str = "", opponent: str = "", season_from: str = "",
                 season_to: str = "", home_away: str = "",
                 game_types: list[str] = Query(default=[])):
     """The builder panel: pick measures, filters and a grouping, then run."""
     from webapp import alt_analytics as aa
-    ctx, games = _alt_ctx(q, player_id)
+    ctx, games = _alt_ctx(q, player_id, sort, direction, page)
     sel = measures or (aa.default_measures(ctx["player"]["position"], games)
                        if games is not None else [])
     if games is not None:
         ctx["chips"] = aa.preset_chips(games, ctx["player"]["position"])
+        ctx["reset_fill"] = aa.reset_fill(games, ctx["player"]["position"])
     ctx.update({"sel_measures": sel, "agg": agg, "group_by": group_by,
                 "opponent": opponent, "season_from": season_from,
                 "season_to": season_to, "home_away": home_away,
