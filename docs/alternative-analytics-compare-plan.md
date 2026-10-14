@@ -1,6 +1,6 @@
 # Alternative Analytics: comparison and game-context filters (plan)
 
-Status: planned, NOT started (on hold at the user's request, 2026-10-13).  Nothing in this plan has been implemented.  Follows `docs/alternative-analytics-plan.md`, whose phases 1 and 3 (builder, landing tab) are built.
+Status: Stage A1 (new `player_games` columns and the filter picker) built 2026-10-14, uncommitted until confirmed.  Stage A2 (compare), Stage B and Stage C are not started.  Follows `docs/alternative-analytics-plan.md`, whose phases 1 and 3 (builder, landing tab) are built.
 
 ## Goal
 
@@ -18,7 +18,7 @@ Python webapp only, outside `sleepermetrics`, so `verify.py` is unaffected.
 - **Two sides only** (A vs B).  No third side.
 - **Group by in compare mode is allowed, with one tab per measure** (option c).  Ungrouped compare is one table.  Grouped compare is a tab strip, one tab per ticked measure, switched in the browser with no new request.  Each tab has a row per group with columns Games A, Games B, A, B, Diff.
 - **Table only for now.**  No chart.
-- **More filters wherever the data supports them**, kept out of the way under a "More filters" disclosure with an active-count badge, so the main filters line stays as it is (Opponent, Site, Seasons, Games).
+- **More filters wherever the data supports them**, kept out of the way in a filter picker (a dropdown of checkboxes; only ticked filters show, defaults Opponent, Site, Seasons, Games), built in A1 and replacing the earlier filter picker.
 - **Coaches means head coaches** for now.  Coordinators are parked (see below).
 - **Staging:** compare plus the game-level filters first (Stage A), then teammate and opposing-defender presence (Stage B), then play-level data with phase 2 (Stage C).
 
@@ -41,7 +41,7 @@ Catch %             66.1      69.4     +3.3
 - A side with no matching games says "No games match".
 - Sides are labelled automatically from what differs ("Home", "Away", "vs KC", "2022 to 2024"), or by player name.  Equal labels get "(A)" and "(B)".
 
-**Mode 1, same player and two filter sets:** a second filters block ("Filters B") with the same layout as the first, including More filters.  Quick compare chips fill both blocks in one click and switch the mode on:
+**Mode 1, same player and two filter sets:** a second filters block ("Filters B") with the same layout as the first, including the filter picker.  Quick compare chips fill both blocks in one click and switch the mode on:
 - Home vs Away
 - Regular season vs Playoffs
 - Last 3 seasons vs before
@@ -114,8 +114,8 @@ Availability found in the stored participation files:
 
 - `fantasy-football-4-fun/webapp/alt_analytics.py`: new filters, `run_compare`, side labels, the better-direction rule, filter option lists.
 - `fantasy-football-4-fun/webapp/app.py`: compare and extended filter parameters (extended ones read from the query string so the old signature and its tests stay valid), second-player search.
-- `fantasy-football-4-fun/webapp/templates/_alt_builder.html`: Compare line, Filters B, More filters, second-player picker, quick compare chips, comparison table and measure tabs.
-- `fantasy-football-4-fun/webapp/static/style.css`: comparison table, tints, tabs, the More filters disclosure.
+- `fantasy-football-4-fun/webapp/templates/_alt_builder.html`: Compare line, Filters B, filter picker, second-player picker, quick compare chips, comparison table and measure tabs.
+- `fantasy-football-4-fun/webapp/static/style.css`: comparison table, tints, tabs, the filter picker.
 - `fantasy-football-4-fun/webapp/sources/nflref/player_games.py`: the new columns.
 - `fantasy-football-4-fun/tests/test_alt_analytics.py`, `fantasy-football-4-fun/tests/test_nflref.py`.
 - `CLAUDE.md` and `docs/alternative-analytics-plan.md`.
@@ -125,7 +125,7 @@ Availability found in the stored participation files:
 
 - Rebuilt snapshots: row counts unchanged; coach, QB and referee spot-checked against the schedule (for example Kelce 2023: Andy Reid, Patrick Mahomes); rest and surface values normalised; blank temp and wind left blank.
 - Compare against independent sums from the raw files: a player's Home plus Away must equal his Career, and a result filter must split games exactly.
-- In Chromium on port 8000: Kelce home vs away, regular season vs playoffs, wins vs losses; Kelce vs Jefferson with the same filters; a kicker against a receiver (dashes); a grouped compare with its measure tabs; More filters badge counts; a phone width.  The page script is not run by the test suite.
+- In Chromium on port 8000: Kelce home vs away, regular season vs playoffs, wins vs losses; Kelce vs Jefferson with the same filters; a kicker against a receiver (dashes); a grouped compare with its measure tabs; filter picker badge counts; a phone width.  The page script is not run by the test suite.
 - Full suite.
 
 ## Traps to remember

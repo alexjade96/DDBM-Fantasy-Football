@@ -1407,3 +1407,52 @@ def test_player_games_blanks_targets_for_a_season_with_none_recorded():
     full = df.copy()
     full["targets"] = [150, 0, 0, 0, 0]
     assert pg._blank_unrecorded(full)["targets"].tolist() == [150, 0, 0, 0, 0]
+
+
+def _pg_schedule_with_context():
+    s = _pg_schedule()
+    s["home_coach"] = ["HC1", "HC2", "HC3", "HC4"]
+    s["away_coach"] = ["AC1", "AC2", "AC3", "AC4"]
+    s["home_qb_id"] = ["hq1", "hq2", "hq3", "hq4"]
+    s["away_qb_id"] = ["aq1", "aq2", "aq3", "aq4"]
+    s["home_qb_name"] = ["Hq1", "Hq2", "Hq3", "Hq4"]
+    s["away_qb_name"] = ["Aq1", "Aq2", "Aq3", "Aq4"]
+    s["home_rest"] = [7, 7, 10, 14]
+    s["away_rest"] = [6, 7, 7, 8]
+    s["referee"] = ["Ref1", None, "Ref3", "Ref4"]
+    s["weekday"] = ["Sunday", "Sunday", "Thursday", "Sunday"]
+    s["temp"] = [float("nan"), 50.0, float("nan"), 40.0]
+    s["wind"] = [float("nan"), 5.0, float("nan"), 3.0]
+    s["div_game"] = [0, 1, 0, 0]
+    s["overtime"] = [0.0, 0.0, 0.0, 1.0]
+    s["surface"] = ["grass ", "fieldturf", "", "dessograss"]   # stray space, blank
+    return s
+
+
+def test_player_games_adds_own_side_game_context():
+    from webapp.sources.nflref import player_games as pg
+    df = pg.build(_pg_players(), _pg_schedule_with_context(), 2016).set_index("player_id")
+    home = df.loc["00-1"]          # LV is the home team (OAK on the schedule)
+    assert (home.coach, home.opp_coach) == ("HC1", "AC1")
+    assert (home.qb_id, home.qb, home.opp_qb_id, home.opp_qb) == ("hq1", "Hq1", "aq1", "Aq1")
+    assert home.rest == 7 and home.referee == "Ref1" and home.weekday == "Sunday"
+    away = df.loc["00-3"]          # AAA is the away team in game 3
+    assert (away.coach, away.opp_coach, away.qb, away.rest) == ("AC3", "HC3", "Aq3", 7)
+
+
+def test_player_games_normalises_surface_and_keeps_blanks_blank():
+    from webapp.sources.nflref import player_games as pg
+    df = pg.build(_pg_players(), _pg_schedule_with_context(), 2016).set_index("player_id")
+    assert df.loc["00-1", "surface"] == "Grass"          # "grass " with a trailing space
+    assert df.loc["00-3", "surface"] is None or pd.isna(df.loc["00-3", "surface"])
+    assert df.loc["00-4", "surface"] == "Grass"          # dessograss
+    assert pd.isna(df.loc["00-1", "temp"]) and pd.isna(df.loc["00-1", "wind"])
+    assert pd.isna(df.loc["00-3", "referee"]) is False   # present for game 3
+    assert pg._surface_type("fieldturf") == "Turf" and pg._surface_type("") is None
+    assert pg._surface_type(float("nan")) is None
+
+
+def test_player_games_still_builds_from_a_schedule_without_context_columns():
+    from webapp.sources.nflref import player_games as pg
+    df = pg.build(_pg_players(), _pg_schedule(), 2016)
+    assert len(df) == 4 and df["coach"].isna().all() and df["qb_id"].isna().all()

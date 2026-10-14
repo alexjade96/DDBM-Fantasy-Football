@@ -8,115 +8,232 @@
    that does. #}
 <section class="card" id="alt-builder">
   <h3>Builder</h3>
-  <form class="controls inline" hx-get="/altanalytics/builder" hx-target="#alt-builder"
-        hx-swap="outerHTML">
-    <label><span>Player</span>
-      <input type="text" name="q" value="{{ player.name if player else q }}"
-             placeholder="Name" autocomplete="off"></label>
-    <button type="submit" class="nfl-apply" style="margin-left:0">Search</button>
-  </form>
+  <div class="alt-search">
+    <form class="controls inline" hx-get="/altanalytics/builder" hx-target="#alt-builder"
+          hx-swap="outerHTML">
+      <label><span>Player</span>
+        <input type="text" name="q" value="{{ player.name if player else q }}"
+               placeholder="Name" autocomplete="off"></label>
+      <button type="submit" class="nfl-apply" style="margin-left:0">Search</button>
+    </form>
+  </div>
 
   {% if player %}
-  <p class="alt-player" title="{{ player.coverage_text }}"><strong>{{ player.name }}</strong>
-    &middot; {{ player.position }} &middot; {{ player.team }}</p>
-  <div class="alt-quick">
-    <span class="alt-quick-label">Quick picks</span>
-    <div class="alt-chips">
-      {% for c in chips %}
-      <button type="button" class="alt-chip" title="{{ c.hint }}"
-              data-fill='{{ c.fill | tojson }}'>{{ c.label }}</button>
-      {% endfor %}
-      <button type="button" class="alt-chip alt-reset" title="{{ aa.CONTROL_HINTS.reset }}"
-              data-fill='{{ reset_fill | tojson }}'>Reset</button>
-    </div>
+  <div class="alt-who" title="{{ player.coverage_text }}">
+    <span class="alt-who-name">{{ player.name }}</span>
+    <span class="alt-who-meta">{{ player.position }} &middot; {{ player.team }}</span>
   </div>
   <form id="alt-builder-form" hx-get="/altanalytics/builder" hx-target="#alt-builder"
         hx-swap="outerHTML">
     <input type="hidden" name="q" value="{{ q }}">
     <input type="hidden" name="player_id" value="{{ player.player_id }}">
     <input type="hidden" name="run" value="1">
-    <div class="alt-block">
-      <h4>Measures</h4>
-      {# Same group order for every player; a group (or measure) the player has
-         no production in is dimmed and disabled, never hidden. #}
-      {% for g in measure_groups %}
-      <div class="alt-mrow{% if not g.used %} alt-mrow-off{% endif %}">
-        <span class="alt-mlabel">{{ g.label }}</span>
-        <div class="alt-mboxes">
-          {% for key, label, used in g["items"] %}
-          <label class="adp-check{% if not used %} alt-unused{% endif %}"
-                 title="{{ aa.MEASURE_HINTS.get(key, label) }}{% if not used %}.  No production for this player.{% endif %}">
-            <input type="checkbox" name="measures" value="{{ key }}"
-                   {% if key in sel_measures %}checked{% endif %}
-                   {% if not used %}disabled{% endif %}>
-            <span>{{ label }}</span>
-          </label>
-          {% endfor %}
+    {% set xs = extra_sel or {} %}
+    {% set xo = extra_opts or {} %}
+    {% set shown = fshown or [] %}
+    {# One field: a small label over its control.  `plain` marks a control that is
+       not a filter, so it never counts toward the "filters in use" count. #}
+    {% macro field(key, label, hint="", wide=false, plain=false) %}
+    <div class="alt-field{% if wide %} alt-field-wide{% endif %}" data-f="{{ key }}"
+         {% if plain %}data-plain{% endif %}
+         {% if key not in shown %}hidden{% endif %}{% if hint %} title="{{ hint }}"{% endif %}>
+      <span class="alt-flabel">{{ label }}</span>
+      {{ caller() }}
+    </div>
+    {% endmacro %}
+    {% macro pick(key, label, options) %}
+    {% call field(key, label) %}
+    <select name="{{ key }}" aria-label="{{ label }}">
+      <option value="">Any</option>
+      {% for o in options %}
+      {% if o is mapping %}
+      <option value="{{ o.value }}" {% if o.value == xs.get(key) %}selected{% endif %}>{{ o.label }}</option>
+      {% else %}
+      <option value="{{ o }}" {% if o == xs.get(key) %}selected{% endif %}>{{ o }}</option>
+      {% endif %}
+      {% endfor %}
+    </select>
+    {% endcall %}
+    {% endmacro %}
+
+    <div class="alt-block alt-picker">
+      <h4>Filter <span class="alt-hcount" data-count="picked">{{ shown|length }} selected</span></h4>
+      <div class="alt-fbar">
+        <details class="alt-fpick">
+          <summary title="{{ aa.CONTROL_HINTS.filter_picker }}">Choose what to show</summary>
+          <div class="alt-fmenu">
+            <input type="hidden" name="fshow_set" value="1">
+            {% for group, items in aa.PICKER_MENU %}
+            <div class="alt-fmgroup">
+              <h5>{{ group }}</h5>
+              {% for key, label in items %}
+              <label class="adp-check">
+                <input type="checkbox" name="fshow" value="{{ key }}"
+                       {% if key in shown %}checked{% endif %}>
+                <span>{{ label }}</span>
+              </label>
+              {% endfor %}
+            </div>
+            {% endfor %}
+          </div>
+        </details>
+        <span class="alt-fnone"{% if shown %} hidden{% endif %}>Nothing chosen: tick a stat group to run a query.</span>
+      </div>
+    </div>
+
+    <div class="alt-block alt-quicksec">
+      <h4>Quick picks</h4>
+      <div class="alt-chips">
+        {% for c in chips %}
+        <button type="button" class="alt-chip" title="{{ c.hint }}"
+                data-fill='{{ c.fill | tojson }}'>{{ c.label }}</button>
+        {% endfor %}
+        <button type="button" class="alt-chip alt-reset" title="{{ aa.CONTROL_HINTS.reset }}"
+                data-fill='{{ reset_fill | tojson }}'>Reset</button>
+      </div>
+    </div>
+
+    {# Each stat group is its own section with its own header (no "Measures"
+       wrapper).  A group (or measure) the player has no production in is dimmed
+       and disabled; which groups are on screen is the picker's choice. #}
+    {% for g in measure_groups %}
+    {% set gkey = "m_" ~ g.label|lower %}
+    {% set n_sel = namespace(v=0) %}
+    {% for key, label, used in g["items"] %}{% if key in sel_measures %}{% set n_sel.v = n_sel.v + 1 %}{% endif %}{% endfor %}
+    <div class="alt-block alt-mgroup{% if not g.used %} alt-mrow-off{% endif %}" data-f="{{ gkey }}" data-plain
+         {% if gkey not in shown %}hidden{% endif %}>
+      <h4>{{ g.label }} <span class="alt-hcount" data-count="{{ gkey }}"{% if not n_sel.v %} hidden{% endif %}>{{ n_sel.v }} selected</span></h4>
+      <div class="alt-mboxes">
+        {% for key, label, used in g["items"] %}
+        <label class="adp-check{% if not used %} alt-unused{% endif %}"
+               title="{{ aa.MEASURE_HINTS.get(key, label) }}{% if not used %}.  No production for this player.{% endif %}">
+          <input type="checkbox" name="measures" value="{{ key }}"
+                 {% if key in sel_measures %}checked{% endif %}
+                 {% if not used %}disabled{% endif %}>
+          <span>{{ label }}</span>
+        </label>
+        {% endfor %}
+      </div>
+    </div>
+    {% endfor %}
+
+    <div class="alt-block alt-line" data-blk="show">
+      <h4>Show</h4>
+      <div class="alt-filterbody">
+        <div class="alt-fields">
+          {% call field("agg", "Total or per game", aa.CONTROL_HINTS.agg, false, true) %}
+          <select name="agg" aria-label="Total or per game">
+            {% for k, v in aa.AGGS.items() %}
+            <option value="{{ k }}" {% if k == agg %}selected{% endif %}>{{ v }}</option>
+            {% endfor %}
+          </select>
+          {% endcall %}
+          {% call field("group_by", "Group by", aa.CONTROL_HINTS.group_by, false, true) %}
+          <select name="group_by" aria-label="Group by">
+            <option value="">Career</option>
+            {% for k, v in aa.GROUPS.items() %}
+            <option value="{{ k }}" {% if k == group_by %}selected{% endif %}>{{ v }}</option>
+            {% endfor %}
+          </select>
+          {% endcall %}
         </div>
       </div>
-      {% endfor %}
     </div>
-    <div class="alt-block alt-line">
-      <h4>Show</h4>
-      <div class="alt-ctl">
-        <select name="agg" aria-label="Total or per game" title="{{ aa.CONTROL_HINTS.agg }}">
-          {% for k, v in aa.AGGS.items() %}
-          <option value="{{ k }}" {% if k == agg %}selected{% endif %}>{{ v }}</option>
-          {% endfor %}
-        </select>
-        <span class="alt-word">by</span>
-        <select name="group_by" aria-label="Group by" title="{{ aa.CONTROL_HINTS.group_by }}">
-          <option value="">Career</option>
-          {% for k, v in aa.GROUPS.items() %}
-          <option value="{{ k }}" {% if k == group_by %}selected{% endif %}>{{ v }}</option>
-          {% endfor %}
-        </select>
-      </div>
-    </div>
-    <div class="alt-block alt-line">
-      <h4>Filters</h4>
-      <div class="alt-ctl">
-        <label class="alt-inl" title="{{ aa.CONTROL_HINTS.opponent }}">Opponent
-          <select name="opponent">
+
+    <div class="alt-block alt-line alt-filters" data-blk="filters">
+      <h4>Filters <span class="alt-hcount" data-count="filters"{% if not filter_active %} hidden{% endif %}>{{ filter_active or 0 }} in use</span></h4>
+      <div class="alt-filterbody">
+        <div class="alt-subsec" data-blk="sub-game">
+          <h5 class="alt-subhead">Game</h5>
+          <div class="alt-fields">
+          {% call field("opponent", "Opponent", aa.CONTROL_HINTS.opponent) %}
+          <select name="opponent" aria-label="Opponent">
             <option value="">Any</option>
             {% for o in opponents %}
             <option value="{{ o }}" {% if o == opponent %}selected{% endif %}>{{ o }}</option>
             {% endfor %}
-          </select></label>
-        <label class="alt-inl" title="{{ aa.CONTROL_HINTS.home_away }}">Site
-          <select name="home_away">
+          </select>
+          {% endcall %}
+          {% call field("home_away", "Site", aa.CONTROL_HINTS.home_away) %}
+          <select name="home_away" aria-label="Site">
             <option value="">Any</option>
             {% for h in aa.HOME_AWAY %}
             <option value="{{ h }}" {% if h == home_away %}selected{% endif %}>{{ h }}</option>
             {% endfor %}
-          </select></label>
-        <label class="alt-inl" title="{{ aa.CONTROL_HINTS.season_from }}">Seasons
-          <select name="season_from" aria-label="From season">
-            <option value="">First</option>
-            {% for y in seasons_all %}
-            <option value="{{ y }}" {% if y|string == season_from %}selected{% endif %}>{{ y }}</option>
+          </select>
+          {% endcall %}
+          {% call field("seasons", "Seasons", aa.CONTROL_HINTS.season_from) %}
+          <span class="alt-pair">
+            <select name="season_from" aria-label="From season">
+              <option value="">First</option>
+              {% for y in seasons_all %}
+              <option value="{{ y }}" {% if y|string == season_from %}selected{% endif %}>{{ y }}</option>
+              {% endfor %}
+            </select>
+            <span class="alt-word">to</span>
+            <select name="season_to" aria-label="To season" title="{{ aa.CONTROL_HINTS.season_to }}">
+              <option value="">Last</option>
+              {% for y in seasons_all %}
+              <option value="{{ y }}" {% if y|string == season_to %}selected{% endif %}>{{ y }}</option>
+              {% endfor %}
+            </select>
+          </span>
+          {% endcall %}
+          {% call field("game_types", "Games", aa.CONTROL_HINTS.game_types, true) %}
+          <span class="alt-types">
+            {% for g in aa.GAME_TYPES %}
+            <label class="adp-check" title="{{ aa.GAME_TYPE_LABELS[g] }}">
+              <input type="checkbox" name="game_types" value="{{ g }}"
+                     {% if g in sel_game_types %}checked{% endif %}>
+              <span>{{ g }}</span>
+            </label>
             {% endfor %}
-          </select></label>
-        <span class="alt-word">to</span>
-        <select name="season_to" aria-label="To season" title="{{ aa.CONTROL_HINTS.season_to }}">
-          <option value="">Last</option>
-          {% for y in seasons_all %}
-          <option value="{{ y }}" {% if y|string == season_to %}selected{% endif %}>{{ y }}</option>
-          {% endfor %}
-        </select>
-        <span class="alt-inl alt-types" title="{{ aa.CONTROL_HINTS.game_types }}">Games
-          {% for g in aa.GAME_TYPES %}
-          <label class="adp-check" title="{{ aa.GAME_TYPE_LABELS[g] }}">
-            <input type="checkbox" name="game_types" value="{{ g }}"
-                   {% if g in sel_game_types %}checked{% endif %}>
-            <span>{{ g }}</span>
-          </label>
-          {% endfor %}
-        </span>
-        <button type="button" class="alt-clear" hidden
-                title="{{ aa.CONTROL_HINTS.clear_filters }}">Clear filters</button>
-        <button type="submit" class="nfl-apply alt-run" style="margin-left:0">Run</button>
+          </span>
+          {% endcall %}
+          {% call field("weeks", "Weeks") %}
+          <span class="alt-pair">
+            <input type="number" name="week_from" min="1" max="22" placeholder="1"
+                   value="{{ xs.get('week_from', '') }}" aria-label="From week">
+            <span class="alt-word">to</span>
+            <input type="number" name="week_to" min="1" max="22" placeholder="22"
+                   value="{{ xs.get('week_to', '') }}" aria-label="To week">
+          </span>
+          {% endcall %}
+          {{ pick("result", "Result", aa.EXTRA_EQ["result"][2]) }}
+          {{ pick("role", "Favorite or underdog", aa.ROLES) }}
+          {{ pick("weekday", "Day", aa.EXTRA_EQ["weekday"][2]) }}
+          {{ pick("div_game", "Division game", ["Yes", "No"]) }}
+          {{ pick("overtime", "Overtime", ["Yes", "No"]) }}
+          </div>
+        </div>
+        <div class="alt-subsec" data-blk="sub-people">
+          <h5 class="alt-subhead">People</h5>
+          <div class="alt-fields">
+          {{ pick("team", "Team", xo.get("team", [])) }}
+          {{ pick("coach", "Head coach", xo.get("coach", [])) }}
+          {{ pick("opp_coach", "Opp. head coach", xo.get("opp_coach", [])) }}
+          {{ pick("qb_id", "Starting QB", xo.get("qb_id", [])) }}
+          {{ pick("opp_qb_id", "Opp. starting QB", xo.get("opp_qb_id", [])) }}
+          {{ pick("referee", "Referee", xo.get("referee", [])) }}
+          </div>
+        </div>
+        <div class="alt-subsec" data-blk="sub-conditions">
+          <h5 class="alt-subhead">Conditions</h5>
+          <div class="alt-fields">
+          {{ pick("roof", "Roof", aa.EXTRA_EQ["roof"][2]) }}
+          {{ pick("surface", "Surface", aa.EXTRA_EQ["surface"][2]) }}
+          {{ pick("temp", "Temperature", aa.EXTRA_BANDS["temp"][2].keys()|list) }}
+          {{ pick("wind", "Wind", aa.EXTRA_BANDS["wind"][2].keys()|list) }}
+          {{ pick("rest", "Rest", aa.EXTRA_BANDS["rest"][2].keys()|list) }}
+          </div>
+        </div>
       </div>
+    </div>
+
+    <div class="alt-actions">
+      <button type="button" class="alt-clear" hidden
+              title="{{ aa.CONTROL_HINTS.clear_filters }}">Clear filters</button>
+      <button type="submit" class="nfl-apply alt-run" style="margin-left:0">Run</button>
     </div>
   </form>
   <script>
@@ -125,44 +242,123 @@
     if (!f) return;
     var chips = document.querySelectorAll('#alt-builder .alt-chip');
     var clear = f.querySelector('.alt-clear');
-    var FILTER_SELECTS = ['opponent', 'home_away', 'season_from', 'season_to'];
+    var none = f.querySelector('.alt-fnone');
     function mark(on) { chips.forEach(function (c) { c.classList.toggle('on', c === on); }); }
     function tick(name, wanted) {
       f.querySelectorAll('input[name=' + name + ']').forEach(function (i) {
         i.checked = wanted.indexOf(i.value) > -1;
       });
     }
-    // A filter that is off its default is outlined, and "Clear filters" shows
-    // only while at least one is.
-    function flag() {
-      var any = false;
-      FILTER_SELECTS.forEach(function (n) {
-        var on = f.elements[n].value !== '';
-        f.elements[n].classList.toggle('alt-narrow', on);
-        any = any || on;
+    // Every control the picker can show or hide: measure rows, Show fields, filters.
+    function fields() { return Array.prototype.slice.call(f.querySelectorAll('[data-f]')); }
+    function isPlain(el) { return el.hasAttribute('data-plain'); }
+    function controls(el) { return el.querySelectorAll('select, input[type=number]'); }
+    // "Has a value" means off its default: a select past its first option, a
+    // filled number box, or any ticked box.
+    function hasValue(el) {
+      var v = false;
+      controls(el).forEach(function (c) {
+        if (c.tagName === 'SELECT' ? c.selectedIndex > 0 : c.value !== '') { v = true; }
       });
-      var types = f.querySelectorAll('input[name=game_types]:checked').length > 0;
-      f.querySelector('.alt-types').classList.toggle('alt-narrow', types);
-      clear.hidden = !(any || types);
+      if (el.querySelector('input[type=checkbox]:checked')) { v = true; }
+      return v;
+    }
+    function wipe(el) {
+      controls(el).forEach(function (c) {
+        if (c.tagName === 'SELECT') { c.selectedIndex = 0; } else { c.value = ''; }
+      });
+      el.querySelectorAll('input[type=checkbox]').forEach(function (c) { c.checked = false; });
+    }
+    // A filter with a value is outlined and counted; "Clear filters" shows only
+    // while at least one has a value.  Measures and Show are never counted.
+    function setCount(key, n, text) {
+      var el = f.querySelector('[data-count="' + key + '"]');
+      if (el) { el.textContent = text; el.hidden = n === 0; }
+    }
+    function flag() {
+      var n = 0;
+      fields().forEach(function (el) {
+        if (isPlain(el)) { return; }
+        var on = hasValue(el);
+        controls(el).forEach(function (c) {
+          var set = c.tagName === 'SELECT' ? c.selectedIndex > 0 : c.value !== '';
+          c.classList.toggle('alt-narrow', set);
+        });
+        var types = el.querySelector('.alt-types');
+        if (types) { types.classList.toggle('alt-narrow', on); }
+        if (on) { n++; }
+      });
+      clear.hidden = n === 0;
+      f.querySelectorAll('.alt-mgroup').forEach(function (g) {
+        var mc = g.querySelectorAll('input[name=measures]:checked').length;
+        setCount(g.dataset.f, mc, mc + ' selected');
+      });
+      setCount('filters', n, n + ' in use');
+      var picked = f.querySelectorAll('input[name=fshow]:checked').length;
+      setCount('picked', picked, picked + ' selected');
+    }
+    // A section heading goes when none of its controls is on screen.
+    function syncBlocks() {
+      f.querySelectorAll('[data-blk]').forEach(function (b) {
+        b.hidden = !b.querySelector('[data-f]:not([hidden])');
+      });
+    }
+    // The picker decides which controls are on screen.  Unticking one clears it,
+    // so a hidden control can never still be shaping the request.
+    function applyShown() {
+      var any = false;
+      f.querySelectorAll('input[name=fshow]').forEach(function (box) {
+        var el = f.querySelector('[data-f="' + box.value + '"]');
+        if (!el) { return; }
+        el.hidden = !box.checked;
+        if (!box.checked) { wipe(el); } else { any = true; }
+      });
+      none.hidden = any;
+      syncBlocks();
     }
     chips.forEach(function (chip) {
       chip.addEventListener('click', function () {
         var d = JSON.parse(chip.dataset.fill);
+        var reset = chip.classList.contains('alt-reset');
+        if (reset) { fields().forEach(wipe); }
         tick('measures', d.measures);
         tick('game_types', d.game_types);
         ['agg', 'group_by', 'opponent', 'season_from', 'season_to', 'home_away']
           .forEach(function (n) { f.elements[n].value = d[n]; });
-        mark(chip.classList.contains('alt-reset') ? null : chip);
+        // A preset ticks what it uses and unticks the rest; filters the user filled
+        // in themselves stay on.
+        var keep = (d.shown || []).slice();
+        fields().forEach(function (el) {
+          if (!isPlain(el) && hasValue(el) && keep.indexOf(el.dataset.f) < 0) { keep.push(el.dataset.f); }
+        });
+        f.querySelectorAll('input[name=fshow]').forEach(function (b) {
+          b.checked = keep.indexOf(b.value) > -1;
+        });
+        applyShown();
+        mark(reset ? null : chip);
         flag();
       });
     });
     clear.addEventListener('click', function () {
-      FILTER_SELECTS.forEach(function (n) { f.elements[n].value = ''; });
-      tick('game_types', []);
+      fields().forEach(function (el) { if (!isPlain(el)) { wipe(el); } });
       mark(null);
       flag();
     });
-    f.addEventListener('change', function () { mark(null); flag(); });
+    f.querySelectorAll('input[name=fshow]').forEach(function (box) {
+      box.addEventListener('change', function () { applyShown(); flag(); });
+    });
+    // `input` as well as `change`, so the counts follow typing in the week boxes.
+    ['change', 'input'].forEach(function (ev) {
+      f.addEventListener(ev, function (e) {
+        if (e.target.name !== 'fshow') { mark(null); flag(); }
+      });
+    });
+    // Close the picker when the user clicks anywhere else.
+    var pickerEl = f.querySelector('.alt-fpick');
+    document.addEventListener('click', function (e) {
+      if (pickerEl && pickerEl.open && !pickerEl.contains(e.target)) { pickerEl.open = false; }
+    });
+    syncBlocks();
     flag();
   })();
   </script>

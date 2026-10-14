@@ -2560,9 +2560,31 @@ h3.gd-block + .tablewrap, h3.gd-block + p.empty { margin-top: 6px; }
 .alt-chip:hover { border-color: var(--turf); }
 .alt-chip.on { background: var(--turf); color: #fff; border-color: var(--turf); }
 #alt-builder .controls { flex-wrap: wrap; }
+#alt-builder .alt-search { padding-bottom: 14px; }
+#alt-builder .alt-search .controls { margin: 0; }
+/* The chosen player is the title of everything below it. */
+#alt-builder .alt-who { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap;
+  padding: 12px 0 2px; border-top: 2px solid var(--line); }
+#alt-builder .alt-who-name { font-size: 20px; font-weight: 700; color: var(--ink); }
+#alt-builder .alt-who-meta { font-size: 14px; color: var(--muted); }
+#alt-builder .alt-quicksec .alt-chips { margin: 0 0 0 11px; }
 #alt-builder .alt-block { margin: 0 0 12px; }
-#alt-builder .alt-block h4 { margin: 0 0 6px; font-size: 12px; font-weight: 600;
-  text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
+#alt-builder .alt-block h4 { margin: 0 0 6px; font-size: 12px; font-weight: 700;
+  text-transform: uppercase; letter-spacing: .05em; color: var(--ink); }
+/* Sections of the form: a heavy rule and an accent tick on the heading, so it is
+   clear which controls belong to Layout, Measures, Show or Filters. */
+#alt-builder form > .alt-block { margin: 18px 0 0; padding-top: 14px;
+  border-top: 2px solid var(--line); }
+/* Every section header sits above its content, the same way, Measures included. */
+#alt-builder form > .alt-block > h4 { display: flex; align-items: baseline; gap: 10px;
+  margin: 0 0 10px; border-left: 3px solid var(--turf); padding-left: 8px; font-size: 13px; }
+#alt-builder form > .alt-block.alt-line { grid-template-columns: 1fr; gap: 0; align-items: start; }
+#alt-builder .alt-hcount { font-size: 12px; font-weight: 500; text-transform: none;
+  letter-spacing: 0; color: var(--muted); }
+#alt-builder .alt-hcount[hidden] { display: none; }
+#alt-builder .alt-block[hidden] { display: none; }
+#alt-builder .alt-mgroup .alt-mboxes { padding-left: 11px; }
+#alt-builder .alt-mgroup.alt-mrow-off > h4 { color: var(--faint); }
 /* Measures: one row per group, label column on the left, boxes flowing right. */
 #alt-builder .alt-mrow { display: grid; grid-template-columns: 84px 1fr; gap: 0 10px;
   align-items: baseline; padding: 5px 0; border-top: 1px solid var(--line); }
@@ -2586,7 +2608,7 @@ h3.gd-block + .tablewrap, h3.gd-block + p.empty { margin-top: 6px; }
   #alt-builder .alt-line h4 { margin-bottom: 2px; }
   #alt-builder .alt-run { margin-left: 0 !important; }
 }
-#alt-builder .alt-ctl select { font-size: 14px; color: var(--ink); }
+#alt-builder .alt-ctl select { font-size: 14px; color: var(--ink); padding: 5px 8px; height: 32px; }
 /* Player search results: a list of rows, not a wrap of buttons. */
 #alt-builder .alt-matches { border: 1px solid var(--line); border-radius: 8px;
   overflow: hidden; margin: 6px 0 4px; }
@@ -2632,13 +2654,75 @@ h3.gd-block + .tablewrap, h3.gd-block + p.empty { margin-top: 6px; }
   letter-spacing: .04em; color: var(--muted); padding-top: 6px; }
 #alt-builder .alt-quick .alt-chips { margin: 0; }
 #alt-builder .alt-reset { border-style: dashed; color: var(--muted); }
-#alt-builder .alt-ctl select.alt-narrow { border-color: var(--turf);
-  box-shadow: 0 0 0 1px var(--turf); }
+#alt-builder .alt-fields select.alt-narrow, #alt-builder .alt-fields input.alt-narrow {
+  border-color: var(--turf); box-shadow: 0 0 0 1px var(--turf); }
 #alt-builder .alt-types.alt-narrow { color: var(--turf); font-weight: 600; }
+/* One standard field: small label over a full-width control, in an auto-fit grid. */
+#alt-builder .alt-filters { align-items: start; }
+#alt-builder .alt-filters h4 { padding-top: 2px; }
+#alt-builder .alt-filterbody { min-width: 0; }
+#alt-builder .alt-fields { display: grid; gap: 10px 12px;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); align-items: end; }
+#alt-builder .alt-field { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+#alt-builder .alt-flabel { font-size: 11px; font-weight: 600; text-transform: uppercase;
+  letter-spacing: .04em; color: var(--muted); }
+#alt-builder .alt-field select, #alt-builder .alt-field input[type=number] {
+  width: 100%; min-width: 0; font-size: 14px; color: var(--ink); box-sizing: border-box;
+  padding: 5px 8px; height: 32px; }
+#alt-builder .alt-field-wide { grid-column: span 2; }
+#alt-builder .alt-pair { display: grid; grid-template-columns: 1fr auto 1fr; gap: 6px;
+  align-items: center; }
+#alt-builder .alt-field .alt-types { display: flex; flex-wrap: nowrap; gap: 4px 12px;
+  height: 32px; align-items: center; }
+#alt-builder .alt-field[hidden], #alt-builder .alt-mrow[hidden],
+#alt-builder .alt-block[hidden] { display: none; }
+#alt-builder .alt-fbar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; }
+#alt-builder .alt-fpick { position: relative; }
+#alt-builder .alt-fpick summary { cursor: pointer; font-size: 13px; font-weight: 600;
+  list-style: none; padding: 5px 12px; border: 1px solid var(--line); border-radius: 6px;
+  background: var(--surface); color: var(--ink); width: fit-content; }
+#alt-builder .alt-fpick summary::-webkit-details-marker { display: none; }
+#alt-builder .alt-fpick summary::after { content: "▾"; margin-left: 8px; color: var(--muted); }
+#alt-builder .alt-fpick[open] summary { border-color: var(--turf); }
+#alt-builder .alt-fmenu { position: absolute; z-index: 20; top: calc(100% + 4px); left: 0;
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 4px 22px;
+  width: min(780px, calc(100vw - 96px));
+  padding: 12px 16px; background: var(--surface); border: 1px solid var(--line);
+  border-radius: 8px; box-shadow: var(--shadow); }
+#alt-builder .alt-fmgroup { display: flex; flex-direction: column; gap: 3px; }
+#alt-builder .alt-fmgroup h5 { margin: 0 0 4px; font-size: 11px; font-weight: 600;
+  text-transform: uppercase; letter-spacing: .04em; color: var(--faint); }
+#alt-builder .alt-fnone { font-size: 13px; color: var(--muted); }
+#alt-builder .alt-fnone[hidden] { display: none; }
+/* Filters are grouped under Game / People / Conditions, each its own labeled band. */
+#alt-builder .alt-subsec { padding: 8px 10px 10px; border: 1px solid var(--line);
+  border-radius: 8px; background: var(--surface); }
+#alt-builder .alt-filters .alt-filterbody { display: flex; flex-wrap: wrap; gap: 10px; }
+#alt-builder .alt-filters .alt-subsec { flex: 1 1 260px; min-width: 0; }
+#alt-builder .alt-filters .alt-subsec[data-blk=sub-game] { flex: 3 1 460px; }
+#alt-builder .alt-filters .alt-subsec[data-blk=sub-people] { flex: 2 1 320px; }
+#alt-builder .alt-subsec[hidden] { display: none; }
+#alt-builder .alt-subhead { margin: 0 0 8px; font-size: 11px; font-weight: 600;
+  text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
+#alt-builder .alt-subhead::before { content: ""; display: inline-block; width: 6px; height: 6px;
+  margin-right: 6px; border-radius: 50%; background: var(--turf); vertical-align: middle; }
+#alt-builder .alt-actions { display: flex; align-items: center; justify-content: flex-end;
+  gap: 14px; margin-top: 18px; padding-top: 12px; border-top: 2px solid var(--line); }
+#alt-builder .alt-badge { display: inline-block; min-width: 18px; padding: 0 6px; margin-left: 6px;
+  border-radius: 9px; background: var(--turf); color: #fff; font-size: 11px; font-weight: 600;
+  text-align: center; line-height: 18px; }
+#alt-builder .alt-badge[hidden] { display: none; }
 #alt-builder .alt-clear { background: transparent; border: 0; padding: 0; font-size: 13px;
   color: var(--turf); text-decoration: underline; cursor: pointer; }
 #alt-builder .alt-clear[hidden] { display: none; }
 @media (max-width: 640px) {
   #alt-builder .alt-quick { grid-template-columns: 1fr; gap: 4px 0; }
+  #alt-builder .alt-fields { grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); }
+  #alt-builder .alt-fpick { width: 100%; }
+  #alt-builder .alt-fmenu { position: static; width: auto; grid-template-columns: 1fr 1fr; margin-top: 6px;
+    box-shadow: none; }
+  #alt-builder .alt-actions { justify-content: space-between; }
+  #alt-builder .alt-field-wide { grid-column: 1 / -1; }
+  #alt-builder .alt-field .alt-types { flex-wrap: wrap; height: auto; min-height: 32px; }
   #alt-builder .alt-quick-label { padding-top: 0; }
 }

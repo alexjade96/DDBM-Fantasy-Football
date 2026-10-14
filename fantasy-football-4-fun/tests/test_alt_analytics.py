@@ -133,7 +133,7 @@ def _rb_games() -> pd.DataFrame:
 def test_preset_fill_uses_the_builders_own_field_names():
     fill = aa.preset_fill("production", _games(), "WR")
     assert set(fill) == {"measures", "agg", "group_by", "opponent", "season_from",
-                         "season_to", "home_away", "game_types"}
+                         "season_to", "home_away", "game_types", "shown"}
 
 
 def test_presets_change_the_measure_checkboxes_not_just_the_grouping():
@@ -272,9 +272,9 @@ def test_load_player_returns_all_seasons_in_order(_fake_table):
 
 # -- routes ----------------------------------------------------------------------
 
-def _req():
+def _req(query: bytes = b""):
     return Request({"type": "http", "method": "GET", "path": "/", "headers": [],
-                    "query_string": b"", "server": ("x", 80), "scheme": "http"})
+                    "query_string": query, "server": ("x", 80), "scheme": "http"})
 
 
 @pytest.fixture
@@ -299,8 +299,9 @@ def _builder(A, **kw):
     args = {"q": "", "player_id": "", "run": 0, "measures": [], "agg": "total",
             "group_by": "", "opponent": "", "season_from": "", "season_to": "",
             "home_away": "", "game_types": []}
+    query = kw.pop("_query", b"")
     args.update(kw)
-    return A.alt_builder(_req(), **args).body.decode()
+    return A.alt_builder(_req(query), **args).body.decode()
 
 
 def test_builder_route_search_lists_matches_and_loads_no_chips(_routes):
@@ -311,7 +312,7 @@ def test_builder_route_search_lists_matches_and_loads_no_chips(_routes):
 def test_chosen_player_shows_full_name_and_position_under_the_search_box(_routes):
     import re
     html = _builder(_routes, q="ab", player_id="00-1")
-    assert re.search(r'<p class="alt-player"[^>]*><strong>A B</strong>\s*&middot; WR &middot; DET', html)
+    assert re.search(r'<div class="alt-who"[^>]*>\s*<span class="alt-who-name">A B</span>\s*<span class="alt-who-meta">WR &middot; DET</span>', html)
     assert 'name="q" value="A B"' in html            # the box shows the full name, not the query
 
 
@@ -465,7 +466,7 @@ def test_search_results_are_rows_with_position_team_seasons_and_games(_routes):
 def test_a_search_with_one_match_goes_straight_to_the_player(_routes):
     html = _builder(_routes, q="solo")
     assert 'class="alt-matches"' not in html
-    assert "alt-player" in html and "alt-chip" in html           # the builder is already open
+    assert "alt-who" in html and "alt-chip" in html              # the builder is already open
 
 
 
@@ -623,4 +624,267 @@ def test_filter_flag_and_clear_button_are_wired(_routes):
     html = _builder(_routes, q="ab", player_id="00-1")
     btn = re.search(r'<button[^>]*class="alt-clear"[^>]*>', html).group(0)
     assert "hidden" in btn and aa.CONTROL_HINTS["clear_filters"] in btn   # hidden until a filter is set
-    assert "alt-narrow" in html and "FILTER_SELECTS" in html              # the script that marks them
+    assert "alt-narrow" in html and "function flag" in html               # the script that marks them
+
+
+# -- game-context filters --------------------------------------------------
+
+def _ctx_games() -> pd.DataFrame:
+    g = _games()
+    g["coach"] = ["Reid", "Reid", "Reid", "Reid", "Shanahan"]
+    g["opp_coach"] = ["Payton", "Smith", "Payton", "Payton", "Kubiak"]
+    g["qb_id"] = ["q1", "q1", "q2", "q2", "q2"]
+    g["qb"] = ["Qa", "Qa", "Qb", "Qb", "Qb"]
+    g["opp_qb_id"] = ["z1"] * 5
+    g["opp_qb"] = ["Zed"] * 5
+    g["referee"] = ["R1", "R2", "R1", "R1", None]
+    g["result"] = ["W", "L", "W", "W", "L"]
+    g["spread"] = [-3.0, 2.0, -1.0, 0.0, 4.0]
+    g["roof"] = ["outdoors", "dome", "outdoors", "closed", "open"]
+    g["surface"] = ["Grass", "Turf", "Grass", None, "Turf"]
+    g["weekday"] = ["Sunday"] * 4 + ["Sunday"]
+    g["temp"] = [30.0, float("nan"), 55.0, float("nan"), 80.0]
+    g["wind"] = [4.0, float("nan"), 12.0, float("nan"), 20.0]
+    g["rest"] = [7, 6, 10, 14, 7]
+    g["div_game"] = [1, 0, 0, 0, 0]
+    g["overtime"] = [0.0, 0.0, 1.0, 0.0, 0.0]
+    return g
+
+
+def _n(filters):
+    return aa.run_query(_ctx_games(), _spec(filters=filters))["games"]
+
+
+def test_name_and_menu_filters_match_exactly():
+    assert _n({"coach": "Reid"}) == 4 and _n({"opp_coach": "Payton"}) == 3
+    assert _n({"qb_id": "q2"}) == 3 and _n({"referee": "R1"}) == 3
+    assert _n({"result": "W"}) == 3 and _n({"team": "det"}) == 5
+    assert _n({"roof": "dome"}) == 1 and _n({"surface": "Turf"}) == 2
+
+
+def test_blank_values_never_match_a_band_or_category():
+    # temp is blank for 2 games, surface for 1: they count in no band or bucket
+    assert sum(_n({"temp": b}) for b in aa.EXTRA_BANDS["temp"][2]) == 3
+    assert _n({"surface": "Grass"}) + _n({"surface": "Turf"}) == 4
+
+
+def test_bands_roles_weeks_and_yes_no():
+    assert _n({"temp": "Under 40"}) == 1 and _n({"temp": "Over 70"}) == 1
+    assert _n({"wind": "10 to 15"}) == 1
+    assert _n({"rest": "Short (6 days or fewer)"}) == 1
+    assert _n({"rest": "Normal (7 to 9)"}) == 2 and _n({"rest": "Long (10 or more)"}) == 2
+    assert _n({"role": "Favorite"}) == 2 and _n({"role": "Underdog"}) == 2   # spread 0 is neither
+    assert _n({"weeks": [4, 1]}) == 3 and _n({"weeks": [19, 22]}) == 2
+    assert _n({"div_game": "Yes"}) == 1 and _n({"div_game": "No"}) == 4
+    assert _n({"overtime": "Yes"}) == 1
+
+
+def test_filters_combine_and_splits_add_up():
+    assert _n({"coach": "Reid", "home_away": "Home"}) == 2
+    assert _n({"result": "W"}) + _n({"result": "L"}) == _n({})
+
+
+def test_extra_filters_reject_values_outside_the_menus():
+    for bad in ({"result": "X"}, {"roof": "tent"}, {"temp": "hot"}, {"role": "Lock"},
+                {"div_game": "Maybe"}, {"weeks": [1]}):
+        with pytest.raises(ValueError):
+            aa.run_query(_ctx_games(), _spec(filters=bad))
+
+
+def test_an_old_frame_without_the_new_columns_matches_nothing_for_them():
+    assert aa.run_query(_games(), _spec(filters={"coach": "Reid"}))["games"] == 0
+    assert aa.run_query(_games(), _spec())["games"] == 5
+
+
+def test_context_options_list_only_names_in_the_games():
+    o = aa.context_options(_ctx_games())
+    assert o["coach"] == ["Reid", "Shanahan"] and o["referee"] == ["R1", "R2"]
+    assert o["qb_id"] == [{"value": "q1", "label": "Qa"}, {"value": "q2", "label": "Qb"}]
+    assert aa.context_options(pd.DataFrame())["coach"] == []
+
+
+
+
+
+
+# -- the filter picker: which filter fields are on screen -----------------------------
+
+def _badge(html: str):
+    """(hidden, text) of the Filters header's "n in use" count."""
+    m = re.search(r'<span class="alt-hcount" data-count="filters"([^>]*)>(\d+) in use</span>', html)
+    assert m
+    return ("hidden" in m.group(1), m.group(2))
+
+
+def test_shown_fields_defaults_then_follows_the_form():
+    assert aa.shown_fields([], False, set()) == aa.DEFAULT_SHOWN
+    # the form had the picker: the ticked boxes win, in menu order
+    assert aa.shown_fields(["coach", "opponent"], True, set()) == ["opponent", "coach"]
+    # everything unticked is a real choice, not a reason to fall back to defaults
+    assert aa.shown_fields([], True, set()) == []
+    # a filter with a value is always shown, ticked or not
+    assert aa.shown_fields([], True, {"temp"}) == ["temp"]
+    # unknown names are dropped
+    assert aa.shown_fields(["bogus", "roof"], True, set()) == ["roof"]
+
+
+def test_every_menu_filter_is_unique_and_has_a_field():
+    keys = aa.PICKER_KEYS
+    assert len(keys) == len(set(keys))
+    # each menu key is a filter the engine cleans, a measure group or a Show control
+    engine = {"opponent", "home_away", "seasons", "game_types", *aa.EXTRA_KEYS}
+    assert set(keys) - aa.PLAIN_KEYS == engine
+    assert aa.PLAIN_KEYS == {"m_passing", "m_rushing", "m_receiving", "m_kicking",
+                             "m_fantasy", "agg", "group_by"}
+
+
+def _field_hidden(html: str, key: str) -> bool:
+    m = re.search(r'<div class="[^"]*alt-(?:field|mgroup)[^"]*" data-f="%s"([^>]*)>' % key, html)
+    assert m, key
+    return "hidden" in m.group(1)
+
+
+def test_builder_route_shows_only_the_default_filters_at_first(_routes):
+    html = _builder(_routes, q="solo", player_id="00-1")
+    shown = [k for k in aa.PICKER_KEYS if not _field_hidden(html, k)]
+    assert shown == aa.default_shown("WR")          # the fixture player is a WR
+    assert "m_receiving" in shown and "m_passing" not in shown and "qb_id" in shown
+    assert 'name="fshow" value="opponent"' in html and "checked" in html
+    assert _badge(html)[0] is True and _badge(html)[1] == "0"
+
+
+def test_builder_route_shows_the_ticked_filters_and_keeps_them_after_a_run(monkeypatch, _routes):
+    monkeypatch.setattr(aa, "load_player", lambda pid: _ctx_games())
+    html = _builder(_routes, q="solo", player_id="00-1", run=1, measures=["targets"],
+                    _query=b"fshow_set=1&fshow=coach&fshow=temp&coach=Reid&result=W&week_from=2")
+    shown = [k for k in aa.PICKER_KEYS if not _field_hidden(html, k)]
+    # coach and temp were ticked; result and weeks have values so they show too, and
+    # the Receiving group stays because a receiving measure is ticked
+    assert shown == ["m_receiving", "weeks", "result", "coach", "temp"]
+    assert _badge(html) == (False, "3")                      # coach, result, weeks have values
+    assert '<option value="Reid" selected>' in html
+    assert '<option value="W" selected>' in html
+
+
+def test_builder_route_with_every_filter_unticked_shows_none(monkeypatch, _routes):
+    monkeypatch.setattr(aa, "load_player", lambda pid: _ctx_games())
+    html = _builder(_routes, q="solo", player_id="00-1", _query=b"fshow_set=1")
+    filters = [k for k in aa.PICKER_KEYS if k not in aa.PLAIN_KEYS]
+    assert all(_field_hidden(html, k) for k in filters)
+    assert _field_hidden(html, "agg") and _field_hidden(html, "group_by")
+
+
+def test_builder_route_runs_with_the_extra_filters(monkeypatch, _routes):
+    monkeypatch.setattr(aa, "load_player", lambda pid: _ctx_games())
+    html = _builder(_routes, q="solo", player_id="00-1", run=1, measures=["targets"],
+                    _query=b"coach=Reid&result=W&week_from=2")
+    # Reid wins from week 2 on: 2023 week 1 is out, the WC game (12) is in
+    assert re.search(r"<td[^>]*>\s*1\s*</td>", html)          # one game matches
+    assert re.search(r"<td[^>]*>\s*12\s*</td>", html)         # its 12 targets
+
+
+def test_a_non_default_show_choice_stays_on_screen_even_if_unticked(monkeypatch, _routes):
+    monkeypatch.setattr(aa, "load_player", lambda pid: _ctx_games())
+    html = _builder(_routes, q="solo", player_id="00-1", agg="per_game", group_by="season",
+                    measures=["targets"], _query=b"fshow_set=1")
+    assert not _field_hidden(html, "agg") and not _field_hidden(html, "group_by")
+    assert not _field_hidden(html, "m_receiving")
+    assert _field_hidden(html, "m_passing") and _field_hidden(html, "m_kicking")
+
+
+def test_measure_groups_and_show_controls_are_in_the_picker_but_presets_are_not(_routes):
+    html = _builder(_routes, q="solo", player_id="00-1")
+    for key in ("m_passing", "m_rushing", "m_receiving", "m_kicking", "m_fantasy",
+                "agg", "group_by"):
+        assert f'name="fshow" value="{key}"' in html
+    assert "alt-chip" in html                       # the Quick picks are still a separate row
+    assert 'name="fshow" value="workload"' not in html
+
+
+def test_default_shown_follows_the_position():
+    qb, rb, wr, k = (aa.default_shown(p) for p in ("QB", "RB", "WR", "K"))
+    assert {"m_passing", "m_rushing"} <= set(qb) and "m_receiving" not in qb
+    assert {"m_rushing", "m_receiving"} <= set(rb) and "m_passing" not in rb
+    assert "m_receiving" in wr and "m_kicking" not in wr
+    assert "m_kicking" in k and not ({"m_passing", "m_rushing", "m_receiving"} & set(k))
+    assert {"roof", "surface", "temp", "wind"} <= set(k)
+    for shown in (qb, rb, wr, k):
+        assert set(aa._COMMON_FILTERS) <= set(shown) and {"agg", "group_by"} <= set(shown)
+        assert shown == [x for x in aa.PICKER_KEYS if x in shown]       # picker order
+    # an unknown position gets every measure group and no position extras
+    assert aa.default_shown("DEF") == aa.DEFAULT_SHOWN
+    assert aa.default_shown(None) == aa.DEFAULT_SHOWN
+
+
+def test_every_position_default_is_a_real_picker_key():
+    for pos in list(aa._DEFAULT_MEASURES) + ["DEF", None]:
+        assert set(aa.default_shown(pos)) <= set(aa.PICKER_KEYS)
+    for pos, extra in aa._POSITION_FILTERS.items():
+        assert pos in aa._DEFAULT_MEASURES and set(extra) <= set(aa.PICKER_KEYS)
+
+
+def test_shown_fields_uses_the_given_default_until_the_form_has_the_picker():
+    assert aa.shown_fields([], False, set(), ["roof"]) == ["roof"]
+    assert aa.shown_fields(["wind"], True, set(), ["roof"]) == ["wind"]
+    assert aa.shown_fields([], False, {"temp"}, ["roof"]) == ["roof", "temp"]
+
+
+def test_reset_fill_carries_the_position_defaults(_routes):
+    g = _games()
+    fill = aa.reset_fill(g, "WR")
+    assert fill["shown"] == aa.default_shown("WR")
+    html = _builder(_routes, q="solo", player_id="00-1")
+    assert '"shown"' in html                        # the Reset chip's data-fill has it
+
+
+def test_preset_shown_ticks_what_it_uses_and_nothing_else():
+    g = _games()
+    s = aa.preset_fill("workload", g, "WR")["shown"]
+    assert s == ["m_receiving", "agg", "group_by"]                   # no filters at all
+    po = aa.preset_fill("playoffs", g, "WR")
+    assert "game_types" in po["shown"] and "opponent" not in po["shown"]
+    assert "seasons" in aa.preset_fill("recent", g, "WR")["shown"]
+    # groups follow the measures the preset picked, in picker order
+    qb = aa.shown_for_fill({"measures": ["passing_yards", "rushing_yards"]})
+    assert qb == ["m_passing", "m_rushing", "agg", "group_by"]
+    both = aa.shown_for_fill({"measures": ["targets"], "opponent": "KC", "home_away": "Home",
+                              "season_from": "2020", "game_types": ["SB"]})
+    assert both == ["m_receiving", "agg", "group_by", "opponent", "home_away", "seasons", "game_types"]
+
+
+def test_every_chip_carries_a_shown_list_of_real_picker_keys(_routes):
+    html = _builder(_routes, q="solo", player_id="00-1")
+    import json
+    from markupsafe import escape
+    fills = re.findall(r"data-fill='([^']*)'", html)
+    assert len(fills) == len(aa.PRESETS) + 1                         # every preset and Reset
+    for raw in fills:
+        d = json.loads(raw.replace("&#34;", '"'))
+        assert d["shown"] and set(d["shown"]) <= set(aa.PICKER_KEYS)
+
+
+def test_section_headers_carry_live_counts(_routes):
+    html = _builder(_routes, q="solo", player_id="00-1")
+    assert 'data-count="filters"' in html
+    for g in ("m_passing", "m_rushing", "m_receiving", "m_kicking", "m_fantasy"):
+        assert f'data-count="{g}"' in html                  # one count per stat group
+    assert "<h4>Measures" not in html                        # no Measures wrapper header
+
+
+def test_filter_section_replaces_layout_and_counts_the_ticked_boxes(_routes):
+    html = _builder(_routes, q="solo", player_id="00-1")
+    assert "<h4>Layout" not in html and "<h4>Filter " in html
+    n = len(aa.default_shown("WR"))
+    assert f'data-count="picked">{n} selected</span>' in html
+    assert "alt-badge" not in html                       # the button no longer carries a count
+
+
+def test_player_title_and_sections_order(_routes):
+    html = _builder(_routes, q="solo", player_id="00-1")
+    order = [html.index(x) for x in ('class="alt-search"', 'class="alt-who"',
+                                     "<h4>Filter ", "<h4>Quick picks", "<h4>Receiving",
+                                     "<h4>Show", "<h4>Filters ")]
+    assert order == sorted(order)                        # search, player, Filter, Quick picks, stats...
+    assert 'alt-who-name">A B</span>' in html and "WR &middot; DET" in html
+    assert 'name="fshow" value="m_receiving"' in html and "<h5>Stats</h5>" in html
+    assert "<h5>Measures</h5>" not in html

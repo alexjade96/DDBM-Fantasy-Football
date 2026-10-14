@@ -1677,10 +1677,36 @@ def alt_builder(request: Request, q: str = "", player_id: str = "", run: int = 0
     if games is not None:
         ctx["chips"] = aa.preset_chips(games, ctx["player"]["position"])
         ctx["reset_fill"] = aa.reset_fill(games, ctx["player"]["position"])
+    # The extra filters and the filter picker are read from the query string so this signature stays
+    # as it was; unset ones are simply absent.
+    qp = request.query_params
+    extras = {k: qp.get(k, "") for k in aa.EXTRA_KEYS if k != "weeks"}
+    def _wk(name: str, default: int) -> int:
+        v = qp.get(name, "").strip()
+        return int(v) if v.isdigit() else default
+    extras["weeks"] = ([_wk("week_from", 1), _wk("week_to", 22)]
+                       if qp.get("week_from") or qp.get("week_to") else None)
     ctx.update({"sel_measures": sel, "agg": agg, "group_by": group_by,
                 "opponent": opponent, "season_from": season_from,
                 "season_to": season_to, "home_away": home_away,
-                "sel_game_types": game_types})
+                "sel_game_types": game_types,
+                "extra_sel": {**extras, "week_from": qp.get("week_from", ""),
+                              "week_to": qp.get("week_to", "")},
+                "extra_opts": aa.context_options(games) if games is not None else {}})
+    active = {k for k, v in extras.items() if v}
+    active |= {k for k, v in (("opponent", opponent), ("home_away", home_away),
+                              ("seasons", season_from or season_to),
+                              ("game_types", game_types)) if v}
+    ctx["filter_active"] = len(active)
+    # Controls that have a value are always shown: measure groups with a ticked
+    # measure, a non-default Show or Group by, and every filter above.
+    forced = set(active)
+    forced |= {aa._measure_group_key(name) for name, keys in aa.MEASURE_GROUPS
+               if any(k in sel for k in keys)}
+    forced |= {k for k, v in (("agg", agg != "total"), ("group_by", group_by)) if v}
+    ctx["fshown"] = aa.shown_fields(
+        qp.getlist("fshow"), bool(qp.get("fshow_set")), forced,
+        aa.default_shown(ctx["player"]["position"], games) if games is not None else None)
     if games is not None and run:
         try:
             seasons = None
@@ -1691,7 +1717,8 @@ def alt_builder(request: Request, q: str = "", player_id: str = "", run: int = 0
             spec = {"measures": sel, "agg": agg, "group_by": group_by or None,
                     "filters": {"opponent": opponent or None, "seasons": seasons,
                                 "home_away": home_away or None,
-                                "game_types": game_types or None}}
+                                "game_types": game_types or None,
+                                **{k: v for k, v in extras.items() if v}}}
             ctx["result"] = aa.table_view(aa.run_query(games, spec))
         except ValueError as exc:
             ctx["error"] = str(exc)

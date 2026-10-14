@@ -138,6 +138,7 @@ CONTROL_HINTS = {
     "season_to": "Last season to include.",
     "game_types": "None ticked means all games.",
     "clear_filters": "Back to every opponent, site, season and game type.",
+    "filter_picker": "Tick what you want on the form: measure groups, how to show them, and filters.  Only ticked items show; unticking one clears it.  Games with no recorded value, such as temperature in a dome, never match a band.",
     "reset": "Clear every measure, filter and grouping back to this player's defaults.",
 }
 
@@ -375,7 +376,7 @@ def reset_fill(games: pd.DataFrame, position: str | None) -> dict:
     preset's fill, so the Reset chip is applied by the same script."""
     return {"measures": default_measures(position, games), "agg": "total",
             "group_by": "", "opponent": "", "season_from": "", "season_to": "",
-            "home_away": "", "game_types": []}
+            "home_away": "", "game_types": [], "shown": default_shown(position, games)}
 
 
 def opponents_faced(games: pd.DataFrame) -> list[str]:
@@ -393,6 +394,208 @@ def coverage(games: pd.DataFrame) -> dict:
     return {"first_season": int(games["season"].min()), "last_season": last,
             "last_week": int(games.loc[games["season"] == last, "week"].max()),
             "games": int(len(games))}
+
+
+# -- game-context filters ("More filters") -------------------------------------------
+# Each is a fixed menu or a name matched exactly against the data.  A blank
+# value in the data (temperature in a dome, an unrecorded surface) never matches
+# a band: unknown is not a number and not a category.
+
+#: filter key -> (label, column, menu or None).  A None menu means a name
+#: matched exactly (coach, referee, team) or a quarterback id.
+EXTRA_EQ = {
+    "team": ("Team", "team", None),
+    "coach": ("Head coach", "coach", None),
+    "opp_coach": ("Opponent head coach", "opp_coach", None),
+    "qb_id": ("Starting QB", "qb_id", None),
+    "opp_qb_id": ("Opponent starting QB", "opp_qb_id", None),
+    "referee": ("Referee", "referee", None),
+    "result": ("Result", "result", ["W", "L", "T"]),
+    "roof": ("Roof", "roof", ["outdoors", "dome", "closed", "open"]),
+    "surface": ("Surface", "surface", ["Grass", "Turf"]),
+    "weekday": ("Day", "weekday", ["Sunday", "Monday", "Thursday", "Saturday",
+                                   "Friday", "Wednesday", "Tuesday"]),
+}
+#: yes/no filters on 0/1 columns
+EXTRA_YESNO = {"div_game": ("Division game", "div_game"),
+               "overtime": ("Overtime", "overtime")}
+#: banded numeric filters: key -> (label, column, {band: (low, high)}), low
+#: inclusive and high exclusive, None = open ended
+EXTRA_BANDS = {
+    "temp": ("Temperature", "temp", {"Under 40": (None, 40), "40 to 70": (40, 70),
+                                     "Over 70": (70, None)}),
+    "wind": ("Wind", "wind", {"Under 10": (None, 10), "10 to 15": (10, 15),
+                              "15 or more": (15, None)}),
+    "rest": ("Rest", "rest", {"Short (6 days or fewer)": (None, 7),
+                              "Normal (7 to 9)": (7, 10),
+                              "Long (10 or more)": (10, None)}),
+}
+ROLES = ["Favorite", "Underdog"]
+EXTRA_KEYS = (list(EXTRA_EQ) + list(EXTRA_YESNO) + list(EXTRA_BANDS)
+              + ["role", "weeks"])
+
+
+#: The picker: every control the builder can show, grouped.  A control's field is
+#: on screen only while its box is ticked; unticking it clears its value.  Presets
+#: (Quick picks) are not in the picker.
+def _measure_group_key(label: str) -> str:
+    return "m_" + label.lower()
+
+
+PICKER_MENU = [
+    ("Stats", [(_measure_group_key(name), name) for name, _ in MEASURE_GROUPS]),
+    ("Results", [("agg", "Total or per game"), ("group_by", "Group by")]),
+    ("Game", [("opponent", "Opponent"), ("home_away", "Site"), ("seasons", "Seasons"),
+              ("game_types", "Games"), ("weeks", "Weeks"), ("result", "Result"),
+              ("role", "Favorite or underdog"), ("weekday", "Day"),
+              ("div_game", "Division game"), ("overtime", "Overtime")]),
+    ("People", [("team", "Team"), ("coach", "Head coach"), ("opp_coach", "Opp. head coach"),
+                ("qb_id", "Starting QB"), ("opp_qb_id", "Opp. starting QB"),
+                ("referee", "Referee")]),
+    ("Conditions", [("roof", "Roof"), ("surface", "Surface"), ("temp", "Temperature"),
+                    ("wind", "Wind"), ("rest", "Rest")]),
+]
+PICKER_KEYS = [k for _, items in PICKER_MENU for k, _ in items]
+#: controls that are not filters: they never count toward the "filters in use" badge
+PLAIN_KEYS = {k for g, items in PICKER_MENU if g in ("Stats", "Results") for k, _ in items}
+#: shown the first time a player is opened: every measure group and both Show
+#: controls, as before, plus the four everyday filters
+DEFAULT_SHOWN = ([k for k in PICKER_KEYS if k in PLAIN_KEYS]
+                 + ["opponent", "home_away", "seasons", "game_types"])
+
+
+#: The everyday filters every position starts with.
+_COMMON_FILTERS = ["opponent", "home_away", "seasons", "game_types"]
+#: Extra filters that matter for a position, shown on first open.  A quarterback's
+#: game is shaped by result and wind; a back's by result and whether he was the
+#: favorite; a receiver's by who threw to him and by wind; a kicker's by the
+#: conditions he kicks in.  Everything else is still one tick away in the picker.
+_POSITION_FILTERS = {
+    "QB": ["result", "wind"],
+    "RB": ["result", "role"],
+    "WR": ["qb_id", "wind"],
+    "TE": ["qb_id", "wind"],
+    "K": ["roof", "surface", "temp", "wind"],
+}
+
+
+def default_shown(position: str | None, games: pd.DataFrame | None = None) -> list[str]:
+    """The controls on screen when a player is first opened, in picker order: the
+    measure groups that hold the position's default measures, both Show controls,
+    the everyday filters, and the position's own extra filters.  An unknown
+    position gets every measure group."""
+    wanted = _DEFAULT_MEASURES.get(position or "")
+    if wanted:
+        groups = {_measure_group_key(name) for name, keys in MEASURE_GROUPS
+                  if any(k in wanted for k in keys)}
+    else:
+        groups = {k for k in PLAIN_KEYS if k.startswith("m_")}
+    keep = (groups | {"agg", "group_by"} | set(_COMMON_FILTERS)
+            | set(_POSITION_FILTERS.get(position or "", [])))
+    return [k for k in PICKER_KEYS if k in keep]
+
+
+def shown_fields(requested: list[str] | None, was_set: bool, active: set[str],
+                 default: list[str] | None = None) -> list[str]:
+    """Which control fields to draw.  `requested` is the ticked boxes from the
+    form and `was_set` says the form had the picker at all (so an empty list means
+    the user unticked everything); without it `default` (the position's defaults)
+    applies.  A control that has a value is always shown, so a URL or a preset can
+    never leave an applied choice hidden."""
+    base = ([k for k in (requested or []) if k in PICKER_KEYS] if was_set
+            else list(default if default is not None else DEFAULT_SHOWN))
+    return [k for k in PICKER_KEYS if k in base or k in active]
+
+
+def _clean_extras(f: dict) -> dict:
+    out: dict = {}
+    for key, (_, _, menu) in EXTRA_EQ.items():
+        v = f.get(key)
+        if v in (None, ""):
+            continue
+        v = str(v).strip()
+        if key == "team":
+            v = v.upper()
+        if menu is not None and v not in menu:
+            raise ValueError(f"unknown {key} value: {v}")
+        if v:
+            out[key] = v
+    for key in EXTRA_YESNO:
+        v = f.get(key)
+        if v in (None, ""):
+            continue
+        if v not in ("Yes", "No"):
+            raise ValueError(f"unknown {key} value: {v}")
+        out[key] = v
+    for key, (_, _, bands) in EXTRA_BANDS.items():
+        v = f.get(key)
+        if v in (None, ""):
+            continue
+        if v not in bands:
+            raise ValueError(f"unknown {key} band: {v}")
+        out[key] = v
+    role = f.get("role")
+    if role not in (None, ""):
+        if role not in ROLES:
+            raise ValueError(f"unknown role: {role}")
+        out["role"] = role
+    weeks = f.get("weeks")
+    if weeks:
+        if len(weeks) != 2:
+            raise ValueError("weeks must be [first, last]")
+        lo, hi = sorted((int(weeks[0]), int(weeks[1])))
+        out["weeks"] = [lo, hi]
+    return out
+
+
+def _apply_extras(df: pd.DataFrame, f: dict) -> pd.DataFrame:
+    def col(name: str) -> pd.Series:
+        return df[name] if name in df.columns else pd.Series(None, index=df.index, dtype=object)
+
+    for key, (_, column, _) in EXTRA_EQ.items():
+        if f.get(key):
+            df = df[col(column).reindex(df.index) == f[key]]
+    for key, (_, column) in EXTRA_YESNO.items():
+        if f.get(key):
+            v = pd.to_numeric(col(column), errors="coerce")
+            df = df[v == (1 if f[key] == "Yes" else 0)]
+    for key, (_, column, bands) in EXTRA_BANDS.items():
+        if f.get(key):
+            lo, hi = bands[f[key]]
+            v = pd.to_numeric(col(column), errors="coerce")
+            keep = v.notna()
+            if lo is not None:
+                keep &= v >= lo
+            if hi is not None:
+                keep &= v < hi
+            df = df[keep]
+    if f.get("role"):
+        sp = pd.to_numeric(col("spread"), errors="coerce")
+        df = df[(sp < 0) if f["role"] == "Favorite" else (sp > 0)]
+    if f.get("weeks"):
+        lo, hi = f["weeks"]
+        df = df[(df["week"] >= lo) & (df["week"] <= hi)]
+    return df
+
+
+def context_options(games: pd.DataFrame) -> dict:
+    """The names this player has actually played with or against, for the
+    More filters menus.  Quarterbacks carry their id as the value."""
+    def names(col: str) -> list[str]:
+        if games.empty or col not in games.columns:
+            return []
+        return sorted(games[col].dropna().astype(str).unique().tolist())
+
+    def qbs(id_col: str, name_col: str) -> list[dict]:
+        if games.empty or id_col not in games.columns:
+            return []
+        d = games[[id_col, name_col]].dropna().drop_duplicates(id_col)
+        return sorted(({"value": str(i), "label": str(n)} for i, n in zip(d[id_col], d[name_col])),
+                      key=lambda o: o["label"])
+
+    return {"team": names("team"), "coach": names("coach"), "opp_coach": names("opp_coach"),
+            "referee": names("referee"), "qb_id": qbs("qb_id", "qb"),
+            "opp_qb_id": qbs("opp_qb_id", "opp_qb")}
 
 
 # -- the one generic query function ---------------------------------------------
@@ -432,7 +635,7 @@ def _clean(spec: dict) -> dict:
         opp = str(opp).strip().upper() or None
     return {"measures": measures, "agg": agg, "group_by": group,
             "filters": {"opponent": opp, "seasons": seasons, "home_away": ha,
-                        "game_types": gts}}
+                        "game_types": gts, **_clean_extras(f)}}
 
 
 def apply_filters(games: pd.DataFrame, filters: dict) -> pd.DataFrame:
@@ -446,7 +649,7 @@ def apply_filters(games: pd.DataFrame, filters: dict) -> pd.DataFrame:
         df = df[df["home_away"] == filters["home_away"]]
     if filters.get("game_types"):
         df = df[df["game_type"].isin(filters["game_types"])]
-    return df
+    return _apply_extras(df, filters)
 
 
 def _value(sub: pd.DataFrame, key: str, agg: str) -> float | None:
@@ -606,7 +809,27 @@ def preset_fill(preset_id: str, games: pd.DataFrame, position: str | None) -> di
     if extra.get("recent") and not games.empty:
         cov = coverage(games)
         fill["season_from"] = str(max(cov["first_season"], cov["last_season"] - 2))
+    fill["shown"] = shown_for_fill(fill)
     return fill
+
+
+def shown_for_fill(fill: dict) -> list[str]:
+    """The picker boxes a fill implies: the measure groups holding its measures,
+    both Show controls, and only the filters the fill sets.  A preset therefore
+    ticks what it uses and unticks the rest (filters the user filled in
+    themselves stay, which the page script adds)."""
+    keep = {_measure_group_key(name) for name, keys in MEASURE_GROUPS
+            if any(k in fill.get("measures", []) for k in keys)}
+    keep |= {"agg", "group_by"}
+    if fill.get("opponent"):
+        keep.add("opponent")
+    if fill.get("home_away"):
+        keep.add("home_away")
+    if fill.get("season_from") or fill.get("season_to"):
+        keep.add("seasons")
+    if fill.get("game_types"):
+        keep.add("game_types")
+    return [k for k in PICKER_KEYS if k in keep]
 
 
 def preset_chips(games: pd.DataFrame, position: str | None) -> list[dict]:

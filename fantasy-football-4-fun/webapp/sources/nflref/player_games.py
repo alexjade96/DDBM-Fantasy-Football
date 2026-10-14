@@ -103,24 +103,54 @@ def _extract(df: pd.DataFrame) -> pd.DataFrame:
     return df[active]
 
 
+#: Raw surface values -> two buckets.  Blank or unknown stays None (unknown),
+#: never a guess.  The raw file has a stray `grass ` with a trailing space.
+_GRASS = {"grass", "dessograss"}
+_TURF = {"fieldturf", "astroturf", "sportturf", "matrixturf", "astroplay", "a_turf"}
+
+
+def _surface_type(value) -> str | None:
+    v = str(value).strip().lower() if isinstance(value, str) else ""
+    if v in _GRASS:
+        return "Grass"
+    if v in _TURF:
+        return "Turf"
+    return None
+
+
 def team_games(sched: pd.DataFrame) -> pd.DataFrame:
     """One row per (season, week, team) from the all-teams schedule.
 
     Columns: season, week, team, opponent, home_away (Home / Away / Neutral),
     game_id, game_type, gameday, roof, surface, team_score, opp_score, result
     (W / L / T, None for an unplayed game) and spread (the betting line from
-    this team's side: negative = favoured).
+    this team's side: negative = favoured).  Also: coach / opp_coach (head
+    coaches), qb_id / qb / opp_qb_id / opp_qb (starting quarterbacks), referee,
+    weekday, temp, wind (blank when not recorded, e.g. domes), rest (days since
+    this team's last game), div_game, overtime, and surface as Grass / Turf
+    (None when unknown).
     """
     s = sched.copy()
     for c in ("home_team", "away_team"):
         s[c] = s[c].replace(_ALIAS)
     neutral = (s["location"].eq("Neutral") if "location" in s.columns
                else pd.Series(False, index=s.index))
-    common = ["season", "week", "game_id", "game_type", "gameday", "roof", "surface"]
+    if "surface" in s.columns:
+        s["surface"] = s["surface"].map(_surface_type)
+    common = ["season", "week", "game_id", "game_type", "gameday", "roof", "surface",
+              "referee", "weekday", "temp", "wind", "div_game", "overtime"]
     common = [c for c in common if c in s.columns]
+
+    def pick(col: str) -> pd.Series:
+        return s[col] if col in s.columns else pd.Series(None, index=s.index, dtype=object)
 
     def side(own: str, other: str, own_score: str, opp_score: str, home: bool) -> pd.DataFrame:
         t = s[common].copy()
+        me, them = ("home", "away") if home else ("away", "home")
+        t["coach"], t["opp_coach"] = pick(f"{me}_coach"), pick(f"{them}_coach")
+        t["qb_id"], t["qb"] = pick(f"{me}_qb_id"), pick(f"{me}_qb_name")
+        t["opp_qb_id"], t["opp_qb"] = pick(f"{them}_qb_id"), pick(f"{them}_qb_name")
+        t["rest"] = pick(f"{me}_rest")
         t["team"] = s[own]
         t["opponent"] = s[other]
         t["team_score"] = s[own_score]
