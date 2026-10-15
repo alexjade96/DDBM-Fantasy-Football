@@ -113,8 +113,12 @@ _COUNTS = {
     "receiving_yards": ("Rec yds", "receiving_yards"),
     "receiving_tds": ("Rec TD", "receiving_tds"),
     "receiving_air_yards": ("Air yds", "receiving_air_yards"),
+    "touches": ("Touches", "touches"),
+    "scrimmage_yards": ("Scrim yds", "scrimmage_yards"),
+    "scrimmage_tds": ("Scrim TD", "scrimmage_tds"),
     "fantasy_points_ppr": ("PPR pts", "fantasy_points_ppr"),
     "fantasy_points": ("Std pts", "fantasy_points"),
+    "kick_points": ("Kick pts", "kick_points"),
     "fg_made": ("FG made", "fg_made"),
     "fg_att": ("FG att", "fg_att"),
     "fg_missed": ("FG missed", "fg_missed"),
@@ -143,10 +147,20 @@ _RATIOS = {
     "yards_per_carry": ("Yds/carry", "rushing_yards", "carries"),
     "yards_per_attempt": ("Yds/att", "passing_yards", "attempts"),
     "completion_rate": ("Cmp %", "completions", "attempts"),
+    "yards_per_completion": ("Yds/cmp", "passing_yards", "completions"),
+    "pass_td_rate": ("Pass TD %", "passing_tds", "attempts"),
+    "int_rate": ("INT %", "interceptions", "attempts"),
+    "rush_td_rate": ("Rush TD %", "rushing_tds", "carries"),
+    "rec_td_rate": ("Rec TD %", "receiving_tds", "targets"),
+    "adot": ("aDOT", "receiving_air_yards", "targets"),
+    "yards_per_air_yard": ("Yds/air yd", "receiving_yards", "receiving_air_yards"),
+    "yards_per_touch": ("Yds/touch", "scrimmage_yards", "touches"),
+    "ppr_per_touch": ("PPR/touch", "fantasy_points_ppr", "touches"),
     "fg_pct": ("FG %", "fg_made", "fg_att"),
     "pat_pct": ("PAT %", "pat_made", "pat_att"),
 }
-_PERCENT = {"catch_rate", "completion_rate", "fg_pct", "pat_pct"}
+_PERCENT = {"catch_rate", "completion_rate", "fg_pct", "pat_pct", "pass_td_rate", "int_rate",
+            "rush_td_rate", "rec_td_rate"}
 
 MEASURES = {**{k: v[0] for k, v in _COUNTS.items()},
             **{k: v[0] for k, v in _MAXES.items()},
@@ -188,6 +202,19 @@ MEASURE_HINTS = {
     "fg_pct": "Field goals made per attempt",
     "pat_pct": "Extra points made per attempt",
     "fg_long": "Longest field goal made (a maximum, not a total)",
+    "touches": "Carries plus catches",
+    "scrimmage_yards": "Rushing yards plus receiving yards",
+    "scrimmage_tds": "Rushing plus receiving touchdowns",
+    "kick_points": "Points from kicking: 3 per field goal and 1 per extra point",
+    "yards_per_completion": "Passing yards per completion",
+    "pass_td_rate": "Passing touchdowns per pass attempt",
+    "int_rate": "Interceptions per pass attempt (lower is better)",
+    "rush_td_rate": "Rushing touchdowns per carry",
+    "rec_td_rate": "Receiving touchdowns per target",
+    "adot": "Average depth of target: air yards per target",
+    "yards_per_air_yard": "Receiving yards per air yard on his targets (above 1 means he gained more than the ball traveled)",
+    "yards_per_touch": "Scrimmage yards per touch",
+    "ppr_per_touch": "Full-PPR fantasy points per touch",
     "fantasy_points_ppr": "Fantasy points with one point per catch (full PPR)",
     "fantasy_points": "Fantasy points with no points for catches (standard)",
 }
@@ -203,6 +230,7 @@ CONTROL_HINTS = {
     "game_types": "None ticked means all games.",
     "clear_filters": "Back to every opponent, site, season and game type.",
     "filter_picker": "Tick what you want on the form: measure groups, how to show them, and filters.  Only ticked items show; unticking one clears it.  Games with no recorded value, such as temperature in a dome, never match a band.",
+    "add_card": "Adds a card with the stats and grouping ticked above.  It follows the filters on this page, and Run refreshes it.",
     "reset": "Clear every measure, filter and grouping back to this player's defaults.",
     "play": "Looks at this player's pass plays only (2016 on; coverage 2018 on).  Passing and receiving measures answer it; other measures show a dash.  A play with no recorded value never matches.",
     "man_zone": "Whether the defense played man or zone coverage on the play.  Recorded from 2018.",
@@ -364,6 +392,33 @@ def search_page(query: str, sort: str = "", direction: str = "", page: int = 1,
             "sort": sort, "direction": direction}
 
 
+def add_derived(df: pd.DataFrame) -> pd.DataFrame:
+    """Columns built from the stored ones so they can be summed and divided like any
+    other: touches, scrimmage yards and touchdowns, and kicking points.  A value is
+    missing only when every part is missing, so a year with no recorded targets is
+    never read as zero."""
+    if df.empty:
+        return df
+    df = df.copy()
+
+    def num(col: str):
+        return pd.to_numeric(df[col], errors="coerce") if col in df.columns else None
+
+    def add(name: str, parts: list[tuple[str, float]]) -> None:
+        cols = [(num(c), w) for c, w in parts]
+        if any(c is None for c, _ in cols):
+            return
+        total = sum(c.fillna(0) * w for c, w in cols)
+        total[pd.concat([c.isna() for c, _ in cols], axis=1).all(axis=1)] = float("nan")
+        df[name] = total
+
+    add("touches", [("carries", 1), ("receptions", 1)])
+    add("scrimmage_yards", [("rushing_yards", 1), ("receiving_yards", 1)])
+    add("scrimmage_tds", [("rushing_tds", 1), ("receiving_tds", 1)])
+    add("kick_points", [("fg_made", 3), ("pat_made", 1)])
+    return df
+
+
 def load_player(player_id: str) -> pd.DataFrame:
     """Every game this player has in the table, oldest first."""
     pid = (player_id or "").strip()
@@ -381,6 +436,7 @@ def load_player(player_id: str) -> pd.DataFrame:
             parts.append(sub)
     out = (pd.concat(parts, ignore_index=True).sort_values(["season", "week"])
            .reset_index(drop=True) if parts else pd.DataFrame())
+    out = add_derived(out)
     if len(_player_cache) >= _PLAYER_CACHE_MAX:
         _player_cache.pop(next(iter(_player_cache)))
     _player_cache[pid] = out
@@ -411,15 +467,19 @@ def available_measures(games: pd.DataFrame) -> list[str]:
 #: Measure headings for the builder, in display order.
 MEASURE_GROUPS = [
     ("Passing", ["attempts", "completions", "passing_yards", "passing_tds",
-                 "interceptions", "completion_rate", "yards_per_attempt"]),
-    ("Rushing", ["carries", "rushing_yards", "rushing_tds", "yards_per_carry"]),
+                 "interceptions", "completion_rate", "yards_per_attempt",
+                 "yards_per_completion", "pass_td_rate", "int_rate"]),
+    ("Rushing", ["carries", "rushing_yards", "rushing_tds", "yards_per_carry",
+                 "rush_td_rate"]),
     ("Receiving", ["targets", "receptions", "receiving_yards", "receiving_tds",
                    "receiving_air_yards", "yards_per_target", "yards_per_reception",
-                   "catch_rate"]),
+                   "catch_rate", "adot", "yards_per_air_yard", "rec_td_rate"]),
+    ("Scrimmage", ["touches", "scrimmage_yards", "scrimmage_tds", "yards_per_touch"]),
     ("Kicking", ["fg_made", "fg_att", "fg_missed", "fg_made_0_19", "fg_made_20_29",
                  "fg_made_30_39", "fg_made_40_49", "fg_made_50_59", "fg_made_60_",
-                 "pat_made", "pat_att", "pat_missed", "fg_pct", "pat_pct", "fg_long"]),
-    ("Fantasy", ["fantasy_points_ppr", "fantasy_points"]),
+                 "pat_made", "pat_att", "pat_missed", "kick_points", "fg_pct", "pat_pct",
+                 "fg_long"]),
+    ("Fantasy", ["fantasy_points_ppr", "fantasy_points", "ppr_per_touch"]),
 ]
 
 
@@ -1041,27 +1101,30 @@ _FAMILIES = {
     "QB": {"volume": ["attempts", "completions", "carries"],
            "yardage": ["passing_yards", "rushing_yards"],
            "scoring": ["passing_tds", "rushing_tds", "interceptions"],
-           "efficiency": ["completion_rate", "yards_per_attempt", "yards_per_carry"]},
+           "efficiency": ["completion_rate", "yards_per_attempt", "yards_per_completion",
+                          "pass_td_rate", "int_rate", "yards_per_carry"]},
     "RB": {"volume": ["carries", "targets", "receptions"],
-           "yardage": ["rushing_yards", "receiving_yards"],
-           "scoring": ["rushing_tds", "receiving_tds"],
+           "yardage": ["rushing_yards", "receiving_yards", "scrimmage_yards"],
+           "scoring": ["rushing_tds", "receiving_tds", "scrimmage_tds"],
            "efficiency": ["yards_per_carry", "yards_per_reception", "catch_rate",
-                          "yards_per_target"]},
+                          "yards_per_target", "yards_per_touch", "rush_td_rate"]},
     "WR": {"volume": ["targets", "receptions", "carries"],
            "yardage": ["receiving_yards", "receiving_air_yards", "rushing_yards"],
            "scoring": ["receiving_tds", "rushing_tds"],
-           "efficiency": ["yards_per_target", "yards_per_reception", "catch_rate"]},
+           "efficiency": ["yards_per_target", "yards_per_reception", "catch_rate", "adot",
+                          "yards_per_air_yard", "rec_td_rate"]},
 }
 _FAMILIES["TE"] = {                    # no rushing: a tight end's carries are noise
     "volume": ["targets", "receptions"],
     "yardage": ["receiving_yards", "receiving_air_yards"],
     "scoring": ["receiving_tds"],
-    "efficiency": ["yards_per_target", "yards_per_reception", "catch_rate"]}
+    "efficiency": ["yards_per_target", "yards_per_reception", "catch_rate", "adot",
+                   "yards_per_air_yard", "rec_td_rate"]}
 _FAMILIES["FB"] = _FAMILIES["RB"]
 _FAMILIES["K"] = {
     "volume": ["fg_att", "fg_made", "pat_att", "pat_made"],
     "yardage": ["fg_long", "fg_made_30_39", "fg_made_40_49", "fg_made_50_59", "fg_made_60_"],
-    "scoring": ["fg_made", "pat_made"],
+    "scoring": ["fg_made", "pat_made", "kick_points"],
     "efficiency": ["fg_pct", "pat_pct"]}
 _FANTASY = {"fantasy": ["fantasy_points_ppr", "fantasy_points"],
             "ppr": ["fantasy_points_ppr"]}
@@ -1160,6 +1223,109 @@ def preset_chips(games: pd.DataFrame, position: str | None) -> list[dict]:
              "fill": preset_fill(p["id"], games, position)} for p in PRESETS]
 
 
+# -- cards: ready-made layouts of the same engine --------------------------------
+# A card is a fixed spec (measure families, Show, Group by) run with the filters
+# the page shares across every card.  The page loads the first EAGER_CARDS when it
+# opens and the rest one at a time afterwards (see _alt_builder.html).
+
+EAGER_CARDS = 3
+
+#: id -> (title, hint, measure families, Show, Group by)
+_CARD_CFG = {
+    "workload": ("Workload", "Volume per game, by season", ["volume"], "per_game", "season"),
+    "production": ("Production", "Yards and scores, season totals", ["yardage", "scoring"],
+                   "total", "season"),
+    "efficiency": ("Efficiency", "Per-play rates, by season", ["efficiency"], "total", "season"),
+    "home_away": ("Home vs away", "Yards and scores per game, by site", ["yardage", "scoring"],
+                  "per_game", "home_away"),
+    "by_opponent": ("By opponent", "Yards and score totals against each opponent",
+                    ["yardage", "scoring"], "total", "opponent"),
+    "coverage": ("Vs coverage", "Pass plays by the coverage the defense ran (2018 on)",
+                 ["volume", "yardage", "scoring"], "total", "coverage"),
+    "routes": ("By route", "Targets by the route the receiver ran (2016 on)",
+               ["volume", "yardage", "scoring"], "total", "route"),
+}
+CARD_ORDER = list(_CARD_CFG)
+_PLAY_CARD_POSITIONS = {"QB", "RB", "FB", "WR", "TE"}
+
+
+def cards_for(position: str | None) -> list[dict]:
+    """The cards that make sense for a position, in display order.  Pass-play cards
+    need a passer or a receiver, and a route is the targeted receiver's, so a
+    quarterback gets coverage only."""
+    out = []
+    for cid in CARD_ORDER:
+        group = _CARD_CFG[cid][4]
+        if group in PLAY_GROUPS and position not in _PLAY_CARD_POSITIONS:
+            continue
+        if group == "route" and position == "QB":
+            continue
+        out.append({"id": cid, "title": _CARD_CFG[cid][0], "hint": _CARD_CFG[cid][1]})
+    return out
+
+
+def card_spec(card_id: str, games: pd.DataFrame, position: str | None, filters: dict) -> dict:
+    """The query spec for a card under the shared filters.  Raises ValueError for an
+    unknown card."""
+    if card_id not in _CARD_CFG:
+        raise ValueError(f"unknown card: {card_id}")
+    _, _, families, agg, group = _CARD_CFG[card_id]
+    measures = _family_measures(families, games, position)
+    if group in PLAY_GROUPS:
+        measures = ([m for m in measures if m in PLAY_MEASURES]
+                    or [m for m in default_measures(position, games) if m in PLAY_MEASURES])
+    return {"measures": measures, "agg": agg, "group_by": group, "filters": filters}
+
+
+def run_card(games: pd.DataFrame, position: str | None, card_id: str, filters: dict) -> dict:
+    return run_query(games, card_spec(card_id, games, position, filters))
+
+
+#: Most cards a user can add on top of the default ones.
+MAX_CUSTOM_CARDS = 6
+
+
+def custom_title(spec: dict) -> str:
+    """A short name for a card the user built: the first stats, then how they are shown,
+    for example "Targets, Rec yds, Catch % +2 · per game, by season"."""
+    labels = [MEASURES[m] for m in spec.get("measures") or [] if m in MEASURES]
+    shown = ", ".join(labels[:3]) + (f" +{len(labels) - 3}" if len(labels) > 3 else "")
+    group = GROUPS.get(spec.get("group_by") or "")
+    how = "per game" if spec.get("agg") == "per_game" else "total"
+    return f"{shown} \u00b7 {how}, {'by ' + group.lower() if group else 'career'}"
+
+
+def parse_custom_cards(raw: list[str]) -> list[dict]:
+    """Cards the page carries from one render to the next, as JSON strings in the query.
+    Anything that is not valid JSON or falls outside the menus is dropped, repeats are
+    kept once, and at most MAX_CUSTOM_CARDS survive.  Each is {"spec", "title"} with the
+    spec holding only measures, agg and group_by."""
+    import json
+    out: list[dict] = []
+    for text in raw or []:
+        try:
+            d = json.loads(text)
+            spec = {"measures": list(d.get("measures") or []), "agg": d.get("agg") or "total",
+                    "group_by": d.get("group_by") or None}
+            clean = _clean({**spec, "filters": {}})
+        except (ValueError, TypeError, AttributeError):
+            continue
+        spec = {"measures": clean["measures"], "agg": clean["agg"], "group_by": clean["group_by"]}
+        if any(x["spec"] == spec for x in out):
+            continue
+        out.append({"spec": spec, "title": custom_title(spec)})
+        if len(out) >= MAX_CUSTOM_CARDS:
+            break
+    return out
+
+
+def has_data(result: dict) -> bool:
+    """True when at least one row holds a recorded value.  A card with nothing to
+    show is hidden rather than drawn empty."""
+    keys = [c["key"] for c in result["columns"]]
+    return any(r.get(k) is not None for r in result["rows"] for k in keys)
+
+
 # -- display --------------------------------------------------------------------
 
 def format_value(key: str, value) -> str:
@@ -1183,16 +1349,115 @@ def group_label(group_by: str | None, value) -> str:
     return str(value)
 
 
+#: Stats where a lower number is the better one.
+LOWER_IS_BETTER = {"interceptions", "int_rate", "fg_missed", "pat_missed"}
+#: Groupings that read as a time series (trend arrows, "best season").
+_SEASONAL = {"season", "week"}
+#: Indicators need at least this many rows to mean anything.
+_MIN_ROWS = 3
+#: A season-over-season change smaller than this gets no arrow.
+_TREND_MIN = 0.05
+_HEAT_MAX = 30           # strongest tint, as a percent of the accent colour
+
+
+def _trend(prev, cur, key: str):
+    """(arrow, tone, pct) for a change from `prev` to `cur`, or None when it is
+    small or undefined.  Tone is good or bad, flipped for lower-is-better stats."""
+    if prev is None or cur is None or prev == 0:
+        return None
+    pct = (cur - prev) / abs(prev)
+    if abs(pct) < _TREND_MIN:
+        return None
+    up = pct > 0
+    good = up != (key in LOWER_IS_BETTER)
+    return ("\u25b2" if up else "\u25bc", "good" if good else "bad", pct)
+
+
+def indicators(result: dict) -> tuple[list[list[dict]], list[dict]]:
+    """Per-cell marks and the card's header chips, judged against the player's own
+    rows only (no league baseline).
+
+    Marks, for each group row and measure column: `h` (a tint strength, percent of
+    the accent, for the higher end of the column), `mark` ("best" or "worst"),
+    `bar` (length against the column's largest row) and `share` (percent of the column
+    total), for count columns grouped by something that is not a season, and `trend`
+    (an arrow against the previous season, for per-game and rate columns grouped by
+    season).  A column with fewer than _MIN_ROWS values
+    or no spread gets none.  Unrecorded values are skipped, never read as zero."""
+    spec = result["spec"]
+    group, agg = spec["group_by"], spec["agg"]
+    rows = result["rows"]
+    keys = [c["key"] for c in result["columns"]]
+    marks: list[list[dict]] = [[{} for _ in keys] for _ in rows]
+    chips: list[dict] = []
+    seasonal = group in _SEASONAL
+    for j, k in enumerate(keys):
+        have = [(i, r.get(k)) for i, r in enumerate(rows) if r.get(k) is not None]
+        if len(have) < _MIN_ROWS:
+            continue
+        vals = [v for _, v in have]
+        lo, hi = min(vals), max(vals)
+        if hi == lo:
+            continue
+        lower = k in LOWER_IS_BETTER
+        is_count = k in _COUNTS
+        bar = (is_count and agg == "total" and group is not None and not seasonal
+               and lo >= 0 and sum(vals) > 0)
+        for i, v in have:
+            m = marks[i][j]
+            if bar:
+                m["bar"] = round(100 * v / hi)               # longest row fills the cell
+                m["share"] = round(100 * v / sum(vals))
+                continue
+            good = (v - lo) / (hi - lo)
+            good = 1 - good if lower else good
+            m["h"] = round(good * _HEAT_MAX)
+            if v == (lo if lower else hi):
+                m["mark"] = "best"
+            elif v == (hi if lower else lo):
+                m["mark"] = "worst"
+        if group == "season" and (k in _RATIOS or (agg == "per_game" and k in _COUNTS)):
+            prev = None
+            for i, v in have:
+                t = _trend(prev[1], v, k) if prev else None
+                if t:
+                    arrow, tone, pct = t
+                    marks[i][j]["trend"] = {
+                        "arrow": arrow, "tone": tone,
+                        "title": f"{pct * 100:+.0f}% vs {group_label(group, rows[prev[0]]['group'])}"}
+                prev = (i, v)
+    if group == "season" and keys:
+        first = keys[0]
+        have = [(i, r.get(first)) for i, r in enumerate(rows) if r.get(first) is not None]
+        if len(have) >= _MIN_ROWS and len({v for _, v in have}) > 1:
+            lower = first in LOWER_IS_BETTER
+            best = (min if lower else max)(have, key=lambda t: t[1])
+            label = result["columns"][0]["label"]
+            chips.append({"text": f"Best: {group_label(group, rows[best[0]]['group'])}",
+                          "title": f"{label}: {format_value(first, best[1])}", "tone": ""})
+            if first in _RATIOS or agg == "per_game":
+                t = _trend(have[-2][1], have[-1][1], first)
+                if t:
+                    arrow, tone, pct = t
+                    chips.append({"text": f"{arrow} {abs(pct) * 100:.0f}%",
+                                  "title": f"{label}: {group_label(group, rows[have[-1][0]]['group'])}"
+                                           f" vs {group_label(group, rows[have[-2][0]]['group'])}",
+                                  "tone": tone})
+    return marks, chips
+
+
 def table_view(result: dict) -> dict:
-    """A `run_query` result as display strings for the templates."""
+    """A `run_query` result as display strings for the templates, plus the marks
+    and chips from `indicators`."""
     group = result["spec"]["group_by"]
     keys = [c["key"] for c in result["columns"]]
+    marks, chips = indicators(result)
 
     def cells(r: dict) -> list[str]:
         return [format_value(k, r.get(k)) for k in keys]
 
     rows = [{"label": group_label(group, r["group"]), "games": r["games"],
-             "cells": cells(r)} for r in result["rows"]]
+             "cells": cells(r), "marks": marks[n]} for n, r in enumerate(result["rows"])]
     total = None
     if result.get("total"):
         total = {"label": "Total", "games": result["total"]["games"],
@@ -1200,4 +1465,4 @@ def table_view(result: dict) -> dict:
     return {"group_label": GROUPS.get(group, "Career") if group else "Career",
             "columns": [c["label"] for c in result["columns"]],
             "rows": rows, "total": total, "games": result["games"],
-            "play_seasons": result.get("play_seasons")}
+            "play_seasons": result.get("play_seasons"), "chips": chips}

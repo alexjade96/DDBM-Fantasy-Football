@@ -2728,3 +2728,108 @@ h3.gd-block + .tablewrap, h3.gd-block + p.empty { margin-top: 6px; }
   #alt-builder .alt-field .alt-types { flex-wrap: wrap; height: auto; min-height: 32px; }
   #alt-builder .alt-quick-label { padding-top: 0; }
 }
+
+/* Player Analytics cards: tiles in a grid, each filled in by the page's queue.  A tile
+   is a light bordered band like .alt-subsec, not a .card, so there is no frame in a frame. */
+/* The panel is a stack of sections: the search and filter card, then each analytics card
+   in a section of its own (a real .card), then Custom.  Same 22px rhythm as the page. */
+#alt-builder.alt-root { display: grid; gap: 22px; min-width: 0; }
+#alt-builder .alt-cards { display: grid; gap: 22px;
+  grid-template-columns: repeat(auto-fill, minmax(460px, 1fr)); }
+#alt-builder .alt-card { min-width: 0; }
+#alt-builder .alt-card[hidden] { display: none; }
+#alt-builder .alt-card > h4 { margin: 0 0 8px; border-left: 3px solid var(--turf);
+  padding-left: 8px; font-size: 13px; text-transform: uppercase; letter-spacing: .05em; }
+#alt-builder .alt-card-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px;
+  margin: 0 0 6px; font-size: 12px; color: var(--muted); }
+#alt-builder .alt-card-games { color: var(--muted); }
+#alt-builder .alt-chipnote { padding: 0 8px; border: 1px solid var(--line); border-radius: 999px;
+  font-size: 11px; line-height: 18px; color: var(--ink); cursor: default; }
+#alt-builder .alt-chipnote-good { color: #2f9e44; border-color: color-mix(in srgb, #2f9e44 50%, transparent); }
+#alt-builder .alt-chipnote-bad { color: #e03131; border-color: color-mix(in srgb, #e03131 50%, transparent); }
+/* Marks judged against the player's own rows: a tint for the higher end of a column, the
+   best row bold and the worst muted, a share bar for counts split by something other than
+   a season, and an arrow against the previous season. */
+#alt-builder td.alt-heat { background-color: color-mix(in srgb, var(--turf) var(--h, 0%), transparent); }
+#alt-builder td.alt-best { font-weight: 700; }
+#alt-builder td.alt-worst { color: var(--muted); }
+#alt-builder td.alt-share { background-image: linear-gradient(90deg,
+  color-mix(in srgb, var(--turf) 24%, transparent) var(--w, 0%), transparent var(--w, 0%)); }
+#alt-builder .alt-trend { margin-left: 4px; font-size: 9px; vertical-align: 1px; cursor: help; }
+#alt-builder .alt-trend-good { color: #2f9e44; }
+#alt-builder .alt-trend-bad { color: #e03131; }
+#alt-builder .alt-card-table { max-height: 320px; overflow: auto; }
+#alt-builder .alt-skel { height: 120px; border-radius: 6px; }
+#alt-builder .alt-allempty { grid-column: 1 / -1; }
+#alt-builder .alt-allempty[hidden] { display: none; }
+@media (max-width: 640px) {
+  #alt-builder .alt-cards { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* Player Analytics chart prototypes (Testing tab). */
+.alt-proto .alt-spark { display: block; margin-top: 4px; }
+.alt-proto .alt-proto-grid { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); }
+.alt-proto .alt-proto-tile { padding: 10px 12px 12px; border: 1px solid var(--line); border-radius: 8px;
+  background: var(--surface); min-width: 0; }
+.alt-proto .alt-proto-tile h4 { margin: 0 0 8px; font-size: 13px; text-transform: uppercase; letter-spacing: .05em; }
+.alt-proto .alt-hbars, .alt-proto .alt-series { color: var(--ink); max-width: 560px; }
+.alt-proto .alt-proto-toggle { display: inline-flex; gap: 4px; margin-bottom: 6px; }
+.alt-proto .alt-proto-toggle button { border: 1px solid var(--line); background: transparent; color: var(--ink);
+  border-radius: 999px; padding: 2px 12px; font-size: 12px; cursor: pointer; }
+.alt-proto .alt-proto-toggle button.on { background: var(--turf); color: #fff; border-color: var(--turf); }
+.alt-proto .alt-proto-pane[hidden] { display: none; }
+
+/* Cards the user adds: the same section as a default card, with a remove button in the title. */
+#alt-builder .alt-xcard > h4 { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+#alt-builder .alt-xtitle { min-width: 0; overflow-wrap: anywhere; }
+#alt-builder .alt-xremove { flex: none; padding: 0 6px; border: 0; background: transparent; color: var(--muted);
+  font-size: 18px; line-height: 1; cursor: pointer; }
+#alt-builder .alt-xremove:hover { color: #e03131; }
+/* The card builder in the top card: stat groups and Show nested under one section header. */
+#alt-builder .alt-addcard .alt-mgroup, #alt-builder .alt-addcard .alt-line { margin: 0 0 10px; }
+#alt-builder .alt-addcard .alt-mgroup > h4, #alt-builder .alt-addcard .alt-line > h4 {
+  font-size: 11px; color: var(--muted); }
+#alt-builder .alt-addrow { margin-top: 8px; }
+#alt-builder .alt-addnote { font-size: 13px; color: #e03131; margin-right: auto; }
+#alt-builder .alt-addnote[hidden] { display: none; }
+#alt-builder .alt-add:disabled { opacity: .5; cursor: not-allowed; }
+
+/* Column dividers in the analytics cards, so neighbouring columns (and their tints and
+   share bars) read as separate.  A collapsed border keeps it to one line per column. */
+#alt-builder .alt-card-table th + th, #alt-builder .alt-card-table td + td {
+  border-left: 1px solid var(--line); }
+
+/* Table | Chart toggle in a card, and the chart views. */
+#alt-builder .alt-views { display: inline-flex; gap: 4px; margin-left: auto; }
+#alt-builder .alt-views button { border: 1px solid var(--line); background: transparent; color: var(--ink);
+  border-radius: 999px; padding: 1px 12px; font-size: 12px; cursor: pointer; }
+#alt-builder .alt-views button:hover { border-color: var(--turf); }
+#alt-builder .alt-views button.on { background: var(--turf); color: #fff; border-color: var(--turf); }
+#alt-builder .alt-view-pane[hidden] { display: none; }
+#alt-builder .alt-card svg { display: block; width: 100%; height: auto; color: var(--ink); }
+
+/* The integrated chart: a legend whose entries switch a stat on or off, then one chart. */
+#alt-builder .alt-legend { display: flex; flex-wrap: wrap; gap: 6px 8px; margin: 0 0 8px; }
+#alt-builder .alt-leg { display: inline-flex; align-items: center; gap: 6px; padding: 1px 10px 1px 8px;
+  border: 1px solid var(--line); border-radius: 999px; background: transparent; color: var(--ink);
+  font-size: 12px; cursor: pointer; }
+#alt-builder .alt-leg:hover { border-color: var(--turf); }
+#alt-builder .alt-leg.off { opacity: .45; text-decoration: line-through; }
+#alt-builder .alt-sw { width: 10px; height: 10px; border-radius: 50%; flex: none; }
+#alt-builder .alt-legnote { color: var(--muted); font-size: 11px; }
+/* Keep chart text readable on a narrow card: the chart holds a minimum width and scrolls
+   sideways rather than shrinking its text. */
+#alt-builder .alt-chart-scroll { max-height: 320px; overflow: auto; }   /* same box as the table */
+#alt-builder .alt-chart-pane svg.alt-multi { min-width: 400px; }
+#alt-builder .alt-aggs { display: inline-flex; gap: 4px; margin: 0 0 8px; }
+#alt-builder .alt-aggs button { border: 1px solid var(--line); background: transparent; color: var(--ink);
+  border-radius: 999px; padding: 1px 12px; font-size: 12px; cursor: pointer; }
+#alt-builder .alt-aggs button:hover { border-color: var(--turf); }
+#alt-builder .alt-aggs button.on { background: var(--turf); color: #fff; border-color: var(--turf); }
+#alt-builder .alt-agg[hidden] { display: none; }
+/* An index chart's axis: neutral percent labels until a stat is hovered, then that stat's own. */
+#alt-builder g.alt-yl[data-ys] { display: none; }
+#alt-builder g.alt-yl.alt-show { display: inline; }
+#alt-builder g.alt-yl-def.alt-hide { display: none; }
+#alt-builder g.alt-s.alt-off { display: none; }
+#alt-builder g.alt-s.alt-dim { opacity: .15; }

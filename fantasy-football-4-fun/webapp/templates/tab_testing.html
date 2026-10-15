@@ -20,3 +20,16 @@
 <h2>Testing</h2>
 <p class="hint"><strong>Prototypes under review, not a finished feature.</strong> Items
    here may be adopted, reworked, or dropped.</p>
+
+{# Player Analytics chart prototypes (2026-10-15): three ways to chart a player's cards,
+   rendered as inline SVG from webapp/alt_charts.py.  Under review: adopt into the
+   cards, rework, or drop.  Not in the dashboard yet. #}
+<section class="card">
+  <h3>Player Analytics: chart prototypes</h3>
+  <form class="controls inline" hx-get="/testing/altcharts" hx-target="#alt-proto-out" hx-swap="innerHTML">
+    <label><span>Player</span>
+      <input type="text" name="q" placeholder="Name" autocomplete="off"></label>
+    <button type="submit" class="nfl-apply" style="margin-left:0">Show</button>
+  </form>
+  <div id="alt-proto-out"></div>
+</section>

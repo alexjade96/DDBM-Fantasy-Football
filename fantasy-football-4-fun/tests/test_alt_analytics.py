@@ -141,7 +141,7 @@ def test_presets_change_the_measure_checkboxes_not_just_the_grouping():
     sets = {p["id"]: tuple(aa.preset_fill(p["id"], g, "RB")["measures"]) for p in aa.PRESETS}
     assert sets["workload"] == ("carries", "targets", "receptions")
     assert sets["efficiency"] == ("yards_per_carry", "yards_per_reception", "catch_rate",
-                                  "yards_per_target")
+                                  "yards_per_target", "rush_td_rate")
     assert sets["fantasy"] == ("fantasy_points_ppr", "fantasy_points")
     assert sets["production"] == ("rushing_yards", "receiving_yards", "rushing_tds",
                                   "receiving_tds")
@@ -304,6 +304,11 @@ def _builder(A, **kw):
     return A.alt_builder(_req(query), **args).body.decode()
 
 
+def _card(A, card, query: bytes = b""):
+    """Call the card route directly with the shared filters in the query string."""
+    return A.alt_card(_req(query), player_id="00-1", card=card).body.decode()
+
+
 def test_builder_route_search_lists_matches_and_loads_no_chips(_routes):
     html = _builder(_routes, q="ab")
     assert "A B" in html and "hx-vals" in html and "alt-chip" not in html
@@ -326,16 +331,15 @@ def test_unknown_player_shows_no_match_message(_routes):
     assert "No player matches" in html
 
 
-def test_chips_carry_their_fill_and_send_no_request(_routes):
-    import json, re
+def test_cards_are_listed_for_the_position_and_the_page_has_no_chips(_routes):
     html = _builder(_routes, q="ab", player_id="00-1")
-    chips = re.findall(r"<button([^>]*class=\"alt-chip\"[^>]*)>", html)
-    assert len(chips) == len(aa.PRESETS)
-    for attrs in chips:
-        assert "hx-" not in attrs and 'type="button"' in attrs   # filling is client-side only
-    fills = [json.loads(re.search(r"data-fill='([^']*)'", a).group(1)) for a in chips]
-    play = fills[[p["id"] for p in aa.PRESETS].index("playoffs")]
-    assert play["group_by"] == "game_type" and play["game_types"] == ["WC", "DIV", "CON", "SB"]
+    ids = re.findall(r'<section class="card alt-card" data-card="([a-z_]+)"', html)
+    assert ids == [c["id"] for c in aa.cards_for("WR")]          # the fixture player is a WR
+    assert "coverage" in ids and "routes" in ids
+    assert 'data-card="custom"' not in html and 'class="nfl-apply alt-add"' in html   # added, not built in
+    assert f'data-eager="{aa.EAGER_CARDS}"' in html
+    assert "alt-chip" not in html and "Quick picks" not in html
+    assert html.split("<script>")[0].count('class="skeleton alt-skel"') == len(ids)   # each waits for its turn
 
 
 def test_only_the_run_form_sends_a_request(_routes):
@@ -345,31 +349,25 @@ def test_only_the_run_form_sends_a_request(_routes):
     assert 'hx-get="/altanalytics/builder"' in form
 
 
-def test_builder_route_runs_the_spec_and_disables_unused_measures(_routes):
-    html = _routes.alt_builder(_req(), q="ab", player_id="00-1", run=1,
-                               measures=["receiving_yards"], agg="per_game",
-                               group_by="season", opponent="", season_from="",
-                               season_to="", home_away="", game_types=[]).body.decode()
-    assert "Rec yds /g" in html
-    # an unused measure stays in the form but is disabled, and is never a result column
-    box = re.search(r'<input[^>]*value="passing_yards"[^>]*>', html, re.S).group(0)
+def test_custom_card_runs_the_spec_and_the_page_disables_unused_measures(_routes):
+    html = _card(_routes, "custom",
+                 b"measures=receiving_yards&agg=per_game&group_by=season")
+    assert "Rec yds /g" in html and 'data-state="ok"' in html
+    assert '<th class="n">Pass yds' not in html                  # never a result column
+    page = _builder(_routes, q="ab", player_id="00-1", measures=["receiving_yards"])
+    # an unused measure stays in the form but is disabled
+    box = re.search(r'<input[^>]*value="passing_yards"[^>]*>', page, re.S).group(0)
     assert "disabled" in box
-    assert '<th class="n">Pass yds' not in html
 
 
-def test_builder_route_turns_a_bad_spec_into_a_message(_routes):
-    html = _routes.alt_builder(_req(), q="ab", player_id="00-1", run=1,
-                               measures=["x"], agg="total", group_by="", opponent="",
-                               season_from="", season_to="", home_away="",
-                               game_types=[]).body.decode()
-    assert "unknown measure" in html
+def test_card_route_turns_a_bad_spec_into_a_message(_routes):
+    html = _card(_routes, "custom", b"measures=x")
+    assert 'data-state="error"' in html and "unknown measure" in html
+    assert 'data-state="error"' in _card(_routes, "nope")        # an unknown card too
 
 
 def test_results_never_render_nan(_routes):
-    html = _routes.alt_builder(_req(), q="ab", player_id="00-1", run=1,
-                               measures=["yards_per_carry"], agg="total", group_by="season",
-                               opponent="", season_from="", season_to="", home_away="",
-                               game_types=[]).body.decode()
+    html = _card(_routes, "custom", b"measures=yards_per_carry&group_by=season")
     assert ">nan<" not in html.lower() and "–" in html
 
 
@@ -377,7 +375,7 @@ def test_grouped_measures_keep_every_measure_in_one_fixed_order():
     games = pd.DataFrame({"targets": [5, 6], "receptions": [3, 4], "receiving_yards": [40, 60],
                           "carries": [1, 0], "rushing_yards": [3, 0],
                           "fantasy_points_ppr": [9.0, 12.0]})
-    order = ["Passing", "Rushing", "Receiving", "Kicking", "Fantasy"]
+    order = ["Passing", "Rushing", "Receiving", "Scrimmage", "Kicking", "Fantasy"]
     for pos in ("WR", "RB", "QB", "K", None):          # the order never depends on the player
         assert [g["label"] for g in aa.grouped_measures(games, pos)] == order
     groups = aa.grouped_measures(games, "WR")
@@ -387,7 +385,7 @@ def test_grouped_measures_keep_every_measure_in_one_fixed_order():
     assert used["targets"] and used["rushing_yards"] and not used["passing_yards"]
     flags = {g["label"]: g["used"] for g in groups}    # a group is used when any measure is
     assert flags == {"Passing": False, "Rushing": True, "Receiving": True,
-                     "Kicking": False, "Fantasy": True}
+                     "Scrimmage": False, "Kicking": False, "Fantasy": True}
     empty = aa.grouped_measures(games.iloc[0:0], "WR")
     assert not any(g["used"] for g in empty)
 
@@ -466,7 +464,7 @@ def test_search_results_are_rows_with_position_team_seasons_and_games(_routes):
 def test_a_search_with_one_match_goes_straight_to_the_player(_routes):
     html = _builder(_routes, q="solo")
     assert 'class="alt-matches"' not in html
-    assert "alt-who" in html and "alt-chip" in html              # the builder is already open
+    assert "alt-who" in html and "alt-cards" in html             # the dashboard is already open
 
 
 
@@ -477,13 +475,13 @@ def test_every_measure_has_a_hover_hint():
     assert {p["id"] for p in aa.PRESETS} == set(aa.PRESET_HINTS)
 
 
-def test_hints_reach_the_page_for_measures_chips_and_controls(_routes):
+def test_hints_reach_the_page_for_measures_cards_and_controls(_routes):
     html = _builder(_routes, q="ab", player_id="00-1")
     assert f'title="{aa.MEASURE_HINTS["targets"]}"' in html
     unused = re.search(r'<label class="adp-check alt-unused"\s+title="([^"]*)"', html).group(1)
     assert unused.endswith("No production for this player.")     # definition first, then the note
-    chips = re.findall(r'class="alt-chip" title="([^"]*)"', html)
-    assert len(chips) == len(aa.PRESETS) and all(chips)
+    cards = re.findall(r'<section class="card alt-card" data-card="[a-z_]+" data-state="idle" title="([^"]*)"', html)
+    assert len(cards) == len(aa.cards_for("WR")) and all(cards)
     for key in ("agg", "group_by", "opponent", "home_away", "season_from", "season_to", "game_types"):
         assert f'title="{aa.CONTROL_HINTS[key]}"' in html
 
@@ -600,19 +598,6 @@ def test_a_single_page_has_no_pager(_routes):
 
 
 # -- quick picks, reset and narrowed filters -----------------------------------
-
-def test_reset_chip_carries_the_players_defaults_and_a_hint(_routes):
-    import json
-    html = _builder(_routes, q="ab", player_id="00-1")
-    assert "Quick picks" in html
-    tag = re.search(r'<button[^>]*class="alt-chip alt-reset"[^>]*>', html).group(0)
-    from markupsafe import escape
-    assert str(escape(aa.CONTROL_HINTS["reset"])) in tag     # the template escapes the apostrophe
-    fill = json.loads(re.search(r"data-fill='([^']*)'", tag).group(1).replace("&#34;", '"'))
-    assert fill["measures"] == aa.default_measures("WR", _games())
-    assert (fill["agg"], fill["group_by"], fill["opponent"], fill["home_away"]) == ("total", "", "", "")
-    assert fill["game_types"] == [] and fill["season_from"] == "" and fill["season_to"] == ""
-
 
 def test_reset_fill_matches_the_form_it_resets(_routes):
     g = _games()
@@ -734,8 +719,8 @@ def test_every_menu_filter_is_unique_and_has_a_field():
     # each menu key is a filter the engine cleans, a measure group or a Show control
     engine = {"opponent", "home_away", "seasons", "game_types", *aa.EXTRA_KEYS}
     assert set(keys) - aa.PLAIN_KEYS == engine
-    assert aa.PLAIN_KEYS == {"m_passing", "m_rushing", "m_receiving", "m_kicking",
-                             "m_fantasy", "agg", "group_by"}
+    assert aa.PLAIN_KEYS == {"m_passing", "m_rushing", "m_receiving", "m_scrimmage",
+                             "m_kicking", "m_fantasy", "agg", "group_by"}
 
 
 def _field_hidden(html: str, key: str) -> bool:
@@ -774,10 +759,9 @@ def test_builder_route_with_every_filter_unticked_shows_none(monkeypatch, _route
     assert _field_hidden(html, "agg") and _field_hidden(html, "group_by")
 
 
-def test_builder_route_runs_with_the_extra_filters(monkeypatch, _routes):
+def test_card_route_runs_with_the_extra_filters(monkeypatch, _routes):
     monkeypatch.setattr(aa, "load_player", lambda pid: _ctx_games())
-    html = _builder(_routes, q="solo", player_id="00-1", run=1, measures=["targets"],
-                    _query=b"coach=Reid&result=W&week_from=2")
+    html = _card(_routes, "custom", b"measures=targets&coach=Reid&result=W&week_from=2")
     # Reid wins from week 2 on: 2023 week 1 is out, the WC game (12) is in
     assert re.search(r"<td[^>]*>\s*1\s*</td>", html)          # one game matches
     assert re.search(r"<td[^>]*>\s*12\s*</td>", html)         # its 12 targets
@@ -797,7 +781,7 @@ def test_measure_groups_and_show_controls_are_in_the_picker_but_presets_are_not(
     for key in ("m_passing", "m_rushing", "m_receiving", "m_kicking", "m_fantasy",
                 "agg", "group_by"):
         assert f'name="fshow" value="{key}"' in html
-    assert "alt-chip" in html                       # the Quick picks are still a separate row
+    assert "alt-chip" not in html                   # no Quick picks: the cards replace them
     assert 'name="fshow" value="workload"' not in html
 
 
@@ -833,8 +817,6 @@ def test_reset_fill_carries_the_position_defaults(_routes):
     g = _games()
     fill = aa.reset_fill(g, "WR")
     assert fill["shown"] == aa.default_shown("WR")
-    html = _builder(_routes, q="solo", player_id="00-1")
-    assert '"shown"' in html                        # the Reset chip's data-fill has it
 
 
 def test_preset_shown_ticks_what_it_uses_and_nothing_else():
@@ -850,17 +832,6 @@ def test_preset_shown_ticks_what_it_uses_and_nothing_else():
     both = aa.shown_for_fill({"measures": ["targets"], "opponent": "KC", "home_away": "Home",
                               "season_from": "2020", "game_types": ["SB"]})
     assert both == ["m_receiving", "agg", "group_by", "opponent", "home_away", "seasons", "game_types"]
-
-
-def test_every_chip_carries_a_shown_list_of_real_picker_keys(_routes):
-    html = _builder(_routes, q="solo", player_id="00-1")
-    import json
-    from markupsafe import escape
-    fills = re.findall(r"data-fill='([^']*)'", html)
-    assert len(fills) == len(aa.PRESETS) + 1                         # every preset and Reset
-    for raw in fills:
-        d = json.loads(raw.replace("&#34;", '"'))
-        assert d["shown"] and set(d["shown"]) <= set(aa.PICKER_KEYS)
 
 
 def test_section_headers_carry_live_counts(_routes):
@@ -882,9 +853,9 @@ def test_filter_section_replaces_layout_and_counts_the_ticked_boxes(_routes):
 def test_player_title_and_sections_order(_routes):
     html = _builder(_routes, q="solo", player_id="00-1")
     order = [html.index(x) for x in ('class="alt-search"', 'class="alt-who"',
-                                     "<h4>Filter ", "<h4>Quick picks", "<h4>Receiving",
-                                     "<h4>Show", "<h4>Filters ")]
-    assert order == sorted(order)                        # search, player, Filter, Quick picks, stats...
+                                     "<h4>Filter ", "<h4>Filters ", "<h4>Add a card",
+                                     "<h4>Receiving", "<h4>Show", 'id="alt-cards"')]
+    assert order == sorted(order)                        # search, player, filters, the card builder, then the cards
     assert 'alt-who-name">A B</span>' in html and "WR &middot; DET" in html
     assert 'name="fshow" value="m_receiving"' in html and "<h5>Stats</h5>" in html
     assert "<h5>Measures</h5>" not in html
@@ -1119,14 +1090,15 @@ def test_play_presets_only_pick_measures_a_play_query_can_answer():
             assert fill["measures"] and set(fill["measures"]) <= aa.PLAY_MEASURES
 
 
-def test_builder_route_reads_play_filters_from_the_query_and_runs_them(_routes, monkeypatch, _playdata):
-    html = _builder(_routes, q="solo", player_id="00-1", run=1, measures=["targets"],
+def test_play_filters_are_read_from_the_query_and_run_in_the_card_route(_routes, monkeypatch, _playdata):
+    html = _builder(_routes, q="solo", player_id="00-1", measures=["targets"],
                     _query=b"man_zone=Man&fshow_set=1&fshow=m_receiving")
     assert not _field_hidden(html, "man_zone")                    # a set filter is always shown
     assert _field_hidden(html, "coverage") and _field_hidden(html, "route")
-    assert re.search(r"<td[^>]*>\s*4\s*</td>", html)              # 4 targets in man coverage
-    assert "Pass-play data used: 2022 to 2023" in html            # which seasons answered
     assert 'data-count="filters">1 in use' in html
+    card = _card(_routes, "custom", b"measures=targets&man_zone=Man")
+    assert re.search(r"<td[^>]*>\s*4\s*</td>", card)             # 4 targets in man coverage
+    assert "Pass-play data used: 2022 to 2023" in card            # which seasons answered
 
 
 def test_builder_page_has_a_play_band_and_dims_game_only_measures(_routes):
@@ -1135,3 +1107,348 @@ def test_builder_page_has_a_play_band_and_dims_game_only_measures(_routes):
     assert '<optgroup label="Pass plays">' in html
     assert "alt-gameonly" in html and "aa.PLAY_KEYS" not in html
     assert '"man_zone", "coverage"' in html                        # the script knows the play keys
+
+
+# -- cards -----------------------------------------------------------------------
+
+def test_cards_follow_the_position():
+    ids = lambda pos: [c["id"] for c in aa.cards_for(pos)]      # noqa: E731
+    base = ["workload", "production", "efficiency", "home_away", "by_opponent"]
+    assert ids("WR") == ids("RB") == ids("TE") == base + ["coverage", "routes"]
+    assert ids("QB") == base + ["coverage"]                      # a route is the receiver's
+    assert ids("K") == base and ids(None) == base               # no pass plays to split
+    assert aa.CARD_ORDER == [c["id"] for c in aa.cards_for("WR")]
+    assert 1 <= aa.EAGER_CARDS < len(aa.CARD_ORDER)
+
+
+def test_card_spec_uses_the_cards_layout_and_the_shared_filters():
+    g = _games()
+    f = {"opponent": "KC", "home_away": "Home"}
+    spec = aa.card_spec("workload", g, "WR", f)
+    assert (spec["agg"], spec["group_by"], spec["filters"]) == ("per_game", "season", f)
+    assert spec["measures"] == aa._family_measures(["volume"], g, "WR")
+    assert aa.card_spec("home_away", g, "WR", {})["group_by"] == "home_away"
+    with pytest.raises(ValueError):
+        aa.card_spec("nope", g, "WR", {})
+
+
+def test_pass_play_cards_only_ask_for_measures_a_play_query_can_answer():
+    for pos in ("QB", "WR", "RB", "TE"):
+        for card in ("coverage", "routes"):
+            if card == "routes" and pos == "QB":
+                continue
+            spec = aa.card_spec(card, _games(), pos, {})
+            assert spec["measures"] and set(spec["measures"]) <= aa.PLAY_MEASURES
+            assert aa._clean(spec)["group_by"] == spec["group_by"]  # a valid spec
+
+
+def test_every_non_play_card_runs_for_every_position():
+    for pos, g in (("WR", _games()), ("RB", _rb_games()), ("K", _kicker_games())):
+        for c in aa.cards_for(pos):
+            if c["id"] in ("coverage", "routes"):
+                continue                                          # needs the pass-play table
+            r = aa.run_card(g, pos, c["id"], {})
+            assert r["columns"] and "rows" in r
+
+
+def test_has_data_is_false_for_no_rows_or_only_unrecorded_values():
+    cols = [{"key": "targets", "label": "Targets"}]
+    assert not aa.has_data({"columns": cols, "rows": []})
+    assert not aa.has_data({"columns": cols, "rows": [{"targets": None, "games": 2}]})
+    assert aa.has_data({"columns": cols, "rows": [{"targets": 0.0, "games": 2}]})   # zero is data
+
+
+def test_card_route_returns_a_card_body_and_matches_the_engine(_routes):
+    g = _games()
+    html = _card(_routes, "workload")
+    assert 'data-state="ok"' in html and "<table>" in html
+    want = aa.table_view(aa.run_card(g, "WR", "workload", {}))
+    for col in want["columns"]:
+        assert f'<th class="n">{col}</th>' in html
+    for row in want["rows"]:
+        assert f"<td>{row['label']}</td>" in html
+
+
+def test_card_route_applies_the_shared_filters(_routes):
+    all_games = _card(_routes, "workload")
+    html = _card(_routes, "workload", b"season_from=2023&season_to=2023")
+    assert "<td>2022</td>" in all_games and "<td>2022</td>" not in html
+    assert "<td>2023</td>" in html
+
+
+def test_a_card_with_nothing_to_show_says_empty_so_the_page_can_hide_it(_routes):
+    html = _card(_routes, "workload", b"opponent=ZZZ")            # no such opponent
+    assert 'data-state="empty"' in html and "<table>" not in html
+
+
+def test_card_route_with_an_unknown_player_is_an_error(_routes):
+    html = _routes.alt_card(_req(), player_id="nobody", card="workload").body.decode()
+    assert 'data-state="error"' in html and "Unknown player" in html
+
+
+def test_page_queue_loads_the_first_few_together_then_the_rest_one_at_a_time(_routes):
+    html = _builder(_routes, q="ab", player_id="00-1")
+    assert "Promise.all(std.slice(0, n).map(load))" in html       # the first few at once
+    assert "std.slice(n).concat(added).reduce" in html           # then a chain, one by one, added cards last
+    assert "IntersectionObserver" not in html                    # not tied to scrolling
+    assert "window.altQueue.stop = true" in html                 # Run / a new player stops the old queue
+    assert "st === 'empty'" in html                              # an empty card is hidden
+
+
+# -- derived columns and rates --------------------------------------------------------
+
+def _derive_frame():
+    return pd.DataFrame({
+        "season": [2022, 2022, 2023], "week": [1, 2, 1], "opponent": ["X", "Y", "X"],
+        "home_away": ["Home", "Away", "Home"], "game_type": ["REG"] * 3,
+        "carries": [10, 0, 5], "rushing_yards": [50, 0, 30], "rushing_tds": [1, 0, 0],
+        "targets": [5, 8, float("nan")], "receptions": [3, 6, 4],
+        "receiving_yards": [40, 80, 20], "receiving_tds": [0, 1, 0],
+        "receiving_air_yards": [30.0, 60.0, float("nan")],
+        "passing_yards": [0, 0, 0], "fg_made": [0, 0, 0], "pat_made": [0, 0, 0],
+        "fantasy_points_ppr": [12.0, 20.0, 8.0]})
+
+
+def test_add_derived_builds_touches_scrimmage_and_kick_points():
+    g = aa.add_derived(_derive_frame())
+    assert g["touches"].tolist() == [13, 6, 9]
+    assert g["scrimmage_yards"].tolist() == [90, 80, 50]
+    assert g["scrimmage_tds"].tolist() == [1, 1, 0]
+    k = aa.add_derived(_kicker_games())
+    assert k["kick_points"].tolist() == [8, 7, 12]                  # 3 per FG, 1 per PAT
+
+
+def test_add_derived_is_missing_only_when_every_part_is_missing():
+    df = pd.DataFrame({"carries": [float("nan"), 2.0], "receptions": [float("nan"), float("nan")]})
+    t = aa.add_derived(df)["touches"]
+    assert pd.isna(t.iloc[0]) and t.iloc[1] == 2.0
+    assert aa.add_derived(pd.DataFrame()).empty
+    assert "touches" not in aa.add_derived(pd.DataFrame({"x": [1]})).columns   # no parts, no column
+
+
+def test_new_rates_are_sum_over_sum_and_skip_unrecorded_parts():
+    g = aa.add_derived(_derive_frame())
+    r = aa.run_query(g, {"measures": ["adot", "yards_per_air_yard", "rec_td_rate",
+                                      "rush_td_rate", "yards_per_touch", "ppr_per_touch"]})
+    row = r["rows"][0]
+    assert abs(row["adot"] - 90 / 13) < 1e-9                  # 2023 has no air yards or targets
+    assert abs(row["yards_per_air_yard"] - 120 / 90) < 1e-9
+    assert abs(row["rec_td_rate"] - 1 / 13 * 100) < 1e-9      # a percent
+    assert abs(row["rush_td_rate"] - 1 / 15 * 100) < 1e-9
+    assert abs(row["yards_per_touch"] - 220 / 28) < 1e-9
+    assert abs(row["ppr_per_touch"] - 40 / 28) < 1e-9
+    assert aa.format_value("rec_td_rate", row["rec_td_rate"]).endswith("%")
+
+
+def test_every_new_measure_is_listed_in_a_group_with_a_hint():
+    new = {"touches", "scrimmage_yards", "scrimmage_tds", "kick_points", "yards_per_completion",
+           "pass_td_rate", "int_rate", "rush_td_rate", "rec_td_rate", "adot",
+           "yards_per_air_yard", "yards_per_touch", "ppr_per_touch"}
+    listed = {k for _, keys in aa.MEASURE_GROUPS for k in keys}
+    assert new <= listed and new <= set(aa.MEASURES) and new <= set(aa.MEASURE_HINTS)
+    assert listed == set(aa.MEASURES)                          # nothing unlisted, nothing extra
+
+
+def test_new_rates_appear_in_the_efficiency_card_by_position():
+    g = aa.add_derived(_derive_frame())
+    wr = aa.card_spec("efficiency", g, "WR", {})["measures"]
+    assert {"adot", "yards_per_air_yard", "rec_td_rate"} <= set(wr)
+    rb = aa.card_spec("efficiency", g, "RB", {})["measures"]
+    assert "yards_per_touch" in rb and "rush_td_rate" in rb
+    assert "scrimmage_yards" in aa.card_spec("production", g, "RB", {})["measures"]
+
+
+# -- indicators ------------------------------------------------------------------------
+
+def _res(rows, group="season", agg="per_game", keys=("targets",)):
+    return {"columns": [{"key": k, "label": aa.MEASURES[k]} for k in keys],
+            "rows": [{"group": gv, "games": 16, **vals} for gv, vals in rows],
+            "total": None, "games": 16 * len(rows),
+            "spec": {"group_by": group, "agg": agg, "measures": list(keys), "filters": {}}}
+
+
+def test_heat_runs_from_the_players_worst_row_to_best_and_marks_the_extremes():
+    marks, _ = aa.indicators(_res([(2020, {"targets": 4.0}), (2021, {"targets": 6.0}),
+                                   (2022, {"targets": 8.0})]))
+    h = [m[0]["h"] for m in marks]
+    assert h == [0, aa._HEAT_MAX // 2, aa._HEAT_MAX]
+    assert [m[0].get("mark") for m in marks] == ["worst", None, "best"]
+
+
+def test_lower_is_better_stats_flip_heat_marks_and_arrow_tone():
+    res = _res([(2020, {"interceptions": 10.0}), (2021, {"interceptions": 4.0}),
+                (2022, {"interceptions": 6.0})], keys=("interceptions",))
+    marks, _ = aa.indicators(res)
+    assert marks[1][0]["mark"] == "best" and marks[0][0]["mark"] == "worst"
+    assert marks[1][0]["trend"]["arrow"] == "\u25bc" and marks[1][0]["trend"]["tone"] == "good"
+    assert marks[2][0]["trend"]["arrow"] == "\u25b2" and marks[2][0]["trend"]["tone"] == "bad"
+
+
+def test_trend_arrows_need_a_real_change_and_only_on_rates_or_per_game_by_season():
+    rows = [(2020, {"targets": 10.0}), (2021, {"targets": 10.2}), (2022, {"targets": 12.0})]
+    marks, _ = aa.indicators(_res(rows))
+    assert "trend" not in marks[0][0] and "trend" not in marks[1][0]        # +2% is noise
+    t = marks[2][0]["trend"]
+    assert t["arrow"] == "\u25b2" and t["tone"] == "good" and "+18%" in t["title"] and "2021" in t["title"]
+    assert not any("trend" in m[0] for m in aa.indicators(_res(rows, agg="total"))[0])   # totals depend on games
+    assert not any("trend" in m[0] for m in aa.indicators(_res(rows, group="opponent"))[0])
+
+
+def test_count_columns_by_a_non_season_group_get_share_bars_not_heat():
+    marks, _ = aa.indicators(_res([("A", {"targets": 50.0}), ("B", {"targets": 30.0}),
+                                   ("C", {"targets": 20.0})], group="opponent", agg="total"))
+    assert [m[0]["bar"] for m in marks] == [100, 60, 40]          # against the longest row
+    assert [m[0]["share"] for m in marks] == [50, 30, 20]         # percent of the total
+    assert all("h" not in m[0] for m in marks)
+    rate = _res([("A", {"catch_rate": 70.0}), ("B", {"catch_rate": 60.0}), ("C", {"catch_rate": 50.0})],
+                group="opponent", agg="total", keys=("catch_rate",))
+    assert all("bar" not in m[0] and "h" in m[0] for m in aa.indicators(rate)[0])   # a rate has no share
+
+
+def test_no_indicators_for_too_few_rows_or_no_spread_or_unrecorded_values():
+    assert aa.indicators(_res([(2020, {"targets": 4.0}), (2021, {"targets": 9.0})]))[0] == [[{}], [{}]]
+    flat = [(2020, {"targets": 5.0}), (2021, {"targets": 5.0}), (2022, {"targets": 5.0})]
+    assert aa.indicators(_res(flat))[0] == [[{}], [{}], [{}]]
+    gap = _res([(2020, {"targets": 4.0}), (2021, {"targets": None}), (2022, {"targets": 8.0}),
+                (2023, {"targets": 6.0})])
+    marks, _ = aa.indicators(gap)
+    assert marks[1][0] == {} and marks[0][0]["mark"] == "worst"        # a dash is never a low
+    assert aa.indicators(_res([(2020, {"targets": 4.0}), (2021, {"targets": None}),
+                               (2022, {"targets": 8.0})]))[0] == [[{}], [{}], [{}]]   # only two values
+
+
+def test_header_chips_name_the_best_season_and_the_latest_change():
+    _, chips = aa.indicators(_res([(2020, {"targets": 8.0}), (2021, {"targets": 6.0}),
+                                   (2022, {"targets": 9.0})]))
+    assert [c["text"] for c in chips] == ["Best: 2022", "\u25b2 50%"]
+    assert chips[1]["tone"] == "good" and "2022 vs 2021" in chips[1]["title"]
+    assert aa.indicators(_res([("A", {"targets": 1.0}), ("B", {"targets": 2.0}),
+                               ("C", {"targets": 3.0})], group="opponent"))[1] == []
+
+
+def test_table_view_carries_marks_and_chips_and_keeps_cells_as_strings():
+    tv = aa.table_view(_res([(2020, {"targets": 4.0}), (2021, {"targets": 6.0}),
+                             (2022, {"targets": 8.0})]))
+    assert tv["rows"][0]["cells"] == ["4"] or isinstance(tv["rows"][0]["cells"][0], str)
+    assert len(tv["rows"][2]["marks"]) == 1 and tv["rows"][2]["marks"][0]["mark"] == "best"
+    assert tv["chips"][0]["text"] == "Best: 2022"
+    assert tv["total"] is None
+
+
+def test_card_template_renders_tints_marks_arrows_bars_and_chips(_routes, monkeypatch):
+    g = aa.add_derived(pd.DataFrame({
+        "player_id": "00-1", "player_display_name": "A B", "position": "WR", "team": "DET",
+        "season": [2020, 2020, 2021, 2021, 2022, 2022], "week": [1, 2] * 3,
+        "opponent": ["X", "Y", "X", "Z", "Y", "Z"], "home_away": ["Home", "Away"] * 3,
+        "game_type": ["REG"] * 6, "carries": [0] * 6, "rushing_yards": [0] * 6,
+        "rushing_tds": [0] * 6, "receptions": [2, 3, 5, 6, 8, 9],
+        "targets": [4, 5, 8, 9, 12, 13], "receiving_yards": [20, 30, 60, 70, 110, 120],
+        "receiving_tds": [0, 0, 1, 0, 1, 1], "receiving_air_yards": [30.0] * 6,
+        "fantasy_points_ppr": [4.0, 6.0, 12.0, 13.0, 21.0, 24.0]}))
+    monkeypatch.setattr(aa, "load_player", lambda pid: g)
+    html = _card(_routes, "workload")
+    assert 'class="n alt-heat alt-worst"' in html and 'class="n alt-heat alt-best"' in html
+    assert re.search(r'style="--h: 0%"', html) and f'style="--h: {aa._HEAT_MAX}%"' in html
+    assert "alt-trend alt-trend-good" in html and "vs 2021" in html     # an arrow with its title
+    assert 'class="alt-chipnote alt-chipnote-plain" title="Targets /g: ' in html and ">Best: 2022<" in html
+    by = _card(_routes, "by_opponent")
+    assert 'class="n alt-share"' in by and "% of the total" in by and "--w: 100%" in by and "alt-heat" not in by
+
+
+def test_cards_are_their_own_sections_outside_the_search_and_filter_card(_routes):
+    html = _builder(_routes, q="ab", player_id="00-1")
+    panel = html.index('<section class="card alt-panel">')
+    panel_end = html.index("</section>", panel)                 # the search and filter card
+    form_end = html.index("</form>", html.index('<form id="alt-builder-form"'))
+    grid = html.index('id="alt-cards"')
+    assert form_end < panel_end < grid                           # the form closes before the cards
+    assert panel < html.index("<h4>Add a card") < form_end       # the builder is in the top card
+    ids = re.findall(r'<section class="card alt-card" data-card="([a-z_]+)"', html)
+    assert ids == [c["id"] for c in aa.cards_for("WR")]          # one real card section each
+    assert html.count('<section class="card alt-card') == len(ids)
+    assert html.rstrip().endswith("</div>") and 'id="alt-builder" class="alt-root"' in html
+
+
+def test_the_card_builder_controls_are_inside_the_form_and_added_cards_are_tied_to_it(_routes):
+    html = _builder(_routes, q="ab", player_id="00-1")
+    form = html[html.index('<form id="alt-builder-form"'):html.index("</form>", html.index('<form id="alt-builder-form"'))]
+    for name in ("measures", "agg", "group_by"):
+        assert f'name="{name}"' in form, name                    # no form= trick needed any more
+    assert 'form="alt-builder-form"' not in form
+    assert "keep.setAttribute('form', 'alt-builder-form')" in html   # an added card's hidden spec
+    assert "root.addEventListener(ev" in html
+
+
+
+
+# -- cards the user adds -----------------------------------------------------------------
+
+def test_custom_title_names_the_first_stats_and_how_they_are_shown():
+    t = aa.custom_title({"measures": ["targets", "receiving_yards"], "agg": "per_game",
+                         "group_by": "season"})
+    assert t == "Targets, Rec yds \u00b7 per game, by season"
+    many = aa.custom_title({"measures": ["targets", "receptions", "receiving_yards", "catch_rate"],
+                            "agg": "total", "group_by": None})
+    assert many == "Targets, Rec, Rec yds +1 \u00b7 total, career"
+    assert aa.custom_title({"measures": ["attempts"], "agg": "total", "group_by": "man_zone"}).endswith("by man or zone")
+
+
+def test_parse_custom_cards_keeps_valid_unique_specs_and_drops_the_rest():
+    import json
+    good = json.dumps({"measures": ["targets"], "agg": "per_game", "group_by": "season"})
+    raw = [good, good, "not json", json.dumps({"measures": ["nope"]}), json.dumps({"measures": []}),
+           json.dumps({"measures": ["targets"], "agg": "weekly"}),
+           json.dumps({"measures": ["receptions"], "group_by": "opponent"})]
+    cards = aa.parse_custom_cards(raw)
+    assert [c["spec"]["measures"] for c in cards] == [["targets"], ["receptions"]]
+    assert cards[0]["spec"] == {"measures": ["targets"], "agg": "per_game", "group_by": "season"}
+    assert cards[1]["spec"]["agg"] == "total"                    # the default
+    assert cards[0]["title"] == aa.custom_title(cards[0]["spec"])
+    assert aa.parse_custom_cards([]) == [] and aa.parse_custom_cards(None) == []
+
+
+def test_parse_custom_cards_stops_at_the_limit():
+    import json
+    raw = [json.dumps({"measures": ["targets"], "agg": "total", "group_by": g})
+           for g in ("season", "opponent", "home_away", "game_type", "week", "man_zone", "coverage", "route")]
+    assert len(aa.parse_custom_cards(raw)) == aa.MAX_CUSTOM_CARDS
+
+
+def test_builder_renders_the_cards_carried_in_the_query_after_default_ones(_routes):
+    import json
+    from urllib.parse import quote
+    spec = {"measures": ["targets", "receiving_yards"], "agg": "per_game", "group_by": "season"}
+    q = ("xcard=" + quote(json.dumps(spec)) + "&xcard=" + quote("garbage")).encode()
+    html = _builder(_routes, q="ab", player_id="00-1", _query=q)
+    cards = re.findall(r'<section class="card alt-card alt-xcard"[^>]*>', html)
+    assert len(cards) == 1 and 'data-card="custom"' in cards[0]      # the invalid one is dropped
+    assert json.loads(re.search(r"data-spec='([^']*)'", cards[0]).group(1)) == spec
+    assert "Targets, Rec yds \u00b7 per game, by season" in html
+    assert html.index('data-card="workload"') < html.index("alt-xcard")  # after the default cards
+    hidden = re.search(r'<input type="hidden" form="alt-builder-form" name="xcard" value=\'([^\']*)\'>', html)
+    assert hidden and json.loads(hidden.group(1)) == spec           # so Run sends it again
+    assert 'data-count="cards">1 added' in html
+    none = _builder(_routes, q="ab", player_id="00-1")
+    assert "alt-xcard" not in none.split("<script>")[0] and 'data-count="cards" hidden' in none
+
+
+def test_card_route_names_a_custom_card_for_the_page(_routes):
+    html = _card(_routes, "custom", b"measures=targets&measures=receiving_yards&agg=per_game&group_by=season")
+    assert 'data-title="Targets, Rec yds \u00b7 per game, by season"' in html
+    assert 'data-state="ok"' in html and "Targets /g" in html
+
+
+def test_page_script_adds_removes_and_caps_cards(_routes):
+    html = _builder(_routes, q="ab", player_id="00-1")
+    assert f"var MAXC = {aa.MAX_CUSTOM_CARDS};" in html
+    assert "Tick at least one stat." in html and "alt-xremove" in html
+    assert "function enqueue(el)" in html                         # an added card joins the loading line
+    assert "OWN[k]" in html                                       # the builder's stats never leak into a default card
+    assert "xcard: 1" in html                                     # nor the carried specs into a card request
+
+
+def test_card_tables_have_column_dividers():
+    from webapp import app as A
+    css = (A.BASE / "static" / "style.css").read_text(encoding="utf-8")
+    assert "#alt-builder .alt-card-table th + th, #alt-builder .alt-card-table td + td" in css
+    assert "border-left: 1px solid var(--line)" in css.split("#alt-builder .alt-card-table th + th")[1][:120]

@@ -1,0 +1,79 @@
+{# One Player Analytics card's body, fetched by the dashboard's queue
+   (/altanalytics/card).  data-state tells the page what to do: "empty" hides the
+   card, "error" offers a retry.  Engine: webapp/alt_analytics.py.
+
+   Each cell may carry marks judged against the player's own rows (alt_analytics.
+   indicators): a tint (--h, strength of the accent), a best or worst mark, a share
+   bar for count columns grouped by something other than a season, and a trend arrow
+   against the previous season.  Explanations live in tooltips only. #}
+{% macro cell(text, m) %}
+<td class="n{% if m.h is defined %} alt-heat{% endif %}{% if m.mark %} alt-{{ m.mark }}{% endif %}{% if m.bar is defined %} alt-share{% endif %}"
+    {% if m.h is defined %}style="--h: {{ m.h }}%"{% elif m.bar is defined %}style="--w: {{ m.bar }}%" title="{{ m.share }}% of the total"{% endif %}>
+  {{ text }}{% if m.trend %}<span class="alt-trend alt-trend-{{ m.trend.tone }}" title="{{ m.trend.title }}">{{ m.trend.arrow }}</span>{% endif %}
+</td>
+{% endmacro %}
+{% macro chart_block(ch, hidden) %}
+<div class="alt-agg" data-agg="{{ ch.agg or '' }}"{% if hidden %} hidden{% endif %}>
+  <div class="alt-legend" role="group" aria-label="Stats shown">
+    {% for l in ch.legend %}
+    <button type="button" class="alt-leg" data-s="{{ l.index }}" aria-pressed="true"
+            title="Show or hide {{ l.label }}{% if ch.mode == 'index' %}.  Hover for its own axis{% endif %}"><span class="alt-sw" style="background: {{ l.color }}"></span>{{ l.label }}<span class="alt-legnote">{{ l.note }}</span></button>
+    {% endfor %}
+  </div>
+  <div class="alt-chart-scroll">{{ ch.svg|safe }}</div>
+</div>
+{% endmacro %}
+<div class="alt-card-body" data-state="{{ state }}" data-title="{{ title }}">
+  {% if state == "error" %}
+  <p class="empty">{{ error }}.</p>
+  {% elif state == "nomatch" %}
+  <p class="empty">No games match.</p>
+  {% elif state == "ok" and result %}
+  <div class="alt-card-meta">
+    <span class="alt-card-games"
+          title="{{ player.coverage_text }}{% if result.play_seasons %}.  Pass-play data used: {{ result.play_seasons }}{% endif %}">{{ result.games }} games</span>
+    {% for c in result.chips %}
+    <span class="alt-chipnote alt-chipnote-{{ c.tone or 'plain' }}" title="{{ c.title }}">{{ c.text }}</span>
+    {% endfor %}
+    {% if charts %}
+    <span class="alt-views" role="tablist" aria-label="View">
+      <button type="button" role="tab" class="on" data-view="table" aria-selected="true">Table</button>
+      <button type="button" role="tab" data-view="chart" aria-selected="false"
+              title="{% if charts.kind == 'bars' and charts.shown < charts.of %}The {{ charts.shown }} largest of {{ charts.of }} rows.  {% endif %}{% if charts.mode == 'index' %}Each stat as a percent of its own average.  Hover a stat for its own axis{% else %}All stats share one axis{% endif %}">Chart</button>
+    </span>
+    {% endif %}
+  </div>
+  <div class="alt-view-pane" data-view="table">
+  <div class="tablewrap nosort alt-card-table"><table>
+    <thead><tr><th>{{ result.group_label }}</th><th class="n">G</th>
+      {% for c in result.columns %}<th class="n">{{ c }}</th>{% endfor %}</tr></thead>
+    <tbody>
+      {% for r in result.rows %}
+      <tr><td>{{ r.label }}</td><td class="n">{{ r.games }}</td>
+        {% for c in r.cells %}{{ cell(c, r.marks[loop.index0]) }}{% endfor %}</tr>
+      {% endfor %}
+      {% if result.total %}
+      <tr><td><strong>{{ result.total.label }}</strong></td>
+        <td class="n"><strong>{{ result.total.games }}</strong></td>
+        {% for c in result.total.cells %}<td class="n"><strong>{{ c }}</strong></td>{% endfor %}</tr>
+      {% endif %}
+    </tbody>
+  </table></div>
+  </div>
+  {% if charts %}
+  <div class="alt-view-pane alt-chart-pane" data-view="chart" hidden>
+    {% if charts_alt %}
+    <span class="alt-aggs" role="tablist" aria-label="Count">
+      {% for a, name in (("total", "Total"), ("per_game", "Per game")) %}
+      <button type="button" role="tab" data-agg="{{ a }}" class="{% if a == charts.agg %}on{% endif %}"
+              aria-selected="{{ 'true' if a == charts.agg else 'false' }}"
+              title="{% if a == 'total' %}Season or career totals{% else %}Per game played: an opponent met once is not ranked against one met a dozen times{% endif %}">{{ name }}</button>
+      {% endfor %}
+    </span>
+    {% endif %}
+    {{ chart_block(charts, false) }}
+    {% if charts_alt %}{{ chart_block(charts_alt, true) }}{% endif %}
+  </div>
+  {% endif %}
+  {% endif %}
+</div>

@@ -1,0 +1,54 @@
+{# Testing: Player Analytics chart prototypes for the first player a name search finds.
+   Inline SVG from webapp/alt_charts.py, same data as the dashboard's cards.  #}
+<div class="alt-proto" id="alt-proto">
+  {% if player and proto %}
+  <h3>{{ player.name }} <span class="hint">{{ player.position }} &middot; {{ player.team }}</span></h3>
+  <div class="alt-proto-grid">
+    {% if proto.spark %}
+    <section class="alt-proto-tile" title="A sparkline under each column: the shape of the player's seasons at a glance">
+      <h4>1. Sparkline under each column</h4>
+      <div class="tablewrap nosort"><table>
+        <thead><tr><th>Season</th><th class="n">G</th>
+          {% for c in proto.spark.columns %}<th class="n">{{ c.label }}{{ c.spark|safe }}</th>{% endfor %}</tr></thead>
+        <tbody>
+          {% for r in proto.spark.view.rows %}
+          <tr><td>{{ r.label }}</td><td class="n">{{ r.games }}</td>
+            {% for c in r.cells %}<td class="n">{{ c }}</td>{% endfor %}</tr>
+          {% endfor %}
+        </tbody>
+      </table></div>
+    </section>
+    {% endif %}
+    {% if proto.share %}
+    <section class="alt-proto-tile" title="Each coverage's share of the column, longest first">
+      <h4>2. {{ proto.share.label }} by coverage</h4>
+      {{ proto.share.svg|safe }}
+    </section>
+    {% endif %}
+    {% if proto.series %}
+    <section class="alt-proto-tile" title="One per-game column by season, as bars or a line">
+      <h4>3. {{ proto.series.label }} by season</h4>
+      <div class="alt-proto-toggle" role="group">
+        <button type="button" class="on" data-pane="bar">Bars</button>
+        <button type="button" data-pane="line">Line</button>
+      </div>
+      <div class="alt-proto-pane" data-pane="bar">{{ proto.series.bar|safe }}</div>
+      <div class="alt-proto-pane" data-pane="line" hidden>{{ proto.series.line|safe }}</div>
+    </section>
+    {% endif %}
+  </div>
+  <script>
+  (function () {
+    var root = document.getElementById('alt-proto');
+    root.querySelectorAll('.alt-proto-toggle button').forEach(function (b) {
+      b.addEventListener('click', function () {
+        root.querySelectorAll('.alt-proto-toggle button').forEach(function (x) { x.classList.toggle('on', x === b); });
+        root.querySelectorAll('.alt-proto-pane').forEach(function (p) { p.hidden = p.dataset.pane !== b.dataset.pane; });
+      });
+    });
+  })();
+  </script>
+  {% elif searched %}
+  <p class="empty">No player matches "{{ q }}".</p>
+  {% endif %}
+</div>

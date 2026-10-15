@@ -1562,6 +1562,22 @@ def landing_start(request: Request):
     return tpl.TemplateResponse(request, "_landing_start.html", {})
 
 
+@app.get("/testing/altcharts", response_class=HTMLResponse)
+def testing_altcharts(request: Request, q: str = ""):
+    """Testing tab: chart prototypes for Player Analytics (sparklines, share bars and a
+    bar or line chart by season) for the first player a name search finds.  League-free."""
+    from webapp import alt_analytics as aa, alt_charts
+    q = (q or "").strip()
+    hits = aa.search_players(q) if q else []
+    ctx = {"q": q, "player": None, "proto": None, "searched": bool(q)}
+    if hits:
+        info, games = _alt_player(hits[0]["player_id"])
+        if info is not None:
+            ctx["player"] = info
+            ctx["proto"] = alt_charts.prototypes(games, info["position"])
+    return tpl.TemplateResponse(request, "_alt_chart_proto.html", ctx)
+
+
 @app.get("/testing", response_class=HTMLResponse)
 def landing_testing(request: Request, league: str = "", season: str | None = None,
                     theme: str = "light", boot: int = 0):
@@ -1662,6 +1678,33 @@ def altanalytics(request: Request):
     return tpl.TemplateResponse(request, "_alt_builder.html", ctx)
 
 
+def _alt_extras(qp) -> dict:
+    """The extra filters (coach, roof, play bands and the rest) from a query string;
+    unset ones are empty, the week range is None or [first, last]."""
+    from webapp import alt_analytics as aa
+    extras = {k: qp.get(k, "") for k in aa.EXTRA_KEYS if k != "weeks"}
+
+    def _wk(name: str, default: int) -> int:
+        v = qp.get(name, "").strip()
+        return int(v) if v.isdigit() else default
+    extras["weeks"] = ([_wk("week_from", 1), _wk("week_to", 22)]
+                       if qp.get("week_from") or qp.get("week_to") else None)
+    return extras
+
+
+def _alt_filters(qp, info: dict) -> dict:
+    """The shared filters every card runs with, as an engine filters dict."""
+    seasons = None
+    sf, st = qp.get("season_from", ""), qp.get("season_to", "")
+    if sf or st:
+        cov = info["coverage"]
+        seasons = [int(sf or cov["first_season"]), int(st or cov["last_season"])]
+    return {"opponent": qp.get("opponent") or None, "seasons": seasons,
+            "home_away": qp.get("home_away") or None,
+            "game_types": qp.getlist("game_types") or None,
+            **{k: v for k, v in _alt_extras(qp).items() if v}}
+
+
 @app.get("/altanalytics/builder", response_class=HTMLResponse)
 def alt_builder(request: Request, q: str = "", player_id: str = "", run: int = 0,
                 sort: str = "", direction: str = "", page: int = 1,
@@ -1669,23 +1712,17 @@ def alt_builder(request: Request, q: str = "", player_id: str = "", run: int = 0
                 group_by: str = "", opponent: str = "", season_from: str = "",
                 season_to: str = "", home_away: str = "",
                 game_types: list[str] = Query(default=[])):
-    """The builder panel: pick measures, filters and a grouping, then run."""
+    """The dashboard panel: player header, the shared filters and the card builder, then
+    the default cards and any cards the user added (`xcard`, one JSON spec each, carried
+    through Run).  The cards fill in afterwards from /altanalytics/card."""
     from webapp import alt_analytics as aa
     ctx, games = _alt_ctx(q, player_id, sort, direction, page)
     sel = measures or (aa.default_measures(ctx["player"]["position"], games)
                        if games is not None else [])
-    if games is not None:
-        ctx["chips"] = aa.preset_chips(games, ctx["player"]["position"])
-        ctx["reset_fill"] = aa.reset_fill(games, ctx["player"]["position"])
     # The extra filters and the filter picker are read from the query string so this signature stays
     # as it was; unset ones are simply absent.
     qp = request.query_params
-    extras = {k: qp.get(k, "") for k in aa.EXTRA_KEYS if k != "weeks"}
-    def _wk(name: str, default: int) -> int:
-        v = qp.get(name, "").strip()
-        return int(v) if v.isdigit() else default
-    extras["weeks"] = ([_wk("week_from", 1), _wk("week_to", 22)]
-                       if qp.get("week_from") or qp.get("week_to") else None)
+    extras = _alt_extras(qp)
     ctx.update({"sel_measures": sel, "agg": agg, "group_by": group_by,
                 "opponent": opponent, "season_from": season_from,
                 "season_to": season_to, "home_away": home_away,
@@ -1707,22 +1744,51 @@ def alt_builder(request: Request, q: str = "", player_id: str = "", run: int = 0
     ctx["fshown"] = aa.shown_fields(
         qp.getlist("fshow"), bool(qp.get("fshow_set")), forced,
         aa.default_shown(ctx["player"]["position"], games) if games is not None else None)
-    if games is not None and run:
+    if games is not None:
+        ctx["cards"] = aa.cards_for(ctx["player"]["position"])
+        ctx["xcards"] = aa.parse_custom_cards(qp.getlist("xcard"))
+    return tpl.TemplateResponse(request, "_alt_builder.html", ctx)
+
+
+@app.get("/altanalytics/card", response_class=HTMLResponse)
+def alt_card(request: Request, player_id: str = "", card: str = ""):
+    """One card's result under the shared filters in the query string.  `state` is
+    ok, empty (no recorded value: the page hides the card), nomatch (the Custom
+    card found no games) or error."""
+    from webapp import alt_analytics as aa, alt_charts
+    info, games = _alt_player((player_id or "").strip())
+    ctx = {"state": "error", "result": None, "error": "Unknown player", "player": info,
+           "title": "", "charts": None, "charts_alt": None}
+    if info is not None:
+        qp = request.query_params
         try:
-            seasons = None
-            if season_from or season_to:
-                cov = ctx["player"]["coverage"]
-                seasons = [int(season_from or cov["first_season"]),
-                           int(season_to or cov["last_season"])]
-            spec = {"measures": sel, "agg": agg, "group_by": group_by or None,
-                    "filters": {"opponent": opponent or None, "seasons": seasons,
-                                "home_away": home_away or None,
-                                "game_types": game_types or None,
-                                **{k: v for k, v in extras.items() if v}}}
-            ctx["result"] = aa.table_view(aa.run_query(games, spec))
+            filters = _alt_filters(qp, info)
+            if card == "custom":
+                spec = {"measures": qp.getlist("measures")
+                        or aa.default_measures(info["position"], games),
+                        "agg": qp.get("agg") or "total",
+                        "group_by": qp.get("group_by") or None, "filters": filters}
+                result = aa.run_query(games, spec)
+                ctx["title"] = aa.custom_title(result["spec"])
+                ctx["state"] = "ok" if result["rows"] else "nomatch"
+            else:
+                if card not in {c["id"] for c in aa.cards_for(info["position"])}:
+                    raise ValueError(f"unknown card: {card}")
+                result = aa.run_card(games, info["position"], card, filters)
+                ctx["state"] = "ok" if aa.has_data(result) else "empty"
+            ctx["result"] = aa.table_view(result)
+            if ctx["state"] == "ok":
+                ctx["charts"] = alt_charts.card_charts(result)
+                if ctx["charts"] and ctx["charts"]["kind"] == "bars":
+                    # Totals favour the opponents played most, so a bar chart also carries the
+                    # other way of counting (total or per game) for the Total | Per game switch.
+                    other = "per_game" if result["spec"].get("agg") == "total" else "total"
+                    ctx["charts_alt"] = alt_charts.card_charts(
+                        aa.run_query(games, {**result["spec"], "agg": other}))
+            ctx["error"] = None
         except ValueError as exc:
             ctx["error"] = str(exc)
-    return tpl.TemplateResponse(request, "_alt_builder.html", ctx)
+    return tpl.TemplateResponse(request, "_alt_card.html", ctx)
 
 
 def _adp_params(season, scoring, pos):

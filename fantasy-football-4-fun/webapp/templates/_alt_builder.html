@@ -3,10 +3,12 @@
    measures the player has production in are offered.  The whole panel swaps
    (outerHTML) on every step.  Engine: webapp/alt_analytics.py.
 
-   The preset chips only FILL the form (data-fill, applied by the script at the
-   bottom of the form block): they send no request.  Run is the only thing
-   that does. #}
-<section class="card" id="alt-builder">
+   A chosen player gets a dashboard: the shared filters, a grid of cards (each a
+   fixed spec run with those filters) and a Custom card (the builder).  Run
+   re-renders the panel.  The cards fill in afterwards from /altanalytics/card:
+   the first few at once, the rest one at a time. #}
+<div id="alt-builder" class="alt-root">
+<section class="card alt-panel">
   <h3>Builder</h3>
   <div class="alt-search">
     <form class="controls inline" hx-get="/altanalytics/builder" hx-target="#alt-builder"
@@ -78,70 +80,6 @@
           </div>
         </details>
         <span class="alt-fnone"{% if shown %} hidden{% endif %}>Nothing chosen: tick a stat group to run a query.</span>
-      </div>
-    </div>
-
-    <div class="alt-block alt-quicksec">
-      <h4>Quick picks</h4>
-      <div class="alt-chips">
-        {% for c in chips %}
-        <button type="button" class="alt-chip" title="{{ c.hint }}"
-                data-fill='{{ c.fill | tojson }}'>{{ c.label }}</button>
-        {% endfor %}
-        <button type="button" class="alt-chip alt-reset" title="{{ aa.CONTROL_HINTS.reset }}"
-                data-fill='{{ reset_fill | tojson }}'>Reset</button>
-      </div>
-    </div>
-
-    {# Each stat group is its own section with its own header (no "Measures"
-       wrapper).  A group (or measure) the player has no production in is dimmed
-       and disabled; which groups are on screen is the picker's choice. #}
-    {% for g in measure_groups %}
-    {% set gkey = "m_" ~ g.label|lower %}
-    {% set n_sel = namespace(v=0) %}
-    {% for key, label, used in g["items"] %}{% if key in sel_measures %}{% set n_sel.v = n_sel.v + 1 %}{% endif %}{% endfor %}
-    <div class="alt-block alt-mgroup{% if not g.used %} alt-mrow-off{% endif %}" data-f="{{ gkey }}" data-plain
-         {% if gkey not in shown %}hidden{% endif %}>
-      <h4>{{ g.label }} <span class="alt-hcount" data-count="{{ gkey }}"{% if not n_sel.v %} hidden{% endif %}>{{ n_sel.v }} selected</span></h4>
-      <div class="alt-mboxes">
-        {% for key, label, used in g["items"] %}
-        <label class="adp-check{% if not used %} alt-unused{% endif %}{% if key not in aa.PLAY_MEASURES %} alt-gameonly{% endif %}"
-               title="{{ aa.MEASURE_HINTS.get(key, label) }}{% if not used %}.  No production for this player.{% endif %}">
-          <input type="checkbox" name="measures" value="{{ key }}"
-                 {% if key in sel_measures %}checked{% endif %}
-                 {% if not used %}disabled{% endif %}>
-          <span>{{ label }}</span>
-        </label>
-        {% endfor %}
-      </div>
-    </div>
-    {% endfor %}
-
-    <div class="alt-block alt-line" data-blk="show">
-      <h4>Show</h4>
-      <div class="alt-filterbody">
-        <div class="alt-fields">
-          {% call field("agg", "Total or per game", aa.CONTROL_HINTS.agg, false, true) %}
-          <select name="agg" aria-label="Total or per game">
-            {% for k, v in aa.AGGS.items() %}
-            <option value="{{ k }}" {% if k == agg %}selected{% endif %}>{{ v }}</option>
-            {% endfor %}
-          </select>
-          {% endcall %}
-          {% call field("group_by", "Group by", aa.CONTROL_HINTS.group_by, false, true) %}
-          <select name="group_by" aria-label="Group by">
-            <option value="">Career</option>
-            {% for k, v in aa.GAME_GROUPS.items() %}
-            <option value="{{ k }}" {% if k == group_by %}selected{% endif %}>{{ v }}</option>
-            {% endfor %}
-            <optgroup label="Pass plays">
-              {% for k, v in aa.PLAY_GROUPS.items() %}
-              <option value="{{ k }}" {% if k == group_by %}selected{% endif %}>{{ v }}</option>
-              {% endfor %}
-            </optgroup>
-          </select>
-          {% endcall %}
-        </div>
       </div>
     </div>
 
@@ -248,152 +186,75 @@
         </div>
       </div>
     </div>
-
     <div class="alt-actions">
       <button type="button" class="alt-clear" hidden
               title="{{ aa.CONTROL_HINTS.clear_filters }}">Clear filters</button>
       <button type="submit" class="nfl-apply alt-run" style="margin-left:0">Run</button>
     </div>
+
+    <div class="alt-block alt-addcard" data-blk="build">
+      <h4>Add a card <span class="alt-hcount" data-count="cards"{% if not xcards %} hidden{% endif %}>{{ xcards|length }} added</span></h4>
+    {# Each stat group is its own section with its own header (no "Measures"
+       wrapper).  A group (or measure) the player has no production in is dimmed
+       and disabled; which groups are on screen is the picker's choice. #}
+    {% for g in measure_groups %}
+    {% set gkey = "m_" ~ g.label|lower %}
+    {% set n_sel = namespace(v=0) %}
+    {% for key, label, used in g["items"] %}{% if key in sel_measures %}{% set n_sel.v = n_sel.v + 1 %}{% endif %}{% endfor %}
+    <div class="alt-block alt-mgroup{% if not g.used %} alt-mrow-off{% endif %}" data-f="{{ gkey }}" data-plain
+         {% if gkey not in shown %}hidden{% endif %}>
+      <h4>{{ g.label }} <span class="alt-hcount" data-count="{{ gkey }}"{% if not n_sel.v %} hidden{% endif %}>{{ n_sel.v }} selected</span></h4>
+      <div class="alt-mboxes">
+        {% for key, label, used in g["items"] %}
+        <label class="adp-check{% if not used %} alt-unused{% endif %}{% if key not in aa.PLAY_MEASURES %} alt-gameonly{% endif %}"
+               title="{{ aa.MEASURE_HINTS.get(key, label) }}{% if not used %}.  No production for this player.{% endif %}">
+          <input type="checkbox" name="measures" value="{{ key }}"
+                 {% if key in sel_measures %}checked{% endif %}
+                 {% if not used %}disabled{% endif %}>
+          <span>{{ label }}</span>
+        </label>
+        {% endfor %}
+      </div>
+    </div>
+    {% endfor %}
+
+    <div class="alt-block alt-line" data-blk="show">
+      <h4>Show</h4>
+      <div class="alt-filterbody">
+        <div class="alt-fields">
+          {% call field("agg", "Total or per game", aa.CONTROL_HINTS.agg, false, true) %}
+          <select name="agg" aria-label="Total or per game">
+            {% for k, v in aa.AGGS.items() %}
+            <option value="{{ k }}" {% if k == agg %}selected{% endif %}>{{ v }}</option>
+            {% endfor %}
+          </select>
+          {% endcall %}
+          {% call field("group_by", "Group by", aa.CONTROL_HINTS.group_by, false, true) %}
+          <select name="group_by" aria-label="Group by">
+            <option value="">Career</option>
+            {% for k, v in aa.GAME_GROUPS.items() %}
+            <option value="{{ k }}" {% if k == group_by %}selected{% endif %}>{{ v }}</option>
+            {% endfor %}
+            <optgroup label="Pass plays">
+              {% for k, v in aa.PLAY_GROUPS.items() %}
+              <option value="{{ k }}" {% if k == group_by %}selected{% endif %}>{{ v }}</option>
+              {% endfor %}
+            </optgroup>
+          </select>
+          {% endcall %}
+        </div>
+      </div>
+    </div>
+
+
+      <div class="alt-actions alt-addrow">
+        <span class="alt-addnote" role="status" hidden></span>
+        <button type="button" class="nfl-apply alt-add" style="margin-left:0"
+                title="{{ aa.CONTROL_HINTS.add_card }}">Add card</button>
+      </div>
+    </div>
+
   </form>
-  <script>
-  (function () {
-    var f = document.getElementById('alt-builder-form');
-    if (!f) return;
-    var chips = document.querySelectorAll('#alt-builder .alt-chip');
-    var clear = f.querySelector('.alt-clear');
-    var none = f.querySelector('.alt-fnone');
-    function mark(on) { chips.forEach(function (c) { c.classList.toggle('on', c === on); }); }
-    function tick(name, wanted) {
-      f.querySelectorAll('input[name=' + name + ']').forEach(function (i) {
-        i.checked = wanted.indexOf(i.value) > -1;
-      });
-    }
-    // Every control the picker can show or hide: measure rows, Show fields, filters.
-    function fields() { return Array.prototype.slice.call(f.querySelectorAll('[data-f]')); }
-    function isPlain(el) { return el.hasAttribute('data-plain'); }
-    function controls(el) { return el.querySelectorAll('select, input[type=number]'); }
-    // "Has a value" means off its default: a select past its first option, a
-    // filled number box, or any ticked box.
-    function hasValue(el) {
-      var v = false;
-      controls(el).forEach(function (c) {
-        if (c.tagName === 'SELECT' ? c.selectedIndex > 0 : c.value !== '') { v = true; }
-      });
-      if (el.querySelector('input[type=checkbox]:checked')) { v = true; }
-      return v;
-    }
-    function wipe(el) {
-      controls(el).forEach(function (c) {
-        if (c.tagName === 'SELECT') { c.selectedIndex = 0; } else { c.value = ''; }
-      });
-      el.querySelectorAll('input[type=checkbox]').forEach(function (c) { c.checked = false; });
-    }
-    // A filter with a value is outlined and counted; "Clear filters" shows only
-    // while at least one has a value.  Measures and Show are never counted.
-    function setCount(key, n, text) {
-      var el = f.querySelector('[data-count="' + key + '"]');
-      if (el) { el.textContent = text; el.hidden = n === 0; }
-    }
-    // Under a play filter or a pass-play grouping only passing and receiving
-    // measures can be answered; the rest are dimmed (and show a dash).
-    var PLAY = {{ aa.PLAY_KEYS | tojson }};
-    function playActive() {
-      var on = PLAY.indexOf(f.elements.group_by.value) > -1;
-      PLAY.forEach(function (k) {
-        var el = f.querySelector('[data-f="' + k + '"]');
-        if (el && !el.hidden && hasValue(el)) { on = true; }
-      });
-      return on;
-    }
-    function flag() {
-      var pa = playActive();
-      f.querySelectorAll('.alt-gameonly').forEach(function (l) { l.classList.toggle('alt-playdim', pa); });
-      var n = 0;
-      fields().forEach(function (el) {
-        if (isPlain(el)) { return; }
-        var on = hasValue(el);
-        controls(el).forEach(function (c) {
-          var set = c.tagName === 'SELECT' ? c.selectedIndex > 0 : c.value !== '';
-          c.classList.toggle('alt-narrow', set);
-        });
-        var types = el.querySelector('.alt-types');
-        if (types) { types.classList.toggle('alt-narrow', on); }
-        if (on) { n++; }
-      });
-      clear.hidden = n === 0;
-      f.querySelectorAll('.alt-mgroup').forEach(function (g) {
-        var mc = g.querySelectorAll('input[name=measures]:checked').length;
-        setCount(g.dataset.f, mc, mc + ' selected');
-      });
-      setCount('filters', n, n + ' in use');
-      var picked = f.querySelectorAll('input[name=fshow]:checked').length;
-      setCount('picked', picked, picked + ' selected');
-    }
-    // A section heading goes when none of its controls is on screen.
-    function syncBlocks() {
-      f.querySelectorAll('[data-blk]').forEach(function (b) {
-        b.hidden = !b.querySelector('[data-f]:not([hidden])');
-      });
-    }
-    // The picker decides which controls are on screen.  Unticking one clears it,
-    // so a hidden control can never still be shaping the request.
-    function applyShown() {
-      var any = false;
-      f.querySelectorAll('input[name=fshow]').forEach(function (box) {
-        var el = f.querySelector('[data-f="' + box.value + '"]');
-        if (!el) { return; }
-        el.hidden = !box.checked;
-        if (!box.checked) { wipe(el); } else { any = true; }
-      });
-      none.hidden = any;
-      syncBlocks();
-    }
-    chips.forEach(function (chip) {
-      chip.addEventListener('click', function () {
-        var d = JSON.parse(chip.dataset.fill);
-        var reset = chip.classList.contains('alt-reset');
-        if (reset) { fields().forEach(wipe); }
-        tick('measures', d.measures);
-        tick('game_types', d.game_types);
-        ['agg', 'group_by', 'opponent', 'season_from', 'season_to', 'home_away']
-          .forEach(function (n) { f.elements[n].value = d[n]; });
-        // A preset ticks what it uses and unticks the rest; filters the user filled
-        // in themselves stay on.
-        var keep = (d.shown || []).slice();
-        fields().forEach(function (el) {
-          if (!isPlain(el) && hasValue(el) && keep.indexOf(el.dataset.f) < 0) { keep.push(el.dataset.f); }
-        });
-        f.querySelectorAll('input[name=fshow]').forEach(function (b) {
-          b.checked = keep.indexOf(b.value) > -1;
-        });
-        applyShown();
-        mark(reset ? null : chip);
-        flag();
-      });
-    });
-    clear.addEventListener('click', function () {
-      fields().forEach(function (el) { if (!isPlain(el)) { wipe(el); } });
-      mark(null);
-      flag();
-    });
-    f.querySelectorAll('input[name=fshow]').forEach(function (box) {
-      box.addEventListener('change', function () { applyShown(); flag(); });
-    });
-    // `input` as well as `change`, so the counts follow typing in the week boxes.
-    ['change', 'input'].forEach(function (ev) {
-      f.addEventListener(ev, function (e) {
-        if (e.target.name !== 'fshow') { mark(null); flag(); }
-      });
-    });
-    // Close the picker when the user clicks anywhere else.
-    var pickerEl = f.querySelector('.alt-fpick');
-    document.addEventListener('click', function (e) {
-      if (pickerEl && pickerEl.open && !pickerEl.contains(e.target)) { pickerEl.open = false; }
-    });
-    syncBlocks();
-    flag();
-  })();
-  </script>
   {% elif matches %}
   {% set mp = match_page %}
   <div class="alt-matches" role="list">
@@ -452,26 +313,308 @@
   {% endif %}
 
   {% if error %}<p class="empty">{{ error }}.</p>{% endif %}
-  {% if result %}
-  <h3 title="{{ player.coverage_text }}{% if result.play_seasons %}.  Pass-play data used: {{ result.play_seasons }}{% endif %}">{{ result.games }} games</h3>
-  {% if result.rows %}
-  <div class="tablewrap nosort"><table>
-    <thead><tr><th>{{ result.group_label }}</th><th class="n">G</th>
-      {% for c in result.columns %}<th class="n">{{ c }}</th>{% endfor %}</tr></thead>
-    <tbody>
-      {% for r in result.rows %}
-      <tr><td>{{ r.label }}</td><td class="n">{{ r.games }}</td>
-        {% for c in r.cells %}<td class="n">{{ c }}</td>{% endfor %}</tr>
-      {% endfor %}
-      {% if result.total %}
-      <tr><td><strong>{{ result.total.label }}</strong></td>
-        <td class="n"><strong>{{ result.total.games }}</strong></td>
-        {% for c in result.total.cells %}<td class="n"><strong>{{ c }}</strong></td>{% endfor %}</tr>
-      {% endif %}
-    </tbody>
-  </table></div>
-  {% else %}
-  <p class="empty">No games match.</p>
-  {% endif %}
-  {% endif %}
 </section>
+
+{# The cards sit outside the search and filter card, each in a section of its own. #}
+{% if player %}
+    <div class="alt-cards" id="alt-cards" data-player="{{ player.player_id }}"
+         data-eager="{{ aa.EAGER_CARDS }}">
+      {% for c in cards %}
+      <section class="card alt-card" data-card="{{ c.id }}" data-state="idle" title="{{ c.hint }}">
+        <h4>{{ c.title }}</h4>
+        <div class="alt-card-slot"><div class="skeleton alt-skel"></div></div>
+      </section>
+      {% endfor %}
+      {% for x in xcards %}
+      <section class="card alt-card alt-xcard" data-card="custom" data-state="idle"
+               data-spec='{{ x.spec | tojson }}'>
+        <h4><span class="alt-xtitle">{{ x.title }}</span>
+          <button type="button" class="alt-xremove" title="Remove this card" aria-label="Remove this card">&times;</button></h4>
+        <div class="alt-card-slot"><div class="skeleton alt-skel"></div></div>
+        <input type="hidden" form="alt-builder-form" name="xcard" value='{{ x.spec | tojson }}'>
+      </section>
+      {% endfor %}
+      <p class="empty alt-allempty" hidden>No card has data for these filters.</p>
+    </div>
+
+  <script>
+  (function () {
+    var f = document.getElementById('alt-builder-form');
+    if (!f) return;
+    var root = document.getElementById('alt-builder');
+    var clear = root.querySelector('.alt-clear');
+    var none = root.querySelector('.alt-fnone');
+    // Every control the picker can show or hide: measure rows, Show fields, filters.
+    function fields() { return Array.prototype.slice.call(root.querySelectorAll('[data-f]')); }
+    function isPlain(el) { return el.hasAttribute('data-plain'); }
+    function controls(el) { return el.querySelectorAll('select, input[type=number]'); }
+    // "Has a value" means off its default: a select past its first option, a
+    // filled number box, or any ticked box.
+    function hasValue(el) {
+      var v = false;
+      controls(el).forEach(function (c) {
+        if (c.tagName === 'SELECT' ? c.selectedIndex > 0 : c.value !== '') { v = true; }
+      });
+      if (el.querySelector('input[type=checkbox]:checked')) { v = true; }
+      return v;
+    }
+    function wipe(el) {
+      controls(el).forEach(function (c) {
+        if (c.tagName === 'SELECT') { c.selectedIndex = 0; } else { c.value = ''; }
+      });
+      el.querySelectorAll('input[type=checkbox]').forEach(function (c) { c.checked = false; });
+    }
+    // A filter with a value is outlined and counted; "Clear filters" shows only
+    // while at least one has a value.  Measures and Show are never counted.
+    function setCount(key, n, text) {
+      var el = root.querySelector('[data-count="' + key + '"]');
+      if (el) { el.textContent = text; el.hidden = n === 0; }
+    }
+    // Under a play filter or a pass-play grouping only passing and receiving
+    // measures can be answered; the rest are dimmed (and show a dash).
+    var PLAY = {{ aa.PLAY_KEYS | tojson }};
+    function playActive() {
+      var on = PLAY.indexOf(f.elements.group_by.value) > -1;
+      PLAY.forEach(function (k) {
+        var el = root.querySelector('[data-f="' + k + '"]');
+        if (el && !el.hidden && hasValue(el)) { on = true; }
+      });
+      return on;
+    }
+    function flag() {
+      var pa = playActive();
+      root.querySelectorAll('.alt-gameonly').forEach(function (l) { l.classList.toggle('alt-playdim', pa); });
+      var n = 0;
+      fields().forEach(function (el) {
+        if (isPlain(el)) { return; }
+        var on = hasValue(el);
+        controls(el).forEach(function (c) {
+          var set = c.tagName === 'SELECT' ? c.selectedIndex > 0 : c.value !== '';
+          c.classList.toggle('alt-narrow', set);
+        });
+        var types = el.querySelector('.alt-types');
+        if (types) { types.classList.toggle('alt-narrow', on); }
+        if (on) { n++; }
+      });
+      clear.hidden = n === 0;
+      root.querySelectorAll('.alt-mgroup').forEach(function (g) {
+        var mc = g.querySelectorAll('input[name=measures]:checked').length;
+        setCount(g.dataset.f, mc, mc + ' selected');
+      });
+      setCount('filters', n, n + ' in use');
+      var picked = root.querySelectorAll('input[name=fshow]:checked').length;
+      setCount('picked', picked, picked + ' selected');
+    }
+    // A section heading goes when none of its controls is on screen.
+    function syncBlocks() {
+      root.querySelectorAll('[data-blk]').forEach(function (b) {
+        b.hidden = !b.querySelector('[data-f]:not([hidden])');
+      });
+    }
+    // The picker decides which controls are on screen.  Unticking one clears it,
+    // so a hidden control can never still be shaping the request.
+    function applyShown() {
+      var any = false;
+      root.querySelectorAll('input[name=fshow]').forEach(function (box) {
+        var el = root.querySelector('[data-f="' + box.value + '"]');
+        if (!el) { return; }
+        el.hidden = !box.checked;
+        if (!box.checked) { wipe(el); } else { any = true; }
+      });
+      none.hidden = any;
+      syncBlocks();
+    }
+    clear.addEventListener('click', function () {
+      fields().forEach(function (el) { if (!isPlain(el)) { wipe(el); } });
+      flag();
+    });
+    root.querySelectorAll('input[name=fshow]').forEach(function (box) {
+      box.addEventListener('change', function () { applyShown(); flag(); });
+    });
+    // `input` as well as `change`, so the counts follow typing in the week boxes.
+    ['change', 'input'].forEach(function (ev) {
+      root.addEventListener(ev, function (e) {
+        if (e.target.name !== 'fshow') { flag(); }
+      });
+    });
+    // Close the picker when the user clicks anywhere else.
+    var pickerEl = root.querySelector('.alt-fpick');
+    document.addEventListener('click', function (e) {
+      if (pickerEl && pickerEl.open && !pickerEl.contains(e.target)) { pickerEl.open = false; }
+    });
+    syncBlocks();
+    flag();
+
+    // -- the cards -------------------------------------------------------------
+    // The first {{ aa.EAGER_CARDS }} cards are fetched together when the panel opens, the rest one at a
+    // time after them.  Run re-renders the panel, which stops this queue (the new
+    // script stops the old one first) and starts another with the new filters.
+    if (window.altQueue) { window.altQueue.stop = true; window.altQueue.ctl.abort(); }
+    var q = window.altQueue = { stop: false, ctl: new AbortController() };
+    var grid = document.getElementById('alt-cards');
+    var pid = grid.dataset.player;
+    var SKIP = { fshow: 1, fshow_set: 1, q: 1, run: 1, xcard: 1 };
+    var OWN = { measures: 1, agg: 1, group_by: 1 };    // the builder's own controls, not a filter
+    var MAXC = {{ aa.MAX_CUSTOM_CARDS }};
+    // A default card runs with the shared filters only.  A card the user added also
+    // carries its own stats and grouping (data-spec), never the builder's current ones.
+    function params(el) {
+      var p = new URLSearchParams();
+      new FormData(f).forEach(function (v, k) {
+        if (SKIP[k] || OWN[k]) { return; }
+        p.append(k, v);
+      });
+      var spec = el.dataset.spec ? JSON.parse(el.dataset.spec) : null;
+      if (spec) {
+        spec.measures.forEach(function (m) { p.append('measures', m); });
+        p.set('agg', spec.agg);
+        if (spec.group_by) { p.set('group_by', spec.group_by); }
+      }
+      p.set('player_id', pid);
+      p.set('card', el.dataset.card);
+      return p;
+    }
+    // Table or Chart per card, switched here with no request.  The choice is kept on
+    // window, so a Run (which redraws the panel) leaves each card on the view it was on.
+    window.altViews = window.altViews || {};
+    function viewKey(el) { return el.dataset.spec || el.dataset.card; }
+    function showView(el, view) {
+      el.querySelectorAll('.alt-views button').forEach(function (b) {
+        var on = b.dataset.view === view;
+        b.classList.toggle('on', on); b.setAttribute('aria-selected', on ? 'true' : 'false');
+      });
+      el.querySelectorAll('.alt-view-pane').forEach(function (p) { p.hidden = p.dataset.view !== view; });
+    }
+    function showAgg(el, agg) {
+      el.querySelectorAll('.alt-aggs button').forEach(function (b) {
+        var on = b.dataset.agg === agg;
+        b.classList.toggle('on', on); b.setAttribute('aria-selected', on ? 'true' : 'false');
+      });
+      el.querySelectorAll('.alt-agg').forEach(function (d) { d.hidden = d.dataset.agg !== agg; });
+    }
+    function applyView(el) {
+      var v = window.altViews[viewKey(el)];
+      if (v && el.querySelector('.alt-views')) { showView(el, v); }
+      var a = window.altViews[viewKey(el) + '|agg'];
+      if (a && el.querySelector('.alt-aggs')) { showAgg(el, a); }
+    }
+    function load(el) {
+      var slot = el.querySelector('.alt-card-slot');
+      el.dataset.state = 'loading';
+      return fetch('/altanalytics/card?' + params(el), { signal: q.ctl.signal })
+        .then(function (r) { return r.text(); })
+        .then(function (html) {
+          if (q.stop) { return; }
+          slot.innerHTML = html;
+          var body = slot.firstElementChild;
+          var st = body ? body.dataset.state : 'error';
+          el.dataset.state = st;
+          if (st === 'empty') { el.hidden = true; }
+          applyView(el);
+          var title = el.querySelector('.alt-xtitle');
+          if (title && body && body.dataset.title) { title.textContent = body.dataset.title; }
+        })
+        .catch(function (e) {
+          if (e.name === 'AbortError' || q.stop) { return; }
+          el.dataset.state = 'error';
+          slot.innerHTML = '<p class="empty">Could not load this card.  ' +
+            '<button type="button" class="alt-retry">Retry</button></p>';
+        });
+    }
+    var all = Array.prototype.slice.call(grid.querySelectorAll('.alt-card'));
+    var std = all.filter(function (c) { return !c.classList.contains('alt-xcard'); });
+    var added = all.filter(function (c) { return c.classList.contains('alt-xcard'); });
+    var n = parseInt(grid.dataset.eager, 10) || 3;
+    function finish() {
+      if (q.stop) { return; }
+      var shown = std.filter(function (c) { return !c.hidden; }).length;
+      grid.querySelector('.alt-allempty').hidden = shown !== 0 || grid.querySelector('.alt-xcard') !== null;
+    }
+    // Default cards: the first few at once, the rest one at a time, then the added cards.
+    var tail = Promise.all(std.slice(0, n).map(load)).then(function () {
+      return std.slice(n).concat(added).reduce(function (chain, el) {
+        return chain.then(function () { return q.stop ? null : load(el); });
+      }, Promise.resolve());
+    }).then(finish);
+    // A card added later joins the end of the same line, so it never competes with one loading.
+    function enqueue(el) { tail = tail.then(function () { return q.stop || !el.isConnected ? null : load(el); }); }
+    function note(text) {
+      var el = root.querySelector('.alt-addnote');
+      el.textContent = text; el.hidden = !text;
+    }
+    function updateCards() {
+      var c = grid.querySelectorAll('.alt-xcard').length;
+      setCount('cards', c, c + ' added');
+      root.querySelector('.alt-add').disabled = c >= MAXC;
+    }
+    root.querySelector('.alt-add').addEventListener('click', function () {
+      var measures = Array.prototype.map.call(
+        root.querySelectorAll('input[name=measures]:checked'), function (b) { return b.value; });
+      if (!measures.length) { note('Tick at least one stat.'); return; }
+      if (grid.querySelectorAll('.alt-xcard').length >= MAXC) { return; }
+      note('');
+      var spec = { measures: measures, agg: f.elements.agg.value, group_by: f.elements.group_by.value || null };
+      var json = JSON.stringify(spec);
+      var el = document.createElement('section');
+      el.className = 'card alt-card alt-xcard';
+      el.dataset.card = 'custom'; el.dataset.state = 'idle'; el.dataset.spec = json;
+      el.innerHTML = '<h4><span class="alt-xtitle">New card</span>' +
+        '<button type="button" class="alt-xremove" title="Remove this card" aria-label="Remove this card">&times;</button></h4>' +
+        '<div class="alt-card-slot"><div class="skeleton alt-skel"></div></div>';
+      var keep = document.createElement('input');
+      keep.type = 'hidden'; keep.name = 'xcard'; keep.value = json;
+      keep.setAttribute('form', 'alt-builder-form');
+      el.appendChild(keep);
+      grid.insertBefore(el, grid.querySelector('.alt-allempty'));
+      grid.querySelector('.alt-allempty').hidden = true;
+      updateCards();
+      enqueue(el);
+      el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    });
+    // Hovering a legend entry fades every other stat, so one line can be followed.
+    function emphasise(e, on) {
+      var t = e.target.closest('.alt-leg') || e.target.closest('g.alt-s');
+      if (!t) { return; }
+      var scope = t.closest('.alt-agg') || t.closest('.alt-chart-pane');
+      if (!scope) { return; }
+      var s = t.dataset.s;
+      scope.querySelectorAll('g.alt-s').forEach(function (g) {
+        g.classList.toggle('alt-dim', on && g.dataset.s !== s);
+      });
+      // An index chart's axis turns into the hovered stat's own units while it is hovered.
+      var own = scope.querySelector('g.alt-yl[data-ys="' + s + '"]');
+      scope.querySelectorAll('g.alt-yl[data-ys]').forEach(function (g) { g.classList.toggle('alt-show', on && g === own); });
+      scope.querySelectorAll('g.alt-yl-def').forEach(function (g) { g.classList.toggle('alt-hide', on && !!own); });
+    }
+    root.addEventListener('mouseover', function (e) { emphasise(e, true); });
+    root.addEventListener('mouseout', function (e) { emphasise(e, false); });
+    root.addEventListener('click', function (e) {
+      // A legend entry shows or hides that stat's line or bars.
+      var lg = e.target.closest('.alt-leg');
+      if (lg) {
+        var scope = lg.closest('.alt-agg') || lg.closest('.alt-chart-pane');
+        var off = lg.classList.toggle('off');
+        lg.setAttribute('aria-pressed', off ? 'false' : 'true');
+        scope.querySelectorAll('g.alt-s[data-s="' + lg.dataset.s + '"]')
+          .forEach(function (g) { g.classList.toggle('alt-off', off); });
+      }
+      var ab = e.target.closest('.alt-aggs button');
+      if (ab) {
+        var acard = ab.closest('.alt-card');
+        window.altViews[viewKey(acard) + '|agg'] = ab.dataset.agg;
+        showAgg(acard, ab.dataset.agg);
+      }
+      var vb = e.target.closest('.alt-views button');
+      if (vb) {
+        var card = vb.closest('.alt-card');
+        window.altViews[viewKey(card)] = vb.dataset.view;
+        showView(card, vb.dataset.view);
+      }
+      if (e.target.classList.contains('alt-retry')) { load(e.target.closest('.alt-card')); }
+      if (e.target.classList.contains('alt-xremove')) { e.target.closest('.alt-card').remove(); updateCards(); }
+    });
+    updateCards();
+  })();
+  </script>
+{% endif %}
+</div>
