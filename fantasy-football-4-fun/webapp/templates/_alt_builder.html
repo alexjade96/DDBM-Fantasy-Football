@@ -105,7 +105,7 @@
       <h4>{{ g.label }} <span class="alt-hcount" data-count="{{ gkey }}"{% if not n_sel.v %} hidden{% endif %}>{{ n_sel.v }} selected</span></h4>
       <div class="alt-mboxes">
         {% for key, label, used in g["items"] %}
-        <label class="adp-check{% if not used %} alt-unused{% endif %}"
+        <label class="adp-check{% if not used %} alt-unused{% endif %}{% if key not in aa.PLAY_MEASURES %} alt-gameonly{% endif %}"
                title="{{ aa.MEASURE_HINTS.get(key, label) }}{% if not used %}.  No production for this player.{% endif %}">
           <input type="checkbox" name="measures" value="{{ key }}"
                  {% if key in sel_measures %}checked{% endif %}
@@ -131,9 +131,14 @@
           {% call field("group_by", "Group by", aa.CONTROL_HINTS.group_by, false, true) %}
           <select name="group_by" aria-label="Group by">
             <option value="">Career</option>
-            {% for k, v in aa.GROUPS.items() %}
+            {% for k, v in aa.GAME_GROUPS.items() %}
             <option value="{{ k }}" {% if k == group_by %}selected{% endif %}>{{ v }}</option>
             {% endfor %}
+            <optgroup label="Pass plays">
+              {% for k, v in aa.PLAY_GROUPS.items() %}
+              <option value="{{ k }}" {% if k == group_by %}selected{% endif %}>{{ v }}</option>
+              {% endfor %}
+            </optgroup>
           </select>
           {% endcall %}
         </div>
@@ -227,6 +232,20 @@
           {{ pick("rest", "Rest", aa.EXTRA_BANDS["rest"][2].keys()|list) }}
           </div>
         </div>
+        <div class="alt-subsec" data-blk="sub-play" title="{{ aa.CONTROL_HINTS.play }}">
+          <h5 class="alt-subhead">Play</h5>
+          <div class="alt-fields">
+          {% for k in ["man_zone", "coverage", "box", "rushers", "pressure", "ttt", "route", "formation"] %}
+          {% if k in aa.PLAY_EQ %}
+          {{ pick(k, aa.PLAY_LABELS[k], aa.PLAY_EQ[k][2].keys()|list) }}
+          {% elif k in aa.PLAY_YESNO %}
+          {{ pick(k, aa.PLAY_LABELS[k], ["Yes", "No"]) }}
+          {% else %}
+          {{ pick(k, aa.PLAY_LABELS[k], aa.PLAY_BANDS[k][2].keys()|list) }}
+          {% endif %}
+          {% endfor %}
+          </div>
+        </div>
       </div>
     </div>
 
@@ -275,7 +294,20 @@
       var el = f.querySelector('[data-count="' + key + '"]');
       if (el) { el.textContent = text; el.hidden = n === 0; }
     }
+    // Under a play filter or a pass-play grouping only passing and receiving
+    // measures can be answered; the rest are dimmed (and show a dash).
+    var PLAY = {{ aa.PLAY_KEYS | tojson }};
+    function playActive() {
+      var on = PLAY.indexOf(f.elements.group_by.value) > -1;
+      PLAY.forEach(function (k) {
+        var el = f.querySelector('[data-f="' + k + '"]');
+        if (el && !el.hidden && hasValue(el)) { on = true; }
+      });
+      return on;
+    }
     function flag() {
+      var pa = playActive();
+      f.querySelectorAll('.alt-gameonly').forEach(function (l) { l.classList.toggle('alt-playdim', pa); });
       var n = 0;
       fields().forEach(function (el) {
         if (isPlain(el)) { return; }
@@ -421,7 +453,7 @@
 
   {% if error %}<p class="empty">{{ error }}.</p>{% endif %}
   {% if result %}
-  <h3 title="{{ player.coverage_text }}">{{ result.games }} games</h3>
+  <h3 title="{{ player.coverage_text }}{% if result.play_seasons %}.  Pass-play data used: {{ result.play_seasons }}{% endif %}">{{ result.games }} games</h3>
   {% if result.rows %}
   <div class="tablewrap nosort"><table>
     <thead><tr><th>{{ result.group_label }}</th><th class="n">G</th>

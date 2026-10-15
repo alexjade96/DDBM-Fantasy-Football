@@ -1,6 +1,6 @@
 # Alternative Analytics: comparison and game-context filters (plan)
 
-Status: Stage A1 (new `player_games` columns and the filter picker) built 2026-10-14, uncommitted until confirmed.  Stage A2 (compare), Stage B and Stage C are not started.  Follows `docs/alternative-analytics-plan.md`, whose phases 1 and 3 (builder, landing tab) are built.
+Status: Stage A1 (new `player_games` columns and the filter picker) built and committed 2026-10-14.  The pass-play part of Stage C (the `pass_plays` dataset, play filters and play group-bys) built 2026-10-15, see the section below.  Stage A2 (compare) and Stage B are not started.  Follows `docs/alternative-analytics-plan.md`, whose phases 1 and 3 (builder, landing tab) are built.
 
 ## Goal
 
@@ -95,7 +95,11 @@ Already present: team, opponent, home_away, game_type, week, season, roof, surfa
 - **Opposing defender played or sat** (2016 on): needs a new small committed table, one row per player per game with snaps, built from the play-by-play participation file's defender id lists (GSIS ids, 2016 on).  PFR snap counts are an alternative, but their ids have no crosswalk to GSIS ids in this project, so participation is the cleaner source.
 - Raw play-by-play and participation files are stored locally and gitignored, so the table is derived locally and committed small.  Nothing may parse play-by-play on Render.
 
-## Stage C: play level, with phase 2 (not started)
+## Stage C: play level, with phase 2 (pass-play table BUILT 2026-10-15; the rest not started)
+
+Built: `pass_plays` (2016 on, one row per pass attempt and sack) with man or zone, coverage type, box, pass rushers, pressure, time to throw, the targeted receiver's route and formation, as filters and group-bys in Player Analytics.  Measures under a play filter are the passing and receiving ones only.  Details and checks are in the CLAUDE.md bullet "Player Analytics play-level filters".  Two corrections to the table below: pressure and time to throw are filled from 2016 (about 93%), and the route for the targeted receiver is filled from 2016 (about 90% to 93%).  Not built: personnel and defender-on-field filters, and per-defender coverage (not recorded anywhere free).
+
+Original plan:
 
 A pass-play table from play-by-play and participation, 2016 on, one row per pass play: passer, receiver, target, catch, yards, air yards, touchdown, defense coverage type (man or zone, Cover 1/2/3/4/6), pass rushers, defenders in the box, route, time to throw, pressure.  This also answers targets per quarterback.
 

@@ -1108,3 +1108,232 @@ def test_game_opponent_never_sends_a_float_season_to_the_schedule_loader(monkeyp
     assert pp._game_opponent("SF", "2016.0", 3) == "LA"
     assert pp._game_opponent("SF", "2016", 3) == "LA"
     assert seen == ["2016", "2016"]
+
+
+# -- route and coverage splits (pass_plays) -------------------------------------
+
+def _pp_frame(rows):
+    """rows: (receiver_id, passer_id, attempt, complete, yards, td, interception,
+    air_yards, route, man_zone, coverage)."""
+    df = pd.DataFrame(rows, columns=["receiver_id", "passer_id", "attempt", "complete", "yards",
+                                     "td", "interception", "air_yards", "route", "man_zone",
+                                     "coverage"])
+    df["season"] = 2025
+    df["week"] = 1
+    df["play_id"] = range(1, len(df) + 1)
+    return df
+
+
+_MAN, _ZONE = "MAN_COVERAGE", "ZONE_COVERAGE"
+
+
+def _splits_env(monkeypatch, frame):
+    from webapp.sources import nflref
+    monkeypatch.setattr(nflref, "load", lambda name, season: frame if name == "pass_plays" else pd.DataFrame())
+
+
+def _recv_profile(position="WR", gsis="00-R"):
+    return {"identity": {"player_id": "1", "position": position, "gsis_id": gsis}, "real_nfl": {}}
+
+
+def test_play_splits_receiver_routes_are_sorted_by_targets_and_leave_blanks_out(monkeypatch):
+    f = _pp_frame([
+        ("00-R", "q", 1, 1, 10, 0, 0, 5.0, "SLANT", _MAN, "COVER_1"),
+        ("00-R", "q", 1, 0, 0, 0, 0, 12.0, "GO", _ZONE, "COVER_3"),
+        ("00-R", "q", 1, 1, 8, 1, 0, 3.0, "SLANT", _ZONE, "COVER_3"),
+        ("00-R", "q", 1, 1, 6, 0, 0, None, None, None, None),          # nothing recorded
+        ("00-X", "q", 1, 1, 99, 1, 0, 9.0, "GO", _MAN, "COVER_1"),      # someone else
+    ])
+    _splits_env(monkeypatch, f)
+    ps = pp.play_splits(_recv_profile(), "2025")
+    assert ps["role"] == "receiver" and ps["plays"] == 4
+    routes = ps["routes"]
+    assert [r["label"] for r in routes["rows"]] == ["Slant", "Go"]            # most targets first
+    assert routes["recorded"] == 3 and routes["plays"] == 4
+    slant = routes["rows"][0]
+    assert (slant["n"], slant["complete"], slant["yards"], slant["td"]) == (2, 2, 18.0, 1)
+    assert slant["rate"] == pytest.approx(100.0) and slant["per"] == pytest.approx(9.0)
+    assert slant["adot"] == pytest.approx(4.0) and slant["share"] == pytest.approx(200 / 3)
+
+
+def test_play_splits_man_zone_and_coverage_follow_the_menu_order_and_count_yards_on_catches(monkeypatch):
+    f = _pp_frame([
+        ("00-R", "q", 1, 0, 25, 0, 0, 20.0, "GO", _ZONE, "COVER_3"),     # incomplete: no yards
+        ("00-R", "q", 1, 1, 9, 0, 0, 4.0, "SLANT", _ZONE, "COVER_2"),
+        ("00-R", "q", 1, 1, 14, 0, 0, 6.0, "IN/DIG", _MAN, "2_MAN"),
+        ("00-R", "q", 1, 1, 3, 1, 0, 1.0, "SWING", _MAN, "COVER_1"),
+    ])
+    _splits_env(monkeypatch, f)
+    ps = pp.play_splits(_recv_profile(), "2025")
+    assert [r["label"] for r in ps["man_zone"]["rows"]] == ["Man", "Zone"]
+    man, zone = ps["man_zone"]["rows"]
+    assert (man["n"], man["yards"], man["td"]) == (2, 17.0, 1)
+    assert (zone["n"], zone["complete"], zone["yards"]) == (2, 1, 9.0)       # the 25 is not counted
+    assert [r["label"] for r in ps["coverage"]["rows"]] == ["Cover 1", "Cover 2", "2-man", "Cover 3"]
+
+
+def test_play_splits_passer_counts_attempts_not_sacks_and_has_no_routes(monkeypatch):
+    f = _pp_frame([
+        (None, "00-Q", 1, 1, 12, 1, 0, 8.0, None, _MAN, "COVER_1"),
+        (None, "00-Q", 1, 0, 0, 0, 1, 15.0, None, _MAN, "COVER_1"),
+        (None, "00-Q", 0, 0, -7, 0, 0, None, None, _MAN, "COVER_1"),     # a sack
+        (None, "00-Z", 1, 1, 50, 0, 0, 30.0, None, _MAN, "COVER_1"),     # another passer
+    ])
+    _splits_env(monkeypatch, f)
+    prof = {"identity": {"player_id": "2", "position": "QB", "gsis_id": "00-Q"}, "real_nfl": {}}
+    ps = pp.play_splits(prof, "2025")
+    assert ps["role"] == "passer" and ps["routes"] is None and ps["plays"] == 2
+    man = ps["man_zone"]["rows"][0]
+    assert (man["n"], man["complete"], man["yards"], man["td"], man["interceptions"]) == (2, 1, 12.0, 1, 1)
+    assert man["rate"] == pytest.approx(50.0) and "adot" not in man
+
+
+def test_play_splits_does_not_apply_to_other_positions(monkeypatch):
+    _splits_env(monkeypatch, _pp_frame([("00-R", "q", 1, 1, 5, 0, 0, 1.0, "GO", _MAN, "COVER_1")]))
+    for pos in ("K", "LB", "CB", "DEF", None):
+        assert pp.play_splits(_recv_profile(pos), "2025") is None
+
+
+def test_play_splits_falls_back_to_the_player_stats_id_when_sleeper_has_none(monkeypatch):
+    f = _pp_frame([("00-R", "q", 1, 1, 5, 0, 0, 1.0, "GO", _MAN, "COVER_1")])
+    _splits_env(monkeypatch, f)
+    prof = _recv_profile(gsis=None)
+    assert pp.play_splits(prof, "2025")["plays"] == 0                        # no id, nothing to match
+    prof["real_nfl"] = {"player_stats": {"rows": [{"player_id": " 00-R"}, {"player_id": "00-R"}]}}
+    assert pp._play_gsis(prof) == "00-R"
+    assert pp.play_splits(prof, "2025")["plays"] == 1
+
+
+def test_play_splits_with_no_season_data_is_an_empty_shell_not_none(monkeypatch):
+    _splits_env(monkeypatch, pd.DataFrame())
+    ps = pp.play_splits(_recv_profile(), "2026")
+    assert ps == {"role": "receiver", "plays": 0, "routes": None, "man_zone": None, "coverage": None}
+    # a season whose plays have no scheme recorded at all (nflverse has not published it)
+    f = _pp_frame([("00-R", "q", 1, 1, 5, 0, 0, 1.0, None, None, None)])
+    _splits_env(monkeypatch, f)
+    ps = pp.play_splits(_recv_profile(), "2026")
+    assert ps["plays"] == 1 and ps["routes"] is None and ps["man_zone"] is None and ps["coverage"] is None
+
+
+def test_play_splits_equal_the_player_analytics_engine(monkeypatch):
+    """The profile and Player Analytics read the same plays through the same
+    labels, so their numbers cannot disagree."""
+    from webapp import alt_analytics as aa
+    f = _pp_frame([
+        ("00-R", "q", 1, 1, 10, 0, 0, 5.0, "SLANT", _MAN, "COVER_1"),
+        ("00-R", "q", 1, 0, 0, 0, 0, 12.0, "GO", _ZONE, "COVER_3"),
+        ("00-R", "q", 1, 1, 8, 1, 0, 3.0, "SLANT", _ZONE, "COVER_3"),
+    ])
+    _splits_env(monkeypatch, f)
+    ps = pp.play_splits(_recv_profile(), "2025")
+    games = pd.DataFrame({"player_id": "00-R", "position": "WR", "season": [2025], "week": [1],
+                          "game_type": "REG", "opponent": "KC", "home_away": "Home"})
+    monkeypatch.setattr(aa, "load_plays", lambda pid, passer: f.assign(season=2025))
+    monkeypatch.setattr(aa, "_play_coverage", {2025: {"man_zone": 1.0, "route": 1.0, "coverage": 1.0}})
+    for blk, key in (("man_zone", "man_zone"), ("coverage", "coverage"), ("routes", "route")):
+        for row in ps[blk]["rows"]:
+            r = aa.run_query(games, {"measures": ["targets", "receptions", "receiving_yards",
+                                                  "receiving_tds"], "agg": "total",
+                                     "group_by": None, "filters": {key: row["label"]}})["rows"][0]
+            assert [r["targets"], r["receptions"], r["receiving_yards"], r["receiving_tds"]] == \
+                [row["n"], row["complete"], row["yards"], row["td"]], (blk, row["label"])
+
+
+# -- per-game play list (play_log) -----------------------------------------------
+
+def _log_frame(rows):
+    """rows: (play_id, qtr, down, ydstogo, yardline, clock, receiver_id, passer_id, complete,
+    yards, td, interception, sack, route, man_zone, coverage)."""
+    df = pd.DataFrame(rows, columns=["play_id", "qtr", "down", "ydstogo", "yardline", "clock",
+                                     "receiver_id", "passer_id", "complete", "yards", "td",
+                                     "interception", "sack", "route", "man_zone", "coverage"])
+    df["attempt"] = 1 - df["sack"]
+    df["season"] = 2025
+    df["week"] = 4
+    df["air_yards"] = 5.0
+    df["box"] = 6.0
+    df["rushers"] = 4.0
+    df["pressure"] = 0.0
+    df["ttt"] = 2.5
+    df["formation"] = "SHOTGUN"
+    return df
+
+
+def _playlog_env(monkeypatch, frame):
+    from webapp.sources import nflref
+    monkeypatch.setattr(nflref, "load", lambda name, season: frame if name == "pass_plays" else pd.DataFrame())
+
+
+def test_play_log_lists_a_receivers_targets_in_game_order_with_the_situation(monkeypatch):
+    f = _log_frame([
+        (30, 2, 3, 7, 35.0, 74.0, "00-R", "q", 1, 12, 1, 0, 0, "SLANT", _MAN, "COVER_1"),
+        (10, 1, 1, 10, 75.0, 861.0, "00-R", "q", 0, 0, 0, 0, 0, "GO", _ZONE, "COVER_3"),
+        (20, 1, 2, 10, 60.0, 600.0, "00-R", "q", 1, 8, 0, 0, 0, None, None, None),
+        (5, 1, 1, 10, 80.0, 900.0, "00-X", "q", 1, 50, 0, 0, 0, "GO", _MAN, "COVER_1"),   # other player
+    ])
+    _playlog_env(monkeypatch, f)
+    pl = pp.play_log(_recv_profile(), "2025", 4)
+    assert pl["role"] == "receiver" and pl["scheme"] is True
+    rows = pl["rows"]
+    assert [r["n"] for r in rows] == [1, 2, 3] and [r["result"] for r in rows] == \
+        ["Incomplete", "Caught, 8 yds", "Caught, 12 yds, TD"]                  # game order, play id
+    assert rows[0]["qtr"] == "Q1" and rows[0]["down_dist"] == "1st & 10"
+    assert rows[0]["field"] == "Own 25" and rows[0]["clock"] == "14:21"
+    assert rows[1]["field"] == "Own 40" and rows[2]["field"] == "Opp 35" and rows[2]["down_dist"] == "3rd & 7"
+    assert rows[0]["route"] == "Go" and rows[0]["man_zone"] == "Zone" and rows[0]["coverage"] == "Cover 3"
+    assert rows[1]["route"] is None and rows[1]["man_zone"] is None            # NaN scrubbed to None
+    assert rows[0]["box"] == 6 and rows[0]["rushers"] == 4 and rows[0]["pressure"] == "No"
+    assert rows[0]["ttt"] == 2.5 and rows[0]["formation"] == "Shotgun" and rows[0]["air_yards"] == 5
+    assert rows[2]["td"] is True
+
+
+def test_play_log_summary_counts_attempts_not_sacks_and_a_quarterback_has_no_route(monkeypatch):
+    f = _log_frame([
+        (1, 1, 1, 10, 75.0, 861.0, None, "00-Q", 1, 12, 1, 0, 0, "SLANT", _MAN, "COVER_1"),
+        (2, 1, 2, 10, 60.0, 600.0, None, "00-Q", 0, 0, 0, 1, 0, None, _MAN, "COVER_1"),
+        (3, 2, 3, 8, 50.0, 300.0, None, "00-Q", 0, -7, 0, 0, 1, None, _ZONE, "COVER_3"),
+    ])
+    _playlog_env(monkeypatch, f)
+    prof = {"identity": {"player_id": "2", "position": "QB", "gsis_id": "00-Q"}, "real_nfl": {}}
+    pl = pp.play_log(prof, "2025", 4)
+    assert pl["role"] == "passer" and len(pl["rows"]) == 3                      # the sack is listed
+    assert [r["result"] for r in pl["rows"]] == ["Complete, 12 yds, TD", "Interception", "Sack, -7 yds"]
+    assert pl["rows"][2]["sack"] is True and pl["rows"][1]["interception"] is True
+    assert pl["man_zone"]["recorded"] == 2                                       # attempts only
+    man = pl["man_zone"]["rows"][0]
+    assert (man["label"], man["n"], man["complete"], man["interceptions"]) == ("Man", 2, 1, 1)
+
+
+def test_play_log_flags_a_game_with_no_recorded_scheme_and_handles_empties(monkeypatch):
+    f = _log_frame([(1, 1, 1, 10, 75.0, 861.0, "00-R", "q", 1, 5, 0, 0, 0, None, None, None)])
+    _playlog_env(monkeypatch, f)
+    pl = pp.play_log(_recv_profile(), "2025", 4)
+    assert pl["scheme"] is False and len(pl["rows"]) == 1 and pl["man_zone"] is None
+    assert pp.play_log(_recv_profile(), "2025", 9)["rows"] == []              # a week he had no play
+    _playlog_env(monkeypatch, pd.DataFrame())
+    assert pp.play_log(_recv_profile(), "2025", 4)["rows"] == []
+    assert pp.play_log(_recv_profile("LB"), "2025", 4) is None                # not a position it covers
+
+
+def test_situation_strings_for_overtime_and_missing_values():
+    row = {"qtr": 5.0, "down": float("nan"), "ydstogo": 2.0, "yardline": float("nan"), "clock": 65.0}
+    s = pp._situation(row)
+    assert s == {"qtr": "OT", "down_dist": None, "field": None, "clock": "1:05"}
+    row = {"qtr": 4.0, "down": 4.0, "ydstogo": 1.0, "yardline": 50.0, "clock": 0.0}
+    assert pp._situation(row) == {"qtr": "Q4", "down_dist": "4th & 1", "field": "Opp 50", "clock": "0:00"}
+    row = {"qtr": 3.0, "down": 2.0, "ydstogo": 9.0, "yardline": 99.0, "clock": 600.0}
+    assert pp._situation(row)["field"] == "Own 1"
+
+
+def test_play_log_lines_up_with_the_season_split_and_the_game_total(monkeypatch):
+    f = _log_frame([
+        (1, 1, 1, 10, 75.0, 861.0, "00-R", "q", 1, 12, 1, 0, 0, "SLANT", _MAN, "COVER_1"),
+        (2, 1, 2, 10, 60.0, 600.0, "00-R", "q", 0, 0, 0, 0, 0, "GO", _ZONE, "COVER_3"),
+        (3, 2, 3, 7, 35.0, 74.0, "00-R", "q", 1, 8, 0, 0, 0, "SLANT", _ZONE, "COVER_3"),
+    ])
+    _playlog_env(monkeypatch, f)
+    log = pp.play_log(_recv_profile(), "2025", 4)
+    season = pp.play_splits(_recv_profile(), "2025")
+    assert [(r["label"], r["n"], r["yards"]) for r in log["man_zone"]["rows"]] == \
+        [(r["label"], r["n"], r["yards"]) for r in season["man_zone"]["rows"]]
+    assert sum(r["n"] for r in log["man_zone"]["rows"]) == len(log["rows"])

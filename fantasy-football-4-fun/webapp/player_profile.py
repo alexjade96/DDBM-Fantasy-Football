@@ -1335,6 +1335,206 @@ def scope_profile(profile: dict, season: str | None) -> dict:
     }
 
 
+# -- route and coverage splits (from the play-level `pass_plays` table) -------------
+
+_PASSER_POS = {"QB"}
+_RECEIVER_POS = {"RB", "WR", "TE", "FB"}
+
+
+def _play_gsis(profile: dict) -> str | None:
+    """The nflverse (GSIS) id the pass-play table is keyed on.  Sleeper's own
+    `gsis_id` is missing for a majority of players, so fall back to the id on
+    this player's `player_stats` rows (matched by name and position)."""
+    ident = profile.get("identity") or {}
+    if ident.get("gsis_id"):
+        return ident["gsis_id"]
+    rows = (((profile.get("real_nfl") or {}).get("player_stats") or {}).get("rows")) or []
+    ids = [str(r["player_id"]).strip() for r in rows if r.get("player_id")]
+    return max(set(ids), key=ids.count) if ids else None
+
+
+def _split_row(label: str, sub: pd.DataFrame, passer: bool) -> dict:
+    """One line of a split table: the same figures Player Analytics computes
+    from the same plays (yards on completions, a sack is not an attempt)."""
+    n = int(len(sub))
+    cmp_ = sub["complete"] == 1
+    yds = float(pd.to_numeric(sub.loc[cmp_, "yards"], errors="coerce").sum())
+    td = int((sub["td"] == 1).sum())
+    out = {"label": label, "n": n, "complete": int(cmp_.sum()), "yards": yds, "td": td,
+           "rate": (100.0 * cmp_.sum() / n) if n else None,
+           "per": (yds / n) if n else None}
+    if passer:
+        out["interceptions"] = int((sub["interception"] == 1).sum())
+    else:
+        air = pd.to_numeric(sub["air_yards"], errors="coerce").dropna()
+        out["adot"] = float(air.mean()) if len(air) else None
+    return out
+
+
+def _split_block(pl: pd.DataFrame, key: str, passer: bool, by_count: bool) -> dict | None:
+    """Rows of one play field (route, man or zone, coverage type) for one
+    player's plays.  `recorded` is how many plays had a value, `plays` how many
+    there were; a play with no value is in no row.  None when nothing was
+    recorded."""
+    from webapp import alt_analytics as aa
+
+    vals = aa._play_values(pl, key)
+    recorded = int(vals.notna().sum())
+    if recorded == 0:
+        return None
+    order = aa._play_order(key)
+    rows = [_split_row(lab, pl[vals == lab], passer) for lab in order if (vals == lab).any()]
+    for r in rows:
+        r["share"] = 100.0 * r["n"] / recorded
+    if by_count:
+        rows.sort(key=lambda r: -r["n"])
+    return {"rows": rows, "recorded": recorded, "plays": int(len(pl))}
+
+
+def play_splits(profile: dict, season: str | None) -> dict | None:
+    """The player's targets by route and results against man or zone and each
+    coverage type, for ONE season (the page's season dropdown), from the
+    committed `pass_plays` snapshot.  A quarterback is read as a passer, a
+    running back, wide receiver or tight end as a receiver; any other position
+    returns None (the sections do not apply).  Route is the TARGETED receiver's
+    route only, so it is a receiver table.  A play with no recorded value is in
+    no row; `recorded` against `plays` says how many that was.
+
+    {"role", "plays", "routes", "man_zone", "coverage"} with each of the last
+    three a block (see `_split_block`) or None; `plays` is 0 when the season has
+    no pass-play data for him."""
+    pos = ((profile.get("identity") or {}).get("position") or "").upper()
+    if pos in _PASSER_POS:
+        passer = True
+    elif pos in _RECEIVER_POS:
+        passer = False
+    else:
+        return None
+    out = {"role": "passer" if passer else "receiver", "plays": 0,
+           "routes": None, "man_zone": None, "coverage": None}
+    gsis = _play_gsis(profile)
+    if not gsis or not season:
+        return out
+    try:
+        from webapp.sources import nflref
+        df = nflref.load("pass_plays", str(season))
+    except Exception:
+        return out
+    if df is None or df.empty:
+        return out
+    pl = df[df["passer_id" if passer else "receiver_id"] == gsis]
+    pl = pl[pl["attempt"] == 1]
+    if pl.empty:
+        return out
+    out["plays"] = int(len(pl))
+    if not passer:
+        out["routes"] = _split_block(pl, "route", False, by_count=True)
+    out["man_zone"] = _split_block(pl, "man_zone", passer, by_count=False)
+    out["coverage"] = _split_block(pl, "coverage", passer, by_count=False)
+    return out
+
+
+# -- per-game play list for the game log -------------------------------------------
+
+_ORDINAL = {1: "1st", 2: "2nd", 3: "3rd", 4: "4th"}
+
+
+def _num(v):
+    """A float, or None for a missing value (pandas NaN is neither None nor falsy)."""
+    return None if v is None or pd.isna(v) else float(v)
+
+
+def _situation(r) -> dict:
+    """Quarter, down and distance, field position and clock for one play, as the
+    display strings the game-detail table shows (a dash-worthy field is None)."""
+    qtr, down, togo = _num(r["qtr"]), _num(r["down"]), _num(r["ydstogo"])
+    yard, clock = _num(r["yardline"]), _num(r["clock"])
+    qlabel = ("OT" if qtr and qtr >= 5 else f"Q{int(qtr)}") if qtr else None
+    dd = None
+    if down is not None and int(down) in _ORDINAL:
+        dd = f"{_ORDINAL[int(down)]} & {int(togo)}" if togo is not None else _ORDINAL[int(down)]
+    field = None
+    if yard is not None:                    # yardline is yards from the opponent's goal line
+        field = f"Opp {int(round(yard))}" if yard <= 50 else f"Own {int(round(100 - yard))}"
+    clk = f"{int(clock) // 60}:{int(clock) % 60:02d}" if clock is not None else None
+    return {"qtr": qlabel, "down_dist": dd, "field": field, "clock": clk}
+
+
+def _play_result(r, passer: bool) -> str:
+    yds = _num(r["yards"])
+    n = f"{int(yds)} yd{'s' if abs(int(yds)) != 1 else ''}" if yds is not None else ""
+    if r["sack"] == 1:
+        return f"Sack, {n}" if n else "Sack"
+    if r["interception"] == 1:
+        return "Interception"
+    if r["complete"] == 1:
+        word = "Complete" if passer else "Caught"
+        return f"{word}, {n}, TD" if r["td"] == 1 else f"{word}, {n}"
+    return "Incomplete"
+
+
+def play_log(profile: dict, season: str, week: int) -> dict | None:
+    """Every pass play this player was on in ONE game (a quarterback's dropbacks
+    and sacks, a receiver's targets), in game order, with the situation and the
+    defense's scheme, plus a man-or-zone summary of the game.  None when the
+    position has no such table (the section does not apply).
+
+    {"role", "rows", "man_zone", "scheme"}: `rows` is empty for a game with no
+    plays (a game he did not play, or a season with no pass-play data);
+    `scheme` is True when any play has a coverage recorded (False for a season
+    nflverse has not published the participation file for, shown as a note
+    rather than a table of dashes).  Same plays and labels as Player Analytics
+    and the season view (`play_splits`)."""
+    from webapp import alt_analytics as aa
+
+    pos = ((profile.get("identity") or {}).get("position") or "").upper()
+    if pos in _PASSER_POS:
+        passer = True
+    elif pos in _RECEIVER_POS:
+        passer = False
+    else:
+        return None
+    out = {"role": "passer" if passer else "receiver", "rows": [], "man_zone": None,
+           "scheme": False}
+    gsis = _play_gsis(profile)
+    if not gsis or not season:
+        return out
+    try:
+        from webapp.sources import nflref
+        df = nflref.load("pass_plays", str(season))
+    except Exception:
+        return out
+    if df is None or df.empty:
+        return out
+    pl = df[(df["passer_id" if passer else "receiver_id"] == gsis) & (df["week"] == int(week))]
+    if pl.empty:
+        return out
+    pl = pl.sort_values("play_id").reset_index(drop=True)
+    labels = {k: [None if pd.isna(v) else v for v in aa._play_values(pl, k)]
+              for k in ("route", "man_zone", "coverage", "formation", "pressure")}
+    out["scheme"] = any(v is not None for v in labels["coverage"] + labels["man_zone"])
+    rows = []
+    for i, r in pl.iterrows():
+        sit = _situation(r)
+        air = _num(r["air_yards"])
+        box, rush, ttt = _num(r["box"]), _num(r["rushers"]), _num(r["ttt"])
+        rows.append({
+            "n": i + 1, **sit,
+            "route": labels["route"][i] if not passer else None,
+            "man_zone": labels["man_zone"][i], "coverage": labels["coverage"][i],
+            "box": int(box) if box is not None else None,
+            "rushers": int(rush) if rush is not None else None,
+            "pressure": labels["pressure"][i], "ttt": ttt,
+            "formation": labels["formation"][i],
+            "result": _play_result(r, passer), "air_yards": int(air) if air is not None else None,
+            "td": bool(r["td"] == 1), "complete": bool(r["complete"] == 1),
+            "sack": bool(r["sack"] == 1), "interception": bool(r["interception"] == 1),
+        })
+    out["rows"] = rows
+    out["man_zone"] = _split_block(pl[pl["attempt"] == 1], "man_zone", passer, by_count=False)
+    return out
+
+
 _PRACTICE_SHORT = {
     "Full Participation in Practice": "Full",
     "Limited Participation in Practice": "Limited",

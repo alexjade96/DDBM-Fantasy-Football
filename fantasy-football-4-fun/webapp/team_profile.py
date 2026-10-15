@@ -1447,6 +1447,113 @@ def _route_summary_rows(stats: dict) -> list[dict]:
     return sorted(out, key=lambda r: r["Routes"], reverse=True)
 
 
+_COMPARE_POS = {"QB": "QB", "RB": "RB", "FB": "RB", "WR": "WR", "TE": "TE"}
+
+
+def _team_pass_plays(abbr: str, season: str) -> pd.DataFrame:
+    """This team's pass attempts for one season from the play-level `pass_plays`
+    table (empty when the abbreviation or season has none), read once per profile
+    build and sliced by week per game."""
+    if not abbr or not season:
+        return pd.DataFrame()
+    try:
+        from webapp.sources import nflref
+        df = nflref.load("pass_plays", str(season))
+    except Exception:
+        return pd.DataFrame()
+    if df is None or df.empty:
+        return pd.DataFrame()
+    return df[(df["team"] == abbr) & (df["attempt"] == 1)]
+
+
+def _plays_line(sub: pd.DataFrame) -> tuple[int, int, int, int, int]:
+    """(attempts or targets, completions, yards on completions, TDs, INTs)."""
+    cmp_ = sub["complete"] == 1
+    return (int(len(sub)), int(cmp_.sum()),
+            int(pd.to_numeric(sub.loc[cmp_, "yards"], errors="coerce").sum()),
+            int((sub["td"] == 1).sum()), int((sub["interception"] == 1).sum()))
+
+
+def _play_compare(plays_week: pd.DataFrame, names: dict[str, tuple[str, str]]) -> dict | None:
+    """One team game's routes and coverage, one block per position group (QB, RB,
+    WR, TE) so the team's players at the same position read side by side.
+
+    `plays_week` is that game's pass attempts (see `_team_pass_plays`); `names`
+    maps nflverse id -> (name, position) from the game's own box-score rows.
+    A quarterback is credited his attempts, everyone else his targets (a
+    throwaway has no target, so the receiver groups can total fewer than the
+    quarterback's attempts); a player with no name or an unlisted position
+    (a kicker's trick play) is left out.  Returns None when the game has no
+    plays or no nameable player, else {"scheme": bool, "groups": [{"group", "role", "man_zone",
+    "coverage", "routes"}]}, each table a list of display-ready dict rows (the
+    keys are the column headings, as `_route_summary_rows` does) ending in a
+    Team row.  `scheme` is False when no play has a coverage recorded (a season
+    nflverse has not published yet); the groups are then empty and the page shows
+    a note.  Route is the targeted receiver's own route, so QBs get no route
+    table.  Coverage and route columns are only the ones that appear in this
+    game, kept the same on every row."""
+    from webapp import alt_analytics as aa
+
+    if plays_week is None or plays_week.empty:
+        return None
+    pw = plays_week.sort_values("play_id").reset_index(drop=True)
+    labels = {k: aa._play_values(pw, k) for k in ("man_zone", "coverage", "route")}
+    scheme = bool(labels["man_zone"].notna().any() or labels["coverage"].notna().any())
+    out = {"scheme": scheme, "groups": []}
+    if not scheme:
+        return out
+
+    for group in ("QB", "RB", "WR", "TE"):
+        passer = group == "QB"
+        col = "passer_id" if passer else "receiver_id"
+        by_player: dict[str, list[int]] = {}
+        for i, pid in pw[col].items():
+            nm = names.get(pid) if isinstance(pid, str) else None
+            if nm and _COMPARE_POS.get(nm[1]) == group:
+                by_player.setdefault(pid, []).append(i)
+        if not by_player:
+            continue
+        order = sorted(by_player, key=lambda p: -len(by_player[p]))
+        unit = "Att" if passer else "Tgt"
+        done = "Cmp" if passer else "Rec"
+
+        def line(prefix: str, sub: pd.DataFrame) -> dict:
+            n, c, y, t, it = _plays_line(sub)
+            row = {f"{prefix}{unit}": n, f"{prefix}{done}": c, f"{prefix}Yds": y}
+            if not prefix:
+                row["TD"] = t
+                if passer:
+                    row["INT"] = it
+            return row
+
+        man_zone, coverage, routes = [], [], []
+        cov_cols = [l for l in aa._play_order("coverage")
+                    if any((labels["coverage"].iloc[by_player[p]] == l).any() for p in order)]
+        route_cols = [l for l in aa._play_order("route")
+                      if any((labels["route"].iloc[by_player[p]] == l).any() for p in order)]
+        for who in [*order, None]:                      # None = the Team row
+            idx = [i for p in order for i in by_player[p]] if who is None else by_player[who]
+            sub = pw.iloc[idx]
+            name = "Team" if who is None else names[who][0]
+            mz = labels["man_zone"].iloc[idx]
+            row = {"player": name, **line("", sub),
+                   **line("Man ", sub[(mz == "Man").values]),
+                   **line("Zone ", sub[(mz == "Zone").values])}
+            man_zone.append(row)
+            cv = labels["coverage"].iloc[idx]
+            coverage.append({"player": name, **{l: int((cv == l).sum()) for l in cov_cols}})
+            if not passer:
+                rt = labels["route"].iloc[idx]
+                routes.append({"player": name, **{l: int((rt == l).sum()) for l in route_cols}})
+        out["groups"].append({"group": group, "role": "passer" if passer else "receiver",
+                              "man_zone": man_zone,
+                              "coverage": coverage if cov_cols else [],
+                              "routes": routes if route_cols else []})
+    # a scheme was recorded but nobody could be named: nothing to compare, and
+    # not the same thing as "no coverage recorded", so no block and no note
+    return out if out["groups"] else None
+
+
 def _attach_week_stats(schedule: list[dict], team_datasets: dict,
                        roster: list[dict] | None = None, abbr: str = "",
                        season: str = "") -> list[dict]:
@@ -1530,11 +1637,13 @@ def _attach_week_stats(schedule: list[dict], team_datasets: dict,
     """
     route_unavailable = str(season) in (
         team_datasets.get("route_participation_unavailable_seasons") or set())
+    plays_all = _team_pass_plays(abbr, season)
     out = []
     for g in schedule:
         wk = g.get("week")
         role_rows: dict[str, list[dict]] = {}
         game_type = None
+        ps_week: list[dict] = []
         if wk is not None:
             for ds, rows in team_datasets.items():
                 if ds == "route_participation_unavailable_seasons":
@@ -1549,6 +1658,7 @@ def _attach_week_stats(schedule: list[dict], team_datasets: dict,
                     for bucket, rows_b in _split_snap_counts(hit).items():
                         role_rows[f"snap_counts_{bucket}"] = rows_b
                 elif ds == "player_stats":
+                    ps_week = hit
                     for bucket, rows_b in _split_player_stats(hit).items():
                         role_rows[f"player_stats_{bucket}"] = rows_b
                 elif ds == "sleeper":
@@ -1567,6 +1677,13 @@ def _attach_week_stats(schedule: list[dict], team_datasets: dict,
         stats["kicker_groups"] = _kicker_groups(stats)
         stats["route_summary"] = _route_summary_rows(stats)
         stats["route_unavailable"] = route_unavailable
+        # Routes and coverage by position (play-level), for same-team,
+        # same-position comparison; None when the game has no plays.
+        names = {str(r["player_id"]).strip(): (r.get("player_display_name"), r.get("position"))
+                 for r in ps_week if r.get("player_id") and r.get("player_display_name")}
+        stats["play_compare"] = (
+            _play_compare(plays_all[plays_all["week"] == wk], names)
+            if wk is not None and not plays_all.empty else None)
         stats["off_position_cols"] = _off_position_cols_for_game(stats)
         out.append({**g, "stats": stats, "game_type": game_type})
     return out

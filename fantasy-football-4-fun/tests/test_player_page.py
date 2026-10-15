@@ -496,3 +496,112 @@ def test_player_game_detail_shows_injury_card_and_dnp_note(monkeypatch, _fake_pr
     assert "Injury report" not in plain
     played = app.player_game_detail(_Req(), "5995", "2025", 3).body.decode()
     assert "Injury report" in played and "Questionable" in played and "Did not play" not in played
+
+
+# -- route and coverage sections -------------------------------------------------
+
+def _row(label, n=10, **kw):
+    r = {"label": label, "n": n, "complete": 7, "yards": 91.0, "td": 1, "rate": 70.0,
+         "per": 9.1, "adot": 7.5, "share": 50.0}
+    r.update(kw)
+    return r
+
+
+def _splits(role="receiver", **kw):
+    base = {"role": role, "plays": 20,
+            "routes": {"rows": [_row("Slant")], "recorded": 19, "plays": 20} if role == "receiver" else None,
+            "man_zone": {"rows": [_row("Man"), _row("Zone", 10)], "recorded": 20, "plays": 20},
+            "coverage": {"rows": [_row("Cover 3", 6)], "recorded": 18, "plays": 20}}
+    base.update(kw)
+    return base
+
+
+def test_player_page_shows_route_and_coverage_sections_before_injuries(monkeypatch, _fake_profile):
+    monkeypatch.setattr(pp, "play_splits", lambda profile, season: _splits())
+    body = app.player_page(_Req(), player_id="5995", render=1).body.decode()
+    assert "<h2>Targets by route" in body and "<h2>Vs coverage" in body
+    assert body.index("<h2>Advanced") < body.index("<h2>Targets by route") < body.index("<h2>Vs coverage") \
+        < body.index("<h2>Injuries")
+    assert "19 of 20 targets have a route recorded" in body
+    assert "18 of 20 targets have a coverage recorded" in body
+    sec = body[body.index("<h2>Targets by route"):body.index("<h2>Injuries")]
+    assert "Slant" in sec and "Cover 3" in sec and "Man or zone" in sec and "Coverage type" in sec
+    assert "Catch %" in sec and "aDOT" in sec and "Share" in sec
+    assert "&amp;ndash;" not in sec and "nan" not in sec.lower().replace("&ndash;", "")
+
+
+def test_player_page_quarterback_gets_coverage_only_with_passing_columns(monkeypatch, _fake_profile):
+    qb_row = _row("Man", interceptions=2)
+    monkeypatch.setattr(pp, "play_splits", lambda profile, season: _splits(
+        "passer", man_zone={"rows": [qb_row], "recorded": 20, "plays": 20}, coverage=None))
+    body = app.player_page(_Req(), player_id="5995", render=1).body.decode()
+    assert "<h2>Targets by route" not in body and "<h2>Vs coverage" in body
+    sec = body[body.index("<h2>Vs coverage"):body.index("<h2>Injuries")]
+    assert "Cmp %" in sec and "Yds/att" in sec and "INT" in sec and "aDOT" not in sec
+    assert "have a coverage recorded" not in sec            # no coverage-type block, so no hint
+
+
+def test_player_page_play_sections_are_absent_for_other_positions(monkeypatch, _fake_profile):
+    monkeypatch.setattr(pp, "play_splits", lambda profile, season: None)
+    body = app.player_page(_Req(), player_id="5995", render=1).body.decode()
+    assert "<h2>Targets by route" not in body and "<h2>Vs coverage" not in body
+
+
+def test_player_page_play_sections_say_so_when_a_season_has_no_data(monkeypatch, _fake_profile):
+    monkeypatch.setattr(pp, "play_splits", lambda profile, season: {
+        "role": "receiver", "plays": 0, "routes": None, "man_zone": None, "coverage": None})
+    body = app.player_page(_Req(), player_id="5995", render=1).body.decode()
+    assert "No route data for this player in 2025" in body
+    assert "No coverage data for this player in 2025" in body
+
+
+def test_player_season_fragment_passes_the_chosen_season_to_play_splits(monkeypatch, _fake_profile_with_seasons):
+    seen = []
+    monkeypatch.setattr(pp, "play_splits", lambda profile, season: seen.append(season) or _splits())
+    app.player_season_sections(_Req(), player_id="5995", season_scope="2024")
+    assert seen == ["2024"]
+
+
+# -- pass plays in the game detail ---------------------------------------------
+
+def _play_log_stub(role="receiver", scheme=True, rows=None):
+    row = {"n": 1, "qtr": "Q1", "down_dist": "2nd & 5", "field": "Own 35", "clock": "14:31",
+           "route": "Slant", "man_zone": "Zone", "coverage": "Cover 3", "box": 6, "rushers": 4,
+           "pressure": "No", "ttt": 2.4, "formation": "Shotgun", "result": "Caught, 4 yds",
+           "air_yards": 4, "td": False, "complete": True, "sack": False, "interception": False}
+    rows = [row, {**row, "n": 2, "route": None, "man_zone": None, "coverage": None, "box": None,
+                  "pressure": None, "ttt": None, "formation": None, "air_yards": None,
+                  "result": "Caught, 12 yds, TD", "td": True}] if rows is None else rows
+    return {"role": role, "rows": rows, "scheme": scheme,
+            "man_zone": {"rows": [_row("Zone", 2)], "recorded": 1, "plays": 2}}
+
+
+def test_player_game_detail_lists_the_pass_plays(monkeypatch, _fake_profile):
+    _game_log_profile(monkeypatch, _fake_profile)
+    monkeypatch.setattr(pp, "play_log", lambda profile, season, week: _play_log_stub())
+    body = app.player_game_detail(_Req(), "5995", "2025", 3).body.decode()
+    assert "Pass plays" in body and "(2 targets)" in body
+    sec = body[body.index("Pass plays"):]
+    for text in ("2nd &amp; 5", "Own 35", "14:31", "Slant", "Cover 3", "Shotgun", "Caught, 4 yds",
+                 "Caught, 12 yds, TD", "Route", "Man/zone"):
+        assert text in sec
+    assert "bench-impact" in sec                                       # the TD row is highlighted
+    assert "&amp;ndash;" not in sec and "nan" not in sec.lower().replace("&ndash;", "")
+    assert "Coverage and route are not recorded" not in sec
+
+
+def test_player_game_detail_quarterback_table_has_no_route_column_and_a_note_without_scheme(monkeypatch, _fake_profile):
+    _game_log_profile(monkeypatch, _fake_profile)
+    monkeypatch.setattr(pp, "play_log", lambda profile, season, week: _play_log_stub("passer", False))
+    body = app.player_game_detail(_Req(), "5995", "2025", 3).body.decode()
+    sec = body[body.index("Pass plays"):]
+    assert "(2 dropbacks)" in sec and "<th>Route</th>" not in sec
+    assert "Coverage and route are not recorded for this game" in sec
+
+
+def test_player_game_detail_has_no_pass_play_block_when_there_are_no_plays(monkeypatch, _fake_profile):
+    _game_log_profile(monkeypatch, _fake_profile)
+    for value in (None, _play_log_stub(rows=[])):
+        monkeypatch.setattr(pp, "play_log", lambda profile, season, week, v=value: v)
+        body = app.player_game_detail(_Req(), "5995", "2025", 3).body.decode()
+        assert "Pass plays" not in body

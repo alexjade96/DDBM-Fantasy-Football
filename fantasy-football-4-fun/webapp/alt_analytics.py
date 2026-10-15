@@ -28,11 +28,75 @@ GAME_TYPE_LABELS = {"REG": "Regular season", "WC": "Wild card", "DIV": "Division
                     "CON": "Conference championship", "SB": "Super Bowl"}
 HOME_AWAY = ["Home", "Away", "Neutral"]
 
-#: group-by menu: key -> label
-GROUPS = {
+#: group-by menu: key -> label (one row per game column value)
+GAME_GROUPS = {
     "opponent": "Opponent", "season": "Season", "home_away": "Home or away",
     "game_type": "Game type", "week": "Week",
 }
+
+# -- play-level filters ----------------------------------------------------------
+# Facts about a single pass play (the defense's scheme, pressure, the route the
+# targeted receiver ran), from the `pass_plays` dataset (2016 on; coverage 2018
+# on).  A play filter splits the player's PASS plays, so only the passing and
+# receiving measures can be answered under one; every other measure is a dash.
+# A play with a blank value never matches a filter or a group.
+
+#: key -> (label, column, {menu label: stored value})
+PLAY_EQ = {
+    "man_zone": ("Man or zone", "man_zone",
+                 {"Man": "MAN_COVERAGE", "Zone": "ZONE_COVERAGE"}),
+    "coverage": ("Coverage type", "coverage",
+                 {"Cover 0": "COVER_0", "Cover 1": "COVER_1", "Cover 2": "COVER_2",
+                  "2-man": "2_MAN", "Cover 3": "COVER_3", "Cover 4": "COVER_4",
+                  "Cover 6": "COVER_6", "Cover 9": "COVER_9", "Combo": "COMBO",
+                  "Blown": "BLOWN"}),
+    "formation": ("Formation", "formation",
+                  {"Shotgun": "SHOTGUN", "Under center": "UNDER CENTER",
+                   "Pistol": "PISTOL"}),
+    "route": ("Route (on targets)", "route",
+              {"Go": "GO", "Slant": "SLANT", "Screen": "SCREEN",
+               "Quick out": "QUICK OUT", "Deep out": "DEEP OUT",
+               "Hitch/curl": "HITCH/CURL", "In/dig": "IN/DIG",
+               "Shallow cross/drag": "SHALLOW CROSS/DRAG", "Corner": "CORNER",
+               "Post": "POST", "Swing": "SWING", "Texas/angle": "TEXAS/ANGLE",
+               "Wheel": "WHEEL"}),
+}
+#: yes/no filters on a 0/1 play column
+PLAY_YESNO = {"pressure": ("Pressure", "pressure")}
+#: banded numeric play filters: key -> (label, column, {band: (low, high)}), low
+#: inclusive, high exclusive, None = open ended
+PLAY_BANDS = {
+    "box": ("Defenders in the box", "box", {"6 or fewer": (None, 7), "7": (7, 8),
+                                            "8 or more": (8, None)}),
+    "rushers": ("Pass rushers", "rushers", {"3 or fewer": (None, 4), "4": (4, 5),
+                                            "5 or more (blitz)": (5, None)}),
+    "ttt": ("Time to throw", "ttt", {"Under 2.5 s": (None, 2.5), "2.5 to 3.5 s": (2.5, 3.5),
+                                     "3.5 s or more": (3.5, None)}),
+}
+PLAY_KEYS = list(PLAY_EQ) + list(PLAY_YESNO) + list(PLAY_BANDS)
+PLAY_COLUMN = {**{k: v[1] for k, v in PLAY_EQ.items()},
+               **{k: v[1] for k, v in PLAY_YESNO.items()},
+               **{k: v[1] for k, v in PLAY_BANDS.items()}}
+PLAY_LABELS = {**{k: v[0] for k, v in PLAY_EQ.items()},
+               **{k: v[0] for k, v in PLAY_YESNO.items()},
+               **{k: v[0] for k, v in PLAY_BANDS.items()}}
+#: group-by values that read the play table
+PLAY_GROUPS = {k: PLAY_LABELS[k] for k in PLAY_KEYS}
+GROUPS = {**GAME_GROUPS, **PLAY_GROUPS}
+
+#: Measures a pass-play query can answer (the rest read the whole game).
+PLAY_MEASURES = {"attempts", "completions", "passing_yards", "passing_tds",
+                 "interceptions", "completion_rate", "yards_per_attempt",
+                 "targets", "receptions", "receiving_yards", "receiving_tds",
+                 "receiving_air_yards", "yards_per_target", "yards_per_reception",
+                 "catch_rate"}
+#: Passer measures versus receiver measures: a quarterback is read as a passer,
+#: everyone else as a receiver.
+_PASSER_MEASURES = {"attempts", "completions", "passing_yards", "passing_tds",
+                    "interceptions", "completion_rate", "yards_per_attempt"}
+#: A season counts toward a play query only when at least this share of its pass
+#: plays has a value in every column the query uses.
+MIN_PLAY_COVERAGE = 0.5
 
 #: Additive measures: key -> (label, source column)
 _COUNTS = {
@@ -140,6 +204,15 @@ CONTROL_HINTS = {
     "clear_filters": "Back to every opponent, site, season and game type.",
     "filter_picker": "Tick what you want on the form: measure groups, how to show them, and filters.  Only ticked items show; unticking one clears it.  Games with no recorded value, such as temperature in a dome, never match a band.",
     "reset": "Clear every measure, filter and grouping back to this player's defaults.",
+    "play": "Looks at this player's pass plays only (2016 on; coverage 2018 on).  Passing and receiving measures answer it; other measures show a dash.  A play with no recorded value never matches.",
+    "man_zone": "Whether the defense played man or zone coverage on the play.  Recorded from 2018.",
+    "coverage": "The coverage the defense ran (Cover 0, 1, 2, 3, 4, 6, 2-man and the like).  Recorded from 2018.",
+    "box": "Defenders lined up in the box at the snap.",
+    "rushers": "Defenders who rushed the passer.  5 or more is a blitz.",
+    "pressure": "Whether the passer was pressured on the play.",
+    "ttt": "Seconds from the snap to the throw.",
+    "route": "The route the targeted receiver ran.  Only the target's route is recorded, so this reads targets.",
+    "formation": "The offense's formation at the snap.",
 }
 
 
@@ -182,6 +255,8 @@ def clear_cache() -> None:
     global _index_cache
     _index_cache = None
     _player_cache.clear()
+    _play_cache.clear()
+    _play_coverage.clear()
 
 
 def _player_index() -> pd.DataFrame:
@@ -432,7 +507,7 @@ EXTRA_BANDS = {
 }
 ROLES = ["Favorite", "Underdog"]
 EXTRA_KEYS = (list(EXTRA_EQ) + list(EXTRA_YESNO) + list(EXTRA_BANDS)
-              + ["role", "weeks"])
+              + ["role", "weeks"] + list(PLAY_KEYS))
 
 
 #: The picker: every control the builder can show, grouped.  A control's field is
@@ -454,6 +529,10 @@ PICKER_MENU = [
                 ("referee", "Referee")]),
     ("Conditions", [("roof", "Roof"), ("surface", "Surface"), ("temp", "Temperature"),
                     ("wind", "Wind"), ("rest", "Rest")]),
+    ("Play", [("man_zone", "Man or zone"), ("coverage", "Coverage type"),
+              ("box", "Defenders in the box"), ("rushers", "Pass rushers"),
+              ("pressure", "Pressure"), ("ttt", "Time to throw"),
+              ("route", "Route (on targets)"), ("formation", "Formation")]),
 ]
 PICKER_KEYS = [k for _, items in PICKER_MENU for k, _ in items]
 #: controls that are not filters: they never count toward the "filters in use" badge
@@ -539,6 +618,27 @@ def _clean_extras(f: dict) -> dict:
         if role not in ROLES:
             raise ValueError(f"unknown role: {role}")
         out["role"] = role
+    for key, (_, _, menu) in PLAY_EQ.items():
+        v = f.get(key)
+        if v in (None, ""):
+            continue
+        if v not in menu:
+            raise ValueError(f"unknown {key} value: {v}")
+        out[key] = v
+    for key in PLAY_YESNO:
+        v = f.get(key)
+        if v in (None, ""):
+            continue
+        if v not in ("Yes", "No"):
+            raise ValueError(f"unknown {key} value: {v}")
+        out[key] = v
+    for key, (_, _, bands) in PLAY_BANDS.items():
+        v = f.get(key)
+        if v in (None, ""):
+            continue
+        if v not in bands:
+            raise ValueError(f"unknown {key} band: {v}")
+        out[key] = v
     weeks = f.get("weeks")
     if weeks:
         if len(weeks) != 2:
@@ -678,6 +778,215 @@ def _value(sub: pd.DataFrame, key: str, agg: str) -> float | None:
     return total
 
 
+# -- the play-level path ----------------------------------------------------------
+# A query with a play filter or a play group-by reads the player's pass plays, not
+# his game rows.  The game filters (opponent, seasons, site, ...) still pick the
+# games; the play filters then pick the plays inside them.  A season counts only
+# when enough of its plays have a value in every column the query uses.
+
+_play_cache: dict[tuple, pd.DataFrame] = {}
+_play_coverage: dict[int, dict[str, float]] = {}
+
+
+def play_seasons() -> list[int]:
+    """Seasons with a pass-play snapshot, oldest first."""
+    from webapp.sources.nflref import cache
+    root = cache._NFLVERSE_DIR / "pass_plays"
+    out = []
+    if root.is_dir():
+        for p in root.glob("*.parquet"):
+            if p.stem.isdigit():
+                out.append(int(p.stem))
+    return sorted(out)
+
+
+def is_passer(games: pd.DataFrame) -> bool:
+    """A quarterback is read as a passer; everyone else as a receiver."""
+    return (not games.empty) and str(games["position"].iloc[-1]) == "QB"
+
+
+def load_plays(player_id: str, passer: bool) -> pd.DataFrame:
+    """This player's pass plays, oldest first: every dropback he threw (or was
+    sacked on) as a passer, every play he was targeted on as a receiver."""
+    key = (player_id, passer)
+    if key in _play_cache:
+        return _play_cache[key]
+    col = "passer_id" if passer else "receiver_id"
+    cols = sorted(set(PLAY_COLUMN.values()))
+    parts = []
+    for yr in play_seasons():
+        df = nflref.load("pass_plays", str(yr))
+        if df.empty:
+            continue
+        if yr not in _play_coverage:
+            _play_coverage[yr] = {c: float(df[c].notna().mean()) for c in cols if c in df.columns}
+        sub = df[df[col] == player_id]
+        if not sub.empty:
+            parts.append(sub)
+    out = (pd.concat(parts, ignore_index=True).sort_values(["season", "week", "play_id"])
+           .reset_index(drop=True) if parts else pd.DataFrame())
+    if len(_play_cache) >= _PLAYER_CACHE_MAX:
+        _play_cache.pop(next(iter(_play_cache)))
+    _play_cache[key] = out
+    return out
+
+
+def _play_values(plays: pd.DataFrame, key: str) -> pd.Series:
+    """The label each play falls under for a play filter or group (None when the
+    value is blank or outside every band): one definition for filtering and
+    grouping."""
+    col = plays[PLAY_COLUMN[key]]
+    if key in PLAY_EQ:
+        inv = {v: k for k, v in PLAY_EQ[key][2].items()}
+        return col.map(inv)
+    v = pd.to_numeric(col, errors="coerce")
+    if key in PLAY_YESNO:
+        return v.map({1.0: "Yes", 0.0: "No"})
+    out = pd.Series([None] * len(plays), index=plays.index, dtype=object)
+    for label, (lo, hi) in PLAY_BANDS[key][2].items():
+        m = v.notna()
+        if lo is not None:
+            m &= v >= lo
+        if hi is not None:
+            m &= v < hi
+        out[m] = label
+    return out
+
+
+def _play_order(key: str) -> list[str]:
+    if key in PLAY_EQ:
+        return list(PLAY_EQ[key][2])
+    if key in PLAY_YESNO:
+        return ["Yes", "No"]
+    return list(PLAY_BANDS[key][2])
+
+
+_PLAY_NUM = ["attempt", "complete", "yards", "td", "interception", "air_yards"]
+
+
+def _play_measure_frame(plays: pd.DataFrame, passer: bool) -> pd.DataFrame:
+    """The additive measures, one numeric column each, per play, for this role."""
+    for c in _PLAY_NUM:
+        if c not in plays.columns:
+            plays = plays.assign(**{c: pd.Series(dtype=float)})
+    att = plays["attempt"] == 1
+    a = att.astype(float)
+    cmp_ = (att & (plays["complete"] == 1)).astype(float)
+    yds = pd.to_numeric(plays["yards"], errors="coerce").where(cmp_ == 1, 0.0)
+    td = (att & (plays["td"] == 1)).astype(float)
+    if passer:
+        return pd.DataFrame({"attempts": a, "completions": cmp_, "passing_yards": yds,
+                             "passing_tds": td,
+                             "interceptions": (att & (plays["interception"] == 1)).astype(float)})
+    return pd.DataFrame({"targets": a, "receptions": cmp_, "receiving_yards": yds,
+                         "receiving_tds": td,
+                         "receiving_air_yards": pd.to_numeric(plays["air_yards"],
+                                                              errors="coerce").where(att)})
+
+
+def _play_value(m: pd.DataFrame, n_games: int, key: str, agg: str) -> float | None:
+    """One measure over a set of plays (`m` = their measure frame) and the games
+    they came from.  A measure the role does not have, or one outside the play
+    measures, is None (a dash).  A group with games but no matching play is a
+    real zero for a count and None for a ratio."""
+    if key not in PLAY_MEASURES:
+        return None
+    if key in _RATIOS:
+        _, num, den = _RATIOS[key]
+        if num not in m.columns or den not in m.columns:
+            return None
+        d = m[den].sum()
+        if d == 0:
+            return None
+        v = float(m[num].sum() / d)
+        return v * 100 if key in _PERCENT else v
+    if key not in m.columns or n_games <= 0:
+        return None
+    col = m[key]
+    if len(col) and col.notna().sum() == 0:
+        return None                      # not recorded (air yards), never zero
+    total = float(col.sum())
+    return total / n_games if agg == "per_game" else total
+
+
+def _run_play_query(games: pd.DataFrame, spec: dict) -> dict:
+    measures, agg, group, filters = (spec["measures"], spec["agg"], spec["group_by"],
+                                     spec["filters"])
+    columns = [{"key": m, "label": MEASURES[m] + (" /g" if agg == "per_game"
+                                                  and m in _COUNTS else "")}
+               for m in measures]
+    empty = {"columns": columns, "rows": [], "total": None, "games": 0, "spec": spec,
+             "play_seasons": None}
+    if games.empty:
+        return empty
+    play_filters = {k: filters[k] for k in PLAY_KEYS if filters.get(k)}
+    used = {PLAY_COLUMN[k] for k in play_filters}
+    if group in PLAY_GROUPS:
+        used.add(PLAY_COLUMN[group])
+    passer = is_passer(games)
+    plays = load_plays(str(games["player_id"].iloc[0]), passer)
+    g = apply_filters(games, filters)
+    usable = {yr for yr, cov in _play_coverage.items()
+              if all(cov.get(c, 0.0) >= MIN_PLAY_COVERAGE for c in used)}
+    g = g[g["season"].isin(usable)]
+    if g.empty:
+        return empty
+    seasons_used = sorted(int(x) for x in g["season"].unique())
+    note = (f"{seasons_used[0]}" if len(seasons_used) == 1
+            else f"{seasons_used[0]} to {seasons_used[-1]}")
+    if plays.empty:
+        plays = pd.DataFrame({"season": pd.Series(dtype="int64"),
+                              "week": pd.Series(dtype="int64"),
+                              **{c: pd.Series(dtype=object) for c in PLAY_COLUMN.values()}})
+    keys = g[["season", "week"]].copy()
+    if group in GAME_GROUPS:
+        keys["_grp"] = g[group].values
+    pl = plays.merge(keys, on=["season", "week"], how="inner").reset_index(drop=True)
+    for k, v in play_filters.items():
+        pl = pl[_play_values(pl, k) == v]
+    m = _play_measure_frame(pl, passer)
+
+    def row(label, idx, n):
+        r = {"group": label, "games": int(n)}
+        sub = m.loc[idx] if idx is not None else m
+        for k in measures:
+            r[k] = _play_value(sub, int(n), k, agg)
+        return r
+
+    rows: list[dict] = []
+    total = None
+    n_games = len(g)
+    if group is None:
+        rows = [row(None, None, len(g))]
+    elif group in GAME_GROUPS:
+        for key, gsub in g.groupby(group, sort=True):
+            idx = pl.index[pl["_grp"] == key]
+            rows.append(row(key.item() if hasattr(key, "item") else key, idx, len(gsub)))
+        if group == "game_type":
+            rank = {x: i for i, x in enumerate(GAME_TYPES)}
+            rows.sort(key=lambda r: rank.get(r["group"], 99))
+        total = row("Total", None, len(g))
+    else:
+        vals = _play_values(pl, group)
+        for label in _play_order(group):
+            idx = pl.index[vals == label]
+            if len(idx) == 0:
+                continue
+            n = len(pl.loc[idx, ["season", "week"]].drop_duplicates())
+            rows.append(row(label, idx, n))
+        idx_all = pl.index[vals.notna()]
+        n_games = len(pl.loc[idx_all, ["season", "week"]].drop_duplicates())
+        total = row("Total", idx_all, n_games) if rows else None
+    return {"columns": columns, "rows": rows, "total": total, "games": int(n_games),
+            "spec": spec, "play_seasons": note}
+
+
+def uses_plays(spec: dict) -> bool:
+    """True when a cleaned spec needs the pass-play table."""
+    f = spec.get("filters") or {}
+    return any(f.get(k) for k in PLAY_KEYS) or spec.get("group_by") in PLAY_GROUPS
+
+
 def run_query(games: pd.DataFrame, spec: dict) -> dict:
     """Run one spec over one player's games.
 
@@ -687,6 +996,8 @@ def run_query(games: pd.DataFrame, spec: dict) -> dict:
     one entry per measure.  Raises ValueError on a spec outside the menus.
     """
     spec = _clean(spec)
+    if uses_plays(spec):
+        return _run_play_query(games, spec)
     df = apply_filters(games, spec["filters"]) if not games.empty else games
     measures, agg, group = spec["measures"], spec["agg"], spec["group_by"]
     columns = [{"key": m, "label": MEASURES[m] + (" /g" if agg == "per_game"
@@ -766,6 +1077,8 @@ PRESET_HINTS = {
     "home_away": "Yards and scores per game, split by home, away and neutral",
     "by_opponent": "Yards and scores totals against each opponent",
     "playoffs": "Playoff games only, per game, split by round",
+    "man_zone": "Pass plays split by man and zone coverage (2018 on)",
+    "pressure": "Pass plays split by whether the passer was pressured (2016 on)",
 }
 
 #: id -> (label, measure families, Show, Group by, extra)
@@ -781,6 +1094,10 @@ _PRESET_CFG = {
     "by_opponent": ("By opponent", ["yardage", "scoring"], "total", "opponent", {}),
     "playoffs": ("Playoff run", ["yardage", "scoring", "ppr"], "per_game", "game_type",
                  {"game_types": _PLAYOFF_TYPES}),
+    "man_zone": ("Man vs zone", ["volume", "yardage", "scoring"], "total", "man_zone",
+                 {"play": True}),
+    "pressure": ("Under pressure", ["volume", "yardage", "scoring"], "total", "pressure",
+                 {"play": True}),
 }
 
 PRESETS = [{"id": k, "label": v[0]} for k, v in _PRESET_CFG.items()]
@@ -803,7 +1120,12 @@ def preset_fill(preset_id: str, games: pd.DataFrame, position: str | None) -> di
     if preset_id not in _PRESET_CFG:
         raise ValueError(f"unknown preset: {preset_id}")
     _, families, agg, group, extra = _PRESET_CFG[preset_id]
-    fill = {"measures": _family_measures(families, games, position), "agg": agg,
+    measures = _family_measures(families, games, position)
+    if extra.get("play"):
+        # a pass-play split can only answer the passing and receiving measures
+        measures = ([m for m in measures if m in PLAY_MEASURES]
+                    or [m for m in default_measures(position, games) if m in PLAY_MEASURES])
+    fill = {"measures": measures, "agg": agg,
             "group_by": group, "opponent": "", "season_from": "", "season_to": "",
             "home_away": "", "game_types": list(extra.get("game_types", []))}
     if extra.get("recent") and not games.empty:
@@ -877,4 +1199,5 @@ def table_view(result: dict) -> dict:
                  "cells": cells(result["total"])}
     return {"group_label": GROUPS.get(group, "Career") if group else "Career",
             "columns": [c["label"] for c in result["columns"]],
-            "rows": rows, "total": total, "games": result["games"]}
+            "rows": rows, "total": total, "games": result["games"],
+            "play_seasons": result.get("play_seasons")}

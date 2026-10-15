@@ -2593,6 +2593,7 @@ h3.gd-block + .tablewrap, h3.gd-block + p.empty { margin-top: 6px; }
 #alt-builder .alt-mrow-off .alt-mlabel { color: var(--faint); font-weight: 500; }
 #alt-builder .adp-check.alt-unused { opacity: .4; cursor: not-allowed; }
 #alt-builder .adp-check.alt-unused input { cursor: not-allowed; }
+#alt-builder .adp-check.alt-playdim { opacity: .4; }
 /* Show and Filters: a label column, then one wrapping line of controls. */
 #alt-builder .alt-line { display: grid; grid-template-columns: 84px 1fr; gap: 0 10px;
   align-items: center; }
@@ -2701,6 +2702,7 @@ h3.gd-block + .tablewrap, h3.gd-block + p.empty { margin-top: 6px; }
 #alt-builder .alt-filters .alt-subsec { flex: 1 1 260px; min-width: 0; }
 #alt-builder .alt-filters .alt-subsec[data-blk=sub-game] { flex: 3 1 460px; }
 #alt-builder .alt-filters .alt-subsec[data-blk=sub-people] { flex: 2 1 320px; }
+#alt-builder .alt-filters .alt-subsec[data-blk=sub-play] { flex: 3 1 460px; }
 #alt-builder .alt-subsec[hidden] { display: none; }
 #alt-builder .alt-subhead { margin: 0 0 8px; font-size: 11px; font-weight: 600;
   text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }

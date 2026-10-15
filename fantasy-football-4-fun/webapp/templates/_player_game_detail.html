@@ -81,6 +81,58 @@
   this data until after the season ends. Route stats will appear here
   once it&rsquo;s released.</p>
 {% endif %}
+{# Pass plays in this game: every target (receiver) or dropback (quarterback) in
+   game order, with the situation and the defense's scheme, from the play-level
+   pass_plays table (webapp.player_profile.play_log).  Route is the targeted
+   receiver's own route.  A game with no recorded coverage (a season nflverse has
+   not published yet) still lists the plays, with a note instead of the scheme. #}
+{% macro dash(v) %}{% if v is not none %}{{ v }}{% else %}&ndash;{% endif %}{% endmacro %}
+{% if play_log and play_log.rows %}
+{% set passer = play_log.role == "passer" %}
+<h3 class="gd-block">Pass plays <span class="hint">({{ play_log.rows|length }} {{ "dropbacks" if passer else "targets" }})</span></h3>
+{% if play_log.man_zone %}
+<div class="tablewrap">
+  <table class="dt-games">
+    <thead><tr><th>Man or zone</th><th class="n">{{ "Att" if passer else "Tgt" }}</th><th class="n">{{ "Cmp" if passer else "Rec" }}</th><th class="n">Yds</th><th class="n">TD</th>{% if passer %}<th class="n">INT</th>{% endif %}</tr></thead>
+    <tbody>
+    {% for r in play_log.man_zone.rows %}
+      <tr><td>{{ r.label }}</td><td class="n">{{ r.n }}</td><td class="n">{{ r.complete }}</td>
+        <td class="n">{{ "{:,.0f}".format(r.yards) }}</td><td class="n">{{ r.td }}</td>
+        {% if passer %}<td class="n">{{ r.interceptions }}</td>{% endif %}</tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+{% if not play_log.scheme %}
+<p class="empty">Coverage and route are not recorded for this game.</p>
+{% endif %}
+<div class="tablewrap"{% if play_log.man_zone %} style="margin-top:14px"{% endif %}>
+  <table class="dt-games">
+    <thead><tr>
+      <th>#</th><th>Qtr</th><th>Down</th><th>Field</th><th>Clock</th>
+      {% if not passer %}<th>Route</th>{% endif %}
+      <th>Man/zone</th><th>Coverage</th><th class="n">Box</th><th class="n">Rush</th><th>Pressure</th><th class="n">TTT</th><th>Formation</th>
+      <th>Result</th><th class="n">Air</th>
+    </tr></thead>
+    <tbody>
+    {% for r in play_log.rows %}
+      <tr{% if r.td %} class="bench-impact"{% endif %}>
+        <td>{{ r.n }}</td><td>{{ dash(r.qtr) }}</td><td>{{ dash(r.down_dist) }}</td>
+        <td>{{ dash(r.field) }}</td><td>{{ dash(r.clock) }}</td>
+        {% if not passer %}<td>{{ dash(r.route) }}</td>{% endif %}
+        <td>{{ dash(r.man_zone) }}</td><td>{{ dash(r.coverage) }}</td>
+        <td class="n">{{ dash(r.box) }}</td><td class="n">{{ dash(r.rushers) }}</td>
+        <td>{{ dash(r.pressure) }}</td>
+        <td class="n">{% if r.ttt is not none %}{{ "%.1f"|format(r.ttt) }}{% else %}&ndash;{% endif %}</td>
+        <td>{{ dash(r.formation) }}</td>
+        <td>{{ r.result }}</td><td class="n">{{ dash(r.air_yards) }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
 {# Raw source data: ONE table per category, one row per source (2026-09,
    user request -- "instead of splitting data by source, integrate all
    major metrics into a single table and simply add a column stating the

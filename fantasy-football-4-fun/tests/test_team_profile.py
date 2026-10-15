@@ -1452,3 +1452,120 @@ def test_position_group_table_header_carries_title_attribute():
     html = tmpl.render(groups=groups, cols_by_group=cols_by_group)
     assert 'title="Pass attempts"' in html
     assert ">Att<" in html
+
+
+# --- routes and coverage per game, by position (pass_plays) --------------------
+
+def _team_plays(rows):
+    """rows: (play_id, passer_id, receiver_id, complete, yards, td, interception,
+    route, man_zone, coverage)."""
+    df = pd.DataFrame(rows, columns=["play_id", "passer_id", "receiver_id", "complete", "yards",
+                                     "td", "interception", "route", "man_zone", "coverage"])
+    df["attempt"] = 1
+    df["sack"] = 0
+    df["week"] = 1
+    return df
+
+
+_NAMES = {"00-Q": ("Qa Back", "QB"), "00-W1": ("Wide One", "WR"), "00-W2": ("Wide Two", "WR"),
+          "00-T": ("Tight End", "TE"), "00-R": ("Run Back", "FB"), "00-K": ("Kick Er", "K")}
+_M, _Z = "MAN_COVERAGE", "ZONE_COVERAGE"
+
+
+def _compare_plays():
+    return _team_plays([
+        (1, "00-Q", "00-W1", 1, 10, 0, 0, "SLANT", _M, "COVER_1"),
+        (2, "00-Q", "00-W1", 1, 20, 1, 0, "GO", _Z, "COVER_3"),
+        (3, "00-Q", "00-W2", 0, 0, 0, 0, "SLANT", _Z, "COVER_3"),
+        (4, "00-Q", "00-T", 1, 7, 0, 0, "HITCH/CURL", _Z, "COVER_2"),
+        (5, "00-Q", None, 0, 0, 0, 1, None, _M, "COVER_1"),             # a throwaway, picked off
+        (6, "00-Q", "00-R", 1, 3, 0, 0, "SWING", _M, "COVER_1"),        # a fullback, grouped as RB
+        (7, "00-Q", "00-K", 1, 40, 0, 0, "GO", _Z, "COVER_3"),          # a kicker's trick play
+    ])
+
+
+def test_play_compare_groups_by_position_and_ends_each_table_with_a_team_row():
+    pc = tp._play_compare(_compare_plays(), _NAMES)
+    assert pc["scheme"] is True
+    assert [g["group"] for g in pc["groups"]] == ["QB", "RB", "WR", "TE"]    # no K group
+    wr = next(g for g in pc["groups"] if g["group"] == "WR")
+    one, two, team = wr["man_zone"]
+    assert one["player"] == "Wide One" and two["player"] == "Wide Two" and team["player"] == "Team"
+    assert (one["Tgt"], one["Rec"], one["Yds"], one["TD"]) == (2, 2, 30, 1)
+    assert (one["Man Tgt"], one["Man Yds"], one["Zone Tgt"], one["Zone Yds"]) == (1, 10, 1, 20)
+    assert (team["Tgt"], team["Rec"], team["Yds"]) == (3, 2, 30)
+    assert wr["role"] == "receiver"
+
+
+def test_play_compare_quarterback_counts_attempts_and_interceptions_but_has_no_routes():
+    qb = next(g for g in tp._play_compare(_compare_plays(), _NAMES)["groups"] if g["group"] == "QB")
+    row = qb["man_zone"][0]
+    assert qb["role"] == "passer" and qb["routes"] == []
+    assert (row["Att"], row["Cmp"], row["Yds"], row["TD"], row["INT"]) == (7, 5, 80, 1, 1)
+    assert (row["Man Att"], row["Zone Att"]) == (3, 4)
+    assert qb["man_zone"][-1]["player"] == "Team" and qb["man_zone"][-1]["Att"] == 7
+
+
+def test_play_compare_trims_route_and_coverage_columns_uniformly():
+    wr = next(g for g in tp._play_compare(_compare_plays(), _NAMES)["groups"] if g["group"] == "WR")
+    assert [k for k in wr["routes"][0] if k != "player"] == ["Go", "Slant"]       # only routes seen
+    assert [k for k in wr["coverage"][0] if k != "player"] == ["Cover 1", "Cover 3"]
+    assert len({tuple(r) for r in wr["routes"]}) == 1 and len({tuple(r) for r in wr["coverage"]}) == 1
+    assert wr["routes"][-1] == {"player": "Team", "Go": 1, "Slant": 2}
+    assert wr["coverage"][0] == {"player": "Wide One", "Cover 1": 1, "Cover 3": 1}
+
+
+def test_play_compare_folds_a_fullback_into_running_backs_and_skips_unlisted_positions():
+    rb = next(g for g in tp._play_compare(_compare_plays(), _NAMES)["groups"] if g["group"] == "RB")
+    assert [r["player"] for r in rb["man_zone"]] == ["Run Back", "Team"]
+    names = {k: v for k, v in _NAMES.items() if k != "00-W2"}                  # no name for W2
+    wr = next(g for g in tp._play_compare(_compare_plays(), names)["groups"] if g["group"] == "WR")
+    assert [r["player"] for r in wr["man_zone"]] == ["Wide One", "Team"]
+
+
+def test_play_compare_without_a_recorded_scheme_is_a_flag_with_no_groups():
+    p = _compare_plays()
+    p[["route", "man_zone", "coverage"]] = None
+    assert tp._play_compare(p, _NAMES) == {"scheme": False, "groups": []}
+    assert tp._play_compare(pd.DataFrame(), _NAMES) is None
+    assert tp._play_compare(None, _NAMES) is None
+
+
+def test_attach_week_stats_adds_play_compare_for_the_game(monkeypatch):
+    plays = _compare_plays()
+    plays = pd.concat([plays, plays.assign(week=2, play_id=plays.play_id + 100)], ignore_index=True)
+    monkeypatch.setattr(tp, "_team_pass_plays", lambda abbr, season: plays)
+    ps_rows = [{"player_id": " 00-W1", "player_display_name": "Wide One", "position": "WR",
+                "week": 1, "targets": 2}]
+    out = tp._attach_week_stats([{"week": 1}, {"week": 2}, {"week": 3}],
+                                {"player_stats": ps_rows}, abbr="KC", season="2025")
+    pc = out[0]["stats"]["play_compare"]
+    assert [g["group"] for g in pc["groups"]] == ["WR"]                     # only players with a name
+    assert pc["groups"][0]["man_zone"][0]["player"] == "Wide One"
+    assert out[1]["stats"]["play_compare"] is None                           # no names for week 2
+    assert out[2]["stats"]["play_compare"] is None                           # no plays that week
+    assert tp._attach_week_stats([{"week": 1}], {})[0]["stats"]["play_compare"] is None
+
+
+@pytest.mark.skipif(_tpl is None, reason="webapp.app import chain unavailable")
+def test_team_game_detail_renders_the_position_blocks_and_the_no_scheme_note():
+    pc = tp._play_compare(_compare_plays(), _NAMES)
+    stats = {"offense_by_position": [{"group": "WR", "players": []}], "off_position_cols": {},
+             "play_compare": pc}
+    html = _tpl.env.get_template("_team_game_detail.html").render(
+        theme="light", game_key=1, stats=stats, source_labels={}, roster_index={})
+    for h in ("QB: vs man and zone", "QB: attempts by coverage type", "WR: vs man and zone",
+              "WR: targets by route", "WR: targets by coverage type", "TE: vs man and zone"):
+        assert h in html
+    assert "QB: targets by route" not in html                               # a passer has no route table
+    assert "Wide One" in html and ">Team<" in html and "Man Tgt".upper() in html.upper()
+    assert "&amp;ndash;" not in html and "nan" not in html.lower().replace("&ndash;", "")
+    note = _tpl.env.get_template("_team_game_detail.html").render(
+        theme="light", game_key=1,
+        stats={**stats, "play_compare": {"scheme": False, "groups": []}},
+        source_labels={}, roster_index={})
+    assert "Coverage and route are not recorded for this game" in note
+    none = _tpl.env.get_template("_team_game_detail.html").render(
+        theme="light", game_key=1, stats={**stats, "play_compare": None},
+        source_labels={}, roster_index={})
+    assert "vs man and zone" not in none and "not recorded for this game" not in none

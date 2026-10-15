@@ -153,6 +153,33 @@
       nflverse doesn&rsquo;t publish this data until after the season
       ends. Route stats will appear here once it&rsquo;s released.</p>
     {% endif %}
+    {# Routes and coverage by position for THIS game (team_profile._play_compare,
+       from the play-level pass_plays table): one block per position group so the
+       team's players at the same position read side by side, each table ending in
+       a Team row.  A quarterback is credited attempts, everyone else targets; route
+       is the targeted receiver's own route.  Columns are only the routes and
+       coverage types that appear in this game.  No coverage recorded (a season
+       nflverse has not published yet) shows a note instead. #}
+    {% if stats.play_compare %}
+    {% if stats.play_compare.groups %}
+    {% for g in stats.play_compare.groups %}
+    {% set what = "attempts" if g.role == "passer" else "targets" %}
+    <h3 class="gd-block">{{ g.group }}: vs man and zone</h3>
+    {{ tsm.stat_table(g.man_zone, roster_index=roster_index) }}
+    {% if g.routes %}
+    <h3 class="gd-block">{{ g.group }}: targets by route</h3>
+    {{ tsm.stat_table(g.routes, roster_index=roster_index) }}
+    {% endif %}
+    {% if g.coverage %}
+    <h3 class="gd-block">{{ g.group }}: {{ what }} by coverage type</h3>
+    {{ tsm.stat_table(g.coverage, roster_index=roster_index) }}
+    {% endif %}
+    {% endfor %}
+    {% else %}
+    <h3 class="gd-block">Routes &amp; coverage</h3>
+    <p class="empty">Coverage and route are not recorded for this game.</p>
+    {% endif %}
+    {% endif %}
   </div>
   {% endif %}
   {% if _has_defense %}

@@ -274,6 +274,61 @@
 <p class="empty">No real-NFL data found for this player in {{ season_scope }}.</p>
 {% endif %}
 
+{# Targets by route and results against each coverage, from the play-level
+   pass_plays table (webapp.player_profile.play_splits).  `play_splits` is None
+   for a position these do not apply to.  A play with no recorded value is in no
+   row; the heading hint says how many were.  Route is the targeted receiver's
+   route only.  Dashes use block form (Jinja autoescapes a literal in {{ }}). #}
+{% macro split_table(block, passer, first_col, count_label) %}
+<div class="tablewrap">
+  <table class="dt-games">
+    <thead><tr>
+      <th>{{ first_col }}</th><th class="n">{{ count_label }}</th>
+      {% if passer %}<th class="n">Cmp</th><th class="n">Yds</th><th class="n">TD</th><th class="n">INT</th><th class="n">Cmp %</th><th class="n">Yds/att</th>
+      {% else %}<th class="n">Rec</th><th class="n">Yds</th><th class="n">TD</th><th class="n">Catch %</th><th class="n">Yds/tgt</th><th class="n">aDOT</th><th class="n">Share</th>{% endif %}
+    </tr></thead>
+    <tbody>
+    {% for r in block.rows %}
+      <tr>
+        <td>{{ r.label }}</td>
+        <td class="n">{{ r.n }}</td>
+        <td class="n">{{ r.complete }}</td>
+        <td class="n">{{ "{:,.0f}".format(r.yards) }}</td>
+        <td class="n">{{ r.td }}</td>
+        {% if passer %}<td class="n">{{ r.interceptions }}</td>{% endif %}
+        <td class="n">{% if r.rate is not none %}{{ "%.1f"|format(r.rate) }}%{% else %}&ndash;{% endif %}</td>
+        <td class="n">{% if r.per is not none %}{{ "%.1f"|format(r.per) }}{% else %}&ndash;{% endif %}</td>
+        {% if not passer %}
+        <td class="n">{% if r.adot is not none %}{{ "%.1f"|format(r.adot) }}{% else %}&ndash;{% endif %}</td>
+        <td class="n">{{ "%.0f"|format(r.share) }}%</td>
+        {% endif %}
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endmacro %}
+{% if play_splits %}
+{% set ps = play_splits %}
+{% set passer = ps.role == "passer" %}
+{% set unit = "attempts" if passer else "targets" %}
+{% if not passer %}
+<h2>Targets by route <span class="hint">({{ season_scope }}{% if ps.routes %}, {{ ps.routes.recorded }} of {{ ps.routes.plays }} targets have a route recorded{% endif %})</span></h2>
+{% if ps.routes %}
+{{ split_table(ps.routes, false, "Route", "Tgt") }}
+{% else %}
+<p class="empty">No route data for this player in {{ season_scope }}.</p>
+{% endif %}
+{% endif %}
+<h2>Vs coverage <span class="hint">({{ season_scope }}{% if ps.coverage %}, {{ ps.coverage.recorded }} of {{ ps.coverage.plays }} {{ unit }} have a coverage recorded{% endif %})</span></h2>
+{% if ps.man_zone or ps.coverage %}
+{% if ps.man_zone %}{{ split_table(ps.man_zone, passer, "Man or zone", "Att" if passer else "Tgt") }}{% endif %}
+{% if ps.coverage %}<div{% if ps.man_zone %} style="margin-top:14px"{% endif %}>{{ split_table(ps.coverage, passer, "Coverage type", "Att" if passer else "Tgt") }}</div>{% endif %}
+{% else %}
+<p class="empty">No coverage data for this player in {{ season_scope }}.</p>
+{% endif %}
+{% endif %}
+
 {# Injuries: its own section after Advanced & usage stats, scoped to the same
    season_scope as everything above.  `injuries` is webapp.player_profile.
    injury_summary() of the season's nflverse weekly injury reports (None when

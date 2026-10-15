@@ -64,7 +64,7 @@ def test_registry_lists_the_datasets():
         "player_stats", "schedules", "player_games", "snap_counts",
         "ngs_passing", "ngs_receiving", "ngs_rushing",
         "pfr_pass", "pfr_rec", "pfr_rush", "pfr_def",
-        "injuries", "route_participation",
+        "injuries", "route_participation", "pass_plays",
     }
 
 
@@ -1456,3 +1456,125 @@ def test_player_games_still_builds_from_a_schedule_without_context_columns():
     from webapp.sources.nflref import player_games as pg
     df = pg.build(_pg_players(), _pg_schedule(), 2016)
     assert len(df) == 4 and df["coach"].isna().all() and df["qb_id"].isna().all()
+
+
+# -- pass_plays: play-level rows with the defensive scheme ------------------------
+
+def _pp_pbp():
+    return pd.DataFrame({
+        "game_id": ["g1"] * 6, "play_id": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
+        "week": [1] * 6, "season": [2018] * 6,
+        "posteam": ["AAA"] * 6, "defteam": ["BBB"] * 6,
+        # nflverse's pass_attempt includes sacks; play 5 is a two-point try,
+        # play 6 a deleted play
+        "pass_attempt": [1.0, 1.0, 1.0, 0.0, 1.0, 1.0],
+        "sack": [0.0, 0.0, 1.0, 0.0, 0.0, 0.0],
+        "two_point_attempt": [0.0, 0.0, 0.0, 0.0, 1.0, 0.0],
+        "play_deleted": [0.0, 0.0, 0.0, 0.0, 0.0, 1.0],
+        "passer_player_id": ["00-Q"] * 6, "receiver_player_id": ["00-A", None, None, None, "00-A", "00-A"],
+        "complete_pass": [1.0, 0.0, 0.0, 0.0, 1.0, 1.0],
+        "yards_gained": [12.0, 0.0, -7.0, 3.0, 2.0, 5.0],
+        "air_yards": [8.0, 15.0, None, None, 2.0, 5.0],
+        "pass_touchdown": [0.0, 0.0, 0.0, 0.0, 1.0, 0.0], "interception": [0.0, 1.0, 0.0, 0.0, 0.0, 0.0],
+    })
+
+
+def _pp_part():
+    return pd.DataFrame({
+        "nflverse_game_id": ["g1", "g1", "g1"], "play_id": [1.0, 2.0, 3.0],
+        "route": ["SLANT", "", None], "defense_man_zone_type": ["MAN_COVERAGE", "ZONE_COVERAGE", None],
+        "defense_coverage_type": ["COVER_1", "COVER_3", None],
+        "defenders_in_box": [6.0, 7.0, 8.0], "number_of_pass_rushers": [4.0, 5.0, 4.0],
+        "was_pressure": [False, True, True], "time_to_throw": [2.1, 3.0, None],
+        "offense_formation": ["SHOTGUN", "UNDER CENTER", " "],
+    })
+
+
+def test_pass_plays_keeps_attempts_and_sacks_and_drops_two_point_and_deleted_plays():
+    from webapp.sources.nflref import pass_plays as pp
+    df = pp.build(_pp_pbp(), _pp_part(), 2018)
+    assert df["play_id"].tolist() == [1, 2, 3]
+    assert df["attempt"].tolist() == [1, 1, 0]            # a sack is a dropback, not an attempt
+    assert df["sack"].tolist() == [0, 0, 1]
+    assert list(df.columns) == pp.COLUMNS
+
+
+def test_pass_plays_joins_the_scheme_and_leaves_missing_values_blank():
+    from webapp.sources.nflref import pass_plays as pp
+    df = pp.build(_pp_pbp(), _pp_part(), 2018)
+    assert df["man_zone"].tolist()[:2] == ["MAN_COVERAGE", "ZONE_COVERAGE"]
+    assert df["man_zone"].isna().tolist() == [False, False, True]
+    assert df["route"].iloc[0] == "SLANT" and pd.isna(df["route"].iloc[1])     # "" is not a route
+    assert pd.isna(df["formation"].iloc[2])                                      # blank text -> None
+    assert df["pressure"].tolist() == [0.0, 1.0, 1.0]                             # 0 / 1 / (blank stays NaN)
+    assert pd.isna(df["ttt"].iloc[2])
+    assert df["yards"].tolist() == [12.0, 0.0, -7.0] and df["td"].tolist() == [0, 0, 0]
+
+
+def test_pass_plays_without_a_participation_file_has_plays_and_blank_scheme():
+    from webapp.sources.nflref import pass_plays as pp
+    df = pp.build(_pp_pbp(), None, 2026)
+    assert len(df) == 3 and df["season"].eq(2026).all()
+    for c in ("route", "man_zone", "coverage", "box", "rushers", "pressure", "ttt", "formation"):
+        assert df[c].isna().all(), c
+
+
+def test_pass_plays_blank_pressure_stays_blank_not_false():
+    from webapp.sources.nflref import pass_plays as pp
+    part = _pp_part()
+    part["was_pressure"] = [True, None, False]
+    df = pp.build(_pp_pbp(), part, 2018)
+    assert df["pressure"].iloc[0] == 1.0 and pd.isna(df["pressure"].iloc[1])
+
+
+def test_pass_plays_fetch_snapshots_and_serves_it(monkeypatch):
+    def fake(asset, columns=None, reload=False):
+        return _pp_pbp() if asset.startswith("pbp/") else _pp_part()
+    monkeypatch.setattr(api, "fetch_release_parquet", fake)
+    assert len(nflref.load("pass_plays", "2018")) == 3
+    monkeypatch.setattr(api, "fetch_release_parquet",
+                        lambda *a, **k: (_ for _ in ()).throw(RuntimeError("offline")))
+    cache._mem.clear()
+    assert len(nflref.load("pass_plays", "2018")) == 3        # from the snapshot
+
+
+def test_pass_plays_is_built_when_participation_is_unavailable(monkeypatch):
+    def fake(asset, columns=None, reload=False):
+        if asset.startswith("pbp_participation/"):
+            raise RuntimeError("404")
+        return _pp_pbp()
+    monkeypatch.setattr(api, "fetch_release_parquet", fake)
+    df = nflref.load("pass_plays", "2026")
+    assert len(df) == 3 and df["man_zone"].isna().all()
+
+
+def test_pass_plays_before_earliest_is_empty():
+    assert nflref.load("pass_plays", "2015").empty
+
+
+def test_pass_plays_on_render_never_rebuilds(monkeypatch):
+    monkeypatch.setattr(api, "on_render", lambda: True)
+    monkeypatch.setattr(api, "fetch_release_parquet",
+                        lambda *a, **k: (_ for _ in ()).throw(AssertionError("no download")))
+    assert nflref.load("pass_plays", "2018").empty
+
+
+def test_pass_plays_probes_the_play_by_play_asset_for_refresh():
+    assert DATASETS["pass_plays"]._asset("2024") == "pbp/play_by_play_2024.parquet"
+
+
+def test_pass_plays_keeps_the_situation_columns_and_blanks_a_missing_one():
+    from webapp.sources.nflref import pass_plays as pp
+    pbp = _pp_pbp()
+    pbp["qtr"] = [1.0, 2.0, 5.0, 3.0, 3.0, 3.0]
+    pbp["down"] = [1.0, 3.0, None, 2.0, 2.0, 2.0]
+    pbp["ydstogo"] = [10.0, 7.0, 2.0, 5.0, 5.0, 5.0]
+    pbp["yardline_100"] = [75.0, 40.0, 9.0, 50.0, 50.0, 50.0]
+    pbp["quarter_seconds_remaining"] = [861.0, 100.0, 65.0, 30.0, 30.0, 30.0]
+    df = pp.build(pbp, _pp_part(), 2018)
+    assert df["qtr"].tolist() == [1.0, 2.0, 5.0] and df["ydstogo"].tolist() == [10.0, 7.0, 2.0]
+    assert df["yardline"].tolist() == [75.0, 40.0, 9.0] and df["clock"].tolist() == [861.0, 100.0, 65.0]
+    assert df["down"].iloc[:2].tolist() == [1.0, 3.0] and pd.isna(df["down"].iloc[2])
+    # a file without the columns (an older snapshot source) still builds, blank
+    bare = pp.build(_pp_pbp(), _pp_part(), 2018)
+    assert bare[["qtr", "down", "ydstogo", "yardline", "clock"]].isna().all().all()

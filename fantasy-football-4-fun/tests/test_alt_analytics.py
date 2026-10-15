@@ -888,3 +888,250 @@ def test_player_title_and_sections_order(_routes):
     assert 'alt-who-name">A B</span>' in html and "WR &middot; DET" in html
     assert 'name="fshow" value="m_receiving"' in html and "<h5>Stats</h5>" in html
     assert "<h5>Measures</h5>" not in html
+
+
+# -- play-level queries (pass_plays) ---------------------------------------------
+
+def _plays(rows, **const) -> pd.DataFrame:
+    """rows: (season, week, attempt, complete, yards, td, man_zone, box)."""
+    df = pd.DataFrame(rows, columns=["season", "week", "attempt", "complete", "yards",
+                                     "td", "man_zone", "box"])
+    df["play_id"] = range(1, len(df) + 1)
+    df["interception"] = 0
+    df["air_yards"] = df["yards"].astype(float)
+    df["sack"] = 0
+    df["coverage"] = None
+    df["rushers"] = 4.0
+    df["pressure"] = 0.0
+    df["ttt"] = 2.5
+    df["formation"] = "SHOTGUN"
+    df["route"] = "GO"
+    df["receiver_id"] = "00-1"
+    df["passer_id"] = None
+    for k, v in const.items():
+        df[k] = v
+    return df
+
+
+_MAN, _ZONE = "MAN_COVERAGE", "ZONE_COVERAGE"
+
+
+def _wr_plays() -> pd.DataFrame:
+    return _plays([
+        (2022, 1, 1, 1, 10, 0, _MAN, 6.0), (2022, 1, 1, 0, 0, 0, _MAN, 7.0),
+        (2022, 1, 1, 1, 20, 1, _ZONE, 6.0), (2022, 2, 1, 1, 5, 0, _ZONE, 8.0),
+        (2023, 1, 1, 1, 30, 1, _MAN, 7.0), (2023, 1, 1, 1, 7, 0, None, 7.0),
+        (2023, 22, 1, 0, 0, 0, _MAN, 6.0),
+    ])                                    # 2023 week 19: a game with no play at all
+
+
+@pytest.fixture
+def _playdata(monkeypatch):
+    plays = _wr_plays()
+    monkeypatch.setattr(aa, "load_plays", lambda pid, passer: plays)
+    monkeypatch.setattr(aa, "_play_coverage",
+                        {2022: {"man_zone": .9, "box": 1.0, "coverage": .9, "rushers": 1.0,
+                                "pressure": 1.0, "ttt": 1.0, "formation": 1.0, "route": .9},
+                         2023: {"man_zone": .99, "box": 1.0, "coverage": .99, "rushers": 1.0,
+                                "pressure": 1.0, "ttt": 1.0, "formation": 1.0, "route": .9}})
+    return plays
+
+
+def _pq(**kw):
+    base = {"measures": ["targets", "receptions", "receiving_yards", "receiving_tds"],
+            "agg": "total", "filters": {}, "group_by": None}
+    base.update(kw)
+    return base
+
+
+def test_uses_plays_only_for_a_play_filter_or_play_group():
+    assert not aa.uses_plays(aa._clean(_pq()))
+    assert aa.uses_plays(aa._clean(_pq(filters={"man_zone": "Man"})))
+    assert aa.uses_plays(aa._clean(_pq(group_by="coverage")))
+    assert not aa.uses_plays(aa._clean(_pq(group_by="season", filters={"opponent": "KC"})))
+
+
+def test_man_filter_sums_the_players_targets_in_man_coverage(_playdata):
+    r = aa.run_query(_games(), _pq(filters={"man_zone": "Man"}))
+    row = r["rows"][0]
+    assert row["targets"] == 4 and row["receptions"] == 2
+    assert row["receiving_yards"] == 40 and row["receiving_tds"] == 1
+    assert row["games"] == 5 and r["games"] == 5          # every game in a usable season
+    assert r["play_seasons"] == "2022 to 2023"
+
+
+def test_per_game_divides_by_games_played_including_a_game_with_no_play(_playdata):
+    r = aa.run_query(_games(), _pq(agg="per_game", filters={"man_zone": "Man"}))
+    assert r["rows"][0]["targets"] == pytest.approx(4 / 5)    # 5 games, one had no man play
+
+
+def test_play_group_splits_plays_and_leaves_a_blank_scheme_out(_playdata):
+    r = aa.run_query(_games(), _pq(group_by="man_zone"))
+    by = {x["group"]: x for x in r["rows"]}
+    assert set(by) == {"Man", "Zone"}
+    assert (by["Man"]["targets"], by["Man"]["games"]) == (4, 3)
+    assert (by["Zone"]["targets"], by["Zone"]["games"], by["Zone"]["receiving_yards"]) == (2, 2, 25)
+    # the play with no coverage recorded (7 yards) is in no group and not in the total
+    assert r["total"]["targets"] == 6 and r["total"]["receiving_yards"] == 65
+    assert r["total"]["games"] == 4 == r["games"]
+
+
+def test_group_per_game_counts_only_games_with_such_a_play(_playdata):
+    r = aa.run_query(_games(), _pq(agg="per_game", group_by="man_zone"))
+    man = {x["group"]: x for x in r["rows"]}["Man"]
+    assert man["targets"] == pytest.approx(4 / 3)
+
+
+def test_game_filters_and_play_filters_combine(_playdata):
+    r = aa.run_query(_games(), _pq(filters={"man_zone": "Man", "opponent": "KC"}))
+    # KC games: 2022 wk1 (2 man targets), 2023 wk1 (1), 2023 wk19 (none)
+    assert r["rows"][0]["targets"] == 3 and r["games"] == 3
+
+
+def test_game_group_with_a_play_filter_keeps_zero_games(_playdata):
+    r = aa.run_query(_games(), _pq(group_by="game_type", filters={"man_zone": "Man"}))
+    by = {x["group"]: x for x in r["rows"]}
+    assert by["WC"]["targets"] == 0 and by["WC"]["games"] == 1      # a real zero, not a dash
+    assert by["SB"]["targets"] == 1 and by["REG"]["targets"] == 3
+    assert r["total"]["targets"] == 4
+
+
+def test_a_measure_a_play_query_cannot_answer_is_a_dash(_playdata):
+    r = aa.run_query(_games(), _pq(measures=["targets", "rushing_yards", "fantasy_points_ppr"],
+                                   filters={"man_zone": "Zone"}))
+    row = r["rows"][0]
+    assert row["targets"] == 2 and row["rushing_yards"] is None
+    assert row["fantasy_points_ppr"] is None
+    assert aa.table_view(r)["rows"][0]["cells"][1] == "–"
+
+
+def test_ratios_use_the_plays_sums(_playdata):
+    r = aa.run_query(_games(), _pq(measures=["catch_rate", "yards_per_target", "yards_per_reception"],
+                                   filters={"man_zone": "Man"}))
+    row = r["rows"][0]
+    assert row["catch_rate"] == pytest.approx(50.0)           # 2 of 4
+    assert row["yards_per_target"] == pytest.approx(10.0)     # 40 / 4
+    assert row["yards_per_reception"] == pytest.approx(20.0)  # 40 / 2
+
+
+def test_a_season_without_the_needed_column_is_left_out(monkeypatch, _playdata):
+    monkeypatch.setattr(aa, "_play_coverage",
+                        {2022: {"man_zone": 0.0, "box": 1.0}, 2023: {"man_zone": .99, "box": 1.0}})
+    r = aa.run_query(_games(), _pq(filters={"man_zone": "Man"}))
+    assert r["games"] == 3 and r["play_seasons"] == "2023"     # 2022 had no coverage data
+    assert r["rows"][0]["targets"] == 2
+    # a filter on a column both seasons have keeps both
+    assert aa.run_query(_games(), _pq(filters={"box": "7"}))["games"] == 5
+
+
+def test_no_season_with_data_gives_no_rows(monkeypatch, _playdata):
+    monkeypatch.setattr(aa, "_play_coverage", {2022: {"man_zone": 0.0}, 2023: {"man_zone": 0.0}})
+    r = aa.run_query(_games(), _pq(filters={"man_zone": "Man"}))
+    assert r["rows"] == [] and r["games"] == 0
+
+
+def _labels(series):
+    return [None if pd.isna(x) else x for x in series]
+
+
+def test_box_rusher_pressure_and_time_to_throw_bands():
+    p = pd.DataFrame({"box": [5.0, 6.0, 7.0, 8.0, 11.0, None],
+                      "rushers": [3.0, 4.0, 5.0, 6.0, 4.0, None],
+                      "pressure": [1.0, 0.0, None, 1.0, 0.0, 1.0],
+                      "ttt": [1.0, 2.4, 2.5, 3.49, 3.5, None]})
+    assert _labels(aa._play_values(p, "box")) == ["6 or fewer", "6 or fewer", "7", "8 or more",
+                                                  "8 or more", None]
+    assert _labels(aa._play_values(p, "rushers")) == ["3 or fewer", "4", "5 or more (blitz)",
+                                                      "5 or more (blitz)", "4", None]
+    assert _labels(aa._play_values(p, "pressure")) == ["Yes", "No", None, "Yes", "No", "Yes"]
+    assert _labels(aa._play_values(p, "ttt")) == ["Under 2.5 s", "Under 2.5 s", "2.5 to 3.5 s",
+                                                  "2.5 to 3.5 s", "3.5 s or more", None]
+
+
+def test_coverage_route_and_formation_menus_use_the_stored_values(_playdata):
+    p = _playdata.copy()
+    p["coverage"] = ["COVER_3", "COVER_1", "COVER_3", "2_MAN", None, "COVER_3", "COVER_0"]
+    p["route"] = ["GO", "SLANT", "GO", "SCREEN", None, "HITCH/CURL", "GO"]
+    assert aa._play_values(p, "coverage").tolist()[:4] == ["Cover 3", "Cover 1", "Cover 3", "2-man"]
+    assert _labels(aa._play_values(p, "route"))[3:6] == ["Screen", None, "Hitch/curl"]
+    assert aa._play_values(p, "formation").iloc[0] == "Shotgun"
+
+
+def test_bad_play_filter_values_are_refused():
+    for f in ({"man_zone": "Blitz"}, {"coverage": "Cover 5"}, {"pressure": "Maybe"},
+              {"box": "9"}, {"route": "Fly"}):
+        with pytest.raises(ValueError):
+            aa._clean(_pq(filters=f))
+    with pytest.raises(ValueError):
+        aa._clean(_pq(group_by="not_a_group"))
+
+
+def test_a_quarterback_is_read_as_a_passer_and_a_sack_is_not_an_attempt(monkeypatch):
+    g = _games()
+    g["position"] = "QB"
+    p = _plays([(2022, 1, 1, 1, 12, 1, _MAN, 6.0), (2022, 1, 1, 0, 0, 0, _MAN, 6.0),
+                (2022, 1, 0, 0, -7, 0, _MAN, 6.0), (2023, 1, 1, 1, 8, 0, _ZONE, 6.0)],
+               passer_id="00-1", receiver_id=None)
+    p.loc[2, "sack"] = 1
+    p.loc[1, "interception"] = 1
+    monkeypatch.setattr(aa, "load_plays", lambda pid, passer: p if passer else pd.DataFrame())
+    monkeypatch.setattr(aa, "_play_coverage", {2022: {"man_zone": 1.0}, 2023: {"man_zone": 1.0}})
+    r = aa.run_query(g, {"measures": ["attempts", "completions", "passing_yards", "passing_tds",
+                                      "interceptions", "completion_rate", "targets"],
+                         "agg": "total", "group_by": None, "filters": {"man_zone": "Man"}})
+    row = r["rows"][0]
+    assert row["attempts"] == 2 and row["completions"] == 1      # the sack is not an attempt
+    assert row["passing_yards"] == 12 and row["passing_tds"] == 1 and row["interceptions"] == 1
+    assert row["completion_rate"] == pytest.approx(50.0)
+    assert row["targets"] is None                                # receiver measure: a dash
+
+
+def test_air_yards_not_recorded_is_a_dash_not_zero(monkeypatch, _playdata):
+    p = _wr_plays()
+    p["air_yards"] = float("nan")
+    monkeypatch.setattr(aa, "load_plays", lambda pid, passer: p)
+    r = aa.run_query(_games(), _pq(measures=["receiving_air_yards", "targets"],
+                                   filters={"man_zone": "Man"}))
+    assert r["rows"][0]["receiving_air_yards"] is None and r["rows"][0]["targets"] == 4
+
+
+def test_play_measures_are_a_subset_of_the_known_measures_and_pick_a_role():
+    assert aa.PLAY_MEASURES <= set(aa.MEASURES)
+    assert aa._PASSER_MEASURES <= aa.PLAY_MEASURES
+    assert "rushing_yards" not in aa.PLAY_MEASURES and "fg_made" not in aa.PLAY_MEASURES
+
+
+def test_play_filters_are_in_the_picker_and_default_off():
+    keys = dict(aa.PICKER_MENU)["Play"]
+    assert [k for k, _ in keys] == ["man_zone", "coverage", "box", "rushers", "pressure",
+                                    "ttt", "route", "formation"]
+    assert set(aa.PLAY_KEYS) <= set(aa.PICKER_KEYS) and set(aa.PLAY_KEYS) <= set(aa.EXTRA_KEYS)
+    for pos in ("QB", "RB", "WR", "TE", "K", None):
+        assert not (set(aa.PLAY_KEYS) & set(aa.default_shown(pos)))
+
+
+def test_play_presets_only_pick_measures_a_play_query_can_answer():
+    for pid, group in (("man_zone", "man_zone"), ("pressure", "pressure")):
+        for pos in ("QB", "WR", "RB", "TE"):
+            g = _games()
+            fill = aa.preset_fill(pid, g, pos)
+            assert fill["group_by"] == group
+            assert fill["measures"] and set(fill["measures"]) <= aa.PLAY_MEASURES
+
+
+def test_builder_route_reads_play_filters_from_the_query_and_runs_them(_routes, monkeypatch, _playdata):
+    html = _builder(_routes, q="solo", player_id="00-1", run=1, measures=["targets"],
+                    _query=b"man_zone=Man&fshow_set=1&fshow=m_receiving")
+    assert not _field_hidden(html, "man_zone")                    # a set filter is always shown
+    assert _field_hidden(html, "coverage") and _field_hidden(html, "route")
+    assert re.search(r"<td[^>]*>\s*4\s*</td>", html)              # 4 targets in man coverage
+    assert "Pass-play data used: 2022 to 2023" in html            # which seasons answered
+    assert 'data-count="filters">1 in use' in html
+
+
+def test_builder_page_has_a_play_band_and_dims_game_only_measures(_routes):
+    html = _builder(_routes, q="solo", player_id="00-1")
+    assert 'data-blk="sub-play"' in html and "<h5 class=\"alt-subhead\">Play</h5>" in html
+    assert '<optgroup label="Pass plays">' in html
+    assert "alt-gameonly" in html and "aa.PLAY_KEYS" not in html
+    assert '"man_zone", "coverage"' in html                        # the script knows the play keys

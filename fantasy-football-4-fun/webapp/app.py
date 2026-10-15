@@ -5707,6 +5707,7 @@ def _player_season_ctx(profile: dict, season_scope: str | None) -> dict:
         "real_nfl": scoped["real_nfl"],
         "real_nfl_categories": scoped["real_nfl_categories"],
         "injuries": pp.injury_summary(((scoped["real_nfl"] or {}).get("injuries") or {}).get("rows")),
+        "play_splits": pp.play_splits(profile, scoped["season_scope"]),
         "game_log": scoped["game_log"],
         "game_log_stat_cols": profile.get("game_log_stat_cols") or [],
         "league_scoped": scoped["league_scoped"],
@@ -5866,6 +5867,7 @@ def player_game_detail(request: Request, player_id: str, season: str, week: int,
     ctx = {
         "theme": theme, "game": game, "identity": profile.get("identity") or {},
         "source_labels": stat_reconcile.SOURCE_LABELS,
+        "play_log": pp.play_log(profile, str(season), week),
     }
     return tpl.TemplateResponse(request, "_player_game_detail.html", ctx)
 
