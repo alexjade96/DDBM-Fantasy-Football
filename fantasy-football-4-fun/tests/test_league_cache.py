@@ -237,3 +237,27 @@ def test_another_chart_is_not_held_behind_a_slow_player_build(monkeypatch):
     release.set()
     t.join(5)
     assert got
+
+
+def test_prime_waits_before_assembling_on_render(monkeypatch):
+    """The boot prime must not start its CPU-bound build until after the delay,
+    so Render's boot health check is answered first."""
+    order = []
+    monkeypatch.setattr(app_mod, "_prime_delay", lambda: 7.0)
+    monkeypatch.setattr(app_mod.time, "sleep", lambda s: order.append(("sleep", s)))
+    monkeypatch.setattr(app_mod, "_assemble_league", lambda lid: order.append(("assemble", lid)))
+    monkeypatch.setattr(app_mod, "_cache", {})
+    app_mod._prime_default_league()
+    assert order == [("sleep", 7.0), ("assemble", app_mod.DEFAULT_LEAGUE)]
+
+
+def test_prime_delay_defaults_and_override(monkeypatch):
+    monkeypatch.delenv("SLEEPERMETRICS_PRIME_DELAY", raising=False)
+    monkeypatch.setattr(app_mod, "on_render", lambda: True)
+    assert app_mod._prime_delay() == 45.0
+    monkeypatch.setattr(app_mod, "on_render", lambda: False)
+    assert app_mod._prime_delay() == 0.0
+    monkeypatch.setenv("SLEEPERMETRICS_PRIME_DELAY", "3")
+    assert app_mod._prime_delay() == 3.0
+    monkeypatch.setenv("SLEEPERMETRICS_PRIME_DELAY", "junk")
+    assert app_mod._prime_delay() == 0.0

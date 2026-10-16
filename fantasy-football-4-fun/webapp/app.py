@@ -775,12 +775,32 @@ def _warm_async(s) -> None:
                      name=f"warm-{key}", daemon=True).start()
 
 
+def _prime_delay() -> float:
+    """Seconds the boot prime waits before assembling.  45 on Render, 0 elsewhere;
+    SLEEPERMETRICS_PRIME_DELAY overrides either."""
+    raw = os.environ.get("SLEEPERMETRICS_PRIME_DELAY")
+    try:
+        if raw not in (None, ""):
+            return max(0.0, float(raw))
+    except ValueError:
+        pass
+    return 45.0 if on_render() else 0.0
+
+
 def _prime_default_league() -> None:
     """Assemble the default league into _cache at process start, so the first
     visitor gets a cache hit instead of paying the chain walk. Runs on the
     daemon thread started by the app lifespan; never raises. A no-op if the
-    entry is already fresh (e.g. a fast restart)."""
+    entry is already fresh (e.g. a fast restart).
+
+    On Render it first waits `_prime_delay()` seconds: the assembly is CPU-bound
+    pandas work and, on the slow shared CPU, it holds the GIL long enough that
+    the platform's boot health check got no answer and the deploy timed out
+    (a294145).  The wait lets that check pass first."""
     try:
+        delay = _prime_delay()
+        if delay > 0:
+            time.sleep(delay)
         hit = _cache.get(DEFAULT_LEAGUE)
         if hit and time.time() - hit["at"] < TTL:
             return
