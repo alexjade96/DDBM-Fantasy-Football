@@ -73,7 +73,47 @@ PLAY_BANDS = {
     "ttt": ("Time to throw", "ttt", {"Under 2.5 s": (None, 2.5), "2.5 to 3.5 s": (2.5, 3.5),
                                      "3.5 s or more": (3.5, None)}),
 }
+PASS_KEYS = list(PLAY_EQ) + list(PLAY_YESNO) + list(PLAY_BANDS)
+
+# -- run-play filters --------------------------------------------------------------
+# Facts about a single carry (the box, the personnel, the formation, which way the
+# run went), from the `rush_plays` dataset (2016 on; the defense's look is blank in a
+# season nflverse has not published its participation file for).  They share the
+# menus above, so the picker, the cleaning and the grouping treat them the same way,
+# but they read the rush table: a query uses the pass table or the rush table, never
+# both, and only the carry measures can be answered under a run filter.
+RUSH_EQ = {
+    "run_location": ("Run direction", "run_location",
+                     {"Left": "Left", "Middle": "Middle", "Right": "Right"}),
+    "run_gap": ("Run gap", "run_gap", {"End": "End", "Tackle": "Tackle", "Guard": "Guard"}),
+    "rush_formation": ("Rush formation", "formation",
+                       {"Shotgun": "SHOTGUN", "Singleback": "SINGLEBACK",
+                        "Under center": "UNDER CENTER", "I-form": "I_FORM",
+                        "Pistol": "PISTOL", "Jumbo": "JUMBO", "Wildcat": "WILDCAT",
+                        "Empty": "EMPTY"}),
+    "off_personnel": ("Offense personnel", "off_personnel",
+                      {"11 (1 RB, 1 TE)": "11", "12 (1 RB, 2 TE)": "12",
+                       "21 (2 RB, 1 TE)": "21", "13 (1 RB, 3 TE)": "13",
+                       "22 (2 RB, 2 TE)": "22", "10 (1 RB, no TE)": "10",
+                       "20 (2 RB, no TE)": "20", "Other": "Other"}),
+    "def_personnel": ("Defense personnel", "def_personnel",
+                      {"4-2-5": "4-2-5", "4-3-4": "4-3-4", "3-4-4": "3-4-4",
+                       "3-3-5": "3-3-5", "2-4-5": "2-4-5", "2-3-6": "2-3-6",
+                       "4-1-6": "4-1-6", "5-2-4": "5-2-4"}),
+    "carry_type": ("Carry type", "carry_type",
+                   {"Designed run": "Run", "Scramble": "Scramble", "Kneel": "Kneel"}),
+}
+RUSH_BANDS = {
+    "rush_box": ("Defenders in the box (runs)", "box",
+                 {"6 or fewer (light)": (None, 7), "7": (7, 8),
+                  "8 or more (stacked)": (8, None)}),
+}
+PLAY_EQ.update(RUSH_EQ)
+PLAY_BANDS.update(RUSH_BANDS)
+RUSH_KEYS = list(RUSH_EQ) + list(RUSH_BANDS)
 PLAY_KEYS = list(PLAY_EQ) + list(PLAY_YESNO) + list(PLAY_BANDS)
+#: which table each play key reads
+PLAY_TABLE = {**{k: "pass" for k in PASS_KEYS}, **{k: "rush" for k in RUSH_KEYS}}
 PLAY_COLUMN = {**{k: v[1] for k, v in PLAY_EQ.items()},
                **{k: v[1] for k, v in PLAY_YESNO.items()},
                **{k: v[1] for k, v in PLAY_BANDS.items()}}
@@ -82,6 +122,8 @@ PLAY_LABELS = {**{k: v[0] for k, v in PLAY_EQ.items()},
                **{k: v[0] for k, v in PLAY_BANDS.items()}}
 #: group-by values that read the play table
 PLAY_GROUPS = {k: PLAY_LABELS[k] for k in PLAY_KEYS}
+PASS_GROUPS = {k: PLAY_LABELS[k] for k in PASS_KEYS}
+RUSH_GROUPS = {k: PLAY_LABELS[k] for k in RUSH_KEYS}
 GROUPS = {**GAME_GROUPS, **PLAY_GROUPS}
 
 #: Measures a pass-play query can answer (the rest read the whole game).
@@ -90,6 +132,10 @@ PLAY_MEASURES = {"attempts", "completions", "passing_yards", "passing_tds",
                  "targets", "receptions", "receiving_yards", "receiving_tds",
                  "receiving_air_yards", "yards_per_target", "yards_per_reception",
                  "catch_rate"}
+#: What a run-play query can answer: carries only (a quarterback's scrambles count).
+RUSH_PLAY_MEASURES = {"carries", "rushing_yards", "rushing_tds", "yards_per_carry"}
+#: the measures each table can answer
+TABLE_MEASURES = {"pass": PLAY_MEASURES, "rush": RUSH_PLAY_MEASURES}
 #: Passer measures versus receiver measures: a quarterback is read as a passer,
 #: everyone else as a receiver.
 _PASSER_MEASURES = {"attempts", "completions", "passing_yards", "passing_tds",
@@ -232,6 +278,7 @@ CONTROL_HINTS = {
     "filter_picker": "Tick what you want on the form: measure groups, how to show them, and filters.  Only ticked items show; unticking one clears it.  Games with no recorded value, such as temperature in a dome, never match a band.",
     "add_card": "Adds a card with the stats and grouping ticked above.  It follows the filters on this page, and Run refreshes it.",
     "reset": "Clear every measure, filter and grouping back to this player's defaults.",
+    "run": "Looks at this player's carries only (2016 on; the defense's look is missing for a season nflverse has not published it for).  Carries, rushing yards, touchdowns and yards per carry answer it; other measures show a dash.  A carry with no recorded value never matches.  Cannot be combined with a Play filter.",
     "play": "Looks at this player's pass plays only (2016 on; coverage 2018 on).  Passing and receiving measures answer it; other measures show a dash.  A play with no recorded value never matches.",
     "man_zone": "Whether the defense played man or zone coverage on the play.  Recorded from 2018.",
     "coverage": "The coverage the defense ran (Cover 0, 1, 2, 3, 4, 6, 2-man and the like).  Recorded from 2018.",
@@ -285,6 +332,7 @@ def clear_cache() -> None:
     _player_cache.clear()
     _play_cache.clear()
     _play_coverage.clear()
+    _rush_coverage.clear()
 
 
 def _player_index() -> pd.DataFrame:
@@ -593,6 +641,10 @@ PICKER_MENU = [
               ("box", "Defenders in the box"), ("rushers", "Pass rushers"),
               ("pressure", "Pressure"), ("ttt", "Time to throw"),
               ("route", "Route (on targets)"), ("formation", "Formation")]),
+    ("Run", [("rush_box", "Defenders in the box"), ("off_personnel", "Offense personnel"),
+             ("def_personnel", "Defense personnel"), ("rush_formation", "Formation"),
+             ("run_location", "Run direction"), ("run_gap", "Run gap"),
+             ("carry_type", "Carry type")]),
 ]
 PICKER_KEYS = [k for _, items in PICKER_MENU for k, _ in items]
 #: controls that are not filters: they never count toward the "filters in use" badge
@@ -793,9 +845,14 @@ def _clean(spec: dict) -> dict:
     opp = f.get("opponent") or None
     if opp is not None:
         opp = str(opp).strip().upper() or None
-    return {"measures": measures, "agg": agg, "group_by": group,
-            "filters": {"opponent": opp, "seasons": seasons, "home_away": ha,
-                        "game_types": gts, **_clean_extras(f)}}
+    filters = {"opponent": opp, "seasons": seasons, "home_away": ha,
+               "game_types": gts, **_clean_extras(f)}
+    tables = {PLAY_TABLE[k] for k in PLAY_KEYS if filters.get(k)}
+    if group in PLAY_TABLE:
+        tables.add(PLAY_TABLE[group])
+    if len(tables) > 1:
+        raise ValueError("pass-play and run-play choices cannot be combined")
+    return {"measures": measures, "agg": agg, "group_by": group, "filters": filters}
 
 
 def apply_filters(games: pd.DataFrame, filters: dict) -> pd.DataFrame:
@@ -846,12 +903,13 @@ def _value(sub: pd.DataFrame, key: str, agg: str) -> float | None:
 
 _play_cache: dict[tuple, pd.DataFrame] = {}
 _play_coverage: dict[int, dict[str, float]] = {}
+_rush_coverage: dict[int, dict[str, float]] = {}      # the same, for the rush table
 
 
-def play_seasons() -> list[int]:
-    """Seasons with a pass-play snapshot, oldest first."""
+def play_seasons(table: str = "pass") -> list[int]:
+    """Seasons with a pass-play (or, for "rush", a run-play) snapshot, oldest first."""
     from webapp.sources.nflref import cache
-    root = cache._NFLVERSE_DIR / "pass_plays"
+    root = cache._NFLVERSE_DIR / ("rush_plays" if table == "rush" else "pass_plays")
     out = []
     if root.is_dir():
         for p in root.glob("*.parquet"):
@@ -889,6 +947,48 @@ def load_plays(player_id: str, passer: bool) -> pd.DataFrame:
         _play_cache.pop(next(iter(_play_cache)))
     _play_cache[key] = out
     return out
+
+
+def load_rush_plays(player_id: str) -> pd.DataFrame:
+    """Every carry this player had (a quarterback's scrambles and kneel-downs
+    included, as the official stat lines count them), oldest first."""
+    key = (player_id, "rusher")
+    if key in _play_cache:
+        return _play_cache[key]
+    cols = sorted(set(PLAY_COLUMN.values()))
+    parts = []
+    for yr in play_seasons("rush"):
+        df = nflref.load("rush_plays", str(yr))
+        if df.empty:
+            continue
+        df = df.assign(carry_type=_carry_type(df))
+        if yr not in _rush_coverage:
+            _rush_coverage[yr] = {c: float(df[c].notna().mean()) for c in cols if c in df.columns}
+        sub = df[df["rusher_id"] == player_id]
+        if not sub.empty:
+            parts.append(sub)
+    out = (pd.concat(parts, ignore_index=True).sort_values(["season", "week", "play_id"])
+           .reset_index(drop=True) if parts else pd.DataFrame())
+    if len(_play_cache) >= _PLAYER_CACHE_MAX:
+        _play_cache.pop(next(iter(_play_cache)))
+    _play_cache[key] = out
+    return out
+
+
+def _carry_type(df: pd.DataFrame) -> pd.Series:
+    """Designed run, scramble or kneel-down, from the two flags on each carry."""
+    kneel = pd.to_numeric(df["kneel"], errors="coerce").fillna(0) == 1
+    scramble = pd.to_numeric(df["scramble"], errors="coerce").fillna(0) == 1
+    return pd.Series("Run", index=df.index, dtype=object).mask(scramble, "Scramble").mask(kneel, "Kneel")
+
+
+def _rush_measure_frame(plays: pd.DataFrame) -> pd.DataFrame:
+    """The additive carry measures, one numeric column each, per carry."""
+    nan = pd.Series(float("nan"), index=plays.index)
+    yards = pd.to_numeric(plays["yards"], errors="coerce") if "yards" in plays.columns else nan
+    td = pd.to_numeric(plays["td"], errors="coerce").fillna(0.0) if "td" in plays.columns         else pd.Series(0.0, index=plays.index)
+    return pd.DataFrame({"carries": pd.Series(1.0, index=plays.index),
+                         "rushing_yards": yards, "rushing_tds": td})
 
 
 def _play_values(plays: pd.DataFrame, key: str) -> pd.Series:
@@ -944,12 +1044,13 @@ def _play_measure_frame(plays: pd.DataFrame, passer: bool) -> pd.DataFrame:
                                                               errors="coerce").where(att)})
 
 
-def _play_value(m: pd.DataFrame, n_games: int, key: str, agg: str) -> float | None:
+def _play_value(m: pd.DataFrame, n_games: int, key: str, agg: str,
+                allowed: set | None = None) -> float | None:
     """One measure over a set of plays (`m` = their measure frame) and the games
     they came from.  A measure the role does not have, or one outside the play
     measures, is None (a dash).  A group with games but no matching play is a
     real zero for a count and None for a ratio."""
-    if key not in PLAY_MEASURES:
+    if key not in (PLAY_MEASURES if allowed is None else allowed):
         return None
     if key in _RATIOS:
         _, num, den = _RATIOS[key]
@@ -984,9 +1085,15 @@ def _run_play_query(games: pd.DataFrame, spec: dict) -> dict:
     if group in PLAY_GROUPS:
         used.add(PLAY_COLUMN[group])
     passer = is_passer(games)
-    plays = load_plays(str(games["player_id"].iloc[0]), passer)
+    tables = {PLAY_TABLE[k] for k in play_filters} | ({PLAY_TABLE[group]} if group in PLAY_TABLE
+                                                      else set())
+    table = "rush" if "rush" in tables else "pass"
+    allowed = TABLE_MEASURES[table]
+    pid = str(games["player_id"].iloc[0])
+    plays = load_rush_plays(pid) if table == "rush" else load_plays(pid, passer)
+    coverage = _rush_coverage if table == "rush" else _play_coverage
     g = apply_filters(games, filters)
-    usable = {yr for yr, cov in _play_coverage.items()
+    usable = {yr for yr, cov in coverage.items()
               if all(cov.get(c, 0.0) >= MIN_PLAY_COVERAGE for c in used)}
     g = g[g["season"].isin(usable)]
     if g.empty:
@@ -1004,13 +1111,13 @@ def _run_play_query(games: pd.DataFrame, spec: dict) -> dict:
     pl = plays.merge(keys, on=["season", "week"], how="inner").reset_index(drop=True)
     for k, v in play_filters.items():
         pl = pl[_play_values(pl, k) == v]
-    m = _play_measure_frame(pl, passer)
+    m = _rush_measure_frame(pl) if table == "rush" else _play_measure_frame(pl, passer)
 
     def row(label, idx, n):
         r = {"group": label, "games": int(n)}
         sub = m.loc[idx] if idx is not None else m
         for k in measures:
-            r[k] = _play_value(sub, int(n), k, agg)
+            r[k] = _play_value(sub, int(n), k, agg, allowed)
         return r
 
     rows: list[dict] = []
@@ -1244,24 +1351,76 @@ _CARD_CFG = {
                  ["volume", "yardage", "scoring"], "total", "coverage"),
     "routes": ("By route", "Targets by the route the receiver ran (2016 on)",
                ["volume", "yardage", "scoring"], "total", "route"),
+    "rush_box": ("Vs the box", "Carries by how many defenders were in the box: 6 or fewer is "
+                 "light, 8 or more is stacked (2016 on)", [], "total", "rush_box"),
+    "rush_direction": ("By run direction", "Carries by the side of the line the run went to (2016 on)",
+                       [], "total", "run_location"),
+    "rush_personnel": ("By personnel", "Carries by the offense's personnel group: 11 is one back "
+                       "and one tight end (2016 on)", [], "total", "off_personnel"),
+    "rush_formation": ("By formation", "Carries by the offense's formation (2016 on)",
+                       [], "total", "rush_formation"),
 }
 CARD_ORDER = list(_CARD_CFG)
-_PLAY_CARD_POSITIONS = {"QB", "RB", "FB", "WR", "TE"}
+#: What a rush card shows: the only measures a run-play query can answer.
+_RUSH_CARD_MEASURES = ["carries", "rushing_yards", "rushing_tds", "yards_per_carry"]
+_RUSH_CARDS = ["rush_box", "rush_direction", "rush_personnel", "rush_formation"]
+
+#: Cards every position can show, first and last.  The first EAGER_CARDS load together,
+#: so they are the cheap game-level ones; the split cards follow, in the order that
+#: matters for the position.
+_HEAD_CARDS = ["workload", "production", "efficiency"]
+_TAIL_CARDS = ["home_away", "by_opponent"]
+#: The position's own cards, most relevant first.  A back is judged on how he runs, a
+#: receiver on how he is covered, a quarterback on both (his scrambles are carries).
+_POSITION_CARDS = {
+    "QB": ["coverage"] + _RUSH_CARDS,
+    "RB": _RUSH_CARDS + ["coverage", "routes"],
+    "FB": _RUSH_CARDS + ["coverage", "routes"],
+    "WR": ["coverage", "routes"] + _RUSH_CARDS,
+    "TE": ["coverage", "routes"],
+}
+#: How much a player must have done before a card about it is shown: a handful of
+#: carries or targets would give rows of one or two plays.
+MIN_USAGE = {"rush": 20, "recv": 20, "pass": 50}
 
 
-def cards_for(position: str | None) -> list[dict]:
-    """The cards that make sense for a position, in display order.  Pass-play cards
-    need a passer or a receiver, and a route is the targeted receiver's, so a
-    quarterback gets coverage only."""
-    out = []
-    for cid in CARD_ORDER:
-        group = _CARD_CFG[cid][4]
-        if group in PLAY_GROUPS and position not in _PLAY_CARD_POSITIONS:
-            continue
-        if group == "route" and position == "QB":
-            continue
-        out.append({"id": cid, "title": _CARD_CFG[cid][0], "hint": _CARD_CFG[cid][1]})
-    return out
+def _usage(games: pd.DataFrame, column: str) -> float:
+    if games is None or games.empty or column not in games.columns:
+        return 0.0
+    return float(pd.to_numeric(games[column], errors="coerce").fillna(0).sum())
+
+
+def _card_applies(cid: str, position: str | None, games: pd.DataFrame | None) -> bool:
+    """Whether the player has done enough of what a position card is about.  With no
+    games to look at (the position alone) every card the position can have applies."""
+    if games is None:
+        return True
+    if cid in _RUSH_CARDS:
+        return _usage(games, "carries") >= MIN_USAGE["rush"]
+    if cid == "routes":
+        return _usage(games, "targets") >= MIN_USAGE["recv"]
+    if cid == "coverage":
+        if position == "QB":
+            return _usage(games, "attempts") >= MIN_USAGE["pass"]
+        return _usage(games, "targets") >= MIN_USAGE["recv"]
+    return True
+
+
+def cards_for(position: str | None, games: pd.DataFrame | None = None) -> list[dict]:
+    """The cards for a player, in display order: the cheap game-level cards, then the
+    position's own (a back's run splits, a receiver's coverage and routes), then the
+    splits by site and opponent.  With `games`, a position card appears only when the
+    player has the usage it is about (carries for a run card, targets for routes);
+    without, every card the position can have is listed."""
+    order = _HEAD_CARDS + [c for c in _POSITION_CARDS.get(position or "", [])
+                           if _card_applies(c, position, games)] + _TAIL_CARDS
+    return [{"id": cid, "title": _CARD_CFG[cid][0], "hint": _CARD_CFG[cid][1]} for cid in order]
+
+
+def cards_for_player(player_id: str, position: str | None) -> list[dict]:
+    """`cards_for` for a chosen player, reading his games (cached) to apply the usage
+    rules.  The builder page calls this."""
+    return cards_for(position, load_player(player_id))
 
 
 def card_spec(card_id: str, games: pd.DataFrame, position: str | None, filters: dict) -> dict:
@@ -1270,6 +1429,9 @@ def card_spec(card_id: str, games: pd.DataFrame, position: str | None, filters: 
     if card_id not in _CARD_CFG:
         raise ValueError(f"unknown card: {card_id}")
     _, _, families, agg, group = _CARD_CFG[card_id]
+    if group in RUSH_GROUPS:
+        return {"measures": list(_RUSH_CARD_MEASURES), "agg": agg, "group_by": group,
+                "filters": filters}
     measures = _family_measures(families, games, position)
     if group in PLAY_GROUPS:
         measures = ([m for m in measures if m in PLAY_MEASURES]
@@ -1278,7 +1440,18 @@ def card_spec(card_id: str, games: pd.DataFrame, position: str | None, filters: 
 
 
 def run_card(games: pd.DataFrame, position: str | None, card_id: str, filters: dict) -> dict:
-    return run_query(games, card_spec(card_id, games, position, filters))
+    spec = card_spec(card_id, games, position, filters)
+    # The filters are shared, and a query reads the pass table or the rush table, never
+    # both.  A card about the other table cannot be answered under them, so it has no
+    # rows (and the page hides it) rather than failing.
+    wants = PLAY_TABLE.get(spec["group_by"])
+    active = {PLAY_TABLE[k] for k in PLAY_KEYS if filters.get(k)}
+    if wants and active and wants not in active:
+        labels = {m: MEASURES[m] for m in spec["measures"]}
+        return {"columns": [{"key": m, "label": labels[m]} for m in spec["measures"]],
+                "rows": [], "total": None, "games": 0, "spec": spec,
+                "play_seasons": None}
+    return run_query(games, spec)
 
 
 #: Most cards a user can add on top of the default ones.

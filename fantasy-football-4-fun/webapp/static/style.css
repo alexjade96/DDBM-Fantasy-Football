@@ -2821,6 +2821,25 @@ h3.gd-block + .tablewrap, h3.gd-block + p.empty { margin-top: 6px; }
 #alt-builder .alt-addcard .alt-mgroup > h4, #alt-builder .alt-addcard .alt-line > h4 {
   font-size: 11px; color: var(--muted); }
 #alt-builder .alt-addrow { margin-top: 8px; }
+/* Add a card is a card of its own beside the search and filter card: two columns when
+   there is room, stacked below.  Its heading matches the form sections. */
+#alt-builder .alt-top { display: grid; gap: 22px; grid-template-columns: minmax(0, 1fr); align-items: start; }
+@media (min-width: 940px) {
+  #alt-builder .alt-top.alt-two { grid-template-columns: minmax(0, 1.7fr) minmax(0, 1fr); }
+}
+#alt-builder .alt-addpanel { min-width: 0; }
+#alt-builder .alt-addpanel > .alt-block { margin: 0; }
+#alt-builder .alt-addpanel > .alt-block > .alt-bhead > h4 { display: flex; align-items: baseline; gap: 10px;
+  margin: 0; border-left: 3px solid var(--turf); padding-left: 8px; font-size: 13px; }
+/* The filters a card ran with, under its title; and the marker shown when the form has
+   been edited since the last Run. */
+#alt-builder .alt-cfilters { display: flex; flex-wrap: wrap; gap: 4px 6px; margin: 0 0 8px 11px; cursor: default; }
+#alt-builder .alt-cf { padding: 0 8px; border: 1px solid var(--line); border-radius: 999px;
+  font-size: 11px; line-height: 18px; color: var(--muted); }
+#alt-builder .alt-stale { grid-column: 1 / -1; margin: 0; padding: 6px 10px; border-radius: 6px;
+  font-size: 13px; color: var(--ink); border: 1px solid color-mix(in srgb, #e8a317 60%, transparent);
+  background: color-mix(in srgb, #e8a317 14%, transparent); }
+#alt-builder .alt-stale[hidden] { display: none; }
 #alt-builder .alt-addnote { font-size: 13px; color: #e03131; margin-right: auto; }
 #alt-builder .alt-addnote[hidden] { display: none; }
 #alt-builder .alt-add:disabled { opacity: .5; cursor: not-allowed; }

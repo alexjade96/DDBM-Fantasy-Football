@@ -64,7 +64,7 @@ def test_registry_lists_the_datasets():
         "player_stats", "schedules", "player_games", "snap_counts",
         "ngs_passing", "ngs_receiving", "ngs_rushing",
         "pfr_pass", "pfr_rec", "pfr_rush", "pfr_def",
-        "injuries", "route_participation", "pass_plays",
+        "injuries", "route_participation", "pass_plays", "rush_plays",
     }
 
 
@@ -1578,3 +1578,149 @@ def test_pass_plays_keeps_the_situation_columns_and_blanks_a_missing_one():
     # a file without the columns (an older snapshot source) still builds, blank
     bare = pp.build(_pp_pbp(), _pp_part(), 2018)
     assert bare[["qtr", "down", "ydstogo", "yardline", "clock"]].isna().all().all()
+
+
+# -- rush_plays: one row per carry with the defense's look -------------------------------
+
+def _rp_pbp():
+    return pd.DataFrame({
+        "game_id": ["g1"] * 7, "play_id": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0],
+        "week": [1] * 7, "season": [2018] * 7,
+        "posteam": ["AAA"] * 7, "defteam": ["BBB"] * 7,
+        # play 5 is a two-point try, play 6 deleted, play 7 has no rusher (a pass)
+        "rush_attempt": [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.0],
+        "rusher_player_id": ["00-R", "00-R", "00-Q", "00-Q", "00-R", "00-R", None],
+        "qb_scramble": [0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0],
+        "qb_kneel": [0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0],
+        "two_point_attempt": [0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0],
+        "play_deleted": [0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0],
+        "rushing_yards": [5.0, -2.0, 11.0, -1.0, 1.0, 4.0, None],
+        "rush_touchdown": [0.0, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0],
+        "first_down": [0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0], "fumble_lost": [0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+        "run_location": ["left", "middle", None, None, "right", "left", None],
+        "run_gap": ["end", None, None, None, "guard", "tackle", None],
+        "qtr": [1.0, 2.0, 3.0, 4.0, 4.0, 1.0, 1.0], "down": [1.0, 2.0, 3.0, 1.0, 2.0, 1.0, 1.0],
+        "ydstogo": [10.0, 8.0, 4.0, 10.0, 2.0, 10.0, 10.0], "yardline_100": [75.0, 60.0, 30.0, 12.0, 2.0, 50.0, 50.0],
+        "quarter_seconds_remaining": [800.0, 400.0, 90.0, 30.0, 10.0, 700.0, 700.0],
+        "score_differential": [0.0, -3.0, 7.0, 10.0, 3.0, 0.0, 0.0],
+    })
+
+
+def _rp_part():
+    return pd.DataFrame({
+        "nflverse_game_id": ["g1", "g1", "g1"], "play_id": [1.0, 2.0, 3.0],
+        "defenders_in_box": [7.0, 8.0, 6.0],
+        "offense_personnel": ["1 RB, 1 TE, 3 WR", "1 RB, 2 TE, 2 WR", None],
+        "defense_personnel": ["4 DL, 2 LB, 5 DB", "4 DL, 3 LB, 4 DB", None],
+        "offense_formation": ["SHOTGUN", "UNDER CENTER", " "],
+    })
+
+
+def test_registry_has_rush_plays():
+    assert "rush_plays" in DATASETS
+
+
+def test_rush_plays_keeps_every_carry_and_drops_two_point_deleted_and_rusherless_plays():
+    from webapp.sources.nflref import rush_plays as rp
+    df = rp.build(_rp_pbp(), _rp_part(), 2018)
+    assert df["play_id"].tolist() == [1, 2, 3, 4]
+    assert list(df.columns) == rp.COLUMNS
+    assert df["scramble"].tolist() == [0, 0, 1, 0] and df["kneel"].tolist() == [0, 0, 0, 1]   # flagged, kept
+    assert df["yards"].tolist() == [5.0, -2.0, 11.0, -1.0] and df["td"].tolist() == [0, 0, 1, 0]
+    assert df["fumble_lost"].tolist() == [0, 1, 0, 0] and df["first_down"].tolist() == [0, 0, 1, 0]
+
+
+def test_rush_plays_joins_the_defenses_look_and_leaves_missing_values_blank():
+    from webapp.sources.nflref import rush_plays as rp
+    df = rp.build(_rp_pbp(), _rp_part(), 2018)
+    assert df["box"].tolist()[:3] == [7.0, 8.0, 6.0] and pd.isna(df["box"].iloc[3])
+    assert df["off_personnel"].tolist()[:2] == ["11", "12"] and pd.isna(df["off_personnel"].iloc[2])
+    assert df["def_personnel"].tolist()[:2] == ["4-2-5", "4-3-4"]
+    assert pd.isna(df["formation"].iloc[2])                                   # blank text -> None
+    assert df["run_location"].tolist()[:2] == ["Left", "Middle"] and pd.isna(df["run_location"].iloc[2])
+    assert df["run_gap"].iloc[0] == "End" and pd.isna(df["run_gap"].iloc[1])
+
+
+def test_rush_plays_keeps_the_situation_columns():
+    from webapp.sources.nflref import rush_plays as rp
+    df = rp.build(_rp_pbp(), _rp_part(), 2018)
+    assert df["qtr"].tolist() == [1, 2, 3, 4] and df["down"].tolist() == [1, 2, 3, 1]
+    assert df["yardline"].iloc[3] == 12.0 and df["clock"].iloc[2] == 90.0
+    assert df["score_diff"].tolist() == [0.0, -3.0, 7.0, 10.0]
+
+
+def test_rush_plays_without_a_participation_file_has_carries_and_a_blank_look():
+    from webapp.sources.nflref import rush_plays as rp
+    df = rp.build(_rp_pbp(), None, 2026)
+    assert len(df) == 4 and df["season"].eq(2026).all()
+    for c in ("box", "off_personnel", "def_personnel", "formation"):
+        assert df[c].isna().all(), c
+    assert df["run_location"].notna().sum() == 2                                # from play-by-play
+
+
+def test_offense_personnel_is_the_usual_two_digit_code_or_other():
+    from webapp.sources.nflref import rush_plays as rp
+    assert rp.offense_code("1 RB, 1 TE, 3 WR") == "11" and rp.offense_code("2 RB, 1 TE, 2 WR") == "21"
+    assert rp.offense_code("1 OL, 1 RB, 1 TE, 2 WR") == "Other"                 # not five eligibles with five linemen
+    assert rp.offense_code("1 RB, 6 OL, 1 TE, 2 WR") == "Other"                 # a sixth lineman is not a standard code
+    assert rp.offense_code(None) is None and rp.offense_code("") is None
+    assert rp.defense_code("4 DL, 2 LB, 5 DB") == "4-2-5" and rp.defense_code("4 DL, 3 LB") is None
+
+
+def test_personnel_is_counted_from_position_lists_when_the_file_has_them():
+    from webapp.sources.nflref import rush_plays as rp
+    assert rp.offense_code_from_positions("QB;RB;TE;WR;WR;WR;T;T;G;G;C") == "11"
+    assert rp.offense_code_from_positions("QB;RB;FB;TE;WR;WR;T;T;G;G;C") == "21"   # a fullback is a back
+    assert rp.offense_code_from_positions("QB;RB;TE;WR;WR;T;T;G;G;C") == "Other"    # ten players
+    assert rp.offense_code_from_positions("QB;RB;TE;WR;WR;WR;T;T;T;G;G;C") == "Other"   # a sixth lineman
+    assert rp.defense_code_from_positions("DE;DT;DT;DE;ILB;ILB;CB;CB;CB;FS;SS") == "4-2-5"
+    assert rp.defense_code_from_positions(None) is None
+
+
+def test_rush_plays_prefers_position_lists_over_the_personnel_string():
+    from webapp.sources.nflref import rush_plays as rp
+    part = _rp_part()
+    # 2023 on: the string can list defenders; the position list is the reliable one
+    part["offense_personnel"] = ["2 CB, 2 DE, 1 FS, 2 MLB, 1 OLB, 2 RB, 1 TE"] * 3
+    part["offense_positions"] = ["QB;RB;TE;WR;WR;WR;T;T;G;G;C", "QB;RB;TE;TE;WR;WR;T;T;G;G;C", None]
+    part["defense_positions"] = ["DE;DT;DT;DE;ILB;ILB;CB;CB;CB;FS;SS", None, None]
+    df = rp.build(_rp_pbp(), part, 2024)
+    assert df["off_personnel"].tolist()[:2] == ["11", "12"]
+    assert df["def_personnel"].iloc[0] == "4-2-5"
+    assert df["def_personnel"].iloc[1] == "4-3-4"                                # no list: the string is the fallback
+
+
+def test_rush_plays_fetch_snapshots_and_serves_it(monkeypatch):
+    def fake(asset, columns=None, reload=False):
+        if asset.startswith("pbp_participation/") and columns and "offense_positions" in columns:
+            raise RuntimeError("an older file has no position lists")
+        return _rp_pbp() if asset.startswith("pbp/") else _rp_part()
+    monkeypatch.setattr(api, "fetch_release_parquet", fake)
+    df = nflref.load("rush_plays", "2018")
+    assert len(df) == 4 and df["box"].notna().sum() == 3                          # the fallback still got the look
+    monkeypatch.setattr(api, "fetch_release_parquet",
+                        lambda *a, **k: (_ for _ in ()).throw(RuntimeError("offline")))
+    cache._mem.clear()
+    assert len(nflref.load("rush_plays", "2018")) == 4                            # from the snapshot
+
+
+def test_rush_plays_is_built_when_participation_is_unavailable(monkeypatch):
+    def fake(asset, columns=None, reload=False):
+        if asset.startswith("pbp_participation/"):
+            raise RuntimeError("404")
+        return _rp_pbp()
+    monkeypatch.setattr(api, "fetch_release_parquet", fake)
+    df = nflref.load("rush_plays", "2026")
+    assert len(df) == 4 and df["box"].isna().all()
+
+
+def test_rush_plays_before_earliest_is_empty_and_render_never_rebuilds(monkeypatch):
+    assert nflref.load("rush_plays", "2015").empty
+    monkeypatch.setattr(api, "on_render", lambda: True)
+    monkeypatch.setattr(api, "fetch_release_parquet",
+                        lambda *a, **k: (_ for _ in ()).throw(AssertionError("no download")))
+    assert nflref.load("rush_plays", "2018").empty
+
+
+def test_rush_plays_probes_the_play_by_play_asset_for_refresh():
+    assert DATASETS["rush_plays"]._asset("2024") == "pbp/play_by_play_2024.parquet"

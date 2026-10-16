@@ -106,11 +106,12 @@ def _registry() -> dict[str, NflDataset]:
     from .injuries import Injuries
     from .route_participation import RouteParticipation
     from .pass_plays import PassPlays
+    from .rush_plays import RushPlays
     return {d.name: d for d in (
         PlayerStats(), Schedules(), PlayerGames(), SnapCounts(),
         NgsPassing(), NgsReceiving(), NgsRushing(),
         PfrPass(), PfrRec(), PfrRush(), PfrDef(),
-        Injuries(), RouteParticipation(), PassPlays(),
+        Injuries(), RouteParticipation(), PassPlays(), RushPlays(),
     )}
 
 
