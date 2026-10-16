@@ -58,34 +58,46 @@
     {% endcall %}
     {% endmacro %}
 
-    <div class="alt-block alt-picker">
-      <h4>Filter <span class="alt-hcount" data-count="picked">{{ shown|length }} selected</span></h4>
-      <div class="alt-fbar">
-        <details class="alt-fpick">
-          <summary title="{{ aa.CONTROL_HINTS.filter_picker }}">Choose what to show</summary>
-          <div class="alt-fmenu">
-            <input type="hidden" name="fshow_set" value="1">
-            {% for group, items in aa.PICKER_MENU %}
-            <div class="alt-fmgroup">
-              <h5>{{ group }}</h5>
-              {% for key, label in items %}
-              <label class="adp-check">
-                <input type="checkbox" name="fshow" value="{{ key }}"
-                       {% if key in shown %}checked{% endif %}>
-                <span>{{ label }}</span>
-              </label>
-              {% endfor %}
-            </div>
+    <input type="hidden" name="fshow_set" value="1">
+    {# A picker: a button that opens a searchable list of checkboxes, grouped, each group
+       with All and None.  Every box is name="fshow", so the server contract is one list. #}
+    {% macro picker(label, groups, key, hint) %}
+    {% set n = namespace(v=0) %}
+    {% for group, items in groups %}{% for k, lab in items %}{% if k in shown %}{% set n.v = n.v + 1 %}{% endif %}{% endfor %}{% endfor %}
+    <details class="alt-fpick" data-pk="{{ key }}">
+      <summary title="{{ hint }}">{{ label }} <span class="alt-pcount" data-count="{{ key }}"{% if not n.v %} hidden{% endif %}>{{ n.v }}</span></summary>
+      <div class="alt-fmenu">
+        <input type="search" class="alt-fsearch" placeholder="Search" autocomplete="off"
+               aria-label="Search {{ label | lower }}">
+        {% for group, items in groups %}
+        <div class="alt-fmgroup">
+          <div class="alt-fmhead"><h5>{{ group }}</h5>
+            <span class="alt-fmbtns"><button type="button" data-bulk="all">All</button><button type="button" data-bulk="none">None</button></span>
+          </div>
+          <div class="alt-fmitems">
+            {% for k, lab in items %}
+            <label class="adp-check">
+              <input type="checkbox" name="fshow" value="{{ k }}" {% if k in shown %}checked{% endif %}>
+              <span>{{ lab }}</span>
+            </label>
             {% endfor %}
           </div>
-        </details>
-        <span class="alt-fnone"{% if shown %} hidden{% endif %}>Nothing chosen: tick a stat group to run a query.</span>
+        </div>
+        {% endfor %}
+        <p class="alt-fmnone" hidden>Nothing matches.</p>
       </div>
-    </div>
+    </details>
+    {% endmacro %}
+    {% set stat_groups = [] %}{% set filter_groups = [] %}{% set stat_keys = [] %}{% set filter_keys = [] %}
+    {% for g in aa.PICKER_MENU %}{% if g[0] in ("Stats", "Results") %}{% set _ = stat_groups.append(g) %}{% for k, lab in g[1] %}{% set _ = stat_keys.append(k) %}{% endfor %}{% else %}{% set _ = filter_groups.append(g) %}{% for k, lab in g[1] %}{% set _ = filter_keys.append(k) %}{% endfor %}{% endif %}{% endfor %}
 
-    <div class="alt-block alt-line alt-filters" data-blk="filters">
-      <h4>Filters <span class="alt-hcount" data-count="filters"{% if not filter_active %} hidden{% endif %}>{{ filter_active or 0 }} in use</span></h4>
-      <div class="alt-filterbody">
+    <div class="alt-block alt-filters">
+      <div class="alt-bhead">
+        <h4>Filters <span class="alt-hcount" data-count="filters"{% if not filter_active %} hidden{% endif %}>{{ filter_active or 0 }} in use</span></h4>
+        {{ picker("Choose filters", filter_groups, "picked-filters", "Choose which filters appear.  Unticking one clears its value.  Games with no recorded value, such as temperature in a dome, never match a band.") }}
+      </div>
+      <p class="alt-fempty"{% if shown | select("in", filter_keys) | list %} hidden{% endif %}>No filters chosen: every game counts.</p>
+      <div class="alt-filterbody" data-blk="filters-body">
         <div class="alt-subsec" data-blk="sub-game">
           <h5 class="alt-subhead">Game</h5>
           <div class="alt-fields">
@@ -123,7 +135,7 @@
           </span>
           {% endcall %}
           {% call field("game_types", "Games", aa.CONTROL_HINTS.game_types, true) %}
-          <span class="alt-types">
+          <span class="alt-types alt-pills">
             {% for g in aa.GAME_TYPES %}
             <label class="adp-check" title="{{ aa.GAME_TYPE_LABELS[g] }}">
               <input type="checkbox" name="game_types" value="{{ g }}"
@@ -185,15 +197,22 @@
           </div>
         </div>
       </div>
-    </div>
-    <div class="alt-actions">
-      <button type="button" class="alt-clear" hidden
-              title="{{ aa.CONTROL_HINTS.clear_filters }}">Clear filters</button>
-      <button type="submit" class="nfl-apply alt-run" style="margin-left:0">Run</button>
+      <div class="alt-actions">
+        <div class="alt-applied" role="list" aria-label="Filters in use"></div>
+        <button type="button" class="alt-clear" hidden
+                title="{{ aa.CONTROL_HINTS.clear_filters }}">Clear filters</button>
+        <button type="submit" class="nfl-apply alt-run" style="margin-left:0">Run</button>
+      </div>
     </div>
 
-    <div class="alt-block alt-addcard" data-blk="build">
-      <h4>Add a card <span class="alt-hcount" data-count="cards"{% if not xcards %} hidden{% endif %}>{{ xcards|length }} added</span></h4>
+    <div class="alt-block alt-addcard">
+      <div class="alt-bhead">
+        <h4>Add a card <span class="alt-hcount" data-count="cards"{% if not xcards %} hidden{% endif %}>{{ xcards|length }} added</span></h4>
+        {{ picker("Choose stats", stat_groups, "picked-stats", "Choose which stat groups and counting controls appear.  Unticking one clears it.") }}
+      </div>
+      {% set has_stat = namespace(v=false) %}{% for k in shown %}{% if k.startswith("m_") %}{% set has_stat.v = true %}{% endif %}{% endfor %}
+      <p class="alt-fnone"{% if has_stat.v %} hidden{% endif %}>Nothing chosen: tick a stat group to run a query.</p>
+      <div class="alt-addbody" data-blk="build-body">
     {# Each stat group is its own section with its own header (no "Measures"
        wrapper).  A group (or measure) the player has no production in is dimmed
        and disabled; which groups are on screen is the picker's choice. #}
@@ -204,7 +223,7 @@
     <div class="alt-block alt-mgroup{% if not g.used %} alt-mrow-off{% endif %}" data-f="{{ gkey }}" data-plain
          {% if gkey not in shown %}hidden{% endif %}>
       <h4>{{ g.label }} <span class="alt-hcount" data-count="{{ gkey }}"{% if not n_sel.v %} hidden{% endif %}>{{ n_sel.v }} selected</span></h4>
-      <div class="alt-mboxes">
+      <div class="alt-mboxes alt-pills">
         {% for key, label, used in g["items"] %}
         <label class="adp-check{% if not used %} alt-unused{% endif %}{% if key not in aa.PLAY_MEASURES %} alt-gameonly{% endif %}"
                title="{{ aa.MEASURE_HINTS.get(key, label) }}{% if not used %}.  No production for this player.{% endif %}">
@@ -218,16 +237,15 @@
     </div>
     {% endfor %}
 
-    <div class="alt-block alt-line" data-blk="show">
+    <div class="alt-block alt-line alt-show" data-blk="show">
       <h4>Show</h4>
-      <div class="alt-filterbody">
-        <div class="alt-fields">
-          {% call field("agg", "Total or per game", aa.CONTROL_HINTS.agg, false, true) %}
-          <select name="agg" aria-label="Total or per game">
+      <div class="alt-showbody">
+          {% call field("agg", "Count", aa.CONTROL_HINTS.agg, false, true) %}
+          <span class="alt-seg" role="radiogroup" aria-label="Total or per game">
             {% for k, v in aa.AGGS.items() %}
-            <option value="{{ k }}" {% if k == agg %}selected{% endif %}>{{ v }}</option>
+            <label><input type="radio" name="agg" value="{{ k }}" {% if k == agg %}checked{% endif %}><span>{{ v }}</span></label>
             {% endfor %}
-          </select>
+          </span>
           {% endcall %}
           {% call field("group_by", "Group by", aa.CONTROL_HINTS.group_by, false, true) %}
           <select name="group_by" aria-label="Group by">
@@ -242,15 +260,14 @@
             </optgroup>
           </select>
           {% endcall %}
-        </div>
       </div>
     </div>
-
 
       <div class="alt-actions alt-addrow">
         <span class="alt-addnote" role="status" hidden></span>
         <button type="button" class="nfl-apply alt-add" style="margin-left:0"
                 title="{{ aa.CONTROL_HINTS.add_card }}">Add card</button>
+      </div>
       </div>
     </div>
 
@@ -363,6 +380,7 @@
         if (c.tagName === 'SELECT') { c.selectedIndex = 0; } else { c.value = ''; }
       });
       el.querySelectorAll('input[type=checkbox]').forEach(function (c) { c.checked = false; });
+      el.querySelectorAll('input[type=radio]').forEach(function (r, i) { r.checked = i === 0; });
     }
     // A filter with a value is outlined and counted; "Clear filters" shows only
     // while at least one has a value.  Measures and Show are never counted.
@@ -402,14 +420,58 @@
         setCount(g.dataset.f, mc, mc + ' selected');
       });
       setCount('filters', n, n + ' in use');
-      var picked = root.querySelectorAll('input[name=fshow]:checked').length;
-      setCount('picked', picked, picked + ' selected');
+      root.querySelectorAll('.alt-fpick').forEach(function (pk) {
+        var c = pk.querySelectorAll('input[name=fshow]:checked').length;
+        setCount(pk.dataset.pk, c, String(c));
+      });
+      renderApplied();
     }
-    // A section heading goes when none of its controls is on screen.
+    // One chip per filter that has a value, "Label: value", with an x that clears just that
+    // filter.  Built from the controls themselves, so it can never disagree with the request.
+    var applied = root.querySelector('.alt-applied');
+    function valueText(el) {
+      var parts = [];
+      controls(el).forEach(function (c) {
+        if (c.tagName === 'SELECT') { if (c.selectedIndex > 0) { parts.push(c.options[c.selectedIndex].text); } }
+        else if (c.value !== '') { parts.push(c.value); }
+      });
+      if (el.querySelector('.alt-pair')) {
+        var pair = el.querySelectorAll('select, input[type=number]');
+        var a = pair[0], b = pair[1];
+        var av = a.tagName === 'SELECT' ? (a.selectedIndex > 0 ? a.options[a.selectedIndex].text : '') : a.value;
+        var bv = b.tagName === 'SELECT' ? (b.selectedIndex > 0 ? b.options[b.selectedIndex].text : '') : b.value;
+        return av && bv ? av + ' to ' + bv : av ? 'from ' + av : bv ? 'to ' + bv : '';
+      }
+      el.querySelectorAll('input[type=checkbox]:checked').forEach(function (c) { parts.push(c.value); });
+      return parts.join(', ');
+    }
+    function renderApplied() {
+      if (!applied) { return; }
+      applied.textContent = '';
+      fields().forEach(function (el) {
+        if (isPlain(el) || el.hidden || !hasValue(el)) { return; }
+        var label = el.querySelector('.alt-flabel');
+        var chip = document.createElement('span');
+        chip.className = 'alt-achip'; chip.setAttribute('role', 'listitem');
+        chip.appendChild(document.createTextNode((label ? label.textContent : el.dataset.f) + ': ' + valueText(el)));
+        var x = document.createElement('button');
+        x.type = 'button'; x.className = 'alt-achip-x'; x.textContent = '×';
+        x.setAttribute('aria-label', 'Clear ' + (label ? label.textContent : el.dataset.f));
+        x.addEventListener('click', function () { wipe(el); flag(); });
+        chip.appendChild(x);
+        applied.appendChild(chip);
+      });
+      applied.hidden = applied.children.length === 0;
+    }
+    // A body goes when none of its controls is on screen (and says so, so a picker
+    // header is never the only thing left).
     function syncBlocks() {
       root.querySelectorAll('[data-blk]').forEach(function (b) {
         b.hidden = !b.querySelector('[data-f]:not([hidden])');
       });
+      var fb = root.querySelector('[data-blk="filters-body"]');
+      var fe = root.querySelector('.alt-fempty');
+      if (fb && fe) { fe.hidden = !fb.hidden; }
     }
     // The picker decides which controls are on screen.  Unticking one clears it,
     // so a hidden control can never still be shaping the request.
@@ -421,7 +483,7 @@
         el.hidden = !box.checked;
         if (!box.checked) { wipe(el); } else { any = true; }
       });
-      none.hidden = any;
+      none.hidden = !!root.querySelector('[data-pk="picked-stats"] input[name=fshow][value^="m_"]:checked');
       syncBlocks();
     }
     clear.addEventListener('click', function () {
@@ -437,11 +499,39 @@
         if (e.target.name !== 'fshow') { flag(); }
       });
     });
-    // Close the picker when the user clicks anywhere else.
-    var pickerEl = root.querySelector('.alt-fpick');
-    document.addEventListener('click', function (e) {
-      if (pickerEl && pickerEl.open && !pickerEl.contains(e.target)) { pickerEl.open = false; }
+    // The pickers: one open at a time, closed by a click elsewhere or Escape.  Each has a
+    // search box (hides labels that do not match, and a group left with none), and All and
+    // None per group, which tick or untick through the same change event as a click.
+    var pickers = Array.prototype.slice.call(root.querySelectorAll('.alt-fpick'));
+    function closePickers(except) { pickers.forEach(function (pk) { if (pk !== except) { pk.open = false; } }); }
+    pickers.forEach(function (pk) {
+      pk.addEventListener('toggle', function () { if (pk.open) { closePickers(pk); } });
+      var box = pk.querySelector('.alt-fsearch');
+      box.addEventListener('input', function () {
+        var t = box.value.trim().toLowerCase(), any = false;
+        pk.querySelectorAll('.alt-fmgroup').forEach(function (g) {
+          var seen = false;
+          g.querySelectorAll('.adp-check').forEach(function (l) {
+            var hit = !t || l.textContent.toLowerCase().indexOf(t) > -1;
+            l.hidden = !hit; if (hit) { seen = true; }
+          });
+          g.hidden = !seen; if (seen) { any = true; }
+        });
+        pk.querySelector('.alt-fmnone').hidden = any;
+      });
+      pk.addEventListener('click', function (e) {
+        var b = e.target.closest("[data-bulk]");
+        if (!b) { return; }
+        var on = b.dataset.bulk === "all";
+        b.closest('.alt-fmgroup').querySelectorAll('input[name=fshow]').forEach(function (c) {
+          if (!c.closest('label').hidden && c.checked !== on) { c.checked = on; c.dispatchEvent(new Event('change', { bubbles: false })); }
+        });
+      });
     });
+    document.addEventListener('click', function (e) {
+      pickers.forEach(function (pk) { if (pk.open && !pk.contains(e.target)) { pk.open = false; } });
+    });
+    document.addEventListener('keydown', function (e) { if (e.key === 'Escape') { closePickers(null); } });
     syncBlocks();
     flag();
 

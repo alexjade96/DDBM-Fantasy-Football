@@ -842,18 +842,23 @@ def test_section_headers_carry_live_counts(_routes):
     assert "<h4>Measures" not in html                        # no Measures wrapper header
 
 
-def test_filter_section_replaces_layout_and_counts_the_ticked_boxes(_routes):
+def test_two_pickers_each_count_their_own_ticked_boxes(_routes):
     html = _builder(_routes, q="solo", player_id="00-1")
-    assert "<h4>Layout" not in html and "<h4>Filter " in html
-    n = len(aa.default_shown("WR"))
-    assert f'data-count="picked">{n} selected</span>' in html
-    assert "alt-badge" not in html                       # the button no longer carries a count
+    assert "<h4>Layout" not in html and "<h4>Filters " in html
+    shown = aa.default_shown("WR")
+    stat_keys = [k for g, items in aa.PICKER_MENU if g in ("Stats", "Results") for k, _ in items]
+    n_stats = sum(k in shown for k in stat_keys)
+    n_filters = len(shown) - n_stats
+    assert f'data-count="picked-stats">{n_stats}</span>' in html
+    assert f'data-count="picked-filters">{n_filters}</span>' in html
+    assert html.count('class="alt-fpick"') == 2          # Choose filters and Choose stats
+    assert "alt-badge" not in html
 
 
 def test_player_title_and_sections_order(_routes):
     html = _builder(_routes, q="solo", player_id="00-1")
     order = [html.index(x) for x in ('class="alt-search"', 'class="alt-who"',
-                                     "<h4>Filter ", "<h4>Filters ", "<h4>Add a card",
+                                     "<h4>Filters ", "<h4>Add a card",
                                      "<h4>Receiving", "<h4>Show", 'id="alt-cards"')]
     assert order == sorted(order)                        # search, player, filters, the card builder, then the cards
     assert 'alt-who-name">A B</span>' in html and "WR &middot; DET" in html
@@ -1452,3 +1457,80 @@ def test_card_tables_have_column_dividers():
     css = (A.BASE / "static" / "style.css").read_text(encoding="utf-8")
     assert "#alt-builder .alt-card-table th + th, #alt-builder .alt-card-table td + td" in css
     assert "border-left: 1px solid var(--line)" in css.split("#alt-builder .alt-card-table th + th")[1][:120]
+
+
+# -- builder restyle: two pickers, applied chips, pills, segmented control -------------
+
+def test_each_picker_is_searchable_and_has_all_and_none_per_group(_routes):
+    html = _builder(_routes, q="solo", player_id="00-1")
+    pickers = re.findall(r'<details class="alt-fpick" data-pk="([\w-]+)">', html)
+    assert pickers == ["picked-filters", "picked-stats"]
+    assert html.count('class="alt-fsearch"') == 2
+    groups = [g for g, _ in aa.PICKER_MENU]
+    assert html.count('data-bulk="all"') == html.count('data-bulk="none"') == len(groups)
+    # the filters picker holds the filter groups only, the stats picker the Stats and Results groups
+    filters_menu = html[html.index('data-pk="picked-filters"'):html.index('data-pk="picked-stats"')]
+    assert "<h5>Game</h5>" in filters_menu and "<h5>Stats</h5>" not in filters_menu
+    stats_menu = html[html.index('data-pk="picked-stats"'):]
+    assert "<h5>Stats</h5>" in stats_menu and "<h5>Results</h5>" in stats_menu and "<h5>Game</h5>" not in stats_menu
+
+
+def test_every_picker_box_still_posts_as_fshow_with_one_sentinel(_routes):
+    html = _builder(_routes, q="solo", player_id="00-1")
+    assert html.count('name="fshow_set"') == 1
+    assert len(re.findall(r'name="fshow" value="', html)) == len(aa.PICKER_KEYS)
+
+
+def test_each_picker_sits_in_its_own_section_header_so_it_never_hides_with_its_body(_routes):
+    html = _builder(_routes, q="solo", player_id="00-1")
+    head = re.search(r'<div class="alt-bhead">\s*<h4>Filters .*?</details>', html, re.S).group(0)
+    assert 'data-pk="picked-filters"' in head
+    add = re.search(r'<div class="alt-bhead">\s*<h4>Add a card .*?</details>', html, re.S).group(0)
+    assert 'data-pk="picked-stats"' in add
+    # the bodies are what hides when nothing is chosen, not the sections that hold the pickers
+    assert 'data-blk="filters-body"' in html and 'data-blk="build-body"' in html
+    assert 'class="alt-block alt-filters" data-blk' not in html and 'class="alt-block alt-addcard" data-blk' not in html
+
+
+def test_applied_filters_get_a_chip_row_beside_run(_routes):
+    html = _builder(_routes, q="solo", player_id="00-1")
+    row = re.search(r'<div class="alt-actions">.*?</div>\s*</div>', html, re.S).group(0)
+    assert 'class="alt-applied"' in row and 'class="alt-clear"' in row and 'class="nfl-apply alt-run"' in row
+    assert row.index("alt-applied") < row.index("alt-clear") < row.index("alt-run")
+    for fn in ("function renderApplied()", "function valueText(el)", "alt-achip-x"):
+        assert fn in html
+
+
+def test_stats_and_game_types_are_pills_and_total_per_game_is_segmented(_routes):
+    html = _builder(_routes, q="solo", player_id="00-1")
+    assert 'class="alt-mboxes alt-pills"' in html and 'class="alt-types alt-pills"' in html
+    assert 'class="alt-seg"' in html
+    assert html.count('type="radio" name="agg"') == len(aa.AGGS)
+    assert re.search(r'<input type="radio" name="agg" value="total" checked>', html)   # the default stays Total
+    assert '<select name="agg"' not in html
+    from webapp import app as A
+    css = (A.BASE / "static" / "style.css").read_text(encoding="utf-8")
+    assert ".alt-pills .adp-check input:checked + span" in css and ".alt-seg input:checked + span" in css
+
+
+def test_picker_script_closes_others_searches_and_bulk_ticks(_routes):
+    html = _builder(_routes, q="solo", player_id="00-1")
+    for marker in ("function closePickers(except)", "'toggle'", "'Escape'", "closest(\"[data-bulk]\")",
+                   "dispatchEvent(new Event('change'"):
+        assert marker in html
+    assert "[data-pk=\"picked-stats\"] input[name=fshow][value^=\"m_\"]:checked" in html   # the note follows the stat groups only
+    assert "'input[type=radio]'" in html                          # unticking Show resets the segmented control
+
+
+def test_no_filters_chosen_note_shows_only_when_no_filter_is_ticked(_routes):
+    shown = _builder(_routes, q="solo", player_id="00-1")
+    assert re.search(r'<p class="alt-fempty" hidden>', shown)
+    none = _builder(_routes, q="solo", player_id="00-1", _query=b"fshow_set=1&fshow=m_receiving")
+    assert re.search(r'<p class="alt-fempty">No filters chosen: every game counts\.</p>', none)
+
+
+def test_nothing_chosen_stats_note_is_hidden_when_a_stat_group_is_shown(_routes):
+    # (the server forces a group on whenever measures are selected, so the empty state is
+    # reached in the browser by unticking, and is covered by the Chromium check)
+    html = _builder(_routes, q="solo", player_id="00-1", _query=b"fshow_set=1&fshow=m_receiving")
+    assert re.search(r'<p class="alt-fnone" hidden>', html)
